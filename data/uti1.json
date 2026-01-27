@@ -1,0 +1,44 @@
+{
+  "conditions": {
+    "fever_present": {
+      "all": [
+        {
+          "is_true": "fever"
+        }
+      ]
+    }
+  },
+
+    "questions": {
+    {
+      "question_id": "urinary_symptoms_1",    # unique identifier
+      "question": "Are you experiencing pain when passing urine?",    #the question that is shown on the patient-facing UI
+      "send_to_encoder": "true",    # Is this question suitable for encoder extraction
+      "encoder_prompt": "Does the response indicate there is pain when passing urine?",    # the prompt that is fed to the encoder
+      "answer_field": "empty",    # The end answer
+      "answer_label": "dysuria",    # short descriptor - used only for writing conditions (we could use question_id but more prone to errors if someone re-orders the questions, a descriptor is more human readable)
+      "answer_source": "empty",    # Initially empty, then filled with encoder or direct answer depending on source
+      "answer_type": "Boolean"    # Tri-state output: Encoder extracts true/false/empty
+    },
+    {
+      "question_id": "urinary_symptoms_2",
+      "question": "Have you felt like you have had a fever during this episode?",
+      "send_to_encoder": "true",
+      "encoder_prompt": "Does the response indicate there is fever in this episode?",
+      "answer_field": "empty",
+      "answer_label": "fever",
+      "answer_source": "empty",
+      "answer_type": "Boolean"
+    },
+    {
+      "question_id": "urinary_symptoms_3", 
+      "question": "When did the symptoms start?",
+      "send_to_encoder": "false",    # This question is not suitable for encoder extraction - patient directly answers only
+      "encoder_prompt": "null",
+      "signal_type": "null",
+      "answer_field": "empty",
+      "answer_label": "onset",
+      "answer_type": "text"    # Patients can answer in text, encoders can only answer Booleans
+    }
+  }
+},
