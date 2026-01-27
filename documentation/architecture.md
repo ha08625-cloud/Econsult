@@ -72,22 +72,28 @@ Clinical rules are plug-and-play: easily changed without writing new code
 ## 4. Clinical ruleset structure
 
 {
-  "question_id": "urinary_symptoms_1",    # unique identifier
-  "question": "Are you experiencing pain when passing urine?",    #the question that is shown on the patient-facing UI
-  "send_to_encoder": "true",    # Is this question suitable for encoder extraction
-  "encoder_prompt": "Does the response indicate there is pain when passing urine?",    # the prompt that is fed to the encoder
-  "answer_field": "empty",    # The end answer
-  "answer_source": "empty",    # Initially empty, then filled with encoder or direct answer depending on source
-  "answer_type": "Boolean"    # Tri-state output: Encoder extracts true/false/empty
+"question_id": "urinary_symptoms_1",    # unique identifier
+"question": "Are you experiencing pain when passing urine?",    # patient-facing question
+"answer_key": "dysuria_present",    # unique label used only for condition logic (could use question_id but more brittle if someone re-orders questions)
+"answer_type": "Boolean",    # for encoder must be true, false, or unanswered
+"send_to_encoder": true,
+"encoder_prompt": "Does the response indicate there is pain when passing urine?"    # prompt for encoder
 },
 {
-  "question_id": "urinary_symptoms_2", 
-  "question": "When did the symptoms start?",
-  "send_to_encoder": "false",    # This question is not suitable for encoder extraction - patient directly answers only
-  "encoder_prompt": "null",
-  "signal_type": "null",
-  "answer_field": "empty",
-  "answer_type": "text"    # Patients can answer in text, encoders can only answer Booleans
+"question_id": "urinary_symptoms_2",
+"question": "Have you felt like you have had a fever during this episode?",
+"answer_key": "fever_present",
+"answer_type": "Boolean",
+"send_to_encoder": true,
+"encoder_prompt": "Does the response indicate there is fever in this episode?"
+},
+{
+"question_id": "urinary_symptoms_3",
+"question": "When did the symptoms start?",
+"answer_key": "symptom_onset_text",
+"answer_type": "text",
+"send_to_encoder": false,    # can only be answered by patient not pre-filled by encoder
+"encoder_prompt": null
 }
 
 **Key decisions**
@@ -103,8 +109,9 @@ Clinical rules are plug-and-play: easily changed without writing new code
 
 Rulesets are validated at load time.
 Fail‑fast, fail-loud conditions include:
-* Safety rule referencing absent or invalid answer_field
+* Safety rule referencing absent or invalid answer_key
 * Duplicate or unstable IDs
+* Duplicate or unstable answer_keys
 * Invalid rule expressions
 * If send_to_encoder = true, then encoder_prompt must not be null and answer_type must be Boolean
 
