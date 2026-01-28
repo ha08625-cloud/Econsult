@@ -13,37 +13,14 @@ Safety logic consumes explicit answers only
 Phase 1 — Define the ruleset schema COMPLETE
 
 Deliverables
-
-JSON schema for:
-Condition
-Questions
-Answer fields
-Safety rules
-
-Schema validator
+* JSON schema - see uti1.json for MVP schema
+* Schema validator (rules decided but validator not built)
 
 ---
 
-Phase 2 — Build the deterministic form engine (core logic)
+Phase 2 — Build the deterministic form engine COMPLETE
 
-Deliverables
-
-Pure function:
-input: ruleset + current answers
-output: form state
-No HTTP, no UI, no persistence
-
-Concrete actions
-1. Load ruleset
-2. Initialise answer state:
-empty values
-source = unanswered
-
-3. Return:
-ordered question list
-answer fields
-answer sources
-metadata needed by UI
+See form_engine_proposal.md for implementation plan and engine.py for actual code
 
 ---
 
