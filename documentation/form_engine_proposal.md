@@ -133,7 +133,7 @@ From this state you can derive:
 These should be assertions, not comments:
 
 1. `answers` contains **exactly one entry per question answer_key**
-2. `encoder_value` is immutable after encoder run
+2. encoder_value is immutable within a single Runtime state lineage. ruleset_version mismatch → hard failure
 3. `value` may change only via explicit patient input
 4. Safety engine consumes a projected view, not RuntimeState directly
 
@@ -221,8 +221,9 @@ Validate:
 * condition_id matches ruleset
 * every ruleset answer_key exists exactly once in answers
 * no extra or missing keys
-* source ∈ {unanswered, encoder, patient}
+* source ∈ {unanswered, encoder, encoder_confirmed, encoder_corrected, patient}
 * encoder_value is immutable (cannot be changed client-side after first set)
+* On submission: encoder → encoder_confirmed or encoder_corrected. This must be an assertion, not a convention.
 
 Reject any attempt to:
 * reconstruct provenance
@@ -363,9 +364,11 @@ symptom_onset_text: {
 
 ---
 
-## Step 5 — Safety evaluation
+## Step 5 — Submission and safety evaluation
 
-**Projection fed into safety engine**
+Clicks submit
+* all source: encoder fields flipped to encoder_confirmed or encoder_corrected
+* Projection fed into safety engine**
 
 ```
 {
