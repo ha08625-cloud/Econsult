@@ -29,7 +29,8 @@ Clinical rules are plug-and-play: easily changed without writing new code
 * Condition definition loader (JSON)
 * Deterministic form rules engine
 * Safety net evaluation engine
-* Stateless API: submit answers → return form state
+* The backend API is stateless with respect to infrastructure (no server-side session), but operates on an explicit, canonical RuntimeState provided with each request
+* Future version will add server-side state for increased auditability and reliability
 * Audit logging
 
 ### Frontend
@@ -66,7 +67,7 @@ Clinical rules are plug-and-play: easily changed without writing new code
 * Encoder output is not re-used (output is for debugging and quality control only)
 
 **Safety evaluation**
-* Engine evaluates safety rules using answers only
+* Engine evaluates safety rules using answers only - occurs after submission
 * Safety messages rendered in UI
 
 ## 4. Clinical ruleset structure
@@ -147,7 +148,10 @@ Encoder output:
 
 * Is clearly marked as suggested
 * Can be overridden
-* Is never authoritative
+* Are advisory and non-authoritative
+* Are frozen at extraction time and may be confirmed or corrected by the patient
+* On submission, any remaining encoder-derived values are treated as explicitly confirmed or explicitly corrected
+* Encoder provenance is retained for audit and debugging only and is never exposed to safety logic or clinical outputs
 
 ---
 
@@ -165,8 +169,9 @@ Runtime state exists only in memory:
 8.1 Canonical runtime state (lossless, backend)
 
 Purpose:
-* debugging and model evaluation
-* audit trail and safety incident investigation
+* The system operates on a canonical RuntimeState object that represents the full, lossless state of a form at a point in time
+* For the MVP, this state may be round-tripped via the client. In later versions it will be server-owned and versioned
+* RuntimeState supports multiple submit events over time, each producing an independent safety evaluation for debugging, model evaluation, audit trail and safety incident investigation
 
 Contains:
 * free text input
