@@ -1,13 +1,5 @@
 {
-  "conditions": {
-    "fever_present": {
-      "all": [
-        {
-          "is_true": "fever_present"
-        }
-      ]
-    }
-  },
+  "condition_id": "urinary_symptoms",
   "questions": [
     {
       "question_id": "urinary_symptoms_1",
@@ -33,5 +25,16 @@
       "send_to_encoder": false,
       "encoder_prompt": null
     }
-  ]
+  ],
+  
+  "safety": {
+    "rules": {
+      "fever_with_urinary_symptoms": {
+        "all": [
+          { "is_true": "fever_present" }
+        ],
+        "message": "You should seek urgent medical advice if you have a fever with urinary symptoms."
+      }
+    }
+  }
 }
