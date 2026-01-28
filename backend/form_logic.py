@@ -1,3 +1,11 @@
+from typing import Any
+from runtime_state import RuntimeState, AnswerState, SafetyEvaluation
+from ruleset import ruleset_hash
+
+"""
+creates blank runtime state at initialisation
+"""
+
 def initialise_runtime_state(
     ruleset: dict,
     free_text: str,
@@ -24,6 +32,10 @@ def initialise_runtime_state(
         },
     )
 
+"""
+reloads partially filled form on returns
+fail loud if incompatible with ruleset version
+"""
 def hydrate_runtime_state(
     incoming: RuntimeState,
     ruleset: dict,
@@ -45,3 +57,47 @@ def hydrate_runtime_state(
         }
 
     return incoming
+
+"""
+changes source if patient clicks box
+"""
+
+def patient_update(runtime: RuntimeState, answer_key: str, value: Any) -> None:
+    a = runtime.answers[answer_key]
+
+    a.value = value
+
+    if a.source == "encoder":
+        a.source = "encoder_corrected"
+    else:
+        a.source = "patient"
+
+"""
+changes all encoders to encoder_confirmed on submit
+"""
+
+def normalise_on_submit(runtime: RuntimeState) -> None:
+    for a in runtime.answers.values():
+        if a.source == "encoder":
+            a.source = "encoder_confirmed"
+
+"""
+checks for safety netting instructions needed
+"""
+
+def evaluate_safety(runtime: RuntimeState, ruleset: dict) -> None:
+    runtime.safety_evaluation = SafetyEvaluation()
+
+    answers_view = {
+        k: v.value for k, v in runtime.answers.items()
+    }
+
+    for rule_id, rule in ruleset.get("safety", {}).get("rules", {}).items():
+        satisfied = all(
+            answers_view.get(cond["is_true"]) is True
+            for cond in rule.get("all", [])
+        )
+
+        if satisfied:
+            runtime.safety_evaluation.triggered_rules.append(rule_id)
+            runtime.safety_evaluation.messages.append(rule["message"])
