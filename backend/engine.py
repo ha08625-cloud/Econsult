@@ -42,17 +42,6 @@ def apply_encoder(runtime: RuntimeState, ruleset: dict) -> None:
             a.value = value
             a.source = "encoder"
 
-
-def clinical_output(runtime: RuntimeState) -> dict:
-    return {
-        "condition_id": runtime.condition_id,
-        "free_text": runtime.free_text,
-        "answers": {
-            k: v.value for k, v in runtime.answers.items()
-        },
-        "safety_messages": runtime.safety_evaluation.messages,
-    }
-
 ruleset = load_ruleset("uti1_revised.json")
 
 state = initialise_runtime_state(
