@@ -1,6 +1,6 @@
-Provisional plan for MVP
+### Provisional plan for MVP
 
-Locked invariants for MVP
+### Locked invariants for MVP
 
 Server is stateless per request
 No ML dependency
@@ -10,7 +10,7 @@ Safety logic consumes explicit answers only
 
 ---
 
-Phase 1 — Define the ruleset schema COMPLETE
+### Phase 1 — Define the ruleset schema COMPLETE
 
 Deliverables
 * JSON schema - see uti1.json for MVP schema
@@ -18,13 +18,13 @@ Deliverables
 
 ---
 
-Phase 2 — Build the deterministic form engine COMPLETE
+### Phase 2 — Build the deterministic form engine COMPLETE
 
 See form_engine_proposal.md for implementation plan and engine.py for actual code
 
 ---
 
-Phase 3 — Encoder stub (non-ML)
+### Phase 3 — Encoder stub (non-ML)
 
 Deliverables: Fake encoder implementation
 
@@ -35,7 +35,7 @@ Concrete actions
 
 ---
 
-Phase 4 — Safety engine (separate, explicit)
+### Phase 4 — Safety engine (separate, explicit)
 
 Deliverables
 
@@ -52,7 +52,7 @@ Why Safety must be inspectable, testable, and impossible to trigger via encoder 
 
 ---
 
-Phase 5 — Clinical output vs audit output split
+### Phase 5 — Clinical output vs audit output split
 
 Deliverables
 Two serializers:
@@ -68,7 +68,7 @@ This enforces regulatory boundaries early instead of retrofitting later.
 
 ---
 
-Phase 6 — Stateless API wrapper
+### Phase 6 — Stateless API wrapper
 Deliverables
 Minimal HTTP API (single endpoint is sufficient)
 
@@ -92,7 +92,7 @@ outputs: clinical output + safety messages
 
 ---
 
-Phase 7 — Minimal frontend renderer
+### Phase 7 — Minimal frontend renderer
 
 Deliverables
 Dumb UI capable of:
@@ -108,7 +108,7 @@ No hidden questions
 
 ---
 
-Phase 8 — End-to-end validation
+### Phase 8 — End-to-end validation
 Deliverables
 One full happy-path test
 One safety-trigger test
