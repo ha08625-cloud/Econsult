@@ -1,9 +1,3 @@
-Done. The canvas now contains the revised ruleset with a dedicated `safety` block and stable semantic keys.
-
-Below is the **Phase 1 validation checklist**. This should be implemented as load-time validation and treated as non-negotiable.
-
----
-
 ## Phase 1 — Ruleset Validation Checklist (fail-fast)
 
 ### 1. Top-level structure
@@ -126,17 +120,3 @@ Validation should **warn (not fail)** if:
 * no encoder-enabled questions exist
 
 This allows early MVPs without weakening correctness.
-
----
-
-## What this unlocks
-
-With this locked, Phase 2 can proceed safely:
-
-* deterministic form engine
-* no schema churn
-* no ambiguity about responsibility boundaries
-* safety logic mechanically isolated
-
-Next step, if you want to proceed in order:
-**Phase 2 — define the canonical runtime form state shape** (pure data, no HTTP yet).
