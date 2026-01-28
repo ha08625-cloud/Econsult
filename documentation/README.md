@@ -16,11 +16,9 @@ Planned improvements
 - The patient can write a short blurb explaining their presenting complaint
 - That blurb is then run through a fast encoder model
 - The encoder model will have a series of heads which are boolean classifiers for each required symptom e.g. fever: yes or no and then pre-fills the form based on those answers
-- This is about better forms, not artificial intelligence replacing clinicians
+- This is about reducing redundancy in forms, not AI driven decisions or conversation
 
 ### Documentation 
 - Architecture.md - High level architecture decisions
-- Modules.md - Individual descriptions of modules
-- current_phase.md - Overall plan for current phase (currently MVP)
-- TODO.md - immediate tasks
-- updates.md - Planned improvements for later versions
+- current_version.md - Overall plan for current phase (currently MVP/V1)
+- planned_updates.md - Planned improvements for later versions
