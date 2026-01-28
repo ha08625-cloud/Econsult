@@ -1,9 +1,7 @@
 Provisional plan for MVP
 
-Phase 0 — Lock invariants (do not write code yet)
+Locked invariants for MVP
 
-Deliverables
-Written confirmation (README / comment) of the following invariants:
 Server is stateless per request
 No ML dependency
 All clinical meaning lives in JSON rulesets
@@ -47,12 +45,20 @@ answer fields
 answer sources
 metadata needed by UI
 
-This is the functional core.
-Everything else is an adapter.
+---
+
+Phase 3 — Encoder stub (non-ML)
+
+Deliverables: Fake encoder implementation
+
+Concrete actions
+1. Hard-code deterministic outputs based on keywords
+2. Populate suggested answers
+3. Mark source = encoder
 
 ---
 
-Phase 3 — Safety engine (separate, explicit)
+Phase 4 — Safety engine (separate, explicit)
 
 Deliverables
 
@@ -69,7 +75,7 @@ Why Safety must be inspectable, testable, and impossible to trigger via encoder 
 
 ---
 
-Phase 4 — Clinical output vs audit output split
+Phase 5 — Clinical output vs audit output split
 
 Deliverables
 Two serializers:
@@ -77,7 +83,6 @@ Clinical output (lossy)
 Audit/debug output (lossless)
 
 Concrete actions
-
 1. Define exact field inclusion/exclusion
 2. Ensure encoder-related fields are excluded from clinical output
 3. Add ruleset version + timestamps to audit output
@@ -86,28 +91,31 @@ This enforces regulatory boundaries early instead of retrofitting later.
 
 ---
 
-Phase 5 — Stateless API wrapper
+Phase 6 — Stateless API wrapper
 Deliverables
 Minimal HTTP API (single endpoint is sufficient)
 
 Concrete actions
-
 1. POST /form/init
 inputs: condition_id, free_text
 outputs: form state
 
 2. POST /form/submit
-inputs: answers only
+inputs: 
+{
+  condition_id,
+  ruleset_version,
+  free_text,
+  answers
+}
 outputs: clinical output + safety messages
 
 3. No session storage
 4. No per-user memory
 
-Why Prevents accidental conversational state from creeping in.
-
 ---
 
-Phase 6 — Minimal frontend renderer
+Phase 7 — Minimal frontend renderer
 
 Deliverables
 Dumb UI capable of:
@@ -120,26 +128,6 @@ Constraints
 No clinical logic
 No branching
 No hidden questions
-
-Why Any logic here will later diverge from server truth.
-
----
-
-Phase 7 — Encoder stub (non-ML)
-
-Deliverables
-
-Fake encoder implementation
-
-Concrete actions
-
-1. Hard-code deterministic outputs based on keywords
-
-2. Populate suggested answers
-
-3. Mark source = encoder
-
-This tests the entire integration path without introducing ML uncertainty.
 
 ---
 
