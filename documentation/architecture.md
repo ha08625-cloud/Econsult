@@ -98,10 +98,11 @@ Clinical rules are plug-and-play: easily changed without writing new code
 }
 
 **Key decisions**
-* One question_id can map onto 0 or 1 signal_id - some questions can't be extracted easily by encoders e.g. When did the symptoms start?
-* One signal_id can only map onto one question_id - this is not classical NLP, this is a simple form filling accelerator. More than one question to a signal invites complexities around contradiction detection and resolution
+* This is a form filling engine, not an AI conversation agent
+* Some questions can't be extracted easily by encoders e.g. When did the symptoms start?
+* More than one question to a signal invites complexities around contradiction detection and resolution
 * The only source of information is the patient - signals can be derived from encoders reading free text or direct input from the patient.  Information from other sources, e.g. EHRs, is not within the scope of this project
-* Signals should never exist without Questions
+* Therefore there is no reason to have a signal_id separate from a question_id - the encoder is a helper to speed up a certain subset of questions, not its own class of information
 * The question and the encoder prompt are different wordings of the SAME clinical concept optimised for different consumers (one human, one ML) - if one changes, the other MUST be reviewed or they may diverge dangerously
 
 ---
