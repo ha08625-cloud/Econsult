@@ -149,7 +149,7 @@ runtime_id must reference an existing session
 
 base_version must be provided
 
-answers may be empty but must be present
+answers must be present and completed
 
 Only answer_key → value pairs are permitted
 
@@ -324,7 +324,7 @@ All submissions are complete
 
 All conflicts are explicit
 
-All safety rules are evaluated exactly once per submission
+All safety rules are evaluated exactly once per RunTimeState version created at POST /form/update submission
 
 No silent recovery or auto-correction occurs
 
