@@ -1,27 +1,27 @@
-## Phase 6 — API Wrapper with Canonical Server-Side State (Revised)
+# Phase 6 — API Wrapper with Canonical Server-Side State
 
-### Purpose
+## Purpose
 
-Expose the deterministic form engine over HTTP while preserving canonical RuntimeState integrity, auditability, and safety.
-
-The API is **stateless in interaction semantics** (no conversational flow, no per-user logic), but **RuntimeState is server-owned and persisted**. This removes hostile-client risks, simplifies validation, and aligns with future audit and safety requirements.
+Expose the deterministic form engine over HTTP while preserving canonical RuntimeState integrity, auditability, and clinical safety.
+Earlier plans assumed a stateless API. This was rejected due to audit, security, and validation risks. Phase 6 therefore introduces **server-side RuntimeState persistence in the MVP** to avoid later architectural refactors.
+RuntimeState is server-owned, versioned, and authoritative. Clients interact only through constrained, render-safe and intent-only data structures.
 
 ---
 
 ## Architectural stance
 
 * RuntimeState is **canonical, backend-owned, and lossless**
-* The client never invents, mutates, or signs RuntimeState
+* The client never invents, mutates, signs, or round-trips RuntimeState
 * The server is the sole authority for:
-
-  * state identity
+  * runtime identity
   * versioning
   * provenance transitions
   * safety evaluation
 * Persistence is minimal, append-only or versioned
-* No conversational memory, no hidden workflow, no cross-user state
-
-This is not a session-based system. It is a deterministic engine with durable inputs.
+* No conversational memory
+* No hidden workflow
+* No cross-user or cross-request behavioural state
+This is a **stateful system**, but not a session- or conversation-driven one. It is a deterministic engine with durable inputs.
 
 ---
 
@@ -29,7 +29,7 @@ This is not a session-based system. It is a deterministic engine with durable in
 
 Each RuntimeState instance is stored server-side with:
 
-* `runtime_id` (UUID, server-generated)
+* `runtime_id` (UUID, server-generated, unguessable)
 * `ruleset_hash`
 * `version` (monotonic integer)
 * `created_at`
@@ -41,14 +41,80 @@ Rules:
 * RuntimeState is never mutated in place
 * Each update creates a new version
 * Previous versions remain accessible for audit/debug
-* Submission/evaluation never deletes or invalidates state
+* No update or evaluation deletes or invalidates state
 
 This enables:
 
-* safe re-submission
-* patient back-navigation
-* audit trails
-* future model evaluation
+* safe back-navigation
+* hard failure on conflicts
+* auditability
+* future model and safety evaluation
+
+RuntimeState is an **engineering and safety artefact**, not a medical record. Production retention (30 days) is deferred to later stages.
+
+---
+
+## Client-facing data contracts
+
+### ClientStateView (server → client)
+
+A render-only projection of RuntimeState.
+Purpose:
+
+* Render questions and answers
+* Indicate which values were suggested
+* Drive frontend completeness checks
+
+Properties:
+
+* Derived from RuntimeState
+* Lossy by design
+* Structurally incapable of being used as input
+* Never accepted by any endpoint
+
+Contains (illustrative):
+
+* question text
+* answer_key
+* current value
+* required flag
+* suggested flag
+
+Explicitly excludes:
+
+* provenance enums
+* encoder internals
+* raw signals
+* safety logic
+* internal metadata
+
+---
+
+### ClientAnswerReturn (client → server)
+
+An intent-only structure representing **explicit patient input**.
+
+Purpose:
+
+* Express user intent unambiguously
+* Avoid inference via diffing or state comparison
+
+Properties:
+
+* Contains only keys the patient explicitly answered or changed
+* Absence of a key means “no change”
+* Every provided value is treated as `source=patient`
+
+Contains:
+
+* `answer_key → value`
+
+Never contains:
+
+* provenance
+* full state
+* encoder information
+* free text
 
 ---
 
@@ -57,188 +123,192 @@ This enables:
 ### POST /form/init
 
 **Purpose**
-Create a new RuntimeState (version 1) for a given condition.
+Create a new RuntimeState (version 1) for a selected condition.
 
 **Inputs**
 
-```
+```json
 {
-  condition_id: string,
-  free_text: string | null
+  "condition_id": "string",
+  "free_text": "string | null"
 }
 ```
 
 **Behaviour**
 
 * Load and validate ruleset
-* Initialise canonical RuntimeState (all answer_keys present)
-* Run encoder once (if free text present)
+* Initialise RuntimeState with all answer_keys present
+* Run encoder once (if free_text present)
 * Apply encoder mapping
 * Persist RuntimeState (version = 1)
+* Generate ClientStateView
 
 **Outputs**
 
-```
+```json
 {
-  runtime_id: string,
-  version: number,
-  state: RuntimeState
+  "runtime_id": "string",
+  "version": 1,
+  "client_state": ClientStateView
 }
 ```
 
-Encoder output is frozen at this point and can never be re-run.
+**Invariants**
+
+* Encoder runs exactly once
+* Encoder output is frozen permanently
+* `free_text` exists only at init
+* `/form/update` schema must not allow free_text
+* Changing free text requires a new runtime_id
 
 ---
 
 ### POST /form/update
 
 **Purpose**
-Apply patient answer changes to an existing RuntimeState and produce a new version.
+Apply patient answer changes, normalise provenance, and automatically evaluate safety.
 
 **Inputs**
 
-```
+```json
 {
-  runtime_id: string,
-  base_version: number,
-  answer_updates: {
-    answer_key: value
-  }
+  "runtime_id": "string",
+  "base_version": number,
+  "answers": ClientAnswerReturn
 }
 ```
 
 **Behaviour**
 
 * Load latest RuntimeState for runtime_id
-* Reject if base_version != latest_version (409 Conflict)
+* Reject if `base_version != latest_version` (409 Conflict)
 * Validate ruleset hash
-* Apply updates using form logic
-* Enforce allowed provenance transitions
-* Increment version
-* Update last_modified_at
-* Persist new RuntimeState version
+* Apply patient answers (`source=patient`)
+* Normalise encoder provenance:
+
+  * remaining encoder → encoder_confirmed
+  * overwritten encoder → encoder_corrected
+* Validate that all required questions are answered
+* Create new RuntimeState version
+* Persist
+* Project → ExplicitAnswers
+* Run safety engine
+* Generate ClientStateView
 
 **Outputs**
 
-```
+```json
 {
-  runtime_id: string,
-  version: number,
-  state: RuntimeState
+  "runtime_id": "string",
+  "version": number,
+  "client_state": ClientStateView,
+  "safety_messages": [...]
 }
 ```
 
-The client never sends a full RuntimeState for mutation. Auto-merge is explicitly forbidden.
+**Notes**
+
+* This endpoint is safety-critical
+* Partial or incomplete states are rejected
+* Auto-merge is forbidden
+* Safety is never optional or deferrable
 
 ---
 
-### POST /form/evaluate
+### POST /form/finish
 
 **Purpose**
-Evaluate a specific RuntimeState snapshot and emit derived outputs.
-
-This endpoint is **pure**: it must not mutate, normalise, advance, or persist state.
+Final, irreversible submission after safety has been shown to the patient.
 
 **Inputs**
 
-```
+```json
 {
-  runtime_id: string,
-  version: number
+  "runtime_id": "string",
+  "version": number
 }
 ```
 
 **Behaviour**
 
-* Load RuntimeState(runtime_id, version)
-* Validate ruleset hash
-* Project RuntimeState → ExplicitAnswers
-* Evaluate safety rules
-* Generate clinical and safety outputs
-
-**Critical invariants**
-
-* Must NOT advance version
-* Must NOT normalise provenance permanently
-* Must NOT persist any changes
-* May be called on any historical version
-
-**Outputs**
-
-```
-{
-  clinical_output,
-  safety_messages
-}
-```
-
-Evaluation output is a read-only artefact. The frontend must continue rendering the last known RuntimeState.
-
-**Behaviour**
 * Load RuntimeState
-* Normalise encoder provenance
-* Project RuntimeState → ExplicitAnswers
-* Evaluate safety rules
-* Generate clinical and safety outputs
+* Reject if version is not latest
+* Optionally re-run safety defensively
+* Serialize clinical output
+* Hand off to downstream system (out of scope)
 
 **Outputs**
-```
 
+```json
 {
-clinical_output,
-safety_messages
+  "clinical_output": ...
 }
-
 ```
 
-Evaluation does not mutate or advance RuntimeState.
-
----
-
-## Statelessness guarantees
-
-* No conversational flow
-* No hidden per-user logic
-* Each request is explicit and self-contained
-* Server persistence does not imply behavioural state
-
-The API remains deterministic and replayable.
+This endpoint marks the end of Phase 6 responsibility.
 
 ---
 
 ## Failure semantics
 
 Fail loud and early on:
-* invalid runtime_id or version
+
+* invalid runtime_id
+* missing or invalid version
 * ruleset_hash mismatch
 * illegal provenance transitions
-* malformed updates
+* malformed ClientAnswerReturn
+* incomplete required answers
+* concurrent modification conflicts
 
-Expected UX behaviour on failure:
-* notify user
-* restart form if necessary
+UX expectation:
+
+* user is notified
+* form may need to restart
+* no silent recovery
+
+Clinical ambiguity is never auto-resolved.
+
+---
+
+## UI flow (informative, non-binding)
+
+1. **Screen 1 — Init**
+
+   * condition + free text
+   * `/form/init`
+2. **Screen 2 — Edit**
+
+   * all questions required
+   * `/form/update`
+   * safety evaluated automatically
+3. **Screen 3 — Review**
+
+   * read-only answers
+   * safety messages always visible
+4. **Final submit**
+
+   * `/form/finish`
 
 ---
 
 ## Explicit non-goals (Phase 6)
 
-* No session management
-* No authentication model
-* No long-term data retention policy
-* No ruleset migration support
-
-These are deferred intentionally.
+* Authentication or authorisation
+* Session management
+* UI implementation
+* Ruleset migration
+* Multi-condition support
+* Retention enforcement
+* EHR integration
 
 ---
 
-## Rationale
+## Implementation goals (Phase 6 deliverables)
 
-Introducing minimal server-side storage at this phase:
-* reduces security risk
-* simplifies validation
-* preserves functional purity
-* aligns with regulatory and audit needs
-
-This is a deliberate architectural choice, not a compromise.
-
-```
+* HTTP API exposing the existing engine
+* Server-side RuntimeState persistence
+* ClientStateView projection
+* ClientAnswerReturn ingestion
+* Safety evaluated automatically on update
+* Explicit invariants enforced in code
