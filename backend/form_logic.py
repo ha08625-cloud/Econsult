@@ -80,24 +80,3 @@ def normalise_on_submit(runtime: RuntimeState) -> None:
     for a in runtime.answers.values():
         if a.source == "encoder":
             a.source = "encoder_confirmed"
-
-"""
-checks for safety netting instructions needed
-"""
-
-def evaluate_safety(runtime: RuntimeState, ruleset: dict) -> None:
-    runtime.safety_evaluation = SafetyEvaluation()
-
-    answers_view = {
-        k: v.value for k, v in runtime.answers.items()
-    }
-
-    for rule_id, rule in ruleset.get("safety", {}).get("rules", {}).items():
-        satisfied = all(
-            answers_view.get(cond["is_true"]) is True
-            for cond in rule.get("all", [])
-        )
-
-        if satisfied:
-            runtime.safety_evaluation.triggered_rules.append(rule_id)
-            runtime.safety_evaluation.messages.append(rule["message"])
