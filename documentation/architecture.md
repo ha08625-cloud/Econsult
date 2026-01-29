@@ -139,8 +139,30 @@ No business logic
 No clinical decisions
 No state persistence
 
-Linear flow only
+### 3.8 explicit_answers.py — Safety-critical answer projection
 
+Responsibilities:
+* Define the only data structure that safety and other post-submit rule engines may consume
+* Enforce immutability of projected answers
+* Remove all provenance, encoder metadata, and RuntimeState access
+
+Properties:
+* Input is a projection of RuntimeState, not RuntimeState itself
+* Answers are immutable (frozen dataclass)
+* Answer values may be True, False, or None
+* None represents unknown, not False
+
+### 3.9 projection.py — Explicit answer projection boundary
+
+Responsibilities:
+* Project RuntimeState → ExplicitAnswers
+* Apply strict allow-list provenance rules
+* Act as the single choke point where encoder influence is excluded from safety
+
+Rules:
+* Only answers with source ∈ {patient, encoder_confirmed} are included
+* All other answers are treated as unanswered (None), even if a value exists
+* Projection is deterministic and total (all answer_keys always present)
 
 ## 4. Data flow
 
@@ -155,10 +177,15 @@ Return canonical RuntimeState
 
 ### 4.2 Form submission
 
-Hydrate and validate RuntimeState
-Normalise encoder provenance
-Evaluate safety rules (explicit answers only)
-Serialize clinical output
+* Hydrate and validate RuntimeState
+* Normalise encoder provenance
+* Evaluate safety rules as follows:
+  * Normalise encoder provenance (encoder → encoder_confirmed)
+  * Project RuntimeState → ExplicitAnswers
+  * Evaluate safety using the safety engine
+  * If any safety rules are triggered, block submission
+  * Return safety messages
+* Serialize clinical output
 
 ## 5. Encoder logic
 
@@ -184,7 +211,6 @@ encoder_corrected
 patient
 
 Allowed transitions:
-
 From	To	Allowed
 unanswered	encoder	yes
 unanswered	patient	yes
@@ -196,13 +222,39 @@ patient	encoder_confirmed	no
 
 Encoders may only ever produce encoder.
 
-## 6. Safety architecture
+## 6. Safety architecture (blocking, isolated)
 
-Safety rules live in the ruleset
-Safety consumes explicit answers only
-Encoder output is ignored by safety
-Safety logic is deterministic and inspectable
-This guarantees encoder failure cannot cause unsafe advice.
+Safety rules live in the ruleset.
+Safety evaluation is performed by a dedicated safety engine that:
+Consumes explicit answers only
+Never sees RuntimeState, AnswerState, provenance, or encoder output
+Operates on an immutable input structure
+Is deterministic, inspectable, and unit-testable in isolation
+
+### 6.1 Explicit answer semantics
+
+Safety consumes an ExplicitAnswers structure with the following semantics:
+True / False → explicitly answered
+None → unknown / unanswered
+(None is never treated as False)
+Encoder-derived answers (encoder) are never visible to safety.
+Encoder-confirmed answers (encoder_confirmed) are treated as explicit only after submission normalisation.
+
+### 6.2 Safety engine responsibilities
+
+The safety engine:
+* Evaluates safety rules against explicit answers
+* Returns structured safety outcomes (rule IDs + message text)
+* Does not decide whether submission is allowed
+* Blocking behaviour is enforced only by the pipeline, based on safety output.
+
+### 6.3 Blocking semantics
+
+For the MVP:
+* Any triggered safety rule blocks form submission
+* The patient is prevented from submitting until answers are changed
+* Blocking is explicit and transparent to the patient
+* This is a medically defensible design choice and prevents unsafe overnight submissions.
 
 ## 7. State and statelessness
 
@@ -299,6 +351,10 @@ Fail‑fast, fail-loud conditions include:
 * Duplicate or unstable answer_keys
 * Invalid rule expressions
 * If send_to_encoder = true, then encoder_prompt must not be null and answer_type must be Boolean
+* Safety engine receiving anything other than ExplicitAnswers
+* Safety evaluation attempted before projection
+* Projection omitting any answer_key
+* Safety rules referencing keys absent from projected answers
 
 Log warning but don't fail loudly
 * If source if direct_answer, then signal_id, encoder_prompt and signal_type must be null (incorrect but not dangerous)
@@ -321,5 +377,6 @@ However:
 
 * One condition (urinary symptoms), three answer fields: dysuria (boolean), fever (boolean), onset (free text)
 * All questions visible
-* One safety message (fever=true => speak to doctor immediately)
+* One safety message (fever=true => speak to doctor immediately) which is evaluated after submission only
+* Safety message blocks final submission
 * No ML dependency
