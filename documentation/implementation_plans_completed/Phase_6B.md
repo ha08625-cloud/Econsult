@@ -4,25 +4,17 @@ Purpose
 
 Define the exact HTTP interface for the Phase 6 session-backed form engine.
 
-This document translates Phase 6A semantic invariants into concrete, enforceable wire contracts. It intentionally avoids framework, database, or infrastructure choices.
-
-The goal is to remove ambiguity at the HTTP boundary so implementation becomes mechanical rather than interpretive.
-
+This document translates Phase 6A semantic invariants into concrete, enforceable wire contracts
 
 ---
 
 Scope
 
 This phase defines:
-
 Endpoint list and responsibilities
-
 Request and response schemas
-
 Versioning and concurrency requirements
-
 Error taxonomy and status code usage
-
 Boundary-level invariants
 
 
@@ -98,10 +90,6 @@ Endpoint definitions
 
 POST /form/init
 
-Purpose
-
-Create a new session and initialise RuntimeState.
-
 Request body
 
 {
@@ -141,17 +129,9 @@ Failure modes
 
 422 Unprocessable Entity — ruleset validation failure
 
-
-
 ---
 
 POST /form/update
-
-Purpose
-
-Submit a complete form, normalise provenance, and evaluate blocking safety rules.
-
-This endpoint is semantically a submit operation. Partial or draft submissions are not supported.
 
 Request body
 
@@ -222,12 +202,6 @@ ruleset hash mismatch
 
 POST /form/finish
 
-Purpose
-
-Close a session and produce final outputs.
-
-After this call, the session becomes read-only.
-
 Request body
 
 {
@@ -245,15 +219,7 @@ version must equal the latest version
 Response body
 
 {
-  "clinical_output": {
-    "answers": {
-      "answer_key": "value"
-    },
-    "free_text": "string | null",
-    "safety_messages": [
-      "string"
-    ]
-  }
+  "submission_id": "string"
 }
 
 Failure modes
@@ -296,8 +262,15 @@ suggested flag
 
 Enforcement rule
 
-Any request containing ClientStateView fields or structure is rejected with 400 Bad Request.
-
+For each endpoint, define the exact accepted shape, and reject everything else.
+For example, /form/update:
+Allowed top-level keys:
+runtime_id
+base_version
+answers
+Inside answers:
+keys must be valid answer_keys
+values must match the declared answer type
 
 ---
 
