@@ -11,47 +11,9 @@ Safety logic consumes explicit answers only
 ---
 
 ### Phase 1 — Define the ruleset schema COMPLETE
-
-Deliverables
-* JSON schema - see uti1.json for MVP schema
-* Schema validator (rules decided but validator not built)
-
----
-
 ### Phase 2 — Build the deterministic form engine COMPLETE
-
-See form_engine_proposal.md for implementation plan and engine.py for actual code
-
----
-
-### Phase 3 — Encoder stub (non-ML)
-
-Deliverables: Fake encoder implementation
-
-Concrete actions
-1. Hard-code deterministic outputs based on keywords
-2. Populate suggested answers
-3. Mark source = encoder
-
----
-
-### Phase 4 — Safety engine (separate, explicit)
-
-Deliverables
-
-Independent safety evaluator:
-input: explicit answers only
-output: safety messages
-
-Concrete actions
-1. Parse safety rules from ruleset
-2. Evaluate against answers
-3. Return message IDs + text
-
-Why Safety must be inspectable, testable, and impossible to trigger via encoder paths.
-
----
-
+### Phase 3 — Encoder stub (non-ML) COMPLETE
+### Phase 4 — Safety engine COMPLETE
 ### Phase 5 — Clinical output vs audit output split
 
 Deliverables
