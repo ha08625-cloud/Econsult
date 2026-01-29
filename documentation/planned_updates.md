@@ -12,6 +12,11 @@ Late prototype updates
 - Autocomplete/typeahead
 - Encoder/head training
 - dockerise and cloud
+runtime_id is a bearer capability
+guessing or leaking it exposes PHI-adjacent data
+You do not need to solve auth in Phase 6, but you should:
+state that runtime_id must be unguessable
+state that rate-limiting and access control are deferred but required
 
 production readiness updates
 - Encryption and cybersecurity
