@@ -1,35 +1,10 @@
 ### Provisional plan for MVP
 
-### Locked invariants for MVP
-
-Server is stateless per request
-No ML dependency
-All clinical meaning lives in JSON rulesets
-UI is a pure renderer
-Safety logic consumes explicit answers only
-
----
-
 ### Phase 1 — Define the ruleset schema COMPLETE
 ### Phase 2 — Build the deterministic form engine COMPLETE
 ### Phase 3 — Encoder stub (non-ML) COMPLETE
 ### Phase 4 — Safety engine COMPLETE
-### Phase 5 — Clinical output vs audit output split
-
-Deliverables
-Two serializers:
-Clinical output (lossy)
-Audit/debug output (lossless)
-
-Concrete actions
-1. Define exact field inclusion/exclusion
-2. Ensure encoder-related fields are excluded from clinical output
-3. Add ruleset version + timestamps to audit output
-
-This enforces regulatory boundaries early instead of retrofitting later.
-
----
-
+### Phase 5 — Clinical output vs audit output split COMPLETE
 ### Phase 6 — Stateless API wrapper
 
 Purpose
