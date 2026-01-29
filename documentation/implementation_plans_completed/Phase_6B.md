@@ -193,7 +193,7 @@ incomplete required answers
 
 illegal provenance transition
 
-ruleset hash mismatch
+ruleset hash mismatch - If ruleset hash in DB ≠ current ruleset hash → 422
 
 
 
