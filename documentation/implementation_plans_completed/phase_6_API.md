@@ -1,10 +1,12 @@
-# Phase 6 — API Wrapper with Canonical Server-Side State
+# Phase 6A — API Semantics and workflow invariants (architecture only, not implementation)
 
 ## Purpose
 
 Expose the deterministic form engine over HTTP while preserving canonical RuntimeState integrity, auditability, and clinical safety.
-Earlier plans assumed a stateless API. This was rejected due to audit, security, and validation risks. Phase 6 therefore introduces **server-side RuntimeState persistence in the MVP** to avoid later architectural refactors.
-RuntimeState is server-owned, versioned, and authoritative. Clients interact only through constrained, render-safe and intent-only data structures.
+
+Earlier plans assumed a stateless API. This was rejected due to auditability, safety, and validation risks. Phase 6 therefore **introduces server-side RuntimeState persistence into the MVP** to avoid later architectural refactors.
+
+RuntimeState is server-owned, versioned, and authoritative. Clients interact only through constrained, render-only projections and intent-only input structures.
 
 ---
 
@@ -13,44 +15,46 @@ RuntimeState is server-owned, versioned, and authoritative. Clients interact onl
 * RuntimeState is **canonical, backend-owned, and lossless**
 * The client never invents, mutates, signs, or round-trips RuntimeState
 * The server is the sole authority for:
-  * runtime identity
-  * versioning
+
+  * session identity (`runtime_id`)
+  * versioning and conflict detection
   * provenance transitions
-  * safety evaluation
-* Persistence is minimal, append-only or versioned
+  * safety and advisory evaluation
+* Persistence is append-only or versioned
 * No conversational memory
 * No hidden workflow
-* No cross-user or cross-request behavioural state
-This is a **stateful system**, but not a session- or conversation-driven one. It is a deterministic engine with durable inputs.
+* No cross-user behavioural state
+
+This is a **session-backed system**.
+
+A *session* is defined as a server-owned, versioned workflow instance identified by `runtime_id`. It is unauthenticated, single-user, short-lived, and deterministic. The absence of authentication does not make the system stateless.
 
 ---
 
 ## RuntimeState persistence model
 
-Each RuntimeState instance is stored server-side with:
+Each session (RuntimeState instance) is stored server-side with:
 
-* `runtime_id` (UUID, server-generated, unguessable)
+* `runtime_id` — UUID, server-generated, unguessable
 * `ruleset_hash`
-* `version` (monotonic integer)
+* `version` — monotonic integer **per runtime_id**
 * `created_at`
 * `last_modified_at`
 * full RuntimeState payload (lossless)
 
-Rules:
+### Rules
 
 * RuntimeState is never mutated in place
-* Each update creates a new version
-* Previous versions remain accessible for audit/debug
+* Each successful update creates a new version
+* Version numbers are monotonic per `runtime_id`
+* The latest version is defined as the highest version number for that `runtime_id`
+* Previous versions remain accessible for audit and debugging
+* Updates are **intentionally non-idempotent**
 * No update or evaluation deletes or invalidates state
 
-This enables:
+Clients must not retry `/form/update` automatically. A version conflict (409) is terminal for that session.
 
-* safe back-navigation
-* hard failure on conflicts
-* auditability
-* future model and safety evaluation
-
-RuntimeState is an **engineering and safety artefact**, not a medical record. Production retention (30 days) is deferred to later stages.
+RuntimeState is an **engineering and safety artefact**, not a medical record. Retention policy (e.g. 30 days) is deferred to later phases.
 
 ---
 
@@ -59,20 +63,21 @@ RuntimeState is an **engineering and safety artefact**, not a medical record. Pr
 ### ClientStateView (server → client)
 
 A render-only projection of RuntimeState.
-Purpose:
+
+**Purpose**
 
 * Render questions and answers
 * Indicate which values were suggested
 * Drive frontend completeness checks
 
-Properties:
+**Properties**
 
 * Derived from RuntimeState
 * Lossy by design
-* Structurally incapable of being used as input
-* Never accepted by any endpoint
+* Read-only projection, not a data transfer object
+* Never accepted by any API endpoint
 
-Contains (illustrative):
+**Contains (illustrative)**
 
 * question text
 * answer_key
@@ -80,13 +85,14 @@ Contains (illustrative):
 * required flag
 * suggested flag
 
-Explicitly excludes:
+**Explicitly excludes**
 
 * provenance enums
-* encoder internals
-* raw signals
-* safety logic
+* encoder internals or raw signals
+* safety or advisory logic
 * internal metadata
+
+Any request payload containing fields from ClientStateView is rejected.
 
 ---
 
@@ -94,27 +100,47 @@ Explicitly excludes:
 
 An intent-only structure representing **explicit patient input**.
 
-Purpose:
+**Purpose**
 
 * Express user intent unambiguously
 * Avoid inference via diffing or state comparison
 
-Properties:
+**Properties**
 
 * Contains only keys the patient explicitly answered or changed
 * Absence of a key means “no change”
-* Every provided value is treated as `source=patient`
+* Every provided value is treated as `source = patient`
 
-Contains:
+**Contains**
 
 * `answer_key → value`
 
-Never contains:
+**Never contains**
 
 * provenance
-* full state
+* full state or projections
 * encoder information
 * free text
+
+---
+
+## Safety and advisory evaluation
+
+Two distinct rule categories are supported:
+
+1. **Blocking safety rules**
+
+   * Represent clinical risk
+   * Evaluated on submission
+   * Any trigger blocks submission
+
+2. **Advisory notices**
+
+   * Non-blocking procedural or informational messages
+   * Do not prevent submission
+   * Intended for guidance (e.g. referral requirements)
+
+Both consume projected ExplicitAnswers, but are typed and enforced separately.
 
 ---
 
@@ -123,7 +149,7 @@ Never contains:
 ### POST /form/init
 
 **Purpose**
-Create a new RuntimeState (version 1) for a selected condition.
+Create a new session and initialise RuntimeState (version = 1).
 
 **Inputs**
 
@@ -138,7 +164,7 @@ Create a new RuntimeState (version 1) for a selected condition.
 
 * Load and validate ruleset
 * Initialise RuntimeState with all answer_keys present
-* Run encoder once (if free_text present)
+* Run encoder exactly once (if free_text present)
 * Apply encoder mapping
 * Persist RuntimeState (version = 1)
 * Generate ClientStateView
@@ -158,15 +184,17 @@ Create a new RuntimeState (version 1) for a selected condition.
 * Encoder runs exactly once
 * Encoder output is frozen permanently
 * `free_text` exists only at init
-* `/form/update` schema must not allow free_text
-* Changing free text requires a new runtime_id
+* `/form/update` must not accept free_text
+* Changing free text requires a new session (`runtime_id`)
 
 ---
 
 ### POST /form/update
 
 **Purpose**
-Apply patient answer changes, normalise provenance, and automatically evaluate safety.
+Submit a complete form, normalise provenance, and evaluate safety and advisory rules.
+
+This endpoint is semantically a **submit operation**, not a draft or partial update.
 
 **Inputs**
 
@@ -180,19 +208,20 @@ Apply patient answer changes, normalise provenance, and automatically evaluate s
 
 **Behaviour**
 
-* Load latest RuntimeState for runtime_id
+* Load latest RuntimeState for `runtime_id`
 * Reject if `base_version != latest_version` (409 Conflict)
 * Validate ruleset hash
-* Apply patient answers (`source=patient`)
+* Apply patient answers (`source = patient`)
 * Normalise encoder provenance:
 
-  * remaining encoder → encoder_confirmed
-  * overwritten encoder → encoder_corrected
+  * unchanged encoder answers → `encoder_confirmed`
+  * overwritten encoder answers → `encoder_corrected`
 * Validate that all required questions are answered
 * Create new RuntimeState version
 * Persist
-* Project → ExplicitAnswers
-* Run safety engine
+* Project RuntimeState → ExplicitAnswers
+* Evaluate blocking safety rules
+* Evaluate advisory notices
 * Generate ClientStateView
 
 **Outputs**
@@ -202,7 +231,8 @@ Apply patient answer changes, normalise provenance, and automatically evaluate s
   "runtime_id": "string",
   "version": number,
   "client_state": ClientStateView,
-  "safety_messages": [...]
+  "safety_messages": [...],
+  "advisory_messages": [...]
 }
 ```
 
@@ -211,14 +241,14 @@ Apply patient answer changes, normalise provenance, and automatically evaluate s
 * This endpoint is safety-critical
 * Partial or incomplete states are rejected
 * Auto-merge is forbidden
-* Safety is never optional or deferrable
+* Safety evaluation is mandatory and occurs exactly once per submission
 
 ---
 
 ### POST /form/finish
 
 **Purpose**
-Final, irreversible submission after safety has been shown to the patient.
+Terminal session closure and hand-off to downstream systems.
 
 **Inputs**
 
@@ -233,8 +263,9 @@ Final, irreversible submission after safety has been shown to the patient.
 
 * Load RuntimeState
 * Reject if version is not latest
-* Optionally re-run safety defensively
-* Serialize clinical output
+* Mark session as closed (read-only)
+* Serialize clinical output (lossy)
+* Persist audit output (lossless RuntimeState)
 * Hand off to downstream system (out of scope)
 
 **Outputs**
@@ -245,7 +276,7 @@ Final, irreversible submission after safety has been shown to the patient.
 }
 ```
 
-This endpoint marks the end of Phase 6 responsibility.
+After `/form/finish`, the session rejects all further updates. Any new interaction requires a new `runtime_id`.
 
 ---
 
@@ -253,18 +284,18 @@ This endpoint marks the end of Phase 6 responsibility.
 
 Fail loud and early on:
 
-* invalid runtime_id
+* invalid `runtime_id`
 * missing or invalid version
-* ruleset_hash mismatch
+* ruleset hash mismatch
 * illegal provenance transitions
 * malformed ClientAnswerReturn
 * incomplete required answers
 * concurrent modification conflicts
 
-UX expectation:
+UX expectations:
 
-* user is notified
-* form may need to restart
+* the user is notified
+* the form may need to restart
 * no silent recovery
 
 Clinical ambiguity is never auto-resolved.
@@ -277,15 +308,18 @@ Clinical ambiguity is never auto-resolved.
 
    * condition + free text
    * `/form/init`
-2. **Screen 2 — Edit**
+
+2. **Screen 2 — Edit / Submit**
 
    * all questions required
    * `/form/update`
-   * safety evaluated automatically
+   * safety and advisory rules evaluated
+
 3. **Screen 3 — Review**
 
    * read-only answers
-   * safety messages always visible
+   * safety and advisory messages visible
+
 4. **Final submit**
 
    * `/form/finish`
@@ -295,7 +329,7 @@ Clinical ambiguity is never auto-resolved.
 ## Explicit non-goals (Phase 6)
 
 * Authentication or authorisation
-* Session management
+* Multi-session recovery
 * UI implementation
 * Ruleset migration
 * Multi-condition support
@@ -307,8 +341,8 @@ Clinical ambiguity is never auto-resolved.
 ## Implementation goals (Phase 6 deliverables)
 
 * HTTP API exposing the existing engine
-* Server-side RuntimeState persistence
+* Server-side session-backed RuntimeState persistence
 * ClientStateView projection
 * ClientAnswerReturn ingestion
-* Safety evaluated automatically on update
+* Blocking safety and non-blocking advisory evaluation
 * Explicit invariants enforced in code
