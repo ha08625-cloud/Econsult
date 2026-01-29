@@ -221,7 +221,7 @@ This endpoint is semantically a **submit operation**, not a draft or partial upd
 * Persist
 * Project RuntimeState → ExplicitAnswers
 * Evaluate blocking safety rules
-* Evaluate advisory notices
+* Evaluate advisory notices (out of scope for MVP)
 * Generate ClientStateView
 
 **Outputs**
@@ -276,7 +276,7 @@ Terminal session closure and hand-off to downstream systems.
 }
 ```
 
-After `/form/finish`, the session rejects all further updates. Any new interaction requires a new `runtime_id`.
+After `/form/finish`, the session rejects all further updates. The front end merely shows a "this session has ended screen". Any new interaction requires a new `runtime_id`.
 
 ---
 
@@ -335,14 +335,3 @@ Clinical ambiguity is never auto-resolved.
 * Multi-condition support
 * Retention enforcement
 * EHR integration
-
----
-
-## Implementation goals (Phase 6 deliverables)
-
-* HTTP API exposing the existing engine
-* Server-side session-backed RuntimeState persistence
-* ClientStateView projection
-* ClientAnswerReturn ingestion
-* Blocking safety and non-blocking advisory evaluation
-* Explicit invariants enforced in code
