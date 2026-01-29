@@ -119,13 +119,18 @@ This module can be fully unit tested without the pipeline or encoder.
 ### 3.6 serialization.py — Output views
 
 Responsibilities:
-Produce clinical output (lossy)
-Produce audit/debug output (lossless, later)
+* Produce clinical output (lossy)
+* Produce audit/debug output (lossless)
+* Current output is saveed to local machine
+* Will add server side storage in later versions
+
+Dependencies
+* serialisation_contracts.py (dataclass contracts)
 
 Rules:
-
-Serialization never mutates state
-Clinical output excludes encoder internals
+* Serialization never mutates state
+* Clinical output excludes encoder internals
+* Future versions of the system will allow patients to return to a previous page, correct information and re-submit (requires RunTime again), so RunTime must never be mutated or destroyed by submission, only copied for serialisation
 
 ### 3.7 pipeline.py — Thin coordinator
 
@@ -164,6 +169,62 @@ Rules:
 * All other answers are treated as unanswered (None), even if a value exists
 * Projection is deterministic and total (all answer_keys always present)
 
+### 3.10 safety_engine.py
+
+Responsibilities:
+* Evaluate safety-critical clinical rules defined in the ruleset
+* Consume explicit answers only (post-projection)
+* Return structured safety outcomes (rule IDs + message text)
+
+Inputs:
+* ExplicitAnswers (immutable, projected view)
+* Safety rule definitions from the ruleset
+
+Outputs:
+* SafetyEvaluation containing:
+* Triggered rule IDs
+* Corresponding safety message payloads
+
+Properties:
+* Pure function: no mutation, no IO, no side effects
+* Deterministic and fully inspectable
+* Unit-testable in complete isolation
+
+Has no access to:
+* RuntimeState
+* AnswerState
+* Answer provenance
+* Encoder output or metadata
+* Submission or blocking logic
+
+Rules:
+* None represents unknown and never satisfies a condition
+* Safety rules are evaluated using explicit boolean logic only
+* The safety engine never blocks submission directly
+* Blocking decisions are enforced exclusively by the pipeline based on safety output
+
+Non-goals:
+* No advisory or informational guidance
+* No UI behaviour
+* No conditional workflows
+* No mutation of answers or state
+
+### 3.11 serialisation_contracts.py
+
+Defines the explicit, immutable data structures that may leave the core
+form engine as serialized outputs.
+
+These contracts enforce a hard boundary between:
+* Internal runtime state (lossless, mutable, provenance-aware)
+* External outputs (lossy or lossless, immutable, purpose-specific)
+* This module contains *no logic* and *no knowledge* of RuntimeState internals.
+* It exists to make output schemas explicit, inspectable, and enforceable.
+
+Key principles:
+* ClinicalOutput is lossy by design and safe for clinical and patient use
+* AuditOutput is lossless and intended for debugging, safety review, and regulation
+* Neither contract may be used as an input back into the engine
+
 ## 4. Data flow
 
 ### 4.1 Form initialisation
@@ -185,7 +246,7 @@ Return canonical RuntimeState
   * Evaluate safety using the safety engine
   * If any safety rules are triggered, block submission
   * Return safety messages
-* Serialize clinical output
+* Serialize clinical output and audit output, but RunTime is NOT mutated or destroyed (needed in case patient returns and re-submit)
 
 ## 5. Encoder logic
 
