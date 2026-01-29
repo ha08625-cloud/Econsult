@@ -158,6 +158,10 @@ Only one row per (runtime_id, version)
 
 is_closed = true prevents further updates
 
+Enforce: /form/finish sets is_closed=true on the latest version
+
+On /form/update, reject if any row for that runtime_id has is_closed=true
+
 
 
 ---
