@@ -22,19 +22,23 @@ Clinical rules are plug-and-play: easily changed without writing new code
 
 ---
 
-## 2. High‑Level Architecture
-
-The system is structured as a linear pipeline composed of strictly separated modules.
-
+## 2. High-Level Architecture
+The system is structured as a server-owned, session-backed pipeline composed of strictly separated modules.
 Request
-  ↓
+↓
+HTTP Boundary (validation + versioning)
+↓
 Pipeline (ordering only)
-  ↓
+↓
 Form Logic (deterministic core)
-  ↓
+↓
 Serialization (clinical / audit views)
-
+↓
+Persistence (versioned RuntimeState)
 No module other than the pipeline is aware of execution order.
+No module other than the persistence layer is aware of storage.
+The RuntimeState is canonical, backend-owned, lossless, and versioned.
+Clients interact only via constrained projections and intent-only inputs.
 
 ---
 
@@ -133,16 +137,18 @@ Rules:
 * Future versions of the system will allow patients to return to a previous page, correct information and re-submit (requires RunTime again), so RunTime must never be mutated or destroyed by submission, only copied for serialisation
 
 ### 3.7 pipeline.py — Thin coordinator
-
 Responsibilities:
 Define execution order only
 Wire modules together
-Provide entry points for API / UI
+Provide entry points for API integration
+Enforce submission-time invariants (via orchestration, not logic)
 
 Rules:
-No business logic
-No clinical decisions
-No state persistence
+No clinical logic
+No safety rule definitions
+No mutation of RuntimeState outside defined transitions
+No persistence logic (delegated to repository layer)
+The pipeline is the only layer permitted to coordinate safety evaluation and submission blocking, based on safety engine output.
 
 ### 3.8 explicit_answers.py — Safety-critical answer projection
 
@@ -237,16 +243,19 @@ Apply encoder mapping
 Return canonical RuntimeState
 
 ### 4.2 Form submission
-
-* Hydrate and validate RuntimeState
-* Normalise encoder provenance
-* Evaluate safety rules as follows:
-  * Normalise encoder provenance (encoder → encoder_confirmed)
-  * Project RuntimeState → ExplicitAnswers
-  * Evaluate safety using the safety engine
-  * If any safety rules are triggered, block submission
-  * Return safety messages
-* Serialize clinical output and audit output, but RunTime is NOT mutated or destroyed (needed in case patient returns and re-submit)
+Load the latest RuntimeState version for the session
+Validate version consistency (optimistic concurrency)
+Apply patient updates
+Normalise encoder provenance
+Validate completeness of required answers
+Project RuntimeState → ExplicitAnswers
+Evaluate safety rules using the safety engine
+If any safety rules are triggered:
+Submission is blocked
+Safety messages are returned
+Persist a new, versioned RuntimeState
+Generate ClientStateView projection
+Each submission produces exactly one new RuntimeState version and exactly one safety evaluation.
 
 ## 5. Encoder logic
 
@@ -317,54 +326,44 @@ For the MVP:
 * Blocking is explicit and transparent to the patient
 * This is a medically defensible design choice and prevents unsafe overnight submissions.
 
-## 7. State and statelessness
+## 7. State
 
-* No server‑side session storage
-* No per‑user memory
-* State exists only:
-* In memory during a request
-* In client‑supplied canonical RuntimeState
+It is a session-backed, server-owned system with RuntimeState persistence.
+There is:
+No conversational memory
+No cross-session state
+No per-user identity
+No hidden workflow
+A session is defined as a server-owned, versioned RuntimeState identified by a runtime_id.
 
-### 7.1 Canonical runtime state (lossless, backend)
-
+### 7.1 Canonical RuntimeState (lossless, backend-owned)
 Purpose:
-* The system operates on a canonical RuntimeState object that represents the full, lossless state of a form at a point in time
-* For the MVP, this state may be round-tripped via the client. In later versions it will be server-owned and versioned
-* RuntimeState supports multiple submit events over time, each producing an independent safety evaluation for debugging, model evaluation, audit trail and safety incident investigation
-
-Contains:
-* free text input
-* encoder raw outputs
-* encoder → answer mappings
-* answer values
-* answer sources (encoder vs patient)
-* rule evaluation results
-* timestamps
-* ruleset version
-
+Represent the full, lossless state of a form at a specific point in time
+Support auditability, safety review, and deterministic replay
+Enable strict versioned updates and conflict detection
 Properties:
-* backend-owned
-* append-only or versioned
-* restricted access, retention-limited (30 days default) and de-identified
-* This is an engineering and safety artefact, not a medical record.
+Backend-owned
+Append-only or versioned
+Never round-tripped through the client
+Never mutated in place
+Short-lived and retention-limited
+Engineering and safety artefact, not a medical record
+RuntimeState is persisted server-side for the lifetime of the session and is collapsed into outputs on final submission.
 
-### 7.2 Clinical output state (lossy, portable)
-
-Purpose:
-* clinician review
-* patient copy
-* EHR ingestion
-
-Contains:
-* final answers only
-* free text (verbatim)
-* safety message text shown
-
-Excludes:
-* encoder signals
-* answer provenance
-* rule evaluation traces
-* internal metadata
+### 7.2 Output states (post-submission)
+On successful final submission:
+RuntimeState is serialized into:
+ClinicalOutput (lossy, portable)
+AuditOutput (lossless, inspectable)
+The session is closed and becomes read-only
+No further RuntimeState access is required
+ClinicalOutput:
+Intended for clinician and patient use
+Excludes encoder internals, provenance, and rule traces
+AuditOutput:
+Retains full provenance and evaluation history
+Intended for debugging, safety review, and regulation
+Never re-enters the engine
 
 ## 8. Clinical ruleset structure
 
@@ -416,6 +415,11 @@ Fail‑fast, fail-loud conditions include:
 * Safety evaluation attempted before projection
 * Projection omitting any answer_key
 * Safety rules referencing keys absent from projected answers
+Client submission of any RuntimeState or projection data
+Version mismatch on update or finish
+Submission attempt after session closure
+Ruleset hash mismatch between session and current ruleset
+Incomplete required answers on submission
 
 Log warning but don't fail loudly
 * If source if direct_answer, then signal_id, encoder_prompt and signal_type must be null (incorrect but not dangerous)
