@@ -4,6 +4,8 @@ Early prototype updates
 - Add encoders
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
+- non blocking advisory messages
+- handle front end errors like 409 gracefully
 
 Late prototype updates
 - Multiple conditions
