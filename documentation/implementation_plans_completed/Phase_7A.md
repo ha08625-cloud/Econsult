@@ -1,7 +1,6 @@
+# 1. REQUIRED for Phase 7 (handover from phase 6)
 
-1. REQUIRED for Phase 7 (frontend renderer)
-
-1.1 Endpoint list, screens + semantics (black-box)
+## 1.1 Endpoint list, screens + semantics (black-box)
 
 Frontend must know only:
 
@@ -25,7 +24,7 @@ POST /form/finish can only be called once
 The frontend does not manage state.
 It reacts to server responses only.
 
-1.2 ClientStateView (render contract)
+## 1.2 ClientStateView (render contract)
 
 Frontend must be given a stable, documented ClientStateView shape, including:
 
@@ -50,10 +49,7 @@ Enforce “all required answered” locally for UX only
 Treat ClientStateView as read-only
 This is the only structure Phase 7 renders.
 
-
----
-
-1.3 ClientAnswerReturn (submission contract)
+## 1.3 ClientAnswerReturn (submission contract)
 
 Frontend must submit:
 
@@ -74,7 +70,7 @@ No copying of client_state
 Frontend does not diff state.
 It sends explicit intent only.
 
-1.4 Safety messages (blocking feedback)
+## 1.4 Safety messages (blocking feedback)
 
 Frontend must handle:
 
@@ -89,7 +85,7 @@ No interpretation, no rewording
 User must change answers and re-submit
 Frontend does not “resolve” safety.
 
-1.5 Version handling (UX only)
+## 1.5 Version handling (UX only)
 
 Frontend must:
 Store runtime_id
@@ -102,7 +98,7 @@ Restart flow
 
 No retry. No merge. No background refresh.
 
-2. EXPLICITLY NOT HANDED OVER (must be hidden)
+# 2. EXPLICITLY NOT HANDED OVER (must be hidden)
 
 Frontend must never know about:
 RuntimeState
@@ -118,7 +114,7 @@ Version history
 
 If Phase 7 asks for any of this, that is a design regression.
 
-3. Minimal frontend mental model (handover summary)
+# 3. Minimal frontend mental model (handover summary)
 
 You should give the Phase 7 implementer this exact framing:
 
@@ -129,30 +125,30 @@ There is no local truth.”
 
 If they violate this, Phase 6 invariants will leak.
 
-4. Strong recommendations (avoid Phase 7 mistakes)
+# 4. Strong recommendations (avoid Phase 7 mistakes)
 
-4.1 Freeze ClientStateView early
+## 4.1 Freeze ClientStateView early
 
 Write a concrete JSON example
 Treat it as a contract
 Evolve only additively
 This avoids frontend/back-end churn.
 
-4.2 Do NOT add client-side branching
+## 4.2 Do NOT add client-side branching
 
 All branching:
 belongs in rulesets
 belongs in Phase 8+
 Phase 7 is a dumb renderer by design.
 
-4.3 Do NOT reuse form libraries that assume local state ownership
+## 4.3 Do NOT reuse form libraries that assume local state ownership
 Many React form libs fight this model.
 Prefer:
 simple controlled inputs
 explicit submit button
 explicit error display
 
-5. What you should hand over as artefacts
+# 5. What you should hand over as artefacts
 
 Minimum package for Phase 7:
 1. Endpoint summary (1 page)
