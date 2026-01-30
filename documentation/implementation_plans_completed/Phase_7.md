@@ -1,15 +1,26 @@
 
 1. REQUIRED for Phase 7 (frontend renderer)
 
-1.1 Endpoint list + semantics (black-box)
+1.1 Endpoint list, screens + semantics (black-box)
 
 Frontend must know only:
 
 Endpoint	When called	Meaning
 
-POST /form/init	Once, at start	Create a new session
-POST /form/update	On submit	Submit a complete form
-POST /form/finish	Final action	Finalise and hand off
+Screen 1: patient can choose condition and enter free text description of symptoms. Contains one submit button which links to POST /form/init	
+Once, at start	
+Create a new session
+submits the free text which then undergoes one encoder pass only.
+
+Screen 2: patient is shown the condition and the free text box (locked), and the boolean questions and answers for that condition. some answers will be pre-filled by the encoder module but all answers can be filled or changed. Contains one submit button which links to POST /form/update. All yes/no answers must be completed before submission 
+
+Screen 3: Purely a render of the ClientStateView. Patient is shown the locked condition, free text box and yes/no questions and answers - not editable. Also shown safety message if triggered. Contains two buttons: return to screen 2 to edit further or final submit which links to POST /form/finish. If the safety message is triggered, then the final submit button should not be available (submit blocked)
+
+Screen 4: Thank you. This session has ended (no further action available to the patient)
+
+POST /form/init can only be called once
+POST /form/update can be called multiple times whenever the patient wants yo go back and change their answer
+POST /form/finish can only be called once
 
 The frontend does not manage state.
 It reacts to server responses only.
@@ -32,7 +43,9 @@ No hidden logic or conditional branching in Phase 7
 
 Frontend responsibilities:
 Render all questions
-Visually mark suggested = true
+Visually mark suggested answers as true or false
+Visually mark suggested answers as suggested (patient must be aware that these can be inaccurate, so place a small warning next to suggested answers)
+After the user edits a suggested value, the UI can remove the suggested marker locally
 Enforce “all required answered” locally for UX only
 Treat ClientStateView as read-only
 This is the only structure Phase 7 renders.
