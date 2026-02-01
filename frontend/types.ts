@@ -1,0 +1,29 @@
+// Frontend-visible contracts only
+
+export type AnswerType = "boolean" | "text";
+
+export interface ClientQuestion {
+  answer_key: string;
+  question_text: string;
+  answer_type: AnswerType;
+  current_value: boolean | string | null;
+  required: boolean;
+  suggested: boolean;
+}
+
+export interface ClientStateView {
+  condition_label: string;
+  free_text: string | null;
+  questions: ClientQuestion[];
+}
+
+export interface ClientAnswerReturn {
+  runtime_id: string;
+  base_version: number;
+  answers: Record<string, boolean | string | null>;
+}
+
+export interface SafetyMessage {
+  rule_id: string;
+  message: string;
+}
