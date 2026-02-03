@@ -5,39 +5,11 @@ I’ll assume Python, PyTorch, and that this runs locally first.
 
 ---
 
-Step 1 — Choose the exact model (do not improvise)
-
-Use this model:
+Step 1 — Choose the exact model
 
 Model ID: emilyalsentzer/Bio_ClinicalBERT
 
-Reason:
-
-Widely cited
-
-Stable
-
-Standard BERT base architecture
-
-Not instruction-tuned (good for encoders)
-
-
-
-Do not use:
-
-GPT-style models
-
-Instruction-tuned medical models
-
-Anything generative
-
-
-
----
-
 Step 2 — Create a clean environment
-
-You want isolation so version drift does not pollute later training.
 
 python -m venv venv
 source venv/bin/activate
@@ -46,11 +18,6 @@ pip install --upgrade pip
 Install the minimum dependencies:
 
 pip install torch transformers
-
-Do not install Trainer, datasets, accelerate yet. Not needed.
-
-
----
 
 Step 3 — Download tokenizer and model from Hugging Face
 
@@ -120,7 +87,6 @@ last_hidden_state
 optionally pooler_output
 
 
-
 ---
 
 Step 5 — Inspect the actual embeddings (critical sanity check)
@@ -161,13 +127,9 @@ The entire semantic representation of the input text
 
 What your future classifier heads will consume
 
-
-Nothing else matters yet.
-
-
 ---
 
-Step 7 — Hard failure tests (important)
+Step 7 — Hard failure tests
 
 Run these and confirm behavior:
 
@@ -189,9 +151,6 @@ tokenizer("I like pizza", return_tensors="pt")
 
 Should still produce embeddings.
 
-If any of these fail, you fix it now, not after fine-tuning.
-
-
 ---
 
 Step 8 — Freeze this as “encoder base validation”
@@ -208,43 +167,6 @@ Forward pass is deterministic
 
 Output dimensionality is stable
 
-
-This is your baseline invariant.
-
-From here forward:
-
-Any accuracy issue is training data or head design
-
-Any crash is your code, not the model
-
-
-
----
-
-Step 9 — What you deliberately have NOT done yet
-
-Correct omissions:
-
-No classifier heads
-
-No probabilities
-
-No thresholds
-
-No ruleset integration
-
-No batching
-
-No GPU optimization
-
-No fine-tuning
-
-
-Those come later, one at a time.
-
-
----
-
 Next logical step (pick one)
 
 1. Define the exact PyTorch module that wraps:
@@ -255,16 +177,8 @@ pooled embedding
 
 N binary heads
 
-
-
 2. Decide where null-thresholding lives in code
-
 
 3. Define the training dataset schema
 
-
 4. Decide how many signals you can support before performance collapses
-
-
-
-Say which one.
