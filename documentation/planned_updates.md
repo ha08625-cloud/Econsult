@@ -9,6 +9,7 @@ Early prototype updates
 
 Late prototype updates
 - Multiple conditions
+- Deterministic data augmentation
 - Full question sets
 - UI and UX improvements
 - Autocomplete/typeahead
