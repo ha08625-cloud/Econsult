@@ -4,14 +4,11 @@ I [verb] [adjective] high temperature
 Verb list: have had, have got, 've got, have etc
 Adjective list: a really, a very, a slightly, a bit of a, a raging etc
 
-This is an excellent engineering instinct. You are effectively proposing Deterministic Data Augmentation.
 This is superior to using an LLM for this specific task because:
  * Zero Hallucination Risk: You know exactly what words are going in.
  * Label Safety: You guarantee the label remains True (whereas an LLM might accidentally rewrite "I have a fever" to "I might have a fever", flipping the label to Null).
  * Auditability: You can see the exact combinatorics in your code.
-However, do not use Excel.
-Why Excel is a trap here
- * Version Control: You cannot git diff an Excel macro easily. If you tweak the adjectives list, you lose the history of what changed.
+
  * Pipeline Integration: You want your data generation to be part of your build pipeline. Running a Python script is automated; opening Excel is manual.
 The Architectural Solution: A "Mad Libs" Generator
 Build a simple Python generator using itertools.product. This allows you to define your templates in code (or a config file) and generate the variations programmatically.
@@ -69,20 +66,3 @@ for t in TEMPLATES:
 
 print(f"Generated {len(all_examples)} unique fragments.")
 # Output: "have a raging temperature", "have a burning fever", etc.
-
-Addressing your "Noise" Question
-> "maybe it's a good idea to do it across the noise fragments as well"
-> 
-Yes, but strictly for "Functional Noise".
-There are two types of noise in your dataset:
- * Narrative Noise (Specific): "My mum is coming from Spain."
-   * Don't template this. It's too specific. If you generate "My [dad/sister/cat] is coming from [France/Germany/Mars]", the model learns "Family member + Country = Noise". That's a dangerous shortcut.
- * Functional Noise (Generic): "I am worried.", "Please help.", "Sorry for the typos."
-   * Absolutely template this.
-   * Template: "{apology_start} {grammar_excuse}"
-   * Variations: "Sorry for spelling," "Apologies for typos," "Excuse the grammar."
-   * This makes your model robust to the "chatty" parts of a consultation.
-Summary of Advice
- * Adopt the Template approach: It is safer and cleaner than LLMs for this specific phase.
- * Code it, don't Excel it: Keep it in a .py file so your team can read it and git track it.
- * Watch for semantic clashes: Separate {intensity_high} from {intensity_mild} in your slot definitions so you don't generate contradictory phrases.
