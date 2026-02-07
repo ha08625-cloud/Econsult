@@ -1,0 +1,83 @@
+# fever_true.yaml
+
+symptom_id: "fever_present"
+semantic_strength: "true"
+target_count: 800
+seed: 42
+
+groups:
+
+  - group_id: "standard_fever_noun"
+    weight: 1.0
+
+    synonyms:
+      - id: "fever"
+        text: "fever"
+
+      - id: "temperature"
+        text: "temperature"
+
+    templates:
+      - id: "declarative_simple"
+        text: "I {verb} {adjective} {synonym}"
+
+      - id: "temporal_prefixed"
+        text: "{time}, I {verb} {adjective} {synonym}"
+
+      - id: "experiential"
+        text: "My body has been {adjective}, and I think it’s a {synonym}"
+
+    variables:
+
+      verb:
+        type: "deque"
+        values:
+          - "have"
+          - "have got"
+          - "'ve had"
+          - "am dealing with"
+
+      adjective:
+        type: "deque"
+        values:
+          - "a high"
+          - "a really high"
+          - "a severe"
+          - "a spiking"
+
+      time:
+        type: "deque"
+        values:
+          - "Today"
+          - "Since this morning"
+          - "Over the last few hours"
+
+
+  - group_id: "medicalised_term"
+    weight: 0.5
+
+    synonyms:
+      - id: "pyrexia"
+        text: "pyrexia"
+
+    templates:
+      - id: "clinical_declarative"
+        text: "I have developed {adjective} {synonym}"
+
+      - id: "clinical_temporal"
+        text: "{time}, I have developed {adjective} {synonym}"
+
+    variables:
+
+      adjective:
+        type: "deque"
+        values:
+          - "a mild"
+          - "a moderate"
+          - "a significant"
+
+      time:
+        type: "deque"
+        values:
+          - "over the last 24 hours"
+          - "since earlier today"
