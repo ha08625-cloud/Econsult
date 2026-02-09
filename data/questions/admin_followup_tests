@@ -1,0 +1,32 @@
+{
+  "condition_id": "admin_followup_tests",
+  "questions": [
+    {
+      "question_id": "admin_followup_tests_1",
+      "question": "Are you contacting us to follow up on test results?",
+      "answer_key": "following_up_test_results",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "admin_followup_tests_2",
+      "question": "Were these tests arranged by this GP practice?",
+      "answer_key": "tests_arranged_by_practice",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "admin_followup_tests_3",
+      "question": "Have you already been told when to expect the results?",
+      "answer_key": "result_timeframe_given",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
