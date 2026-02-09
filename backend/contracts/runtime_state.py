@@ -19,11 +19,12 @@ may differ from value if user corrected
 never authoritative
 """
 @dataclass
+@dataclass
 class AnswerState:
-    value: Optional[Any]
+    value: bool | str | None
     source: AnswerSource
     encoder_value: Optional[bool]
-
+    answer_type: Literal["boolean", "text"]
 
 @dataclass
 class SafetyEvaluation:
