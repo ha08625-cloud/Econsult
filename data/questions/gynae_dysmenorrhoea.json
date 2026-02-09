@@ -1,0 +1,32 @@
+{
+  "condition_id": "gynae_dysmenorrhoea",
+  "questions": [
+    {
+      "question_id": "gynae_dysmenorrhoea_1",
+      "question": "Do you experience pain during your periods?",
+      "answer_key": "period_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gynae_dysmenorrhoea_2",
+      "question": "Is the pain severe enough to interfere with your usual activities?",
+      "answer_key": "activity_limiting_pain",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gynae_dysmenorrhoea_3",
+      "question": "Has this period pain been present for several cycles?",
+      "answer_key": "recurrent_period_pain",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
