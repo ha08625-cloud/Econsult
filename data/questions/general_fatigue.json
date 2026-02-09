@@ -1,0 +1,32 @@
+{
+  "condition_id": "general_fatigue",
+  "questions": [
+    {
+      "question_id": "general_fatigue_1",
+      "question": "Have you been feeling unusually tired or lacking energy most days?",
+      "answer_key": "persistent_fatigue",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "general_fatigue_2",
+      "question": "Has the fatigue been present for more than two weeks?",
+      "answer_key": "fatigue_prolonged",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "general_fatigue_3",
+      "question": "Is the fatigue severe enough to interfere with your usual daily activities?",
+      "answer_key": "fatigue_impairs_function",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
