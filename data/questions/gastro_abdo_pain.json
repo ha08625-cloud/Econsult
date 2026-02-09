@@ -1,0 +1,32 @@
+{
+  "condition_id": "gastro_abdo_pain",
+  "questions": [
+    {
+      "question_id": "gastro_abdo_pain_1",
+      "question": "Are you experiencing pain in your abdomen or stomach area?",
+      "answer_key": "abdominal_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gastro_abdo_pain_2",
+      "question": "Has the pain been severe at any point?",
+      "answer_key": "severe_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gastro_abdo_pain_3",
+      "question": "Has the pain been associated with nausea or vomiting?",
+      "answer_key": "nausea_vomiting_associated",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
