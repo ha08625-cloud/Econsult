@@ -1,0 +1,32 @@
+{
+  "condition_id": "flu_like_illness",
+  "questions": [
+    {
+      "question_id": "flu_like_illness_1",
+      "question": "Do you have fever, chills, or feeling unusually hot or cold?",
+      "answer_key": "fever_or_chills_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "flu_like_illness_2",
+      "question": "Are you experiencing muscle aches or generalised body pain?",
+      "answer_key": "myalgia_or_body_aches",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "flu_like_illness_3",
+      "question": "Do you have a cough, sore throat, or runny nose?",
+      "answer_key": "upper_respiratory_symptoms_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
