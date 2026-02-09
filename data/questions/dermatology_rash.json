@@ -1,0 +1,32 @@
+{
+  "condition_id": "dermatology_rash",
+  "questions": [
+    {
+      "question_id": "dermatology_rash_1",
+      "question": "Do you currently have a visible rash on your skin?",
+      "answer_key": "rash_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_rash_2",
+      "question": "Is the rash itchy or uncomfortable?",
+      "answer_key": "rash_itchy_or_uncomfortable",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_rash_3",
+      "question": "Has the rash spread or changed in appearance recently?",
+      "answer_key": "rash_spreading_or_changing",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
