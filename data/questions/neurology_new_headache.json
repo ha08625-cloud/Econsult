@@ -1,0 +1,32 @@
+{
+  "condition_id": "neurology_new_headache",
+  "questions": [
+    {
+      "question_id": "neurology_new_headache_1",
+      "question": "Is this a completely new type of headache for you?",
+      "answer_key": "new_headache_type",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "neurology_new_headache_2",
+      "question": "Did the headache come on suddenly and reach maximum intensity within minutes?",
+      "answer_key": "sudden_onset_headache",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "neurology_new_headache_3",
+      "question": "Is the headache associated with any neurological symptoms such as weakness, numbness, or speech difficulty?",
+      "answer_key": "associated_neurological_symptoms",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
