@@ -1,0 +1,32 @@
+{
+  "condition_id": "mental_health_anxiety",
+  "questions": [
+    {
+      "question_id": "mental_health_anxiety_1",
+      "question": "Have you been feeling anxious, nervous, or on edge most days?",
+      "answer_key": "anxiety_persistent",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_anxiety_2",
+      "question": "Is the anxiety interfering with your daily activities or responsibilities?",
+      "answer_key": "anxiety_impairs_function",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_anxiety_3",
+      "question": "Have you been experiencing physical symptoms such as palpitations, sweating, or trembling?",
+      "answer_key": "anxiety_physical_symptoms",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
