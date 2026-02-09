@@ -261,7 +261,11 @@ export default function App() {
         <ul>
           {clientState.questions.map((q) => (
             <li key={q.answer_key}>
-              {q.question_text}: {String(q.current_value)}
+              <strong>{q.question_text}</strong>: {
+                q.current_value === null || q.current_value === ""
+                  ? "(not answered)"
+                  : String(q.current_value)
+              }
             </li>
           ))}
         </ul>
