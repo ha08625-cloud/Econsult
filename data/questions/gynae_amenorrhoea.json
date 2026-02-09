@@ -1,0 +1,32 @@
+{
+  "condition_id": "gynae_amenorrhoea",
+  "questions": [
+    {
+      "question_id": "gynae_amenorrhoea_1",
+      "question": "Have you missed one or more expected periods?",
+      "answer_key": "missed_periods_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gynae_amenorrhoea_2",
+      "question": "Is there a possibility that you could be pregnant?",
+      "answer_key": "possible_pregnancy",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gynae_amenorrhoea_3",
+      "question": "Have your periods stopped for more than three months?",
+      "answer_key": "prolonged_absence_of_periods",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
