@@ -1,0 +1,32 @@
+{
+  "condition_id": "mental_health_depression",
+  "questions": [
+    {
+      "question_id": "mental_health_depression_1",
+      "question": "Have you been feeling low, depressed, or hopeless most days?",
+      "answer_key": "low_mood_persistent",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_depression_2",
+      "question": "Have you lost interest or pleasure in activities you usually enjoy?",
+      "answer_key": "anhedonia_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_depression_3",
+      "question": "Is your mood affecting your ability to function at work, school, or home?",
+      "answer_key": "mood_impairs_function",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
