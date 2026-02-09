@@ -1,0 +1,32 @@
+{
+  "condition_id": "gastro_diarrhoea",
+  "questions": [
+    {
+      "question_id": "gastro_diarrhoea_1",
+      "question": "Have you had loose or watery stools?",
+      "answer_key": "diarrhoea_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gastro_diarrhoea_2",
+      "question": "Have you had to open your bowels more frequently than usual?",
+      "answer_key": "increased_frequency_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gastro_diarrhoea_3",
+      "question": "Have you had vomiting during this illness?",
+      "answer_key": "vomiting_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
