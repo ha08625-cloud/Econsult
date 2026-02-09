@@ -1,0 +1,32 @@
+{
+  "condition_id": "mental_health_insomnia",
+  "questions": [
+    {
+      "question_id": "mental_health_insomnia_1",
+      "question": "Are you having difficulty falling asleep most nights?",
+      "answer_key": "difficulty_falling_asleep",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_insomnia_2",
+      "question": "Are you waking up frequently during the night or too early in the morning?",
+      "answer_key": "difficulty_staying_asleep",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_insomnia_3",
+      "question": "Is poor sleep affecting your daytime functioning or concentration?",
+      "answer_key": "sleep_impairs_function",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
