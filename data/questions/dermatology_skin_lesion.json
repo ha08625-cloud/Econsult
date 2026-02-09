@@ -1,0 +1,32 @@
+{
+  "condition_id": "dermatology_skin_lesion",
+  "questions": [
+    {
+      "question_id": "dermatology_skin_lesion_1",
+      "question": "Have you noticed a new skin lesion or mark?",
+      "answer_key": "new_skin_lesion",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_skin_lesion_2",
+      "question": "Has the lesion changed in size, shape, or colour?",
+      "answer_key": "lesion_change_observed",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_skin_lesion_3",
+      "question": "Is the lesion painful, bleeding, or not healing?",
+      "answer_key": "lesion_symptoms_concerning",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
