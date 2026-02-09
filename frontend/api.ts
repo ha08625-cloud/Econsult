@@ -1,4 +1,10 @@
-import { ClientAnswerReturn, ClientStateView, SafetyMessage } from "./types";
+import {
+  ClientAnswerReturn,
+  ClientStateView,
+  ConditionSummary,
+  ConditionPresentation,
+  SafetyMessage,
+} from "./types";
 
 const API_BASE = ""; // same-origin
 
@@ -18,8 +24,39 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(API_BASE + url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+
+  return (await res.json()) as T;
+}
+
 // -------------------------------
-// API endpoints
+// Condition discovery (Screens 0-1)
+// -------------------------------
+
+export async function getConditions(): Promise<{
+  conditions: ConditionSummary[];
+}> {
+  return getJson("/conditions");
+}
+
+export async function getConditionPresentation(
+  conditionId: string
+): Promise<ConditionPresentation> {
+  return getJson(`/conditions/${encodeURIComponent(conditionId)}/presentation`);
+}
+
+// -------------------------------
+// Form session endpoints
 // -------------------------------
 
 export async function initForm(condition: string, freeText: string | null): Promise<{
