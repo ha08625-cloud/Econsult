@@ -1,5 +1,11 @@
 {
   "condition_id": "dermatology_skin_lesion",
+
+  "presentation": {
+    "label": "Skin lesion",
+    "free_text_prompt": "Tell us about the lump and when it started.  It may be useful to say if it is painful or itchy, if it is bleeding or crusty, whether it is growing or changing, and also whether there is a history of skin cancers. ",
+  },
+  
   "questions": [
     {
       "question_id": "dermatology_skin_lesion_1",
