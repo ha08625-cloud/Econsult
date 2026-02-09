@@ -1,9 +1,18 @@
 {
   "condition_id": "dermatology_rash",
+
+  "presentation": {
+    "label": "Skin rashes",
+    "free_text_prompt": "Tell us more about your rash.  You may want to include when it started, what it feels like, which body part is affected and whether you have tried any treatments so far.",
+    "pre_form_information": [
+      "Many rashes or insect bites can be dealt with by the pharmacy"
+    ]
+  },
+  
   "questions": [
     {
       "question_id": "dermatology_rash_1",
-      "question": "Do you currently have a visible rash on your skin?",
+      "question": "Is the rash painful?",
       "answer_key": "rash_present",
       "answer_type": "Boolean",
       "send_to_encoder": false,
@@ -11,7 +20,7 @@
     },
     {
       "question_id": "dermatology_rash_2",
-      "question": "Is the rash itchy or uncomfortable?",
+      "question": "Is the rash itchy?",
       "answer_key": "rash_itchy_or_uncomfortable",
       "answer_type": "Boolean",
       "send_to_encoder": false,
