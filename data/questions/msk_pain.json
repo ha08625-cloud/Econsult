@@ -1,0 +1,32 @@
+{
+  "condition_id": "msk_pain",
+  "questions": [
+    {
+      "question_id": "msk_pain_1",
+      "question": "Are you experiencing pain in a muscle, joint, or bone?",
+      "answer_key": "musculoskeletal_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "msk_pain_2",
+      "question": "Was the pain triggered by an injury or physical strain?",
+      "answer_key": "injury_or_strain_related",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "msk_pain_3",
+      "question": "Is the pain limiting your movement or daily activities?",
+      "answer_key": "movement_or_function_limited",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
