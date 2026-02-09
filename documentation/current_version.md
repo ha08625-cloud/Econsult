@@ -6,22 +6,7 @@
 ### Phase 4 — Safety engine COMPLETE
 ### Phase 5 — Clinical output vs audit output split COMPLETE
 ### Phase 6 — API wrapper COMPLETE
-
-### Phase 7 — Minimal frontend renderer
-
-Deliverables
-Dumb UI capable of:
-Rendering questions
-Showing suggested vs explicit answers
-Allowing overrides
-Submitting answers
-
-Constraints
-No clinical logic
-No branching
-No hidden questions
-
----
+### Phase 7 — Minimal frontend renderer COMPLETE
 
 ### Phase 8 — End-to-end validation
 Deliverables
