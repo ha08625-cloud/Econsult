@@ -1,0 +1,32 @@
+{
+  "condition_id": "neurology_ongoing_headache",
+  "questions": [
+    {
+      "question_id": "neurology_ongoing_headache_1",
+      "question": "Has the headache been present on most days for more than two weeks?",
+      "answer_key": "headache_persistent",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "neurology_ongoing_headache_2",
+      "question": "Is the headache getting progressively worse over time?",
+      "answer_key": "headache_worsening",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "neurology_ongoing_headache_3",
+      "question": "Does the headache regularly wake you from sleep or feel worse on waking?",
+      "answer_key": "night_or_morning_headache",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
