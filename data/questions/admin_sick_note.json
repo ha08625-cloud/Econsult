@@ -1,0 +1,32 @@
+{
+  "condition_id": "admin_sick_note",
+  "questions": [
+    {
+      "question_id": "admin_sick_note_1",
+      "question": "Are you requesting a sick note for time off work or school?",
+      "answer_key": "sick_note_requested",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "admin_sick_note_2",
+      "question": "Is this sick note related to a recent illness or health problem?",
+      "answer_key": "recent_illness_related",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "admin_sick_note_3",
+      "question": "Have you already been seen by a clinician for this issue?",
+      "answer_key": "previous_clinician_review",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
