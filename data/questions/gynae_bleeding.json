@@ -1,0 +1,32 @@
+{
+  "condition_id": "gynae_bleeding",
+  "questions": [
+    {
+      "question_id": "gynae_bleeding_1",
+      "question": "Have you had vaginal bleeding outside of your normal periods?",
+      "answer_key": "non_period_bleeding_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gynae_bleeding_2",
+      "question": "Did the bleeding occur after sexual intercourse?",
+      "answer_key": "post_coital_bleeding",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gynae_bleeding_3",
+      "question": "Has this bleeding happened more than once?",
+      "answer_key": "recurrent_unexpected_bleeding",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
