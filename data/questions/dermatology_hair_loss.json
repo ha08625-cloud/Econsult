@@ -1,5 +1,14 @@
 {
   "condition_id": "dermatology_hair_loss",
+
+  "presentation": {
+    "label": "Hair loss",
+    "free_text_prompt": "Tell us about your symptoms and when they started. You may want to tell us if you have noticed patchy hair loss or general hair thinning, any itching, pain or rash and how long it's been going on for.  ",
+    "pre_form_information": [
+      "If you are feeling very unwell, seek urgent medical help."
+    ]
+  },
+  
   "questions": [
     {
       "question_id": "dermatology_hair_loss_1",
