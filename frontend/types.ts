@@ -27,3 +27,16 @@ export interface SafetyMessage {
   rule_id: string;
   message: string;
 }
+
+// --- Condition discovery and presentation (Screens 0-1 only) ---
+
+export interface ConditionSummary {
+  id: string;
+  label: string;
+}
+
+export interface ConditionPresentation {
+  label: string;
+  free_text_prompt?: string;
+  pre_form_information?: string[];
+}
