@@ -1,0 +1,32 @@
+{
+  "condition_id": "gynae_discharge",
+  "questions": [
+    {
+      "question_id": "gynae_discharge_1",
+      "question": "Have you noticed an unusual vaginal discharge?",
+      "answer_key": "unusual_discharge_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gynae_discharge_2",
+      "question": "Does the discharge have an unusual colour or smell?",
+      "answer_key": "abnormal_discharge_character",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gynae_discharge_3",
+      "question": "Is the discharge associated with itching, pain, or discomfort?",
+      "answer_key": "discharge_with_discomfort",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
