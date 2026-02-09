@@ -1,0 +1,32 @@
+{
+  "condition_id": "ear_pain",
+  "questions": [
+    {
+      "question_id": "ear_pain_1",
+      "question": "Have you had a fever with this ear pain?",
+      "answer_key": "fever_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "ear_pain_2",
+      "question": "Have you noticed any discharge coming from the ear?",
+      "answer_key": "ear_discharge_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "ear_pain_3",
+      "question": "Have you experienced any hearing loss in the affected ear?",
+      "answer_key": "hearing_loss_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+  "safety": {
+    "rules": {}
+  }
+}
