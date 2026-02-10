@@ -1,5 +1,13 @@
 {
   "condition_id": "ear_pain",
+
+  "presentation": {
+    "label": "Ear pain",
+    "free_text_prompt": "Tell us more about your ear pain.  You may want to tell us when it started, which side it is affecting, whether you have had other symptoms like a cold, and whether there is hearing loss or discharge",
+    "pre_form_information": [
+      "Many ear infections can be dealt with by the pharmacy"
+    ]
+  },
   "questions": [
     {
       "question_id": "ear_pain_1",
