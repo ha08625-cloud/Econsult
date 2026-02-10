@@ -1,5 +1,14 @@
 {
   "condition_id": "gastro_constipation",
+
+  "presentation": {
+    "label": "Constipation",
+    "free_text_prompt": "Tell us more about the constipation.  You may want to say if this is a new problem or ongoing for a while and what treatments you have tried already",
+    "pre_form_information": [
+      "If you haven't tried any treatments yet, the pharmacy can provide laxatives without having to go through the GP"
+    ]
+  },
+  
   "questions": [
     {
       "question_id": "gastro_constipation_1",
