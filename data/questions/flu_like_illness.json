@@ -1,5 +1,14 @@
 {
   "condition_id": "flu_like_illness",
+
+  "presentation": {
+    "label": "Flu-like illness",
+    "free_text_prompt": "Tell us more about your symptoms, when they started, whether you're feeling short of breath and whether you have a fever",
+    "pre_form_information": [
+      "Many coughs, colds and flu-like illnesses can be dealt with at the pharmacy"
+    ]
+  },
+  
   "questions": [
     {
       "question_id": "flu_like_illness_1",
