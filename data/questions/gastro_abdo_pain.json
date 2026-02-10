@@ -1,5 +1,14 @@
 {
   "condition_id": "gastro_abdo_pain",
+
+  "presentation": {
+    "label": "Abdominal pain",
+    "free_text_prompt": "Tell us more about your abdominal pain: when it started, what other symptoms you have such as diarrhoea or bleeding, any clear triggers",
+    "pre_form_information": [
+      "If you have severe pain, please call the surgery and ask to speak to the duty doctor, or call 111 or 999 if it is out of hours.  Online consultation is only for routine queries"
+    ]
+  },
+  
   "questions": [
     {
       "question_id": "gastro_abdo_pain_1",
