@@ -22,7 +22,6 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
     assert "questions" in ruleset and ruleset["questions"]
 
     seen_answer_keys = set()
-    seen_signal_ids = set()
 
     for q in ruleset["questions"]:
         assert "answer_key" in q
@@ -31,12 +30,12 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
 
         if q.get("send_to_encoder"):
             assert q.get("encoder_prompt") is not None
-            assert q.get("signal_id") is not None
-            assert q["signal_id"] not in seen_signal_ids
-            seen_signal_ids.add(q["signal_id"])
+            assert q.get("answer_type") == "Boolean", (
+                f"Encoder questions must be Boolean, got {q.get('answer_type')} "
+                f"for {q['answer_key']}"
+            )
         else:
             assert q.get("encoder_prompt") is None
-            assert q.get("signal_id") is None
 
     if "safety" in ruleset:
         for rule in ruleset["safety"]["rules"].values():
@@ -47,24 +46,15 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
 
 def extract_encoder_definitions(ruleset: Dict[str, Any]) -> List[Dict[str, str]]:
     """
-    Returns the encoder-facing contract
+    Returns the encoder-facing contract.
+    Each definition contains answer_key + encoder_prompt.
+    answer_key is the universal identifier -- no separate signal_id exists.
     """
     return [
         {
-            "signal_id": q["signal_id"],
+            "answer_key": q["answer_key"],
             "encoder_prompt": q["encoder_prompt"],
         }
         for q in ruleset["questions"]
         if q.get("send_to_encoder")
     ]
-
-
-def extract_signal_to_answer_key_map(ruleset: Dict[str, Any]) -> Dict[str, str]:
-    """
-    Defines the only allowed mapping from encoder signals to answers
-    """
-    return {
-        q["signal_id"]: q["answer_key"]
-        for q in ruleset["questions"]
-        if q.get("send_to_encoder")
-    }

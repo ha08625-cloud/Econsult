@@ -1,10 +1,11 @@
 """
 encoder stub
-will be replaced in entirety by real stub
+will be replaced in entirety by real encoder
 only purpose is to test output signals are received and interpreted
 """
 
 from typing import Dict, Optional, List
+
 
 def extract_signals(
     free_text: Optional[str],
@@ -12,6 +13,9 @@ def extract_signals(
 ) -> Dict[str, Optional[bool]]:
     """
     Stub encoder.
+    Input: free text + encoder definitions (answer_key + encoder_prompt pairs)
+    Output: {answer_key: True | False | None}
+
     Non-goals:
     - accuracy
     - NLP
@@ -20,25 +24,24 @@ def extract_signals(
     - realism
     """
 
-    # Fail soft
     if not free_text:
-        return {d["signal_id"]: None for d in encoder_definitions}
+        return {d["answer_key"]: None for d in encoder_definitions}
 
     text = free_text.lower()
     output: Dict[str, Optional[bool]] = {}
 
     for d in encoder_definitions:
-        signal_id = d["signal_id"]
+        answer_key = d["answer_key"]
 
         if "no" in text:
-            output[signal_id] = False
-        elif signal_id == "fever_present" and "fever" in text:
-            output[signal_id] = True
-        elif signal_id == "dysuria_present" and "burn" in text:
-            output[signal_id] = True
-        elif signal_id == "frequency_present" and "frequency" in text:
-            output[signal_id] = True
+            output[answer_key] = False
+        elif answer_key == "fever_present" and "fever" in text:
+            output[answer_key] = True
+        elif answer_key == "dysuria_present" and "burn" in text:
+            output[answer_key] = True
+        elif answer_key == "frequency_present" and "frequency" in text:
+            output[answer_key] = True
         else:
-            output[signal_id] = None
+            output[answer_key] = None
 
     return output

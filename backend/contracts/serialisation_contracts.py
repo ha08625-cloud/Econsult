@@ -7,7 +7,7 @@ class ClinicalOutput:
     condition_id: str
     free_text: str
     answers: Dict[str, Any]
-    safety_messages: List[str]
+    safety_messages: List[dict]
 
 
 @dataclass(frozen=True)
