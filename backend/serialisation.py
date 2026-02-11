@@ -7,19 +7,27 @@ Produces three views:
 - AuditOutput (lossless, for debugging and regulation)
 
 Serialisation never mutates state.
+
+Architectural guarantee:
+    This module never accesses presentation metadata directly.
+    The condition_label for ClientStateView is passed in explicitly
+    by the calling layer. The ruleset parameter contains only clinical
+    data (questions, safety rules, encoder definitions).
 """
 
 from runtime_state import RuntimeState
 from serialisation_contracts import ClinicalOutput, AuditOutput
 
 
-def serialize_client_state(runtime: RuntimeState, ruleset: dict) -> dict:
+def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label: str) -> dict:
     """
     Project RuntimeState + ruleset into the ClientStateView dict
     expected by the frontend.
 
     The ruleset is needed because RuntimeState does not store
     question text -- only answer_key and values.
+    condition_label is passed explicitly so the full ruleset's
+    presentation block is never required by this function.
 
     Output shape matches frontend types.ts ClientStateView:
     {
@@ -53,7 +61,7 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict) -> dict:
         })
 
     return {
-        "condition_label": ruleset.get("presentation", {}).get("label", ruleset["condition_id"]),
+        "condition_label": condition_label,
         "free_text": runtime.free_text or None,
         "questions": questions,
     }

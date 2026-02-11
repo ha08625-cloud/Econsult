@@ -1,6 +1,14 @@
+"""
+HTTP layer.
+
+Thin wrapper over engine_adapters. No clinical logic.
+Imports: engine_adapters, persistence, condition_registry, request_validation, errors.
+"""
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import uuid
+import os
 
 from persistence import (
     RuntimeStateRepository,
@@ -8,19 +16,30 @@ from persistence import (
     VersionConflict,
     SessionClosed,
 )
-from errors import *
-from api_models import *
-
-# ---- wiring points (existing engine) ----
-from engine import (
+from runtime_state import RuntimeState
+from condition_registry import ConditionRegistry, ConditionNotFound
+from request_validation import (
+    validate_init_payload,
+    validate_update_payload,
+    validate_finish_payload,
+)
+from errors import APIError, INVALID_PAYLOAD, UNKNOWN_RUNTIME_ID, VERSION_CONFLICT, SESSION_CLOSED
+from engine_adapters import (
     init_runtime_state,
     apply_update_and_evaluate,
     finish_runtime_state,
 )
 
+# --- Startup wiring ---
+
+DATA_DIR = os.environ.get("DATA_DIR", "data")
+
 app = FastAPI()
 repo = RuntimeStateRepository("runtime.db")
+registry = ConditionRegistry(DATA_DIR)
 
+
+# --- Error handling ---
 
 @app.exception_handler(APIError)
 async def api_error_handler(_, exc: APIError):
@@ -30,32 +49,74 @@ async def api_error_handler(_, exc: APIError):
     )
 
 
+# --- Condition discovery (pre-session, no state) ---
+
+@app.get("/conditions")
+async def list_conditions():
+    return {"conditions": registry.list_conditions()}
+
+
+@app.get("/conditions/{condition_id}/presentation")
+async def get_presentation(condition_id: str):
+    try:
+        return registry.get_presentation(condition_id)
+    except ConditionNotFound:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {condition_id}"}},
+        )
+
+
+# --- Form session endpoints ---
+
 @app.post("/form/init")
-async def form_init(req: InitRequest):
+async def form_init(request: Request):
+    payload = await request.json()
+    validate_init_payload(payload)
+
+    condition_id = payload["condition_id"]
+    free_text = payload.get("free_text")
+
+    # Validate condition exists and get its metadata
+    try:
+        ruleset_path = registry.get_ruleset_path(condition_id)
+        condition_label = registry.get_presentation(condition_id)["label"]
+    except ConditionNotFound:
+        raise INVALID_PAYLOAD(f"Unknown condition_id: {condition_id}")
+
     runtime_id = str(uuid.uuid4())
 
-    runtime_state, ruleset_hash, client_state = init_runtime_state(
-        condition_id=req.condition_id,
-        free_text=req.free_text,
+    runtime_state, rh, client_state = init_runtime_state(
+        condition_id=condition_id,
+        free_text=free_text,
+        ruleset_path=ruleset_path,
+        condition_label=condition_label,
     )
 
     repo.create_initial(
         runtime_id=runtime_id,
-        ruleset_hash=ruleset_hash,
+        ruleset_hash=rh,
         state_dict=runtime_state.to_dict(),
     )
 
-    return InitResponse(
-        runtime_id=runtime_id,
-        version=1,
-        client_state=client_state,
-    )
+    return {
+        "runtime_id": runtime_id,
+        "version": 1,
+        "client_state": client_state,
+    }
 
 
 @app.post("/form/update")
-async def form_update(req: UpdateRequest):
+async def form_update(request: Request):
+    payload = await request.json()
+    validate_update_payload(payload)
+
+    runtime_id = payload["runtime_id"]
+    base_version = payload["base_version"]
+    answers = payload["answers"]
+
     try:
-        row = repo.get_latest(req.runtime_id)
+        row = repo.get_latest(runtime_id)
     except RuntimeStateNotFound:
         raise UNKNOWN_RUNTIME_ID()
     except SessionClosed:
@@ -64,49 +125,69 @@ async def form_update(req: UpdateRequest):
     runtime_state = RuntimeState.from_dict(row["state_json"])
     ruleset_hash = row["ruleset_hash"]
 
-    (
-        new_state,
-        new_client_state,
-        safety_messages,
-    ) = apply_update_and_evaluate(
+    # Resolve ruleset path and label from the condition_id stored in RuntimeState
+    try:
+        ruleset_path = registry.get_ruleset_path(runtime_state.condition_id)
+        condition_label = registry.get_presentation(runtime_state.condition_id)["label"]
+    except ConditionNotFound:
+        raise INVALID_PAYLOAD(f"Unknown condition_id: {runtime_state.condition_id}")
+
+    new_state, new_client_state, safety_messages = apply_update_and_evaluate(
         runtime_state=runtime_state,
-        answers=req.answers,
+        answers=answers,
+        ruleset_path=ruleset_path,
+        condition_label=condition_label,
     )
 
     try:
         new_version = repo.insert_new_version(
-            runtime_id=req.runtime_id,
-            base_version=req.base_version,
+            runtime_id=runtime_id,
+            base_version=base_version,
             ruleset_hash=ruleset_hash,
             state_dict=new_state.to_dict(),
         )
     except VersionConflict:
         raise VERSION_CONFLICT()
 
-    return UpdateResponse(
-        runtime_id=req.runtime_id,
-        version=new_version,
-        client_state=new_client_state,
-        safety_messages=safety_messages,
-    )
+    return {
+        "runtime_id": runtime_id,
+        "version": new_version,
+        "client_state": new_client_state,
+        "safety_messages": [
+            {"rule_id": m.rule_id, "message": m.message}
+            for m in safety_messages
+        ],
+    }
 
 
 @app.post("/form/finish")
-async def form_finish(req: FinishRequest):
+async def form_finish(request: Request):
+    payload = await request.json()
+    validate_finish_payload(payload)
+
+    runtime_id = payload["runtime_id"]
+    version = payload["version"]
+
     try:
-        row = repo.get_latest(req.runtime_id)
+        row = repo.get_latest(runtime_id)
     except RuntimeStateNotFound:
         raise UNKNOWN_RUNTIME_ID()
     except SessionClosed:
         raise SESSION_CLOSED()
 
-    if row["version"] != req.version:
+    if row["version"] != version:
         raise VERSION_CONFLICT()
 
     runtime_state = RuntimeState.from_dict(row["state_json"])
 
-    submission_id = finish_runtime_state(runtime_state)
+    # Resolve ruleset path from the condition_id stored in RuntimeState
+    try:
+        ruleset_path = registry.get_ruleset_path(runtime_state.condition_id)
+    except ConditionNotFound:
+        raise INVALID_PAYLOAD(f"Unknown condition_id: {runtime_state.condition_id}")
 
-    repo.close_session(req.runtime_id, req.version)
+    submission_id = finish_runtime_state(runtime_state, ruleset_path)
 
-    return FinishResponse(submission_id=submission_id)
+    repo.close_session(runtime_id, version)
+
+    return {"submission_id": submission_id}

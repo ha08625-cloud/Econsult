@@ -7,7 +7,7 @@ Can be fully unit tested without the pipeline or encoder.
 
 from datetime import datetime
 from typing import Any, Dict
-from runtime_state import RuntimeState, AnswerState, SafetyEvaluation
+from contracts.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
 from ruleset import ruleset_hash
 
 

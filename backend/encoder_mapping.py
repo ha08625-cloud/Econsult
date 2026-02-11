@@ -31,9 +31,10 @@ def apply_encoder_output(
 
     encoder_output.validate_against(encoder_definitions)
 
-    # Store raw encoder output for audit trail
+    # Store raw encoder output for audit trail (as plain dict for JSON serialisation)
+    from dataclasses import asdict
     runtime.metadata.setdefault("audit", {})
-    runtime.metadata["audit"]["encoder_output"] = encoder_output
+    runtime.metadata["audit"]["encoder_output"] = asdict(encoder_output)
 
     for defn in encoder_definitions:
         answer_key = defn.answer_key

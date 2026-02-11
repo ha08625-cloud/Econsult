@@ -59,13 +59,13 @@ export async function getConditionPresentation(
 // Form session endpoints
 // -------------------------------
 
-export async function initForm(condition: string, freeText: string | null): Promise<{
+export async function initForm(conditionId: string, freeText: string | null): Promise<{
   runtime_id: string;
   version: number;
   client_state: ClientStateView;
 }> {
   return postJson("/form/init", {
-    condition,
+    condition_id: conditionId,
     free_text: freeText,
   });
 }
@@ -79,8 +79,11 @@ export async function updateForm(payload: ClientAnswerReturn): Promise<{
   return postJson("/form/update", payload);
 }
 
-export async function finishForm(payload: ClientAnswerReturn): Promise<{
+export async function finishForm(runtimeId: string, version: number): Promise<{
   submission_id: string;
 }> {
-  return postJson("/form/finish", payload);
+  return postJson("/form/finish", {
+    runtime_id: runtimeId,
+    version: version,
+  });
 }

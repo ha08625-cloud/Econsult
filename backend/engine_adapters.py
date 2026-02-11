@@ -6,6 +6,12 @@ safety evaluation, and serialisation.
 
 This is the only module permitted to coordinate across engine boundaries.
 main.py calls these entry points; they return API-ready data.
+
+Architectural guarantee:
+    This module never imports or accesses condition_registry or presentation
+    metadata. The condition_label needed for ClientStateView is passed in
+    explicitly by the HTTP layer. The clinical engine operates exactly as
+    if presentation metadata never existed.
 """
 
 import uuid
@@ -32,6 +38,7 @@ def init_runtime_state(
     condition_id: str,
     free_text: str | None,
     ruleset_path: str,
+    condition_label: str,
 ):
     """
     Entry point for /form/init.
@@ -70,7 +77,7 @@ def init_runtime_state(
         # Apply to RuntimeState (validates + maps)
         apply_encoder_output(runtime_state, encoder_output, encoder_defs)
 
-    client_state = serialize_client_state(runtime_state, ruleset)
+    client_state = serialize_client_state(runtime_state, ruleset, condition_label)
 
     return runtime_state, rh, client_state
 
@@ -79,6 +86,7 @@ def apply_update_and_evaluate(
     runtime_state: RuntimeState,
     answers: Dict[str, Any],
     ruleset_path: str,
+    condition_label: str,
 ):
     """
     Entry point for /form/update.
@@ -113,7 +121,7 @@ def apply_update_and_evaluate(
         for m in safety_eval.messages
     ]
 
-    client_state = serialize_client_state(runtime_state, ruleset)
+    client_state = serialize_client_state(runtime_state, ruleset, condition_label)
 
     return runtime_state, client_state, safety_messages
 

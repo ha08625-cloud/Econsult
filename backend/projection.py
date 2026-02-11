@@ -1,6 +1,6 @@
 from typing import Dict
-from runtime_state import RuntimeState
-from explicit_answers import ExplicitAnswers
+from contracts.runtime_state import RuntimeState
+from contracts.explicit_answers import ExplicitAnswers
 
 EXPLICIT_SOURCES = {
     "patient",

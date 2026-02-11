@@ -335,7 +335,7 @@ export default function App() {
 
               {q.suggested && (
                 <div>
-                  <small>Suggested answer — please check</small>
+                  <small>Suggested answer â€” please check</small>
                 </div>
               )}
             </div>
@@ -425,12 +425,7 @@ export default function App() {
           onClick={async () => {
             try {
               setIsSubmitting(true);
-              const payload: ClientAnswerReturn = {
-                runtime_id: runtimeId,
-                base_version: version,
-                answers: initialiseEditableAnswers(clientState),
-              };
-              await finishForm(payload);
+              await finishForm(runtimeId, version);
               setScreen("DONE");
             } catch (e) {
               setFatalError(String(e));
