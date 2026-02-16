@@ -68,7 +68,7 @@ Responsibilities:
 * Load rulesets from JSON
 * Validate schema and invariants
 * Compute ruleset hash
-* Extracts encoder definitions (encoder‑facing contract), signal → answer_key mappings
+* Extracts encoder definitions (encoder-facing contract): answer_key + encoder_prompt pairs
 
 Rules:
 * Rulesets are authoritative
@@ -79,7 +79,7 @@ Rules:
 
 Responsibilities:
 * Accept free text + encoder definitions
-* Emit {signal_id: true | false | null}
+* Emit {answer_key: true | false | null}
 
 Constraints:
 * Encoder never sees rules, questions or answers, RuntimeState
@@ -90,65 +90,94 @@ Constraints:
 ### 3.4 encoder_mapping.py — Encoder containment layer
 
 Responsibilities:
-Apply encoder output to RuntimeState
-Enforce provenance rules
-Preserve raw encoder output for audit
+* Apply encoder output to RuntimeState
+* Enforce provenance rules
+* Preserve raw encoder output for audit
 
 Rules:
 
-Encoder never overwrites patient input
-Encoder only populates unanswered fields
-Mapping failures are fatal
-Encoder influence is fully contained in this module
+* Encoder never overwrites patient input
+* Encoder only populates unanswered fields
+* Mapping failures are fatal
+* Encoder influence is fully contained in this module
 
 This is the regulatory boundary between inference and clinical data.
 
 ### 3.5 form_logic.py — Deterministic functional core
 
 Responsibilities:
-Initialise runtime state
-Hydrate runtime state on submission
-Apply patient updates
-Normalise provenance on submit
-Evaluate safety rules
+* Initialise runtime state (including answer_type from ruleset)
+* Hydrate runtime state on return
+* Apply patient answers (dict of answer_key → value)
+* Normalise encoder provenance on submit
+* Validate required answers are complete before submission
 
 Rules:
-No encoder access
-No IO
-No serialization
-No sequencing
+* No encoder access
+* No IO
+* No serialization
+* No sequencing
 
-This module can be fully unit tested without the pipeline or encoder.
+Function names:
+* initialise_runtime_state(ruleset, free_text) → RuntimeState
+* hydrate_runtime_state(incoming, ruleset) → RuntimeState
+* apply_patient_answers(runtime, answers_dict) → None (mutates)
+* normalise_encoder_provenance(runtime) → None (mutates)
+* validate_required_answers(runtime) → None (raises ValueError)
 
 ### 3.6 serialization.py — Output views
 
 Responsibilities:
-* Produce clinical output (lossy)
-* Produce audit/debug output (lossless)
-* Current output is saveed to local machine
-* Will add server side storage in later versions
+* Produce ClientStateView (for frontend rendering)
+* Produce ClinicalOutput (lossy, portable)
+* Produce AuditOutput (lossless, for debugging and regulation)
 
-Dependencies
-* serialisation_contracts.py (dataclass contracts)
+Functions:
+* serialize_client_state(runtime, ruleset, condition_label) → dict
+* clinical_output(runtime) → ClinicalOutput
+* audit_output(runtime) → AuditOutput
+
+Dependencies:
+* runtime_state.py (RuntimeState)
+* serialisation_contracts.py (ClinicalOutput, AuditOutput)
 
 Rules:
-* Serialization never mutates state
+* Serialisation never mutates state
 * Clinical output excludes encoder internals
-* Future versions of the system will allow patients to return to a previous page, correct information and re-submit (requires RunTime again), so RunTime must never be mutated or destroyed by submission, only copied for serialisation
+* condition_label is passed in explicitly by the calling layer;
+  this function never accesses presentation metadata from the ruleset
+* RuntimeState must never be mutated or destroyed by serialisation,
+  only read and projected
 
-### 3.7 pipeline.py — Thin coordinator
+Architectural guarantee:
+This module never accesses presentation metadata directly.
+The condition_label for ClientStateView is passed in explicitly
+by the calling layer. The ruleset parameter is used only for
+question text and answer_type, never for presentation data.
+
+### 3.7 engine_adapters.py — Orchestration layer
+
 Responsibilities:
-Define execution order only
-Wire modules together
-Provide entry points for API integration
-Enforce submission-time invariants (via orchestration, not logic)
+* Wire together: ruleset loading, encoder, form logic, projection,
+  safety evaluation, and serialisation
+* Define three entry points matching the API endpoints:
+  * init_runtime_state — form initialisation + encoder
+  * apply_update_and_evaluate — patient answers + safety
+  * finish_runtime_state — clinical/audit output + submission ID
+* Coordinate safety evaluation and submission blocking based on safety output
 
 Rules:
-No clinical logic
-No safety rule definitions
-No mutation of RuntimeState outside defined transitions
-No persistence logic (delegated to repository layer)
-The pipeline is the only layer permitted to coordinate safety evaluation and submission blocking, based on safety engine output.
+* No clinical logic (delegates to form_logic, safety_engine)
+* No persistence logic (delegated to main.py + repository layer)
+* No condition discovery (condition_label passed in by HTTP layer)
+* May import all engine modules
+* Must not import condition_registry
+
+Architectural guarantee:
+This module never imports or accesses condition_registry or presentation
+metadata. The condition_label needed for ClientStateView is passed in
+explicitly by the HTTP layer. The clinical engine operates exactly as
+if presentation metadata never existed.
 
 ### 3.8 explicit_answers.py — Safety-critical answer projection
 
@@ -231,6 +260,172 @@ Key principles:
 * AuditOutput is lossless and intended for debugging, safety review, and regulation
 * Neither contract may be used as an input back into the engine
 
+### 3.12 condition_registry.py — Condition discovery and presentation
+
+Responsibilities:
+* Load all ruleset JSON files from the data directory at startup
+* Validate presence and correctness of presentation blocks
+* Extract and retain: condition_id, presentation.label, full presentation block,
+  and absolute ruleset file path
+* Provide lookup methods for the HTTP layer
+
+Public interface:
+* list_conditions() → list of {id, label}
+* get_presentation(condition_id) → presentation dict
+* get_ruleset_path(condition_id) → absolute file path
+* has_condition(condition_id) → bool
+
+Properties:
+* Initialised once at application startup
+* Immutable after initialisation
+* Any validation failure aborts startup (fail-fast)
+* No hot reload, no lazy loading
+* Only imports stdlib (os, json, typing)
+
+This module must never:
+* Expose questions, encoder definitions, safety rules, or ruleset hashes
+* Return raw ruleset JSON
+* Be imported by form_logic, encoder_mapping, encoder_stub, safety_engine,
+  projection, or serialisation
+
+If a clinical module imports condition_registry, that is a design failure.
+
+Validation rules (fail-fast at startup):
+* presentation block must exist
+* presentation.label must be a non-empty string
+* presentation.free_text_prompt must be a string if present
+* presentation.pre_form_information must be a list of strings if present
+* No unexpected keys in presentation (allow-list: label, free_text_prompt,
+  pre_form_information)
+* No duplicate condition_id across rulesets
+* Data directory must exist and contain at least one JSON file
+
+---
+
+## 3.13 main.py — HTTP layer
+
+Responsibilities:
+* Provide the FastAPI application and endpoint definitions
+* Wire together: condition_registry, engine_adapters, persistence, request_validation
+* Translate between HTTP requests and engine entry points
+* Map condition_id to ruleset_path and condition_label via the registry
+
+Endpoints:
+* GET /conditions — list all conditions (from registry)
+* GET /conditions/{condition_id}/presentation — presentation metadata (from registry)
+* POST /form/init — create session (validates condition, calls engine_adapters.init_runtime_state)
+* POST /form/update — apply patient answers (calls engine_adapters.apply_update_and_evaluate)
+* POST /form/finish — close session (calls engine_adapters.finish_runtime_state)
+
+Rules:
+* No clinical logic
+* No safety rule evaluation
+* No encoder invocation
+* Request validation via request_validation.py (not Pydantic models)
+* Uses Request.json() for payload parsing
+* condition_label is resolved from the registry and passed explicitly to
+  engine_adapters; presentation metadata never enters the engine
+
+Startup:
+* Initialises ConditionRegistry from DATA_DIR environment variable (default: "data")
+* Initialises RuntimeStateRepository (SQLite)
+* Both must succeed or the process fails to start
+
+---
+
+## 3.14 encoder_contracts.py — Encoder boundary contracts
+
+Defines the only data structures permitted to cross the boundary between
+an encoder implementation (stub or ML-backed) and the rest of the form engine.
+
+Contains:
+* EncoderSignalDefinition (frozen dataclass): answer_key + encoder_prompt
+* EncoderOutput (frozen dataclass): model_name, model_version, ruleset_hash,
+  signals dict {answer_key: True | False | None}
+
+EncoderOutput.validate_against(definitions):
+* Validates that output keys exactly match the provided definitions
+* Validates that all values are True, False, or None
+* Raises ValueError/TypeError on mismatch
+
+Properties:
+* Both dataclasses are frozen (immutable)
+* No business logic beyond validation
+* No imports from engine modules
+* Imported by encoder_mapping.py and engine_adapters.py only
+
+---
+
+## 3.15 Frontend modules
+
+The frontend is a stateless renderer. It contains no clinical logic,
+no branching decisions, and no safety evaluation. All intelligence
+lives on the server.
+
+### 3.15.1 types.ts — Frontend-visible contracts
+
+Defines TypeScript interfaces for all data the frontend may receive or send.
+
+Contains:
+* ClientQuestion — individual question with current value and suggested flag
+* ClientStateView — full form state for rendering
+* ClientAnswerReturn — payload sent back on update (runtime_id, base_version, answers)
+* SafetyMessage — rule_id + message text
+* ConditionSummary — id + label for condition list
+* ConditionPresentation — label, free_text_prompt, pre_form_information
+
+Rules:
+* No clinical logic
+* No encoder awareness
+* No safety evaluation
+* These types are projections of server-side state, not mirrors of it
+
+### 3.15.2 api.ts — HTTP client
+
+Provides typed fetch wrappers for all backend endpoints.
+
+Functions:
+* getConditions() — GET /conditions
+* getConditionPresentation(conditionId) — GET /conditions/{id}/presentation
+* initForm(conditionId, freeText) — POST /form/init
+* updateForm(payload) — POST /form/update
+* finishForm(runtimeId, version) — POST /form/finish
+
+Rules:
+* No business logic
+* No data transformation beyond JSON serialisation
+* Payload field names must match backend expectations exactly
+  (e.g. condition_id, free_text, runtime_id, base_version)
+
+### 3.15.3 app.jsx — React UI
+
+Stateless renderer implementing a five-screen flow:
+
+* Screen 0 (SELECT_CONDITION): fetches GET /conditions, renders dropdown
+* Screen 1 (FREE_TEXT): fetches GET /conditions/{id}/presentation,
+  renders framing text + free text input, submits to POST /form/init
+* Screen 2 (EDIT): renders questions from ClientStateView, collects answers,
+  submits to POST /form/update
+* Screen 3 (REVIEW): displays answers + safety messages,
+  submits to POST /form/finish or returns to EDIT
+* Screen 4 (DONE): confirmation
+
+Rules:
+* No clinical logic
+* No branching based on answer values
+* No hidden questions
+* No local safety evaluation
+* All rendering driven by server-provided ClientStateView
+* Session begins at POST /form/init (Screen 1 → Screen 2 transition)
+* Screens 0 and 1 are pre-session (no runtime_id exists)
+* Fatal errors reset all state and return to Screen 0
+
+State management:
+* Pre-session state: selectedConditionId, presentation, freeText
+* Session state: runtimeId, version, clientState, editableAnswers, safetyMessages
+* Pre-session state is discarded after /form/init succeeds
+* Session state is never round-tripped back to pre-session screens
+
 ## 4. Data flow
 
 ### 4.1 Form initialisation
@@ -261,7 +456,7 @@ Each submission produces exactly one new RuntimeState version and exactly one sa
 
 Encoders:
 * Run once on initial free text
-* Output partial `{signal_id: true|false|unknown}` map
+* Output partial {answer_key: true|false|null} map
 * Do not see questions
 * Use `encoder_prompt` as a clinical definition, not an instruction
 
@@ -415,14 +610,14 @@ Fail‑fast, fail-loud conditions include:
 * Safety evaluation attempted before projection
 * Projection omitting any answer_key
 * Safety rules referencing keys absent from projected answers
-Client submission of any RuntimeState or projection data
-Version mismatch on update or finish
-Submission attempt after session closure
-Ruleset hash mismatch between session and current ruleset
-Incomplete required answers on submission
-
-Log warning but don't fail loudly
-* If source if direct_answer, then signal_id, encoder_prompt and signal_type must be null (incorrect but not dangerous)
+* Client submission of any RuntimeState or projection data
+* Version mismatch on update or finish
+* Submission attempt after session closure
+* Ruleset hash mismatch between session and current ruleset
+* Incomplete required answers on submission
+* Missing or invalid presentation block in ruleset → startup abort
+* Duplicate condition_id across rulesets → startup abort
+* Presentation containing unexpected keys → startup abort
 
 ---
 
@@ -438,9 +633,9 @@ However:
 
 ---
 
-## 11. Scope of Stage 1 MVP
+## 11. Scope of current stage
 
-* One condition (urinary symptoms), three answer fields: dysuria (boolean), fever (boolean), onset (free text)
+* Multi-condition support via condition_registry
 * All questions visible
 * One safety message (fever=true => speak to doctor immediately) which is evaluated after submission only
 * Safety message blocks final submission
