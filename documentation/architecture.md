@@ -294,11 +294,14 @@ Validation rules (fail-fast at startup):
 * presentation block must exist
 * presentation.label must be a non-empty string
 * presentation.free_text_prompt must be a string if present
-* presentation.pre_form_information must be a list of strings if present
-* No unexpected keys in presentation (allow-list: label, free_text_prompt,
-  pre_form_information)
+* No unexpected keys in presentation (allow-list: label, free_text_prompt)
 * No duplicate condition_id across rulesets
 * Data directory must exist and contain at least one JSON file
+
+Note: pre_form_information is no longer supported in presentation blocks.
+Practice-specific signposting is handled by presentation_service.py using
+data from practice_repository.py. Universal safety warnings are defined
+as constants in presentation_service.py.
 
 ---
 
@@ -306,13 +309,15 @@ Validation rules (fail-fast at startup):
 
 Responsibilities:
 * Provide the FastAPI application and endpoint definitions
-* Wire together: condition_registry, engine_adapters, persistence, request_validation
+* Wire together: condition_registry, engine_adapters, persistence, request_validation,
+  practice_repository, presentation_service
 * Translate between HTTP requests and engine entry points
 * Map condition_id to ruleset_path and condition_label via the registry
 
 Endpoints:
 * GET /conditions — list all conditions (from registry)
-* GET /conditions/{condition_id}/presentation — presentation metadata (from registry)
+* GET /conditions/{condition_id}/presentation — patient-facing presentation
+  (from presentation_service, accepts optional ?practice= query parameter)
 * POST /form/init — create session (validates condition, calls engine_adapters.init_runtime_state)
 * POST /form/update — apply patient answers (calls engine_adapters.apply_update_and_evaluate)
 * POST /form/finish — close session (calls engine_adapters.finish_runtime_state)
@@ -329,7 +334,9 @@ Rules:
 Startup:
 * Initialises ConditionRegistry from DATA_DIR environment variable (default: "data")
 * Initialises RuntimeStateRepository (SQLite)
-* Both must succeed or the process fails to start
+* Initialises PracticeRepository (same SQLite database)
+* Initialises PresentationService (composes registry + practice data)
+* All must succeed or the process fails to start
 
 ---
 
@@ -356,13 +363,96 @@ Properties:
 
 ---
 
-## 3.15 Frontend modules
+## Section 3.15 practice_repository.py — Practice data access
+
+Database access for practice identity and practice-specific configuration.
+Handles the practices and practice_signposting tables.
+
+Responsibilities:
+* Initialise practice-related tables on startup
+* CRUD operations for practices
+* CRUD operations for practice signposting
+* JSON validation for signposting content
+
+Public interface:
+* create_practice(practice_id, name) → None
+* get_practice(practice_id) → dict | None
+* practice_exists(practice_id) → bool
+* get_signposting(practice_id, condition_id) → list[str] | None
+* set_signposting(practice_id, condition_id, items) → None
+* delete_signposting(practice_id, condition_id) → None
+
+Database schema:
+* practices: practice_id (PK), name, created_at
+* practice_signposting: practice_id + condition_id (composite PK), signposting_json, updated_at
+
+Validation rules:
+* signposting_json must be a valid JSON array
+* Each item must be a non-empty string
+* Empty array is allowed (explicit "no signposting")
+
+Behaviour:
+* get_signposting returns None if no row exists (not configured)
+* get_signposting returns [] if row exists with empty array
+* get_signposting gracefully handles malformed JSON (logs warning, returns None)
+
+This module must never:
+* Access clinical data (rulesets, RuntimeState, answers)
+* Perform composition logic (that belongs in presentation_service)
+* Handle authentication (that belongs in practice_context, Phase 1B)
+
+---
+
+## Section 3.16 presentation_service.py — Patient-facing presentation composition
+
+Composes patient-facing presentation from multiple sources:
+* Universal safety warning (constant)
+* Practice-specific signposting (database)
+* Condition-specific presentation (condition_registry)
+
+Responsibilities:
+* Define the universal safety warning constant
+* Compose the complete patient-facing presentation
+* Provide a single access point for all presentation data
+
+Public interface:
+* UNIVERSAL_SAFETY_WARNING: str (module-level constant)
+* PresentationService.get_patient_presentation(condition_id, practice_id=None) → dict
+
+Return structure:
+```python
+{
+    "label": str,                           # From condition_registry
+    "free_text_prompt": str | None,         # From condition_registry  
+    "universal_safety_warning": str,        # Constant
+    "practice_signposting": list[str] | None,  # From practice_repository
+}
+```
+
+Behaviour:
+* If practice_id is None, practice_signposting is None
+* If practice_id is provided but no signposting configured, practice_signposting is None
+* If signposting is configured, practice_signposting is the list of strings
+* Empty list from database is returned as None (nothing to display)
+* Raises ConditionNotFound if condition_id does not exist (passthrough from registry)
+
+Architectural note:
+This module performs COMPOSITION, not MERGING. Each data source populates a
+distinct field in the output. There is no field-level override logic — practice
+data and condition data occupy separate slots.
+
+This module must never:
+* Access clinical data (rulesets, RuntimeState, answers, safety rules)
+* Modify any data (read-only composition)
+* Handle authentication (that belongs in practice_context, Phase 1B)
+
+## 3.17 Frontend modules
 
 The frontend is a stateless renderer. It contains no clinical logic,
 no branching decisions, and no safety evaluation. All intelligence
 lives on the server.
 
-### 3.15.1 types.ts — Frontend-visible contracts
+### 3.17.1 types.ts — Frontend-visible contracts
 
 Defines TypeScript interfaces for all data the frontend may receive or send.
 
@@ -372,7 +462,7 @@ Contains:
 * ClientAnswerReturn — payload sent back on update (runtime_id, base_version, answers)
 * SafetyMessage — rule_id + message text
 * ConditionSummary — id + label for condition list
-* ConditionPresentation — label, free_text_prompt, pre_form_information
+* ConditionPresentation — label, free_text_prompt, universal_safety_warning, practice_signposting
 
 Rules:
 * No clinical logic
@@ -380,7 +470,7 @@ Rules:
 * No safety evaluation
 * These types are projections of server-side state, not mirrors of it
 
-### 3.15.2 api.ts — HTTP client
+### 3.17.2 api.ts — HTTP client
 
 Provides typed fetch wrappers for all backend endpoints.
 
@@ -397,7 +487,7 @@ Rules:
 * Payload field names must match backend expectations exactly
   (e.g. condition_id, free_text, runtime_id, base_version)
 
-### 3.15.3 app.jsx — React UI
+### 3.17.3 app.jsx — React UI
 
 Stateless renderer implementing a five-screen flow:
 
@@ -640,3 +730,62 @@ However:
 * One safety message (fever=true => speak to doctor immediately) which is evaluated after submission only
 * Safety message blocks final submission
 * No ML dependency
+* Practice-specific signposting via presentation_service (Phase 1A complete)
+* Practice identity via practice_repository (Phase 1A complete)
+* Practice authentication deferred to Phase 1B
+
+
+## Section 12 — Practice Configuration Architecture
+
+### 12.1 Design principles
+
+* Composition, not merging — Practice-specific content occupies a distinct slot,
+  never overwrites or merges with clinical content
+* Clinical engine untouched — All practice configuration is handled in the
+  presentation layer; form_logic, safety_engine, encoder_mapping etc. remain
+  unaware of practice identity
+* Condition registry remains immutable — Practice-specific data is fetched at
+  request time from the database, not baked into startup state
+* Graceful degradation — Missing signposting means "show nothing", not "crash"
+* Narrow scope — Practices can only configure signposting, not safety warnings,
+  labels, or clinical content
+
+### 12.2 Information architecture
+
+Three distinct types of pre-form information, each with clear ownership:
+
+| Type | Example | Ownership | Storage |
+|------|---------|-----------|---------|
+| Universal Safety Warning | "Call 999 if chest pain..." | Centralised, immutable | Config constant |
+| Practice Signposting | "Self-refer to physio: 0800..." | Practice-specific, editable | Database |
+| Form Context | "Tell us about your symptoms" | Centralised, per-condition | Ruleset JSON |
+
+### 12.3 Data flow
+
+1. Patient accesses form with optional ?practice= parameter
+2. GET /conditions/{id}/presentation called
+3. presentation_service composes response:
+   a. Fetches condition presentation from registry (immutable, in-memory)
+   b. Fetches practice signposting from database (if practice_id provided)
+   c. Adds universal safety warning constant
+   d. Returns composed dict
+4. Frontend renders all three information types in distinct UI sections
+
+### 12.4 Future phases
+
+Phase 1B — Practice authentication:
+* practice_tokens table
+* practice_context.py for token validation
+* Token-based access to admin endpoints
+
+Phase 2 — Admin endpoints:
+* CRUD endpoints for practice signposting
+* JSON validation for signposting content
+
+Phase 3 — Admin frontend:
+* Login page (token-based for MVP)
+* Signposting editor per condition
+
+Phase 4 — Audit trail:
+* Audit log table
+* Automatic logging of signposting changes
