@@ -38,5 +38,6 @@ export interface ConditionSummary {
 export interface ConditionPresentation {
   label: string;
   free_text_prompt?: string;
-  pre_form_information?: string[];
+  universal_safety_warning: string;
+  practice_signposting?: string[];
 }
