@@ -32,7 +32,7 @@ function initialiseEditableAnswers(
 // ---------------------------------
 
 export default function App() {
-  const [screen, setScreen] = useState<
+  const [screen, setScreen] = useState
     "SELECT_CONDITION" | "FREE_TEXT" | "EDIT" | "REVIEW" | "DONE"
   >("SELECT_CONDITION");
 
@@ -40,7 +40,7 @@ export default function App() {
   const [runtimeId, setRuntimeId] = useState<string | null>(null);
   const [version, setVersion] = useState<number | null>(null);
   const [clientState, setClientState] = useState<ClientStateView | null>(null);
-  const [editableAnswers, setEditableAnswers] = useState<Record<
+  const [editableAnswers, setEditableAnswers] = useState<Record
     string,
     boolean | string | null
   > | null>(null);
@@ -203,11 +203,33 @@ export default function App() {
       <div>
         <h1>{presentation.label}</h1>
 
-        {presentation.pre_form_information &&
-          presentation.pre_form_information.length > 0 && (
-            <div>
-              {presentation.pre_form_information.map((info, i) => (
-                <p key={i}>{info}</p>
+        {/* Universal safety warning - always shown */}
+        <div style={{
+          backgroundColor: "#fee",
+          padding: "1em",
+          marginBottom: "1em",
+          border: "1px solid #c00",
+          borderRadius: "4px",
+        }}>
+          <strong>Important safety information</strong>
+          <p style={{ marginBottom: 0 }}>{presentation.universal_safety_warning}</p>
+        </div>
+
+        {/* Practice-specific signposting - only shown if configured */}
+        {presentation.practice_signposting &&
+          presentation.practice_signposting.length > 0 && (
+            <div style={{
+              backgroundColor: "#eef",
+              padding: "1em",
+              marginBottom: "1em",
+              border: "1px solid #00c",
+              borderRadius: "4px",
+            }}>
+              <strong>Information from your practice</strong>
+              {presentation.practice_signposting.map((info, i) => (
+                <p key={i} style={{ marginBottom: i === presentation.practice_signposting!.length - 1 ? 0 : undefined }}>
+                  {info}
+                </p>
               ))}
             </div>
           )}
@@ -335,7 +357,7 @@ export default function App() {
 
               {q.suggested && (
                 <div>
-                  <small>Suggested answer â€” please check</small>
+                  <small>Suggested answer — please check</small>
                 </div>
               )}
             </div>
