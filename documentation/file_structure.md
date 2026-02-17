@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout and import mapping
-# Last updated: 2026-02-11
+# Last updated: 2026-02-17
 
 ## Local directory layout
 
@@ -27,6 +27,8 @@ project_root/
 │   ├── request_validation.py
 │   ├── ruleset.py
 │   ├── safety_engine.py
+│   ├── practice_repository.py
+│   ├── presentation_service.py
 │   └── serialisation.py
 │
 ├── frontend/
@@ -78,13 +80,19 @@ Dependency rules:
 - projection.py: imports RuntimeState, ExplicitAnswers
 - safety_engine.py: imports ExplicitAnswers, SafetyEvaluation
 - serialisation.py: imports RuntimeState, ClinicalOutput, AuditOutput
-- pipeline.py / engine_adapters.py: orchestration layer, may import all above
+- engine_adapters.py: orchestration layer, may import all above
 - main.py: HTTP layer, imports engine_adapters + persistence + api_models + errors
+- practice_repository.py: standalone, no engine imports, database access only
+- presentation_service.py: imports condition_registry, practice_repository
+- main.py: HTTP layer, imports engine_adapters + persistence + api_models + errors + condition_registry + practice_repository + presentation_service
 
 Banned imports (design failures if violated):
 - form_logic, encoder_mapping, encoder_stub, safety_engine must NOT import condition_registry
 - safety_engine must NOT import RuntimeState, AnswerState, encoder_contracts
 - serialisation must NOT mutate RuntimeState
+- practice_repository must NOT import any engine modules
+- presentation_service must NOT import RuntimeState, safety_engine, encoder_*, form_logic
+- form_logic, encoder_mapping, encoder_stub, safety_engine must NOT import practice_repository or presentation_service (clinical engine has no awareness of practice identity)
 
 ## Data files (data/)
 
@@ -96,11 +104,3 @@ Banned imports (design failures if violated):
 - types.ts: frontend-visible contracts only
 - api.ts: HTTP client functions
 - app.jsx: React UI, stateless renderer
-
-## Files NOT yet in Claude project files
-
-The following exist locally but have not been uploaded to Claude project files:
-- backend/contracts/encoder_contracts.py (uploaded in chat on 2026-02-11)
-- backend/contracts/explicit_answers.py
-- backend/contracts/runtime_state.py
-- backend/contracts/serialisation_contracts.py
