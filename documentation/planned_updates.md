@@ -6,6 +6,7 @@ Early prototype updates
 - safety rules implemented on clicking yes/no, rather than on submit form
 - non blocking advisory messages
 - handle front end errors like 409 gracefully
+-  Add a public_slug column - More flexibility, but adds complexity
 
 Late prototype updates
 - Multiple conditions
