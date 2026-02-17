@@ -5,10 +5,11 @@ Thin wrapper over engine_adapters. No clinical logic.
 Imports: engine_adapters, persistence, condition_registry, request_validation, errors.
 """
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 from fastapi.responses import JSONResponse
 import uuid
 import os
+from typing import Optional
 
 from persistence import (
     RuntimeStateRepository,
@@ -16,8 +17,10 @@ from persistence import (
     VersionConflict,
     SessionClosed,
 )
-from runtime_state import RuntimeState
+from contracts.runtime_state import RuntimeState
 from condition_registry import ConditionRegistry, ConditionNotFound
+from practice_repository import PracticeRepository
+from presentation_service import PresentationService
 from request_validation import (
     validate_init_payload,
     validate_update_payload,
@@ -33,10 +36,13 @@ from engine_adapters import (
 # --- Startup wiring ---
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
+DB_PATH = os.environ.get("DB_PATH", "runtime.db")
 
 app = FastAPI()
-repo = RuntimeStateRepository("runtime.db")
+repo = RuntimeStateRepository(DB_PATH)
 registry = ConditionRegistry(DATA_DIR)
+practice_repo = PracticeRepository(DB_PATH)
+presentation_service = PresentationService(registry, practice_repo)
 
 
 # --- Error handling ---
@@ -57,9 +63,18 @@ async def list_conditions():
 
 
 @app.get("/conditions/{condition_id}/presentation")
-async def get_presentation(condition_id: str):
+async def get_presentation(
+    condition_id: str,
+    practice: Optional[str] = Query(default=None),
+):
+    """
+    Get patient-facing presentation for a condition.
+    
+    Optional query parameter:
+        practice: Practice ID for practice-specific signposting
+    """
     try:
-        return registry.get_presentation(condition_id)
+        return presentation_service.get_patient_presentation(condition_id, practice)
     except ConditionNotFound:
         return JSONResponse(
             status_code=404,

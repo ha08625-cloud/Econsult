@@ -3,10 +3,7 @@
 
   "presentation": {
     "label": "Urinary symptoms",
-    "free_text_prompt": "Tell us about your symptoms and when they started.",
-    "pre_form_information": [
-      "If you are feeling very unwell, seek urgent medical help."
-    ]
+    "free_text_prompt": "Tell us about your symptoms and when they started."
   },
   
   "questions": [

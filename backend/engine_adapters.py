@@ -17,8 +17,8 @@ Architectural guarantee:
 import uuid
 from typing import Dict, Any, List
 
-from runtime_state import RuntimeState
-from encoder_contracts import EncoderOutput, EncoderSignalDefinition
+from contracts.runtime_state import RuntimeState
+from contracts.encoder_contracts import EncoderOutput, EncoderSignalDefinition
 from projection import project_explicit_answers
 from safety_engine import evaluate_safety
 from serialisation import serialize_client_state, clinical_output, audit_output

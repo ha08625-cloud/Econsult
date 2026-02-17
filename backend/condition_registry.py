@@ -15,6 +15,11 @@ This module must never:
 - Expose questions, encoder definitions, safety rules, or ruleset hashes
 - Return raw ruleset JSON
 - Be imported by form_logic, encoder_mapping, encoder_stub, or safety_engine
+
+Note: pre_form_information is no longer supported in presentation blocks.
+Practice-specific signposting is handled by presentation_service.py using
+data from practice_repository.py. Universal safety warnings are defined
+as constants in presentation_service.py.
 """
 
 import os
@@ -118,21 +123,8 @@ class ConditionRegistry:
                 f"presentation.free_text_prompt must be a string for {prefix}"
             )
 
-        # pre_form_information is optional, must be list of strings if present
-        pfi = presentation.get("pre_form_information")
-        if pfi is not None:
-            if not isinstance(pfi, list):
-                raise RegistryValidationError(
-                    f"presentation.pre_form_information must be an array for {prefix}"
-                )
-            for i, item in enumerate(pfi):
-                if not isinstance(item, str):
-                    raise RegistryValidationError(
-                        f"presentation.pre_form_information[{i}] must be a string for {prefix}"
-                    )
-
         # No nested objects, no templating, no clinical references
-        allowed_keys = {"label", "free_text_prompt", "pre_form_information"}
+        allowed_keys = {"label", "free_text_prompt"}
         extra = set(presentation.keys()) - allowed_keys
         if extra:
             raise RegistryValidationError(
