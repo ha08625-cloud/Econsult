@@ -6,9 +6,10 @@ Handles the practices and practice_signposting tables.
 
 This module is responsible for:
 - Initialising practice-related tables on startup
-- CRUD operations for practices
+- CRUD operations for practices (including email)
 - CRUD operations for practice signposting
 - JSON validation for signposting content
+- Email format validation
 
 This module must never:
 - Access clinical data (rulesets, RuntimeState, answers)
@@ -32,6 +33,11 @@ class InvalidSignpostingData(Exception):
     pass
 
 
+class InvalidEmailError(Exception):
+    """Raised when an email address fails validation."""
+    pass
+
+
 class PracticeRepository:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -44,6 +50,7 @@ class PracticeRepository:
                 CREATE TABLE IF NOT EXISTS practices (
                     practice_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
+                    email TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -55,7 +62,7 @@ class PracticeRepository:
                     condition_id TEXT NOT NULL,
                     signposting_json TEXT NOT NULL,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    
+
                     PRIMARY KEY (practice_id, condition_id)
                 )
                 """
@@ -74,31 +81,65 @@ class PracticeRepository:
         finally:
             conn.close()
 
+    # --- Email validation ---
+
+    def _validate_email(self, email: str) -> None:
+        """
+        Validate email format.
+
+        Rules:
+        - Must be a string
+        - Must not have leading or trailing whitespace
+        - Must contain exactly one '@'
+        - Local part (before '@') must be non-empty
+        - Domain part (after '@') must be non-empty
+        """
+        if not isinstance(email, str):
+            raise InvalidEmailError(
+                f"Email must be a string, got {type(email).__name__}"
+            )
+
+        if email != email.strip():
+            raise InvalidEmailError(
+                "Email contains leading or trailing whitespace"
+            )
+
+        parts = email.split("@")
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise InvalidEmailError(
+                "Email must be in format 'local@domain'"
+            )
+
     # --- Practices ---
 
-    def create_practice(self, practice_id: str, name: str) -> None:
+    def create_practice(self, practice_id: str, name: str, email: str) -> None:
         """
         Create a new practice.
+
+        Validates email format before inserting.
+        Raises InvalidEmailError if email is invalid.
         Raises sqlite3.IntegrityError if practice_id already exists.
         """
+        self._validate_email(email)
+
         with self._conn() as conn:
             conn.execute(
                 """
-                INSERT INTO practices (practice_id, name)
-                VALUES (?, ?)
+                INSERT INTO practices (practice_id, name, email)
+                VALUES (?, ?, ?)
                 """,
-                (practice_id, name),
+                (practice_id, name, email),
             )
 
     def get_practice(self, practice_id: str) -> Optional[dict]:
         """
         Get practice by ID.
-        Returns dict with practice_id, name, created_at or None if not found.
+        Returns dict with practice_id, name, email, created_at or None if not found.
         """
         with self._conn() as conn:
             row = conn.execute(
                 """
-                SELECT practice_id, name, created_at
+                SELECT practice_id, name, email, created_at
                 FROM practices
                 WHERE practice_id = ?
                 """,
@@ -110,9 +151,25 @@ class PracticeRepository:
 
             return dict(row)
 
+    def get_email(self, practice_id: str) -> str:
+        """
+        Get the email address for a practice.
+        Raises PracticeNotFound if practice does not exist.
+        """
+        practice = self.get_practice(practice_id)
+        if practice is None:
+            raise PracticeNotFound(f"Practice not found: {practice_id}")
+        return practice["email"]
+
     def practice_exists(self, practice_id: str) -> bool:
         """Check if a practice exists."""
         return self.get_practice(practice_id) is not None
+
+    def count_practices(self) -> int:
+        """Return total number of practices in the database."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM practices").fetchone()
+            return row[0]
 
     # --- Signposting ---
 
@@ -143,14 +200,13 @@ class PracticeRepository:
             if row is None:
                 return None
 
-            # Parse JSON - should always be valid if set_signposting was used
             try:
                 items = json.loads(row["signposting_json"])
             except json.JSONDecodeError as e:
-                # This should not happen if data was written via set_signposting
-                # Log error and return None for graceful degradation
-                # In production, this would log to a proper logging system
-                print(f"WARNING: Malformed signposting JSON for {practice_id}/{condition_id}: {e}")
+                print(
+                    f"WARNING: Malformed signposting JSON for "
+                    f"{practice_id}/{condition_id}: {e}"
+                )
                 return None
 
             return items
@@ -170,23 +226,19 @@ class PracticeRepository:
         - PracticeNotFound if practice does not exist
         - InvalidSignpostingData if items fail validation
         """
-        # Validate practice exists
         if not self.practice_exists(practice_id):
             raise PracticeNotFound(f"Practice not found: {practice_id}")
 
-        # Validate items
         self._validate_signposting_items(items)
 
-        # Serialize to JSON
         signposting_json = json.dumps(items)
 
-        # Upsert
         with self._conn() as conn:
             conn.execute(
                 """
                 INSERT INTO practice_signposting (practice_id, condition_id, signposting_json, updated_at)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(practice_id, condition_id) 
+                ON CONFLICT(practice_id, condition_id)
                 DO UPDATE SET signposting_json = excluded.signposting_json,
                               updated_at = CURRENT_TIMESTAMP
                 """,
