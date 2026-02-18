@@ -20,9 +20,13 @@ Architectural note:
 This module performs COMPOSITION, not MERGING. Each data source
 populates a distinct field in the output. There is no field-level
 override logic - practice data and condition data occupy separate slots.
-"""
 
-from typing import Optional, List
+Single-tenant contract:
+practice_id is always required. This service is deployed once per
+practice. The practice_id is resolved from app.state at the HTTP layer
+and passed in explicitly. There is no concept of a missing or optional
+practice in this deployment model.
+"""
 
 from condition_registry import ConditionRegistry, ConditionNotFound
 from practice_repository import PracticeRepository
@@ -41,7 +45,7 @@ UNIVERSAL_SAFETY_WARNING = (
 class PresentationService:
     """
     Composes patient-facing presentation from multiple sources.
-    
+
     Thread-safe for read operations (all writes go through PracticeRepository).
     """
 
@@ -56,14 +60,15 @@ class PresentationService:
     def get_patient_presentation(
         self,
         condition_id: str,
-        practice_id: Optional[str] = None,
+        practice_id: str,
     ) -> dict:
         """
         Get the complete patient-facing presentation for a condition.
 
         Args:
             condition_id: The condition to get presentation for
-            practice_id: Optional practice ID for practice-specific signposting
+            practice_id: The practice ID for practice-specific signposting.
+                         Always required in single-tenant deployments.
 
         Returns:
             dict with keys:
@@ -76,25 +81,18 @@ class PresentationService:
             ConditionNotFound: If condition_id does not exist
 
         Behaviour:
-            - If practice_id is None, practice_signposting is None
-            - If practice_id is provided but no signposting configured, 
+            - If no signposting is configured for this practice and condition,
               practice_signposting is None
-            - If practice_id is provided and signposting is configured,
-              practice_signposting is the list of strings
-            - Empty list from database is returned as None (no signposting to show)
+            - If signposting is configured, practice_signposting is the list of strings
+            - Empty list from database is returned as None (nothing to display)
         """
         # Get condition presentation (raises ConditionNotFound if invalid)
         condition_presentation = self._condition_registry.get_presentation(condition_id)
 
-        # Get practice signposting if practice_id provided
-        practice_signposting = None
-        if practice_id is not None:
-            signposting = self._practice_repository.get_signposting(
-                practice_id, condition_id
-            )
-            # Convert empty list to None (nothing to display)
-            if signposting:
-                practice_signposting = signposting
+        # Get practice-specific signposting
+        signposting = self._practice_repository.get_signposting(practice_id, condition_id)
+        # Convert empty list to None (nothing to display)
+        practice_signposting = signposting if signposting else None
 
         return {
             "label": condition_presentation["label"],

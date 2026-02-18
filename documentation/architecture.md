@@ -250,15 +250,29 @@ Defines the explicit, immutable data structures that may leave the core
 form engine as serialized outputs.
 
 These contracts enforce a hard boundary between:
-* Internal runtime state (lossless, mutable, provenance-aware)
-* External outputs (lossy or lossless, immutable, purpose-specific)
-* This module contains *no logic* and *no knowledge* of RuntimeState internals.
-* It exists to make output schemas explicit, inspectable, and enforceable.
+- Internal runtime state (lossless, mutable, provenance-aware)
+- External outputs (lossy or lossless, immutable, purpose-specific)
+
+This module contains no logic and no knowledge of RuntimeState internals.
+It exists to make output schemas explicit, inspectable, and enforceable.
 
 Key principles:
-* ClinicalOutput is lossy by design and safe for clinical and patient use
-* AuditOutput is lossless and intended for debugging, safety review, and regulation
-* Neither contract may be used as an input back into the engine
+- ClinicalOutput is lossy by design and safe for clinical and patient use
+- AuditOutput is lossless and intended for debugging, safety review, and regulation
+- Neither contract may be used as an input back into the engine
+
+ClinicalOutput fields:
+- condition_id: str
+- free_text: str
+- answers: Dict[str, Any] — answer values only, no provenance
+- safety_messages: List[dict]
+- question_labels: Dict[str, str] — answer_key to question text at submission time
+
+question_labels is populated by serialisation.py from the ruleset at submission
+time. Storing it in ClinicalOutput means the record is self-contained: a future
+reader can interpret answers without reloading the ruleset. If the question text
+ever changes, historical submissions still reflect the wording that was shown to
+the patient.
 
 ### 3.12 condition_registry.py — Condition discovery and presentation
 
@@ -305,42 +319,63 @@ as constants in presentation_service.py.
 
 ---
 
-## 3.13 main.py — HTTP layer
+### 3.13 main.py — HTTP layer
 
 Responsibilities:
-* Provide the FastAPI application and endpoint definitions
-* Wire together: condition_registry, engine_adapters, persistence, request_validation,
-  practice_repository, presentation_service
-* Translate between HTTP requests and engine entry points
-* Map condition_id to ruleset_path and condition_label via the registry
+- Provide the FastAPI application and endpoint definitions
+- Wire together: condition_registry, engine_adapters, persistence,
+  practice_repository, submission_repository, email_service, request_validation
+- Translate between HTTP requests and engine entry points
+- Map condition_id to ruleset_path and condition_label via the registry
+- Resolve practice_id from app.state (set once at startup)
+- Orchestrate the submission flow: generate outputs, persist record, send email
 
 Endpoints:
-* GET /conditions — list all conditions (from registry)
-* GET /conditions/{condition_id}/presentation — patient-facing presentation
-  (from presentation_service, accepts optional ?practice= query parameter)
-* POST /form/init — create session (validates condition, calls engine_adapters.init_runtime_state)
-* POST /form/update — apply patient answers (calls engine_adapters.apply_update_and_evaluate)
-* POST /form/finish — close session (calls engine_adapters.finish_runtime_state)
+- GET /conditions — list all conditions (from registry)
+- GET /conditions/{condition_id}/presentation — presentation metadata
+  (no ?practice= parameter; practice_id resolved from app.state)
+- POST /form/init — create session
+- POST /form/update — apply patient answers
+- POST /form/finish — close session, persist submission, send email
 
 Rules:
-* No clinical logic
-* No safety rule evaluation
-* No encoder invocation
-* Request validation via request_validation.py (not Pydantic models)
-* Uses Request.json() for payload parsing
-* condition_label is resolved from the registry and passed explicitly to
+- No clinical logic
+- No safety rule evaluation
+- No encoder invocation
+- Request validation via request_validation.py (not Pydantic models)
+- Uses Request.json() for payload parsing
+- condition_label is resolved from the registry and passed explicitly to
   engine_adapters; presentation metadata never enters the engine
 
-Startup:
-* Initialises ConditionRegistry from DATA_DIR environment variable (default: "data")
-* Initialises RuntimeStateRepository (SQLite)
-* Initialises PracticeRepository (same SQLite database)
-* Initialises PresentationService (composes registry + practice data)
-* All must succeed or the process fails to start
+Startup validation (fail-fast, in order):
+1. PRACTICE_ID environment variable must be set
+2. Database must contain exactly one practice (more is a safety violation —
+   multiple practices implies cross-contamination of clinical data)
+3. That practice must match PRACTICE_ID
+4. The practice must have a non-empty email address
+5. SMTP environment variables must be set (unless DEV_MODE=1)
+6. practice_id stored in app.state.practice_id
+
+Any failure in startup validation raises RuntimeError and prevents the
+application from starting. This is intentional: a misconfigured deployment
+must not silently degrade into sending forms to the wrong destination.
+
+form/finish flow:
+1. Validate payload and load runtime state
+2. Call finish_runtime_state → (ClinicalOutput, AuditOutput)
+3. Get delivery_email from practice_repo (captured at submission time for audit)
+4. Generate submission_id
+5. Create submission record with delivery_status = "pending"
+6. Attempt email send
+7. On success: update delivery_status = "sent"
+8. On EmailDeliveryError: update delivery_status = "failed", log error
+   (do not re-raise — the patient has completed the form)
+9. Close the session
+10. Return submission_id
 
 ---
 
-## 3.14 encoder_contracts.py — Encoder boundary contracts
+### 3.14 encoder_contracts.py — Encoder boundary contracts
 
 Defines the only data structures permitted to cross the boundary between
 an encoder implementation (stub or ML-backed) and the rest of the form engine.
@@ -363,96 +398,130 @@ Properties:
 
 ---
 
-## Section 3.15 practice_repository.py — Practice data access
-
-Database access for practice identity and practice-specific configuration.
-Handles the practices and practice_signposting tables.
+### 3.15 practice_repository.py — Practice database access
 
 Responsibilities:
-* Initialise practice-related tables on startup
-* CRUD operations for practices
-* CRUD operations for practice signposting
-* JSON validation for signposting content
+- Initialise practices and practice_signposting tables on startup
+- CRUD operations for practices (practice_id, name, email)
+- CRUD operations for practice-specific signposting per condition
+- Email format validation
 
 Public interface:
-* create_practice(practice_id, name) → None
-* get_practice(practice_id) → dict | None
-* practice_exists(practice_id) → bool
-* get_signposting(practice_id, condition_id) → list[str] | None
-* set_signposting(practice_id, condition_id, items) → None
-* delete_signposting(practice_id, condition_id) → None
+- create_practice(practice_id, name, email) → None
+- get_practice(practice_id) → dict | None
+- get_email(practice_id) → str (raises PracticeNotFound if absent)
+- practice_exists(practice_id) → bool
+- count_practices() → int
+- get_signposting(practice_id, condition_id) → list[str] | None
+- set_signposting(practice_id, condition_id, items) → None
+- delete_signposting(practice_id, condition_id) → None
 
-Database schema:
-* practices: practice_id (PK), name, created_at
-* practice_signposting: practice_id + condition_id (composite PK), signposting_json, updated_at
-
-Validation rules:
-* signposting_json must be a valid JSON array
-* Each item must be a non-empty string
-* Empty array is allowed (explicit "no signposting")
-
-Behaviour:
-* get_signposting returns None if no row exists (not configured)
-* get_signposting returns [] if row exists with empty array
-* get_signposting gracefully handles malformed JSON (logs warning, returns None)
+Email validation rules:
+- Must be a string
+- Must not have leading or trailing whitespace
+- Must contain exactly one '@' with non-empty parts either side
 
 This module must never:
-* Access clinical data (rulesets, RuntimeState, answers)
-* Perform composition logic (that belongs in presentation_service)
-* Handle authentication (that belongs in practice_context, Phase 1B)
+- Access clinical data (rulesets, RuntimeState, answers)
+- Perform composition logic (that belongs in presentation_service)
+- Handle authentication (Phase 1B)
 
----
 
-## Section 3.16 presentation_service.py — Patient-facing presentation composition
-
-Composes patient-facing presentation from multiple sources:
-* Universal safety warning (constant)
-* Practice-specific signposting (database)
-* Condition-specific presentation (condition_registry)
+### 3.16 submission_repository.py — Submission record database access
 
 Responsibilities:
-* Define the universal safety warning constant
-* Compose the complete patient-facing presentation
-* Provide a single access point for all presentation data
+- Initialise submission_records table on startup
+- Create submission records at form completion
+- Update delivery status after email send attempt
+- Retrieve and list submission records for manual inspection
 
 Public interface:
-* UNIVERSAL_SAFETY_WARNING: str (module-level constant)
-* PresentationService.get_patient_presentation(condition_id, practice_id=None) → dict
+- create_submission(submission_id, practice_id, condition_id,
+  clinical_output, audit_output, delivery_email) → None
+- update_delivery_status(submission_id, status,
+  delivered_at=None, delivery_error=None) → None
+- get_submission(submission_id) → dict
+- list_by_status(status) → list[dict]
 
-Return structure:
-```python
-{
-    "label": str,                           # From condition_registry
-    "free_text_prompt": str | None,         # From condition_registry  
-    "universal_safety_warning": str,        # Constant
-    "practice_signposting": list[str] | None,  # From practice_repository
-}
-```
+delivery_status values: "pending", "sent", "failed"
+list_by_status raises InvalidDeliveryStatus on unrecognised values — a typo
+must not silently return an empty list when the caller expected failures.
 
-Behaviour:
-* If practice_id is None, practice_signposting is None
-* If practice_id is provided but no signposting configured, practice_signposting is None
-* If signposting is configured, practice_signposting is the list of strings
-* Empty list from database is returned as None (nothing to display)
-* Raises ConditionNotFound if condition_id does not exist (passthrough from registry)
-
-Architectural note:
-This module performs COMPOSITION, not MERGING. Each data source populates a
-distinct field in the output. There is no field-level override logic — practice
-data and condition data occupy separate slots.
+delivery_email is stored at submission time from the practice record, not
+looked up later. This means the audit trail reflects where the form was
+actually sent, even if the practice email is updated afterwards.
 
 This module must never:
-* Access clinical data (rulesets, RuntimeState, answers, safety rules)
-* Modify any data (read-only composition)
-* Handle authentication (that belongs in practice_context, Phase 1B)
+- Send emails (that belongs in email_service)
+- Import engine modules
+- Make retry decisions (that belongs in the calling layer)
 
-## 3.17 Frontend modules
+
+### 3.17 email_service.py — Clinical output email delivery
+
+Responsibilities:
+- Format clinical output as a plain text email body
+- Send via SMTP in production mode
+- Log to stdout in DEV_MODE without sending
+
+Configuration via environment variables:
+- SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASSWORD, EMAIL_FROM
+- SMTP_TIMEOUT (default 30 seconds)
+- DEV_MODE=1: skips sending, logs full email content to stdout
+
+Public interface:
+- send_clinical_output(to_email, condition_label, clinical_output,
+  submission_id) → None
+
+Raises EmailDeliveryError on any SMTP failure. The error message is
+suitable for storage in submission_records.delivery_error.
+
+Email body uses clinical_output.question_labels for human-readable answer
+labels. Falls back to the raw answer_key if a label is missing.
+
+This module must never:
+- Access the database
+- Update delivery status (that belongs in submission_repository)
+- Import engine modules or condition_registry
+- Retry on failure
+
+
+### 3.18 presentation_service.py — Patient-facing presentation composition
+
+Responsibilities:
+- Compose patient-facing presentation from three sources:
+  1. Universal safety warning (hardcoded constant, not editable)
+  2. Practice-specific signposting (from practice_repository)
+  3. Condition presentation (label, free_text_prompt from condition_registry)
+- Provide a single access point for all pre-form presentation data
+
+Public interface:
+- get_patient_presentation(condition_id, practice_id) → dict
+
+practice_id is always required. This service is deployed in a single-tenant
+context; there is no concept of a missing practice.
+
+Output keys:
+- label: str
+- free_text_prompt: str | None
+- universal_safety_warning: str
+- practice_signposting: list[str] | None (None if not configured or empty)
+
+This module performs COMPOSITION, not MERGING. Each source populates a
+distinct field. There is no field-level override logic.
+
+This module must never:
+- Access clinical data
+- Modify any data
+- Handle authentication (Phase 1B)
+
+## 3.19 Frontend modules
 
 The frontend is a stateless renderer. It contains no clinical logic,
 no branching decisions, and no safety evaluation. All intelligence
 lives on the server.
 
-### 3.17.1 types.ts — Frontend-visible contracts
+### 3.19.1 types.ts — Frontend-visible contracts
 
 Defines TypeScript interfaces for all data the frontend may receive or send.
 
@@ -470,7 +539,7 @@ Rules:
 * No safety evaluation
 * These types are projections of server-side state, not mirrors of it
 
-### 3.17.2 api.ts — HTTP client
+### 3.19.2 api.ts — HTTP client
 
 Provides typed fetch wrappers for all backend endpoints.
 
@@ -487,7 +556,7 @@ Rules:
 * Payload field names must match backend expectations exactly
   (e.g. condition_id, free_text, runtime_id, base_version)
 
-### 3.17.3 app.jsx — React UI
+### 3.19.3 app.jsx — React UI
 
 Stateless renderer implementing a five-screen flow:
 
@@ -650,6 +719,31 @@ Retains full provenance and evaluation history
 Intended for debugging, safety review, and regulation
 Never re-enters the engine
 
+### 7.3 Submission records (post-session, delivery tracking)
+
+On form/finish, a submission_record is created before the email is sent.
+This ensures the record exists even if the process crashes during delivery.
+
+Lifecycle:
+1. submission_record created with delivery_status = "pending"
+2. Email send attempted
+3. On success: delivery_status = "sent", delivered_at = now
+4. On failure: delivery_status = "failed", delivery_error = exception message
+
+A "failed" record is the recovery mechanism for email delivery failures.
+Manual inspection of failed records (via list_by_status("failed")) is the
+supported recovery path for MVP. No automatic retry is implemented.
+
+The patient receives a submission_id regardless of delivery outcome. Email
+failure is not surfaced to the patient — it is an operational concern, not
+a clinical one. The patient is shown a message on Screen 4 advising them
+to contact the practice directly if they do not receive a response within
+48 hours.
+
+delivery_email is stored at submission time from the practice record.
+If the practice email is updated after submission, historical records
+still reflect the address that was actually used.
+
 ## 8. Clinical ruleset structure
 
 {
@@ -708,6 +802,12 @@ Fail‑fast, fail-loud conditions include:
 * Missing or invalid presentation block in ruleset → startup abort
 * Duplicate condition_id across rulesets → startup abort
 * Presentation containing unexpected keys → startup abort
+* PRACTICE_ID environment variable not set → startup abort
+* Database contains more than one practice → startup abort
+* PRACTICE_ID does not match any practice in database → startup abort
+* Practice has no email address → startup abort
+* SMTP environment variables not set in production mode → startup abort
+* submission_repository.list_by_status called with unrecognised status → ValueError
 
 ---
 
@@ -731,8 +831,11 @@ However:
 * Safety message blocks final submission
 * No ML dependency
 * Practice-specific signposting via presentation_service (Phase 1A complete)
-* Practice identity via practice_repository (Phase 1A complete)
-* Practice authentication deferred to Phase 1B
+* Single-tenant deployment: one practice per deployment, enforced at startup
+* Submission records persisted with delivery status tracking
+* Email delivery of clinical output to practice on form completion
+* DEV_MODE for local development without SMTP configuration
+* question_labels stored in ClinicalOutput for self-contained audit records
 
 
 ## Section 12 — Practice Configuration Architecture

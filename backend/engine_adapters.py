@@ -14,14 +14,14 @@ Architectural guarantee:
     if presentation metadata never existed.
 """
 
-import uuid
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 from contracts.runtime_state import RuntimeState
 from contracts.encoder_contracts import EncoderOutput, EncoderSignalDefinition
 from projection import project_explicit_answers
 from safety_engine import evaluate_safety
 from serialisation import serialize_client_state, clinical_output, audit_output
+from contracts.serialisation_contracts import ClinicalOutput, AuditOutput
 from ruleset import load_ruleset, ruleset_hash, extract_encoder_definitions
 from encoder_stub import extract_signals
 from encoder_mapping import apply_encoder_output
@@ -129,19 +129,19 @@ def apply_update_and_evaluate(
 def finish_runtime_state(
     runtime_state: RuntimeState,
     ruleset_path: str,
-) -> str:
+) -> Tuple[ClinicalOutput, AuditOutput]:
     """
     Entry point for /form/finish.
 
-    Generates clinical and audit outputs.
-    Returns a submission_id.
+    Generates and returns clinical and audit outputs.
+    Submission ID generation and persistence are handled by main.py.
+
+    Returns (ClinicalOutput, AuditOutput).
     """
 
-    clinical = clinical_output(runtime_state)
+    ruleset = load_ruleset(ruleset_path)
+
+    clinical = clinical_output(runtime_state, ruleset)
     audit = audit_output(runtime_state)
 
-    # TODO: persist clinical + audit outputs to storage
-    # For MVP, just generate a submission ID
-    submission_id = str(uuid.uuid4())
-
-    return submission_id
+    return clinical, audit

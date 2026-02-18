@@ -357,7 +357,7 @@ export default function App() {
 
               {q.suggested && (
                 <div>
-                  <small>Suggested answer — please check</small>
+                  <small>Suggested answer â€” please check</small>
                 </div>
               )}
             </div>
@@ -471,6 +471,10 @@ export default function App() {
       <div>
         <h1>Thank you</h1>
         <p>Your consultation has been submitted.</p>
+        <p>
+          If you do not receive a response from the practice within 48 hours,
+          please contact them directly.
+        </p>
       </div>
     );
   }

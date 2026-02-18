@@ -3,13 +3,20 @@ HTTP layer.
 
 Thin wrapper over engine_adapters. No clinical logic.
 Imports: engine_adapters, persistence, condition_registry, request_validation, errors.
+
+Single-tenant deployment:
+- PRACTICE_ID environment variable is required at startup
+- The practice must exist in the database with a valid email
+- The database must contain exactly one practice
+- SMTP configuration is required unless DEV_MODE is set
 """
 
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import uuid
 import os
-from typing import Optional
+import logging
+from datetime import datetime, timezone
 
 from persistence import (
     RuntimeStateRepository,
@@ -21,6 +28,7 @@ from contracts.runtime_state import RuntimeState
 from condition_registry import ConditionRegistry, ConditionNotFound
 from practice_repository import PracticeRepository
 from presentation_service import PresentationService
+from submission_repository import SubmissionRepository
 from request_validation import (
     validate_init_payload,
     validate_update_payload,
@@ -32,20 +40,98 @@ from engine_adapters import (
     apply_update_and_evaluate,
     finish_runtime_state,
 )
+from email_service import send_clinical_output, EmailDeliveryError
 
-# --- Startup wiring ---
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Startup helpers
+# ---------------------------------------------------------------------------
+
+def _require_env(name: str) -> str:
+    """Return the value of an environment variable or abort startup."""
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Required environment variable not set: {name}")
+    return value
+
+
+def _is_dev_mode() -> bool:
+    return os.environ.get("DEV_MODE", "").lower() in ("1", "true")
+
+
+def _validate_startup(practice_repo: PracticeRepository) -> str:
+    """
+    Validate single-tenant startup conditions.
+
+    Rules:
+    - PRACTICE_ID environment variable must be set
+    - Database must contain exactly one practice (more is a safety violation)
+    - That practice must match PRACTICE_ID
+    - The practice must have a non-empty email
+    - SMTP variables must be set unless DEV_MODE is active
+
+    Returns the validated practice_id.
+    Raises RuntimeError with a descriptive message on any failure.
+    """
+    practice_id = _require_env("PRACTICE_ID")
+
+    count = practice_repo.count_practices()
+    if count > 1:
+        raise RuntimeError(
+            f"Database contains {count} practices. "
+            "This is a single-tenant deployment. "
+            "Multiple practices is a clinically unsafe configuration. "
+            "Aborting startup."
+        )
+
+    practice = practice_repo.get_practice(practice_id)
+    if practice is None:
+        raise RuntimeError(
+            f"PRACTICE_ID '{practice_id}' not found in database. "
+            "Create the practice record before starting the application."
+        )
+
+    if not practice.get("email", "").strip():
+        raise RuntimeError(
+            f"Practice '{practice_id}' has no email address configured. "
+            "Update the practice record with a valid email before starting."
+        )
+
+    if not _is_dev_mode():
+        for var in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"):
+            if not os.environ.get(var):
+                raise RuntimeError(
+                    f"Required SMTP environment variable not set: {var}. "
+                    "Set DEV_MODE=1 to skip email sending during development."
+                )
+
+    return practice_id
+
+
+# ---------------------------------------------------------------------------
+# Application factory
+# ---------------------------------------------------------------------------
 
 DATA_DIR = os.environ.get("DATA_DIR", "data")
 DB_PATH = os.environ.get("DB_PATH", "runtime.db")
 
 app = FastAPI()
+
 repo = RuntimeStateRepository(DB_PATH)
 registry = ConditionRegistry(DATA_DIR)
 practice_repo = PracticeRepository(DB_PATH)
+submission_repo = SubmissionRepository(DB_PATH)
 presentation_service = PresentationService(registry, practice_repo)
 
+# Startup validation — runs at import time (when FastAPI loads the module).
+# Any failure here prevents the application from starting.
+app.state.practice_id = _validate_startup(practice_repo)
 
-# --- Error handling ---
+
+# ---------------------------------------------------------------------------
+# Error handling
+# ---------------------------------------------------------------------------
 
 @app.exception_handler(APIError)
 async def api_error_handler(_, exc: APIError):
@@ -55,7 +141,9 @@ async def api_error_handler(_, exc: APIError):
     )
 
 
-# --- Condition discovery (pre-session, no state) ---
+# ---------------------------------------------------------------------------
+# Condition discovery (pre-session, no state)
+# ---------------------------------------------------------------------------
 
 @app.get("/conditions")
 async def list_conditions():
@@ -63,26 +151,34 @@ async def list_conditions():
 
 
 @app.get("/conditions/{condition_id}/presentation")
-async def get_presentation(
-    condition_id: str,
-    practice: Optional[str] = Query(default=None),
-):
+async def get_presentation(condition_id: str):
     """
     Get patient-facing presentation for a condition.
-    
-    Optional query parameter:
-        practice: Practice ID for practice-specific signposting
+
+    practice_id is resolved from app.state (set at startup from PRACTICE_ID
+    environment variable). There is no practice query parameter in single-tenant
+    deployments.
     """
     try:
-        return presentation_service.get_patient_presentation(condition_id, practice)
+        return presentation_service.get_patient_presentation(
+            condition_id,
+            app.state.practice_id,
+        )
     except ConditionNotFound:
         return JSONResponse(
             status_code=404,
-            content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {condition_id}"}},
+            content={
+                "error": {
+                    "code": "CONDITION_NOT_FOUND",
+                    "message": f"Unknown condition: {condition_id}",
+                }
+            },
         )
 
 
-# --- Form session endpoints ---
+# ---------------------------------------------------------------------------
+# Form session endpoints
+# ---------------------------------------------------------------------------
 
 @app.post("/form/init")
 async def form_init(request: Request):
@@ -92,7 +188,6 @@ async def form_init(request: Request):
     condition_id = payload["condition_id"]
     free_text = payload.get("free_text")
 
-    # Validate condition exists and get its metadata
     try:
         ruleset_path = registry.get_ruleset_path(condition_id)
         condition_label = registry.get_presentation(condition_id)["label"]
@@ -138,9 +233,8 @@ async def form_update(request: Request):
         raise SESSION_CLOSED()
 
     runtime_state = RuntimeState.from_dict(row["state_json"])
-    ruleset_hash = row["ruleset_hash"]
+    current_ruleset_hash = row["ruleset_hash"]
 
-    # Resolve ruleset path and label from the condition_id stored in RuntimeState
     try:
         ruleset_path = registry.get_ruleset_path(runtime_state.condition_id)
         condition_label = registry.get_presentation(runtime_state.condition_id)["label"]
@@ -158,7 +252,7 @@ async def form_update(request: Request):
         new_version = repo.insert_new_version(
             runtime_id=runtime_id,
             base_version=base_version,
-            ruleset_hash=ruleset_hash,
+            ruleset_hash=current_ruleset_hash,
             state_dict=new_state.to_dict(),
         )
     except VersionConflict:
@@ -195,14 +289,59 @@ async def form_finish(request: Request):
 
     runtime_state = RuntimeState.from_dict(row["state_json"])
 
-    # Resolve ruleset path from the condition_id stored in RuntimeState
     try:
         ruleset_path = registry.get_ruleset_path(runtime_state.condition_id)
+        condition_label = registry.get_presentation(runtime_state.condition_id)["label"]
     except ConditionNotFound:
         raise INVALID_PAYLOAD(f"Unknown condition_id: {runtime_state.condition_id}")
 
-    submission_id = finish_runtime_state(runtime_state, ruleset_path)
+    # Generate clinical and audit outputs
+    clinical, audit = finish_runtime_state(runtime_state, ruleset_path)
 
+    # Get delivery email from practice record (captured at submission time for audit)
+    delivery_email = practice_repo.get_email(app.state.practice_id)
+
+    # Generate submission ID
+    submission_id = str(uuid.uuid4())
+
+    # Persist submission record before attempting email (status: pending)
+    submission_repo.create_submission(
+        submission_id=submission_id,
+        practice_id=app.state.practice_id,
+        condition_id=runtime_state.condition_id,
+        clinical_output=clinical,
+        audit_output=audit,
+        delivery_email=delivery_email,
+    )
+
+    # Attempt email delivery; update status regardless of outcome
+    try:
+        send_clinical_output(
+            to_email=delivery_email,
+            condition_label=condition_label,
+            clinical_output=clinical,
+            submission_id=submission_id,
+        )
+        submission_repo.update_delivery_status(
+            submission_id=submission_id,
+            status="sent",
+            delivered_at=datetime.now(timezone.utc),
+        )
+    except EmailDeliveryError as e:
+        logger.error(
+            "Email delivery failed for submission %s: %s",
+            submission_id,
+            str(e),
+        )
+        submission_repo.update_delivery_status(
+            submission_id=submission_id,
+            status="failed",
+            delivery_error=str(e),
+        )
+        # Do not re-raise: the patient has completed the form.
+        # A failed delivery leaves a 'failed' record for manual inspection.
+
+    # Close the session after all persistence operations succeed
     repo.close_session(runtime_id, version)
 
     return {"submission_id": submission_id}

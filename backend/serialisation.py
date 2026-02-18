@@ -67,13 +67,26 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
     }
 
 
-def clinical_output(runtime: RuntimeState) -> ClinicalOutput:
-    """Lossy output safe for clinical and patient use."""
+def clinical_output(runtime: RuntimeState, ruleset: dict) -> ClinicalOutput:
+    """
+    Lossy output safe for clinical and patient use.
+
+    The ruleset is required to capture question_labels -- the human-readable
+    question text for each answer_key as it existed at submission time.
+    Storing this in ClinicalOutput means the audit record is self-contained:
+    a future reader does not need to reload the ruleset to interpret the answers.
+    """
+    question_labels = {
+        q["answer_key"]: q["question"]
+        for q in ruleset["questions"]
+    }
+
     return ClinicalOutput(
         condition_id=runtime.condition_id,
         free_text=runtime.free_text,
         answers={k: v.value for k, v in runtime.answers.items()},
         safety_messages=runtime.safety_evaluation.messages,
+        question_labels=question_labels,
     )
 
 

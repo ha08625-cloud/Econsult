@@ -8,6 +8,7 @@ class ClinicalOutput:
     free_text: str
     answers: Dict[str, Any]
     safety_messages: List[dict]
+    question_labels: Dict[str, str]  # answer_key -> question text at submission time
 
 
 @dataclass(frozen=True)

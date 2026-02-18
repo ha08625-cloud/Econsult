@@ -15,6 +15,8 @@ project_root/
 │   │   └── serialisation_contracts.py  # ClinicalOutput, AuditOutput
 │   │
 │   ├── api_models.py
+│   ├── condition_registry.py
+│   ├── email_service.py
 │   ├── encoder_mapping.py
 │   ├── encoder_stub.py
 │   ├── engine_adapters.py
@@ -22,22 +24,24 @@ project_root/
 │   ├── form_logic.py
 │   ├── main.py
 │   ├── persistence.py
-│   ├── pipeline.py
+│   ├── practice_repository.py
+│   ├── presentation_service.py
 │   ├── projection.py
 │   ├── request_validation.py
 │   ├── ruleset.py
 │   ├── safety_engine.py
-│   ├── practice_repository.py
-│   ├── presentation_service.py
-│   └── serialisation.py
+│   ├── serialisation.py
+│   └── submission_repository.py
 │
 ├── frontend/
 │   ├── api.ts
 │   ├── app.jsx
 │   └── types.ts
 │
-└── data/
-    └── uti1.json
+├── data/
+│   └── uti1.json
+│
+└── migrate_phase1a1.py     # one-shot migration script, run from project root
 ```
 
 ## Import mapping: Claude server (flat) vs local
