@@ -329,6 +329,7 @@ Responsibilities:
 - Map condition_id to ruleset_path and condition_label via the registry
 - Resolve practice_id from app.state (set once at startup)
 - Orchestrate the submission flow: generate outputs, persist record, send email
+- registry and practice_repo stored in app.state.registry and app.state.practice_repo so the admin router can access them via request.app.state without importing from main.py
 
 Endpoints:
 - GET /conditions — list all conditions (from registry)
@@ -354,7 +355,8 @@ Startup validation (fail-fast, in order):
 3. That practice must match PRACTICE_ID
 4. The practice must have a non-empty email address
 5. SMTP environment variables must be set (unless DEV_MODE=1)
-6. practice_id stored in app.state.practice_id
+6. ADMIN_TOKEN environment variable must be set (unless DEV_MODE=1); if DEV_MODE=1 and ADMIN_TOKEN is absent, a warning is logged and any non-empty bearer token will be accepted by admin endpoints
+7. practice_id stored in app.state.practice_id
 
 Any failure in startup validation raises RuntimeError and prevents the
 application from starting. This is intentional: a misconfigured deployment
@@ -584,6 +586,56 @@ State management:
 * Session state: runtimeId, version, clientState, editableAnswers, safetyMessages
 * Pre-session state is discarded after /form/init succeeds
 * Session state is never round-tripped back to pre-session screens
+
+---
+
+### 3.20 admin_context.py — Admin authentication boundary
+Responsibilities:
+* Define the AdminContext frozen dataclass
+* Provide the require_admin FastAPI dependency, which is the sole authentication boundary for all admin endpoints
+
+AdminContext fields:
+
+practice_id: str — resolved from request.app.state.practice_id
+auth_method: str — "bearer_token" when validated against ADMIN_TOKEN; "dev_any" in DEV_MODE without a set token
+
+Authentication rules:
+* Authorization header is always required, even in DEV_MODE
+* Missing or empty bearer value → 401
+* If ADMIN_TOKEN is set: token must match exactly → 401 on mismatch
+* If DEV_MODE=1 and ADMIN_TOKEN is not set: any non-empty bearer token is accepted
+* If neither condition holds (production mode, no ADMIN_TOKEN): 401 always — fail closed
+
+The reason the header is required even in DEV_MODE is that omitting it entirely would mean the auth code path is never exercised in development or tests. A broken auth check could be shipped without being noticed. Requiring a header but accepting any value keeps the code path live.
+This module is designed to be replaced in its entirety in Phase 1B when session-based MFA is introduced. Nothing else changes when it is replaced. auth_method is a string rather than an enum so Phase 1B can introduce new values without modifying the dataclass.
+This module must never import any project module. Only stdlib and FastAPI.
+
+---
+
+### 3.21 admin_router.py — Admin API endpoints
+Responsibilities:
+* Provide all admin HTTP endpoints as a FastAPI APIRouter
+* Validate condition_id against the condition registry before any database operation
+* Validate and sanitise signposting input before calling the repository
+* Normalise empty signposting lists to null in all responses
+
+The router is registered in main.py with prefix /admin and tag admin. The prefix and tag are not defined in this module so that the router stays decoupled from its mount point.
+All endpoints declare Depends(require_admin) and receive an AdminContext. Resources (registry, practice_repo) are read from request.app.state — never imported from main.py.
+Endpoints:
+* GET /admin/conditions — returns all condition IDs and labels from the registry. This is a raw administrative view separate from the patient-facing GET /conditions, which composes full presentation data. Keeping them separate means a change to either cannot accidentally affect the other.
+* GET /admin/conditions/{condition_id}/signposting — returns current signposting or null. Returns null (not 404) when no signposting is configured; absence of signposting is a valid configured state, not an error.
+* PUT /admin/conditions/{condition_id}/signposting — replaces the full signposting list. Always sends the complete desired state; no partial update or append. Input validation (performed in the router before calling the repository): body must be {"signposting": [...]}, each item must be a string, each item is stripped of whitespace, each item must be non-empty after stripping, empty list is valid. The stripped list is written to the database as-is (including empty list). The response normalises empty list to null.
+* DELETE /admin/conditions/{condition_id}/signposting — removes the database row entirely. Idempotent. Returns 204 no body. Semantically distinct from PUT []: the row is deleted rather than updated, which preserves the distinction at the database level and in any future audit log, even though GET normalises both to null for current consumers.
+
+Response normalisation rule: empty list and null are both returned as null in all responses. This is consistent with how presentation_service.py behaves and means GET does not expose whether signposting was explicitly cleared or never set. That distinction is preserved at the database level only.
+Validation responsibility split:
+
+The router is the primary validation layer for HTTP input (types, whitespace, empty strings)
+The repository's own validation acts as a backstop but the router validates first
+condition_id is validated against the registry in the router; the repository has no knowledge of valid condition IDs and does not raise on unknown ones
+
+Known limitation: the condition registry is immutable after startup. A new condition JSON file added to data/ while the server is running will return 404 from admin endpoints until the server is restarted. This is intentional.
+This module must never import: clinical engine modules, presentation_service, serialisation, projection, runtime_state.
 
 ## 4. Data flow
 
@@ -876,11 +928,6 @@ Three distinct types of pre-form information, each with clear ownership:
 
 ### 12.4 Future phases
 
-Phase 1B — Practice authentication:
-* practice_tokens table
-* practice_context.py for token validation
-* Token-based access to admin endpoints
-
 Phase 2 — Admin endpoints:
 * CRUD endpoints for practice signposting
 * JSON validation for signposting content
@@ -892,3 +939,8 @@ Phase 3 — Admin frontend:
 Phase 4 — Audit trail:
 * Audit log table
 * Automatic logging of signposting changes
+
+Phase 5 — Practice authentication (defer until all features have been built and we are ready to start thinking about productions readiness):
+* practice_tokens table
+* practice_context.py for token validation
+* Token-based access to admin endpoints
