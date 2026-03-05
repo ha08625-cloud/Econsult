@@ -43,6 +43,7 @@ from engine_adapters import (
 )
 from email_service import send_clinical_output, EmailDeliveryError
 from admin_router import router as admin_router
+from starlette.staticfiles import StaticFiles
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ app.state.practice_repo = practice_repo
 
 # Admin router -- prefix and tag applied here so admin_router.py stays decoupled
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
+app.mount("/admin-portal", StaticFiles(directory="frontend/admin", html=True), name="admin-portal")
 
 
 # ---------------------------------------------------------------------------
