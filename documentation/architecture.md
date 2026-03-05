@@ -374,6 +374,14 @@ form/finish flow:
    (do not re-raise — the patient has completed the form)
 9. Close the session
 10. Return submission_id
+11. Static file serving:
+- StaticFiles from starlette.staticfiles is mounted at /admin-portal,
+  serving files from frontend/admin/ with html=True
+- html=True means a bare request to /admin-portal/ serves admin.html automatically
+- The mount must be registered after app.include_router(admin_router) to avoid
+  the catch-all StaticFiles handler intercepting admin API routes
+- The directory path is relative to the working directory at uvicorn startup,
+  which is expected to be project_root/
 
 ---
 
@@ -636,6 +644,63 @@ condition_id is validated against the registry in the router; the repository has
 
 Known limitation: the condition registry is immutable after startup. A new condition JSON file added to data/ while the server is running will return 404 from admin endpoints until the server is restarted. This is intentional.
 This module must never import: clinical engine modules, presentation_service, serialisation, projection, runtime_state.
+
+---
+
+### 3.22 frontend/admin/admin.html — Admin frontend
+
+A single self-contained HTML file serving the practice admin UI.
+No build step. React 18 and JSX loaded via CDN. Babel-standalone
+performs in-browser JSX transpilation at load time.
+
+Babel-standalone is approximately 800KB. This is acceptable for an
+internal tool on a local network. It would not be acceptable for a
+patient-facing or high-traffic interface.
+
+Served at /admin-portal/ via StaticFiles mount in main.py.
+
+Component structure:
+- App: root component, owns token and conditions state, switches between views
+- TokenView: token entry form, calls GET /admin/conditions as connectivity
+  and auth check, stores valid token in React state (never localStorage)
+- EditorView: condition dropdown and editor container, owns unsaved-change
+  tracking via a ref updated by a callback prop from the editor
+- SignpostingEditorWithRef: manages the full list editor for one condition —
+  load, add, delete, reorder, per-item validation, save, status messages
+
+State ownership:
+- token and conditions: App
+- selectedConditionId: EditorView
+- items, savedItems, isSaving, saveStatus, validationError: SignpostingEditorWithRef
+
+Unsaved change tracking:
+SignpostingEditorWithRef reports its unsaved state to EditorView via an
+onUnsavedChange callback prop. EditorView stores this in a ref (not state)
+so the value is readable synchronously inside the confirm() dialog handler
+without triggering a re-render. When the condition dropdown changes and
+unsaved changes exist, window.confirm() is shown before the switch proceeds.
+
+Key behaviours:
+- Token entry calls GET /admin/conditions; 200 means valid, 401 shows error
+- Condition switch with unsaved changes triggers a confirm() dialog
+- Each item is validated as non-empty (after trim) before save is permitted
+- Save always sends the full list via PUT (no partial update)
+- Empty list save sends [] which the backend stores; subsequent GET returns null;
+  UI shows an empty editor
+- Try/catch on all fetch calls; network errors produce inline error messages,
+  not browser error dialogs
+- Saving spinner and "Saved" / "Save failed: ..." status messages inline
+
+Authentication note:
+The token field is a temporary placeholder. It will be replaced entirely in
+Phase 5 when session-based MFA is introduced. The token is never written to
+localStorage or any persistent browser storage — it exists only in React
+component state for the duration of the browser session.
+
+This module must never:
+- Store the admin token in localStorage or sessionStorage
+- Contain clinical logic or safety rule evaluation
+- Make requests to any endpoint other than /admin/*
 
 ## 4. Data flow
 
@@ -932,9 +997,13 @@ Phase 2 — Admin endpoints:
 * CRUD endpoints for practice signposting
 * JSON validation for signposting content
 
-Phase 3 — Admin frontend:
-* Login page (token-based for MVP)
-* Signposting editor per condition
+Phase 3 — Admin frontend: COMPLETE
+* frontend/admin/admin.html: single-file React UI, no build step
+* Token entry with connectivity check against GET /admin/conditions
+* Signposting editor: add, edit, delete, reorder items per condition
+* Unsaved change detection with confirm() dialog on condition switch
+* Per-item validation, inline save status, network error handling
+* Served at /admin-portal/ via StaticFiles mount in main.py
 
 Phase 4 — Audit trail:
 * Audit log table
