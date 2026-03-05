@@ -9,6 +9,7 @@ Single-tenant deployment:
 - The practice must exist in the database with a valid email
 - The database must contain exactly one practice
 - SMTP configuration is required unless DEV_MODE is set
+- ADMIN_TOKEN is required unless DEV_MODE is set
 """
 
 from fastapi import FastAPI, Request
@@ -41,6 +42,7 @@ from engine_adapters import (
     finish_runtime_state,
 )
 from email_service import send_clinical_output, EmailDeliveryError
+from admin_router import router as admin_router
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _require_env(name: str) -> str:
-    """Return the value of an environment variable or abort startup."""
     value = os.environ.get(name)
     if not value:
         raise RuntimeError(f"Required environment variable not set: {name}")
@@ -61,19 +62,6 @@ def _is_dev_mode() -> bool:
 
 
 def _validate_startup(practice_repo: PracticeRepository) -> str:
-    """
-    Validate single-tenant startup conditions.
-
-    Rules:
-    - PRACTICE_ID environment variable must be set
-    - Database must contain exactly one practice (more is a safety violation)
-    - That practice must match PRACTICE_ID
-    - The practice must have a non-empty email
-    - SMTP variables must be set unless DEV_MODE is active
-
-    Returns the validated practice_id.
-    Raises RuntimeError with a descriptive message on any failure.
-    """
     practice_id = _require_env("PRACTICE_ID")
 
     count = practice_repo.count_practices()
@@ -106,6 +94,19 @@ def _validate_startup(practice_repo: PracticeRepository) -> str:
                     "Set DEV_MODE=1 to skip email sending during development."
                 )
 
+    if not _is_dev_mode():
+        if not os.environ.get("ADMIN_TOKEN"):
+            raise RuntimeError(
+                "Required environment variable not set: ADMIN_TOKEN. "
+                "Set DEV_MODE=1 to skip this check during development."
+            )
+    else:
+        if not os.environ.get("ADMIN_TOKEN"):
+            logger.warning(
+                "ADMIN_TOKEN is not set. In DEV_MODE any non-empty bearer token "
+                "will be accepted by admin endpoints. Do not expose this server publicly."
+            )
+
     return practice_id
 
 
@@ -124,9 +125,14 @@ practice_repo = PracticeRepository(DB_PATH)
 submission_repo = SubmissionRepository(DB_PATH)
 presentation_service = PresentationService(registry, practice_repo)
 
-# Startup validation — runs at import time (when FastAPI loads the module).
+# Startup validation -- runs at import time (when FastAPI loads the module).
 # Any failure here prevents the application from starting.
 app.state.practice_id = _validate_startup(practice_repo)
+app.state.registry = registry
+app.state.practice_repo = practice_repo
+
+# Admin router -- prefix and tag applied here so admin_router.py stays decoupled
+app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
 
 # ---------------------------------------------------------------------------
@@ -152,13 +158,6 @@ async def list_conditions():
 
 @app.get("/conditions/{condition_id}/presentation")
 async def get_presentation(condition_id: str):
-    """
-    Get patient-facing presentation for a condition.
-
-    practice_id is resolved from app.state (set at startup from PRACTICE_ID
-    environment variable). There is no practice query parameter in single-tenant
-    deployments.
-    """
     try:
         return presentation_service.get_patient_presentation(
             condition_id,
@@ -295,16 +294,11 @@ async def form_finish(request: Request):
     except ConditionNotFound:
         raise INVALID_PAYLOAD(f"Unknown condition_id: {runtime_state.condition_id}")
 
-    # Generate clinical and audit outputs
     clinical, audit = finish_runtime_state(runtime_state, ruleset_path)
 
-    # Get delivery email from practice record (captured at submission time for audit)
     delivery_email = practice_repo.get_email(app.state.practice_id)
-
-    # Generate submission ID
     submission_id = str(uuid.uuid4())
 
-    # Persist submission record before attempting email (status: pending)
     submission_repo.create_submission(
         submission_id=submission_id,
         practice_id=app.state.practice_id,
@@ -314,7 +308,6 @@ async def form_finish(request: Request):
         delivery_email=delivery_email,
     )
 
-    # Attempt email delivery; update status regardless of outcome
     try:
         send_clinical_output(
             to_email=delivery_email,
@@ -338,10 +331,7 @@ async def form_finish(request: Request):
             status="failed",
             delivery_error=str(e),
         )
-        # Do not re-raise: the patient has completed the form.
-        # A failed delivery leaves a 'failed' record for manual inspection.
 
-    # Close the session after all persistence operations succeed
     repo.close_session(runtime_id, version)
 
     return {"submission_id": submission_id}
