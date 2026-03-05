@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout and import mapping
-# Last updated: 2026-02-17
+# Last updated: 2026-03-05
 
 ## Local directory layout
 
@@ -14,6 +14,8 @@ project_root/
 │   │   ├── runtime_state.py        # RuntimeState, AnswerState, SafetyEvaluation
 │   │   └── serialisation_contracts.py  # ClinicalOutput, AuditOutput
 │   │
+│   ├── admin_context.py
+│   ├── admin_router.py
 │   ├── api_models.py
 │   ├── condition_registry.py
 │   ├── email_service.py
@@ -34,6 +36,8 @@ project_root/
 │   └── submission_repository.py
 │
 ├── frontend/
+│   ├── admin/
+│   │   └── admin.html
 │   ├── api.ts
 │   ├── app.jsx
 │   └── types.ts
