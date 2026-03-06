@@ -1,6 +1,6 @@
 from typing import Dict
-from contracts.explicit_answers import ExplicitAnswers
-from contracts.runtime_state import SafetyEvaluation
+from explicit_answers import ExplicitAnswers
+from runtime_state import SafetyEvaluation
 
 
 def evaluate_safety(
@@ -15,7 +15,7 @@ def evaluate_safety(
     - SafetyEvaluation with triggered rule IDs and messages
     Semantics:
     - None means unknown and never satisfies a condition
-    - Safety rules are AND-only for MVP
+    - Safety rules use ANY logic: a rule fires if any condition is true
     """
 
     evaluation = SafetyEvaluation()
@@ -23,16 +23,16 @@ def evaluate_safety(
     answers = explicit_answers.values
 
     for rule_id, rule in safety_rules.items():
-        conditions = rule.get("all", [])
+        conditions = rule.get("any", [])
 
-        satisfied = True
+        satisfied = False
         for cond in conditions:
             key = cond.get("is_true")
             if key is None:
                 continue
 
-            if answers.get(key) is not True:
-                satisfied = False
+            if answers.get(key) is True:
+                satisfied = True
                 break
 
         if satisfied:
