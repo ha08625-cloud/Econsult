@@ -6,7 +6,7 @@ import {
   getConditions,
   getConditionPresentation,
 } from "./api";
-import {
+import type {
   ClientStateView,
   ClientAnswerReturn,
   SafetyMessage,
@@ -32,18 +32,13 @@ function initialiseEditableAnswers(
 // ---------------------------------
 
 export default function App() {
-  const [screen, setScreen] = useState
-    "SELECT_CONDITION" | "FREE_TEXT" | "EDIT" | "REVIEW" | "DONE"
-  >("SELECT_CONDITION");
+  const [screen, setScreen] = useState<"SELECT_CONDITION" | "FREE_TEXT" | "EDIT" | "REVIEW" | "DONE">("SELECT_CONDITION");
 
   // Session state (populated after /form/init)
   const [runtimeId, setRuntimeId] = useState<string | null>(null);
   const [version, setVersion] = useState<number | null>(null);
   const [clientState, setClientState] = useState<ClientStateView | null>(null);
-  const [editableAnswers, setEditableAnswers] = useState<Record
-    string,
-    boolean | string | null
-  > | null>(null);
+  const [editableAnswers, setEditableAnswers] = useState<Record<string, boolean | string | null> | null>(null);
   const [safetyMessages, setSafetyMessages] = useState<SafetyMessage[]>([]);
 
   // Shared UI state
@@ -357,7 +352,7 @@ export default function App() {
 
               {q.suggested && (
                 <div>
-                  <small>Suggested answer â€” please check</small>
+                  <small><small>Suggested answer — please check</small></small>
                 </div>
               )}
             </div>

@@ -780,6 +780,7 @@ None → unknown / unanswered
 (None is never treated as False)
 Encoder-derived answers (encoder) are never visible to safety.
 Encoder-confirmed answers (encoder_confirmed) are treated as explicit only after submission normalisation.
+Encoder-corrected answers (encoder_corrected) are always treated as explicit — the patient actively overrode an encoder suggestion, which is the strongest possible signal of explicit intent.
 
 ### 6.2 Safety engine responsibilities
 

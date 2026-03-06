@@ -1,4 +1,4 @@
-import {
+import type {
   ClientAnswerReturn,
   ClientStateView,
   ConditionSummary,

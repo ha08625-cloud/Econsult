@@ -5,6 +5,7 @@ from contracts.explicit_answers import ExplicitAnswers
 EXPLICIT_SOURCES = {
     "patient",
     "encoder_confirmed",
+    "encoder_corrected",
 }
 
 
