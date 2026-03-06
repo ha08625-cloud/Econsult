@@ -1,5 +1,3 @@
-# ruleset IO and validation
-
 import json
 import hashlib
 from typing import Dict, Any, List
@@ -39,8 +37,8 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
 
     if "safety" in ruleset:
         for rule in ruleset["safety"]["rules"].values():
-            for clause in rule.get("all", []):
-                key = clause.get("is_true") or clause.get("is_false")
+            for clause in rule.get("any", []):
+                key = clause.get("is_true")
                 assert key in seen_answer_keys
 
 
