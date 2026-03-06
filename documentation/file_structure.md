@@ -38,9 +38,13 @@ project_root/
 ├── frontend/
 │   ├── admin/
 │   │   └── admin.html
-│   ├── api.ts
-│   ├── app.jsx
-│   └── types.ts
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── api.ts
+│   │   ├── index.css
+│   │   ├── main.tsx
+│   │   └── types.ts
+│   └── vite.config.ts
 │
 ├── data/
 │   └── uti1.json
