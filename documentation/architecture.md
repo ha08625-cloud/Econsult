@@ -565,10 +565,17 @@ Rules:
 * No data transformation beyond JSON serialisation
 * Payload field names must match backend expectations exactly
   (e.g. condition_id, free_text, runtime_id, base_version)
+* All type imports must use `import type` syntax. TypeScript interfaces
+  do not exist at runtime; using a plain import causes bundler errors
+  when verbatimModuleSyntax is enabled in tsconfig
 
-### 3.19.3 app.jsx — React UI
+### 3.19.3 App.tsx — React UI
 
-Stateless renderer implementing a five-screen flow:
+Stateless renderer implementing a five-screen flow.
+
+File is App.tsx (TypeScript + JSX). An earlier version was App.jsx but was
+renamed when TypeScript generic syntax caused Vite/Babel parse errors in a
+.jsx file.
 
 * Screen 0 (SELECT_CONDITION): fetches GET /conditions, renders dropdown
 * Screen 1 (FREE_TEXT): fetches GET /conditions/{id}/presentation,
@@ -588,12 +595,21 @@ Rules:
 * Session begins at POST /form/init (Screen 1 → Screen 2 transition)
 * Screens 0 and 1 are pre-session (no runtime_id exists)
 * Fatal errors reset all state and return to Screen 0
+* All type imports must use `import type` syntax (same reason as api.ts)
 
 State management:
 * Pre-session state: selectedConditionId, presentation, freeText
 * Session state: runtimeId, version, clientState, editableAnswers, safetyMessages
 * Pre-session state is discarded after /form/init succeeds
 * Session state is never round-tripped back to pre-session screens
+
+Development:
+* Served via Vite dev server on port 5173 during development
+* Vite proxy forwards /conditions and /form requests to FastAPI on port 8000
+* For production, run npm run build and serve the dist/ output as StaticFiles
+* Start command from project root:
+    cd frontend && npm run dev
+  FastAPI must also be running on port 8000 in a separate terminal
 
 ---
 
@@ -954,6 +970,9 @@ However:
 * Email delivery of clinical output to practice on form completion
 * DEV_MODE for local development without SMTP configuration
 * question_labels stored in ClinicalOutput for self-contained audit records
+Patient-facing frontend running via Vite dev server (port 5173) with API
+  proxy to FastAPI (port 8000)
+* Admin frontend served as static file at /admin-portal/admin.html
 
 
 ## Section 12 — Practice Configuration Architecture
