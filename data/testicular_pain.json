@@ -1,0 +1,71 @@
+{
+  "condition_id": "testicular_pain",
+
+  "presentation": {
+    "label": "Testicular pain",
+    "free_text_prompt": "Tell us about your symptoms and when they started."
+  },
+
+  "questions": [
+    {
+      "question_id": "testicular_pain_1",
+      "question": "Is the pain severe?",
+      "answer_key": "testicular_pain_severe",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the testicular pain is severe?"
+    },
+    {
+      "question_id": "testicular_pain_2",
+      "question": "Did the pain come on suddenly?",
+      "answer_key": "sudden_onset_testicular_pain",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the testicular pain came on suddenly or rapidly?"
+    },
+    {
+      "question_id": "testicular_pain_3",
+      "question": "Is there any swelling or redness of the testicle or surrounding area?",
+      "answer_key": "testicular_swelling_redness",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate there is swelling or redness of the testicle or surrounding area?"
+    },
+    {
+      "question_id": "testicular_pain_4",
+      "question": "Have you noticed any new lumps on the testicle?",
+      "answer_key": "testicular_lump_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate there is a new lump on the testicle?"
+    },
+    {
+      "question_id": "testicular_pain_5",
+      "question": "Have you had any unprotected sexual contacts with new partners in the last three months?",
+      "answer_key": "recent_unprotected_sex",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had unprotected sexual contacts with new partners recently?"
+    },
+    {
+      "question_id": "testicular_pain_6",
+      "question": "When did the pain start?",
+      "answer_key": "testicular_pain_onset_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "testicular_torsion_urgent": {
+        "any": [
+          { "is_true": "testicular_pain_severe" },
+          { "is_true": "sudden_onset_testicular_pain" }
+        ],
+        "message": "Sudden or severe testicular pain can be a sign of testicular torsion, which is a medical emergency. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      }
+    }
+  }
+}

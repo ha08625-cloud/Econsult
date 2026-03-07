@@ -4,25 +4,15 @@ Email service.
 Responsible for sending clinical output to the practice email address
 after a form submission.
 
-This module is responsible for:
-- Formatting the clinical output as a plain text email body
-- Sending via SMTP in production mode
-- Logging to stdout in DEV_MODE without sending
-
 Configuration via environment variables:
-    SMTP_HOST       - required in production
-    SMTP_PORT       - optional, default 587
-    SMTP_USER       - required in production
-    SMTP_PASSWORD   - required in production
-    EMAIL_FROM      - required in production
-    SMTP_TIMEOUT    - optional, default 30 seconds
-    DEV_MODE        - if set to '1' or 'true', skips SMTP and logs to stdout
+    SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASSWORD,
+    EMAIL_FROM, SMTP_TIMEOUT (default 30), DEV_MODE
 
 This module must never:
 - Access the database
-- Import clinical engine modules (form_logic, safety_engine, etc.)
-- Retry on failure (retry logic belongs in the calling layer)
-- Update delivery status (that belongs in submission_repository)
+- Import clinical engine modules
+- Retry on failure
+- Update delivery status
 """
 
 import os
@@ -34,11 +24,6 @@ from contracts.serialisation_contracts import ClinicalOutput
 
 
 class EmailDeliveryError(Exception):
-    """
-    Raised when email sending fails for any reason.
-    The string representation contains the underlying error message,
-    suitable for storing in submission_records.delivery_error.
-    """
     pass
 
 
@@ -47,7 +32,6 @@ def _is_dev_mode() -> bool:
 
 
 def _format_answer(value) -> str:
-    """Format a single answer value for display in the email body."""
     if value is True:
         return "Yes"
     if value is False:
@@ -62,13 +46,6 @@ def _format_body(
     clinical_output: ClinicalOutput,
     submission_id: str,
 ) -> str:
-    """
-    Format a plain text email body from clinical output.
-
-    answer_keys are used directly as field labels. Question text is not
-    available to this module — if human-readable labels are needed in future,
-    they should be added to ClinicalOutput, not loaded here from the ruleset.
-    """
     lines = [
         "E-CONSULTATION SUBMISSION",
         "=" * 40,
@@ -89,10 +66,20 @@ def _format_body(
         label = clinical_output.question_labels.get(key, key)
         lines.append(f"  {label}: {_format_answer(value)}")
 
+    if clinical_output.additional_text:
+        lines += [
+            "",
+            "ADDITIONAL INFORMATION",
+            "-" * 40,
+            clinical_output.additional_text,
+        ]
+
     if clinical_output.safety_messages:
-        lines.append("")
-        lines.append("SAFETY FLAGS")
-        lines.append("-" * 40)
+        lines += [
+            "",
+            "SAFETY FLAGS",
+            "-" * 40,
+        ]
         for msg in clinical_output.safety_messages:
             lines.append(f"  [{msg.get('id', '')}] {msg.get('text', '')}")
 
@@ -112,19 +99,6 @@ def send_clinical_output(
     clinical_output: ClinicalOutput,
     submission_id: str,
 ) -> None:
-    """
-    Send clinical output to the practice email address.
-
-    In DEV_MODE: logs the full email content to stdout. Does not connect
-    to any SMTP server. Does not raise EmailDeliveryError.
-
-    In production mode: sends via SMTP using environment variable configuration.
-    Raises EmailDeliveryError on any failure, including connection errors,
-    authentication failures, and timeouts.
-
-    This function does not update the submission record. The caller is
-    responsible for updating delivery_status based on success or failure.
-    """
     subject = f"E-consultation: {condition_label} [{submission_id}]"
     body = _format_body(condition_label, clinical_output, submission_id)
 

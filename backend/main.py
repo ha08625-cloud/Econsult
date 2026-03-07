@@ -225,6 +225,7 @@ async def form_update(request: Request):
     runtime_id = payload["runtime_id"]
     base_version = payload["base_version"]
     answers = payload["answers"]
+    additional_text = payload.get("additional_text")
 
     try:
         row = repo.get_latest(runtime_id)
@@ -245,6 +246,7 @@ async def form_update(request: Request):
     new_state, new_client_state, safety_messages = apply_update_and_evaluate(
         runtime_state=runtime_state,
         answers=answers,
+        additional_text=additional_text,
         ruleset_path=ruleset_path,
         condition_label=condition_label,
     )

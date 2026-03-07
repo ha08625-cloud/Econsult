@@ -6,7 +6,7 @@ Can be fully unit tested without the pipeline or encoder.
 """
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from contracts.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
 from ruleset import ruleset_hash
 
@@ -32,6 +32,7 @@ def initialise_runtime_state(
         condition_id=ruleset["condition_id"],
         ruleset_version=ruleset_hash(ruleset),
         free_text=free_text,
+        additional_text=None,
         answers=answers,
         safety_evaluation=SafetyEvaluation(),
         metadata={
@@ -67,6 +68,21 @@ def hydrate_runtime_state(
         }
 
     return incoming
+
+
+def apply_additional_text(
+    runtime: RuntimeState,
+    additional_text: Optional[str],
+) -> None:
+    """
+    Store the patient's optional additional free text on RuntimeState.
+    Converts empty string to None so downstream code can treat None as absent.
+    Never passed to encoder, safety engine, or validation.
+    """
+    if additional_text and additional_text.strip():
+        runtime.additional_text = additional_text.strip()
+    else:
+        runtime.additional_text = None
 
 
 def apply_patient_answers(
@@ -108,6 +124,7 @@ def validate_required_answers(runtime: RuntimeState) -> None:
     """
     Validate that all answers are complete.
     For MVP all questions are required.
+    additional_text is never validated here — it is always optional.
     - Boolean answers: value must not be None
     - Text answers: value must be a non-empty string
     """

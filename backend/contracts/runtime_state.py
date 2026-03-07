@@ -72,6 +72,7 @@ class RuntimeState:
     condition_id: str
     ruleset_version: str
     free_text: str
+    additional_text: Optional[str]
     answers: Dict[str, AnswerState]
     safety_evaluation: SafetyEvaluation
     metadata: Dict[str, Any]
@@ -81,6 +82,7 @@ class RuntimeState:
             "condition_id": self.condition_id,
             "ruleset_version": self.ruleset_version,
             "free_text": self.free_text,
+            "additional_text": self.additional_text,
             "answers": {k: v.to_dict() for k, v in self.answers.items()},
             "safety_evaluation": self.safety_evaluation.to_dict(),
             "metadata": self.metadata,
@@ -95,6 +97,7 @@ class RuntimeState:
             condition_id=d["condition_id"],
             ruleset_version=d["ruleset_version"],
             free_text=d["free_text"],
+            additional_text=d.get("additional_text"),
             answers={k: AnswerState.from_dict(v) for k, v in d["answers"].items()},
             safety_evaluation=SafetyEvaluation.from_dict(d["safety_evaluation"]),
             metadata=d["metadata"],

@@ -1,12 +1,9 @@
 {
-  "condition_id": "dermatology_rash",
+  "condition_id": "dermatology_new_rash",
 
   "presentation": {
-    "label": "Skin rashes",
-    "free_text_prompt": "Tell us more about your rash.  You may want to include when it started, what it feels like, which body part is affected and whether you have tried any treatments so far.",
-    "pre_form_information": [
-      "Many rashes or insect bites can be dealt with by the pharmacy"
-    ]
+    "label": "Dermatology - New skin rashes",
+    "free_text_prompt": "Tell us more about your rash.  You may want to include when it started, what it feels like, which body part is affected and whether you have tried any treatments so far."
   },
   
   "questions": [

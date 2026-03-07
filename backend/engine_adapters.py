@@ -10,11 +10,10 @@ main.py calls these entry points; they return API-ready data.
 Architectural guarantee:
     This module never imports or accesses condition_registry or presentation
     metadata. The condition_label needed for ClientStateView is passed in
-    explicitly by the HTTP layer. The clinical engine operates exactly as
-    if presentation metadata never existed.
+    explicitly by the HTTP layer.
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 
 from contracts.runtime_state import RuntimeState
 from contracts.encoder_contracts import EncoderOutput, EncoderSignalDefinition
@@ -27,6 +26,7 @@ from encoder_stub import extract_signals
 from encoder_mapping import apply_encoder_output
 from form_logic import (
     initialise_runtime_state,
+    apply_additional_text,
     apply_patient_answers,
     normalise_encoder_provenance,
     validate_required_answers,
@@ -40,12 +40,7 @@ def init_runtime_state(
     ruleset_path: str,
     condition_label: str,
 ):
-    """
-    Entry point for /form/init.
-
-    Loads ruleset, creates blank RuntimeState, runs encoder if free text
-    is provided, and returns the state + hash + client view.
-    """
+    """Entry point for /form/init."""
 
     ruleset = load_ruleset(ruleset_path)
     rh = ruleset_hash(ruleset)
@@ -53,7 +48,6 @@ def init_runtime_state(
     runtime_state = initialise_runtime_state(ruleset, free_text or "")
 
     if free_text:
-        # Extract encoder definitions from ruleset
         encoder_defs_raw = extract_encoder_definitions(ruleset)
         encoder_defs = [
             EncoderSignalDefinition(
@@ -63,10 +57,8 @@ def init_runtime_state(
             for d in encoder_defs_raw
         ]
 
-        # Run stub encoder (returns plain dict)
         raw_signals = extract_signals(free_text, encoder_defs_raw)
 
-        # Wrap in EncoderOutput contract
         encoder_output = EncoderOutput(
             model_name="stub",
             model_version="0.1",
@@ -74,7 +66,6 @@ def init_runtime_state(
             signals=raw_signals,
         )
 
-        # Apply to RuntimeState (validates + maps)
         apply_encoder_output(runtime_state, encoder_output, encoder_defs)
 
     client_state = serialize_client_state(runtime_state, ruleset, condition_label)
@@ -85,18 +76,15 @@ def init_runtime_state(
 def apply_update_and_evaluate(
     runtime_state: RuntimeState,
     answers: Dict[str, Any],
+    additional_text: Optional[str],
     ruleset_path: str,
     condition_label: str,
 ):
-    """
-    Entry point for /form/update.
-
-    Applies patient answers, normalises encoder provenance,
-    validates completeness, projects to explicit answers,
-    evaluates safety, and returns updated state + client view + safety messages.
-    """
+    """Entry point for /form/update."""
 
     ruleset = load_ruleset(ruleset_path)
+
+    apply_additional_text(runtime_state, additional_text)
 
     apply_patient_answers(runtime_state, answers)
 
@@ -104,15 +92,12 @@ def apply_update_and_evaluate(
 
     validate_required_answers(runtime_state)
 
-    # Project to explicit answers then evaluate safety
     explicit_answers = project_explicit_answers(runtime_state)
     safety_rules = ruleset.get("safety", {}).get("rules", {})
     safety_eval = evaluate_safety(explicit_answers, safety_rules)
 
-    # Store safety evaluation on runtime state
     runtime_state.safety_evaluation = safety_eval
 
-    # Build safety messages for API response
     safety_messages: List[SafetyMessage] = [
         SafetyMessage(
             rule_id=m["id"],
@@ -130,14 +115,7 @@ def finish_runtime_state(
     runtime_state: RuntimeState,
     ruleset_path: str,
 ) -> Tuple[ClinicalOutput, AuditOutput]:
-    """
-    Entry point for /form/finish.
-
-    Generates and returns clinical and audit outputs.
-    Submission ID generation and persistence are handled by main.py.
-
-    Returns (ClinicalOutput, AuditOutput).
-    """
+    """Entry point for /form/finish."""
 
     ruleset = load_ruleset(ruleset_path)
 

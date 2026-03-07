@@ -14,6 +14,7 @@ export interface ClientQuestion {
 export interface ClientStateView {
   condition_label: string;
   free_text: string | null;
+  additional_text: string | null;
   questions: ClientQuestion[];
 }
 
@@ -21,6 +22,7 @@ export interface ClientAnswerReturn {
   runtime_id: string;
   base_version: number;
   answers: Record<string, boolean | string | null>;
+  additional_text: string | null;
 }
 
 export interface SafetyMessage {

@@ -1,0 +1,55 @@
+{
+  "condition_id": "dermatology_hair_loss",
+
+  "presentation": {
+    "label": "Hair loss",
+    "free_text_prompt": "Tell us about your symptoms and when they started. You may want to tell us if you have noticed patchy hair loss or general hair thinning, any itching, pain or rash."
+  },
+
+  "questions": [
+    {
+      "question_id": "dermatology_hair_loss_1",
+      "question": "Is the hair loss affecting specific patches rather than general thinning?",
+      "answer_key": "patchy_hair_loss",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the hair loss is patchy or affecting specific areas rather than general thinning?"
+    },
+    {
+      "question_id": "dermatology_hair_loss_2",
+      "question": "Is the affected area red, itchy or scaly?",
+      "answer_key": "scalp_symptoms_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate there is redness, itching or scaling of the scalp or affected area?"
+    },
+    {
+      "question_id": "dermatology_hair_loss_3",
+      "question": "Have you been feeling unwell in any other way, for example fatigue, weight changes or any other new symptoms?",
+      "answer_key": "systemic_symptoms_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_hair_loss_4",
+      "question": "Have you had any other skin problems, for example psoriasis or eczema?",
+      "answer_key": "other_dermatological_history",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_hair_loss_5",
+      "question": "How long have you been experiencing hair loss?",
+      "answer_key": "hair_loss_onset_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {}
+  }
+}

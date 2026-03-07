@@ -3,7 +3,7 @@
 
   "presentation": {
     "label": "Urinary symptoms",
-    "free_text_prompt": "Tell us about your symptoms and when they started."
+    "free_text_prompt": "Tell us about your symptoms"
   },
   
   "questions": [

@@ -24,26 +24,9 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
     Project RuntimeState + ruleset into the ClientStateView dict
     expected by the frontend.
 
-    The ruleset is needed because RuntimeState does not store
-    question text -- only answer_key and values.
-    condition_label is passed explicitly so the full ruleset's
-    presentation block is never required by this function.
-
-    Output shape matches frontend types.ts ClientStateView:
-    {
-        condition_label: str,
-        free_text: str | null,
-        questions: [
-            {
-                answer_key: str,
-                question_text: str,
-                answer_type: "boolean" | "text",
-                current_value: bool | str | null,
-                required: true,
-                suggested: bool,
-            }
-        ]
-    }
+    Output shape matches frontend types.ts ClientStateView.
+    additional_text is included so the frontend can pre-populate
+    the field if the patient navigates back to EDIT.
     """
 
     questions = []
@@ -63,6 +46,7 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
     return {
         "condition_label": condition_label,
         "free_text": runtime.free_text or None,
+        "additional_text": runtime.additional_text,
         "questions": questions,
     }
 
@@ -70,11 +54,6 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
 def clinical_output(runtime: RuntimeState, ruleset: dict) -> ClinicalOutput:
     """
     Lossy output safe for clinical and patient use.
-
-    The ruleset is required to capture question_labels -- the human-readable
-    question text for each answer_key as it existed at submission time.
-    Storing this in ClinicalOutput means the audit record is self-contained:
-    a future reader does not need to reload the ruleset to interpret the answers.
     """
     question_labels = {
         q["answer_key"]: q["question"]
@@ -84,6 +63,7 @@ def clinical_output(runtime: RuntimeState, ruleset: dict) -> ClinicalOutput:
     return ClinicalOutput(
         condition_id=runtime.condition_id,
         free_text=runtime.free_text,
+        additional_text=runtime.additional_text,
         answers={k: v.value for k, v in runtime.answers.items()},
         safety_messages=runtime.safety_evaluation.messages,
         question_labels=question_labels,

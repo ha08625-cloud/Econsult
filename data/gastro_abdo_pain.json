@@ -1,0 +1,88 @@
+{
+  "condition_id": "gastro_abdo_pain",
+
+  "presentation": {
+    "label": "Abdominal pain",
+    "free_text_prompt": "Tell us more about your abdominal pain: when it started, what other symptoms you have such as diarrhoea or bleeding, any clear triggers."
+  },
+
+  "questions": [
+    {
+      "question_id": "gastro_abdo_pain_1",
+      "question": "Has the pain been severe at any point?",
+      "answer_key": "severe_abdominal_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the abdominal pain has been severe?"
+    },
+    {
+      "question_id": "gastro_abdo_pain_2",
+      "question": "Have you had nausea or vomiting?",
+      "answer_key": "nausea_vomiting_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had nausea or vomiting?"
+    },
+    {
+      "question_id": "gastro_abdo_pain_3",
+      "question": "Have you noticed any change in your bowel habits, such as diarrhoea or constipation?",
+      "answer_key": "bowel_habit_change_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has noticed a change in their bowel habits?"
+    },
+    {
+      "question_id": "gastro_abdo_pain_4",
+      "question": "Have you noticed any blood in your stool?",
+      "answer_key": "rectal_bleeding_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has noticed blood in their stool?"
+    },
+    {
+      "question_id": "gastro_abdo_pain_5",
+      "question": "Have you had a fever?",
+      "answer_key": "fever_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had a fever?"
+    },
+    {
+      "question_id": "gastro_abdo_pain_6",
+      "question": "Have you had any urinary symptoms such as pain when urinating or needing to urinate more frequently than usual?",
+      "answer_key": "urinary_symptoms_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has urinary symptoms such as pain when urinating or increased urinary frequency?"
+    },
+    {
+      "question_id": "gastro_abdo_pain_7",
+      "question": "Have you had any surgery to your abdomen in the last three months?",
+      "answer_key": "recent_abdominal_surgery",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had abdominal surgery recently?"
+    },
+    {
+      "question_id": "gastro_abdo_pain_8",
+      "question": "When did the pain start?",
+      "answer_key": "abdominal_pain_onset_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "abdominal_pain_urgent": {
+        "any": [
+          { "is_true": "severe_abdominal_pain_present" },
+          { "is_true": "fever_present" },
+          { "is_true": "recent_abdominal_surgery" }
+        ],
+        "message": "Severe abdominal pain, fever, or a history of recent abdominal surgery requires prompt medical assessment. Please call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      }
+    }
+  }
+}

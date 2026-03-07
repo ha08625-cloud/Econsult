@@ -1,0 +1,94 @@
+{
+  "condition_id": "mental_health_depression",
+
+  "presentation": {
+    "label": "Low mood or depression",
+    "free_text_prompt": "Tell us about your symptoms."
+  },
+
+  "questions": [
+    {
+      "question_id": "mental_health_depression_1",
+      "question": "Have you lost interest or pleasure in activities you usually enjoy?",
+      "answer_key": "anhedonia_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has lost interest or pleasure in activities they usually enjoy?"
+    },
+    {
+      "question_id": "mental_health_depression_2",
+      "question": "Is your mood affecting your ability to function at work, school, or home?",
+      "answer_key": "mood_impairs_function",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient's mood is affecting their ability to function at work, school, or home?"
+    },
+    {
+      "question_id": "mental_health_depression_3",
+      "question": "Have you been having difficulty sleeping?",
+      "answer_key": "insomnia_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is having difficulty sleeping or has insomnia?"
+    },
+    {
+      "question_id": "mental_health_depression_4",
+      "question": "Have you noticed any changes in your appetite or weight recently?",
+      "answer_key": "appetite_weight_changes",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had changes in appetite or weight?"
+    },
+    {
+      "question_id": "mental_health_depression_5",
+      "question": "Are you currently seeing a therapist or on a waiting list for therapy?",
+      "answer_key": "currently_in_therapy_or_waitlist",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is currently seeing a therapist or is on a waiting list for therapy?"
+    },
+    {
+      "question_id": "mental_health_depression_6",
+      "question": "Do you regularly drink alcohol or use recreational drugs?",
+      "answer_key": "alcohol_or_drug_use",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient regularly drinks alcohol or uses recreational drugs?"
+    },
+    {
+      "question_id": "mental_health_depression_7",
+      "question": "Have you harmed yourself recently?",
+      "answer_key": "recent_self_harm",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has harmed themselves recently?"
+    },
+    {
+      "question_id": "mental_health_depression_8",
+      "question": "Are you having any thoughts of harming yourself?",
+      "answer_key": "planned_self_harm",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is having thoughts of harming themselves or has plans to harm themselves?"
+    },
+    {
+      "question_id": "mental_health_depression_9",
+      "question": "How long have you been feeling this way?",
+      "answer_key": "depression_duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "self_harm_risk": {
+        "any": [
+          { "is_true": "planned_self_harm" }
+        ],
+        "message": "This online consultation may take up to 24 hours to be reviewed. If you feel you are at risk of harming yourself, please do not wait. Call the surgery and ask to speak to the duty doctor, or contact the Samaritans at any time on 116 123."
+      }
+    }
+  }
+}

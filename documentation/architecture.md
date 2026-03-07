@@ -580,7 +580,7 @@ renamed when TypeScript generic syntax caused Vite/Babel parse errors in a
 * Screen 0 (SELECT_CONDITION): fetches GET /conditions, renders dropdown
 * Screen 1 (FREE_TEXT): fetches GET /conditions/{id}/presentation,
   renders framing text + free text input, submits to POST /form/init
-* Screen 2 (EDIT): renders questions from ClientStateView, collects answers,
+* Screen 2 (EDIT): renders questions from ClientStateView, collects answers, additionalText state is added to the EDIT screen, included in the ClientAnswerReturn payload, and shown on the REVIEW screen only when non-empty
   submits to POST /form/update
 * Screen 3 (REVIEW): displays answers + safety messages,
   submits to POST /form/finish or returns to EDIT

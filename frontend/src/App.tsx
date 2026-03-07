@@ -39,6 +39,7 @@ export default function App() {
   const [version, setVersion] = useState<number | null>(null);
   const [clientState, setClientState] = useState<ClientStateView | null>(null);
   const [editableAnswers, setEditableAnswers] = useState<Record<string, boolean | string | null> | null>(null);
+  const [additionalText, setAdditionalText] = useState<string>("");
   const [safetyMessages, setSafetyMessages] = useState<SafetyMessage[]>([]);
 
   // Shared UI state
@@ -99,13 +100,12 @@ export default function App() {
           onClick={() => {
             setFatalError(null);
             setScreen("SELECT_CONDITION");
-            // Session state
             setRuntimeId(null);
             setVersion(null);
             setClientState(null);
             setEditableAnswers(null);
+            setAdditionalText("");
             setSafetyMessages([]);
-            // Screen 0-1 state
             setConditions(null);
             setSelectedConditionId(null);
             setPresentation(null);
@@ -168,7 +168,6 @@ export default function App() {
       return null;
     }
 
-    // Fetch presentation on entry if not already loaded
     if (presentation === null && !isSubmitting) {
       (async () => {
         try {
@@ -198,7 +197,6 @@ export default function App() {
       <div>
         <h1>{presentation.label}</h1>
 
-        {/* Universal safety warning - always shown */}
         <div style={{
           backgroundColor: "#fee",
           padding: "1em",
@@ -210,7 +208,6 @@ export default function App() {
           <p style={{ marginBottom: 0 }}>{presentation.universal_safety_warning}</p>
         </div>
 
-        {/* Practice-specific signposting - only shown if configured */}
         {presentation.practice_signposting &&
           presentation.practice_signposting.length > 0 && (
             <div style={{
@@ -243,16 +240,14 @@ export default function App() {
             try {
               setIsSubmitting(true);
               const res = await initForm(selectedConditionId, freeText || null);
-              // Store session state
               setRuntimeId(res.runtime_id);
               setVersion(res.version);
               setClientState(res.client_state);
               setEditableAnswers(initialiseEditableAnswers(res.client_state));
-              // Discard Screen 0-1 transient state
+              setAdditionalText(res.client_state.additional_text ?? "");
               setPresentation(null);
               setSelectedConditionId(null);
               setFreeText("");
-              // Advance
               setScreen("EDIT");
             } catch (e) {
               setFatalError(String(e));
@@ -358,6 +353,21 @@ export default function App() {
             </div>
           ))}
 
+          <div style={{ marginTop: "1.5em" }}>
+            <label htmlFor="additional-text">
+              If you wish to add any additional information, you can write it
+              here. For example, if you have answered yes to any of the symptoms
+              above, you can give details here.
+            </label>
+            <textarea
+              id="additional-text"
+              value={additionalText}
+              onChange={(e) => setAdditionalText(e.target.value)}
+              rows={4}
+              style={{ width: "100%", marginTop: "0.5em" }}
+            />
+          </div>
+
           <button
             disabled={!allRequiredAnswered || isSubmitting}
             onClick={async () => {
@@ -367,12 +377,13 @@ export default function App() {
                   runtime_id: runtimeId,
                   base_version: version,
                   answers: editableAnswers,
+                  additional_text: additionalText.trim() || null,
                 };
                 const res = await updateForm(payload);
                 setVersion(res.version);
                 setClientState(res.client_state);
                 setSafetyMessages(res.safety_messages);
-                setEditableAnswers(null); // discard
+                setEditableAnswers(null);
                 setScreen("REVIEW");
               } catch (e) {
                 setFatalError(String(e));
@@ -418,6 +429,13 @@ export default function App() {
             </li>
           ))}
         </ul>
+
+        {clientState.additional_text && (
+          <div>
+            <h3>Additional information</h3>
+            <p>{clientState.additional_text}</p>
+          </div>
+        )}
 
         {hasSafetyBlock && (
           <div>
