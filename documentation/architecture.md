@@ -691,7 +691,7 @@ json"presentation": {
   "free_text_prompt": "Tell us about your symptoms and when they started.",
   "search_tags": ["UTI", "cystitis", "bladder infection", "burning urine"]
 }
-```
+
 
 **Design rationale:** search tags are presentation-layer metadata, not clinical content. Placing them inside the `presentation` block keeps clinical schema (questions, safety rules, encoder definitions) free of search concerns. Tags are written and maintained by whoever edits the ruleset JSON — there is no automatic synonym generation.
 
