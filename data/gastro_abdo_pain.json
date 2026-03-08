@@ -3,7 +3,8 @@
 
   "presentation": {
     "label": "Abdominal pain",
-    "free_text_prompt": "Tell us more about your abdominal pain: when it started, what other symptoms you have such as diarrhoea or bleeding, any clear triggers."
+    "free_text_prompt": "Tell us more about your abdominal pain: when it started, what other symptoms you have such as diarrhoea or bleeding, any clear triggers.",
+    "search_tags": ["stomach", "belly", "appendix", "bowel", "gut", "liver"]
   },
 
   "questions": [

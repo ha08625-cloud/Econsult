@@ -3,7 +3,8 @@
 
   "presentation": {
     "label": "Low mood or depression",
-    "free_text_prompt": "Tell us about your symptoms."
+    "free_text_prompt": "Tell us about your symptoms.",
+    "search_tags": ["mental health", "depressed", "therapy", "antidepressants"]
   },
 
   "questions": [

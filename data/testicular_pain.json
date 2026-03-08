@@ -3,7 +3,8 @@
 
   "presentation": {
     "label": "Testicular pain",
-    "free_text_prompt": "Tell us about your symptoms and when they started."
+    "free_text_prompt": "Tell us about your symptoms and when they started.",
+    "search_tags": ["scrotum", "Ballsack", "testes", "balls", "groin", "genitals"]
   },
 
   "questions": [

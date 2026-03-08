@@ -3,7 +3,8 @@
 
   "presentation": {
     "label": "Hair loss",
-    "free_text_prompt": "Tell us about your symptoms and when they started. You may want to tell us if you have noticed patchy hair loss or general hair thinning, any itching, pain or rash."
+    "free_text_prompt": "Tell us about your symptoms and when they started. You may want to tell us if you have noticed patchy hair loss or general hair thinning, any itching, pain or rash.",
+    "search_tags": ["baldness", "thinning", "loss of hair"]
   },
 
   "questions": [

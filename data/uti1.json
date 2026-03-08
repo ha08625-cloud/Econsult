@@ -4,9 +4,9 @@
   "presentation": {
     "label": "Urinary symptoms",
     "free_text_prompt": "Tell us about your symptoms and when they started.",
-    "search_tags": ["UTI", "cystitis", "bladder infection", "burning urine", "frequent urination", "urinary tract infection", "dysuria", "painful urination", "needing to pee", "peeing a lot"]
+    "search_tags": ["UTI", "cystitis", "bladder infection", "kidney infection", "frequent urination", "water infection"]
   },
-  
+
   "questions": [
     {
       "question_id": "urinary_symptoms_1",
@@ -18,6 +18,22 @@
     },
     {
       "question_id": "urinary_symptoms_2",
+      "question": "Are you needing to pass urine more frequently than usual?",
+      "answer_key": "urinary_frequency_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is passing urine more frequently than usual?"
+    },
+    {
+      "question_id": "urinary_symptoms_3",
+      "question": "Are you waking in the night needing to pass urine?",
+      "answer_key": "nocturia_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is waking at night needing to pass urine?"
+    },
+    {
+      "question_id": "urinary_symptoms_4",
       "question": "Have you felt like you have had a fever during this episode?",
       "answer_key": "fever_present",
       "answer_type": "Boolean",
@@ -25,7 +41,31 @@
       "encoder_prompt": "Does the response indicate there is fever in this episode?"
     },
     {
-      "question_id": "urinary_symptoms_3",
+      "question_id": "urinary_symptoms_5",
+      "question": "Do you have any pain in your sides or back, below your ribs?",
+      "answer_key": "flank_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has pain in their sides or back below the ribs, suggesting flank pain?"
+    },
+    {
+      "question_id": "urinary_symptoms_6",
+      "question": "Have you noticed any blood in your urine?",
+      "answer_key": "haematuria_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has noticed blood in their urine?"
+    },
+    {
+      "question_id": "urinary_symptoms_7",
+      "question": "Have you had a urine infection in the last 30 days?",
+      "answer_key": "recent_uti_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had a urine infection in the last 30 days?"
+    },
+    {
+      "question_id": "urinary_symptoms_8",
       "question": "When did the symptoms start?",
       "answer_key": "symptom_onset_text",
       "answer_type": "text",
@@ -33,14 +73,15 @@
       "encoder_prompt": null
     }
   ],
-  
+
   "safety": {
     "rules": {
-      "fever_with_urinary_symptoms": {
+      "urgent_urinary_symptoms": {
         "any": [
-          { "is_true": "fever_present" }
+          { "is_true": "fever_present" },
+          { "is_true": "flank_pain_present" }
         ],
-        "message": "You should seek urgent medical advice if you have a fever with urinary symptoms."
+        "message": "Some of your symptoms suggest you may need to be seen urgently. Please call the surgery and ask to speak to the duty doctor instead of sending an online form."
       }
     }
   }

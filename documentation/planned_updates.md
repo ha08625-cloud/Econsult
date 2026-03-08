@@ -1,19 +1,14 @@
 Early prototype updates
-- Server side state storage and audit output storage
 - Suggestion conditions in addition to safety conditions
-- Add encoders
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
 - non blocking advisory messages
-- handle front end errors like 409 gracefully
--  Add a public_slug column - More flexibility, but adds complexity
+- Add a public_slug column - More flexibility, but adds complexity
 
 Late prototype updates
-- Multiple conditions
 - Deterministic data augmentation
 - Full question sets
 - UI and UX improvements
-- Autocomplete/typeahead
 - Encoder/head training
 - dockerise and cloud
 runtime_id is a bearer capability
