@@ -36,6 +36,7 @@ function levenshtein(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
 
+  // Allocate a (m+1) x (n+1) matrix
   const dp: number[][] = Array.from({ length: m + 1 }, () =>
     new Array(n + 1).fill(0)
   );

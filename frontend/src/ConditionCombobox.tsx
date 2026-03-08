@@ -1,0 +1,276 @@
+/**
+ * ConditionCombobox.tsx
+ *
+ * Custom combobox for condition selection on Screen 0.
+ *
+ * Behaviour:
+ * - Click/focus: opens suggestion list showing all conditions
+ * - Typing: filters list using filterConditions (label, tag, fuzzy)
+ * - Mouse click on suggestion: selects condition
+ * - Keyboard: ArrowDown/ArrowUp to navigate, Enter to select, Escape/Tab to close
+ * - Blur: closes list after short delay to allow click events to fire first
+ * - On selection: input shows condition label, onChange called with condition id
+ * - On typing after selection: selection is cleared (onChange called with null)
+ *
+ * Filtering is always from the full canonical conditions list, never incremental.
+ */
+
+import React, { useState, useRef, useId } from "react";
+import type { ConditionSummary } from "./types";
+import { filterConditions } from "./search";
+
+interface ConditionComboboxProps {
+  conditions: ConditionSummary[];
+  selectedId: string | null;
+  onChange: (id: string | null) => void;
+}
+
+const SUGGESTION_LIST_MAX_HEIGHT = 300;
+
+export default function ConditionCombobox({
+  conditions,
+  selectedId,
+  onChange,
+}: ConditionComboboxProps) {
+  const [inputValue, setInputValue] = useState<string>("");
+  const [isOpen, setIsOpen] = useState<boolean>(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Unique ids for ARIA — useId ensures no collisions if component is rendered
+  // multiple times on the same page.
+  const baseId = useId();
+  const listboxId = `${baseId}-listbox`;
+  const optionId = (conditionId: string) => `${baseId}-option-${conditionId}`;
+
+  // Derived — never stored in state. Always computed from the full canonical list.
+  const filteredConditions: ConditionSummary[] = filterConditions(
+    conditions,
+    inputValue
+  );
+
+  // True when the user has typed something but no tags/labels matched,
+  // so filterConditions fell back to the full list.
+  const noMatchFallback: boolean =
+    inputValue.trim().length > 0 &&
+    filteredConditions.length === conditions.length &&
+    !conditions.some((c) =>
+      c.label.toLowerCase().includes(inputValue.toLowerCase().trim())
+    );
+
+  // --- Helpers ---
+
+  function selectCondition(condition: ConditionSummary) {
+    setInputValue(condition.label);
+    setIsOpen(false);
+    setActiveIndex(null);
+    onChange(condition.id);
+  }
+
+  function closeList() {
+    setIsOpen(false);
+    setActiveIndex(null);
+  }
+
+  // --- Event handlers ---
+
+  function handleFocus() {
+    // Cancel any pending blur-close so focusing back in doesn't flicker.
+    if (blurTimeoutRef.current !== null) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    setIsOpen(true);
+  }
+
+  function handleBlur() {
+    // Delay closing so a mousedown on a suggestion fires before the list disappears.
+    blurTimeoutRef.current = setTimeout(() => {
+      closeList();
+    }, 150);
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value;
+    setInputValue(value);
+    setIsOpen(true);
+    setActiveIndex(null);
+    // Typing invalidates any previous selection.
+    onChange(null);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!isOpen) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        setIsOpen(true);
+        e.preventDefault();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown": {
+        e.preventDefault();
+        const nextIndex =
+          activeIndex === null
+            ? 0
+            : (activeIndex + 1) % filteredConditions.length;
+        setActiveIndex(nextIndex);
+        break;
+      }
+
+      case "ArrowUp": {
+        e.preventDefault();
+        const prevIndex =
+          activeIndex === null
+            ? filteredConditions.length - 1
+            : (activeIndex - 1 + filteredConditions.length) %
+              filteredConditions.length;
+        setActiveIndex(prevIndex);
+        break;
+      }
+
+      case "Enter": {
+        e.preventDefault();
+        if (activeIndex !== null && filteredConditions[activeIndex]) {
+          selectCondition(filteredConditions[activeIndex]);
+        }
+        break;
+      }
+
+      case "Escape": {
+        e.preventDefault();
+        closeList();
+        break;
+      }
+
+      case "Tab": {
+        // Do not preventDefault — allow natural tab flow.
+        closeList();
+        break;
+      }
+    }
+  }
+
+  function handleSuggestionMouseDown(condition: ConditionSummary) {
+    // mousedown fires before blur, so cancelling the blur timeout here
+    // ensures the list does not close before the selection registers.
+    if (blurTimeoutRef.current !== null) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    selectCondition(condition);
+  }
+
+  // --- Render ---
+
+  const activeDescendant =
+    activeIndex !== null && filteredConditions[activeIndex]
+      ? optionId(filteredConditions[activeIndex].id)
+      : undefined;
+
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        ref={inputRef}
+        id={`${baseId}-input`}
+        type="text"
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-autocomplete="list"
+        aria-controls={listboxId}
+        aria-activedescendant={activeDescendant}
+        value={inputValue}
+        onChange={handleInputChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        placeholder="Start typing or click to see all conditions..."
+        autoComplete="off"
+        style={{ width: "100%", padding: "8px", fontSize: "1em", boxSizing: "border-box" }}
+      />
+
+      {isOpen && (
+        <ul
+          id={listboxId}
+          role="listbox"
+          aria-label="Conditions"
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            margin: 0,
+            padding: 0,
+            listStyle: "none",
+            background: "#fff",
+            border: "1px solid #bbb",
+            borderTop: "none",
+            boxShadow: "0 4px 8px rgba(0,0,0,0.12)",
+            maxHeight: SUGGESTION_LIST_MAX_HEIGHT,
+            overflowY: "auto",
+            zIndex: 100,
+          }}
+        >
+          {noMatchFallback && (
+            <li
+              style={{
+                padding: "6px 10px",
+                fontSize: "0.85em",
+                color: "#666",
+                borderBottom: "1px solid #eee",
+                fontStyle: "italic",
+              }}
+              aria-live="polite"
+            >
+              No matching conditions — try different words, or scroll below.
+            </li>
+          )}
+
+          {!noMatchFallback &&
+            filteredConditions.length < conditions.length && (
+              <li
+                style={{
+                  padding: "4px 10px",
+                  fontSize: "0.8em",
+                  color: "#888",
+                  borderBottom: "1px solid #eee",
+                }}
+                aria-live="polite"
+              >
+                Showing {filteredConditions.length} of {conditions.length}{" "}
+                conditions
+              </li>
+            )}
+
+          {filteredConditions.map((condition, index) => {
+            const isActive = index === activeIndex;
+            const isSelected = condition.id === selectedId;
+
+            return (
+              <li
+                key={condition.id}
+                id={optionId(condition.id)}
+                role="option"
+                aria-selected={isSelected}
+                onMouseDown={() => handleSuggestionMouseDown(condition)}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(null)}
+                style={{
+                  padding: "8px 10px",
+                  cursor: "pointer",
+                  background: isActive ? "#d0e8f8" : isSelected ? "#eef6ff" : "#fff",
+                  fontWeight: isSelected ? 500 : 400,
+                }}
+              >
+                {condition.label}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}

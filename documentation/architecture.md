@@ -611,6 +611,104 @@ Development:
     cd frontend && npm run dev
   FastAPI must also be running on port 8000 in a separate terminal
 
+Here is the new architecture section. This slots in after section 3.19.3 (App.tsx) and before whatever follows it.
+
+### 3.19.4 search.ts — Condition search and filtering
+A single-purpose frontend module containing all condition filtering logic for the combobox. Nothing else in the frontend contains matching logic.
+
+Location: frontend/search.ts
+
+Exported functions:
+* normalise(text): string — lowercases and trims a string. Applied to both query and all strings being compared.
+* matchesQuery(condition, query): boolean — returns true if the condition should appear for a given query string.
+* filterConditions(conditions, query): ConditionSummary[] — filters a canonical condition list by query. Always filters from the full list passed in, never incrementally from a previous result.
+
+Three-layer matching strategy (applied in order):
+* Layer 1 — substring match on the condition label. Case-insensitive. Handles the common case of a patient typing part of a plain English label.
+* Layer 2 — substring match on any search_tags entry. Case-insensitive. Handles synonyms, abbreviations, and medical terms that differ from the label (e.g. "UTI" finding "Urinary symptoms").
+* Layer 3 — Levenshtein (edit distance) fuzzy match on individual tokens of each tag. The tag is split on whitespace into tokens. The query is kept as a single string and compared against each token. Handles common misspellings (e.g. "cistitis" finding "cystitis").
+* Layer 3 only runs if layers 1 and 2 both return false. This avoids unnecessary computation and prevents short correct queries from triggering fuzzy noise.
+
+Fuzzy matching thresholds:
+* Query lengthBehaviourLess than 4Fuzzy disabled entirely4 to 5Threshold 1 (one edit)6 or moreThreshold 2 (two edits)
+* Short queries disable fuzzy matching to prevent false positives. For example, "ut" would otherwise match almost everything.
+* Fallback behaviour:
+* filterConditions returns the full canonical list when the query is empty or when no conditions match. It never returns an empty list.  The caller (ConditionCombobox) is responsible for detecting the no-match fallback and showing the appropriate message.
+
+Constants (named, not magic numbers):
+* FUZZY_MIN_QUERY_LENGTH = 4
+* FUZZY_THRESHOLD_SHORT = 1
+* FUZZY_THRESHOLD_LONG = 2
+
+Dependencies: types.ts (ConditionSummary type only). No backend dependency. No external library.
+Tests: tests/test_search.mjs. Run with node tests/test_search.mjs. Covers all three matching layers, threshold boundary conditions, fallback behaviour, and case insensitivity.
+
+### 3.19.5 ConditionCombobox.tsx — Condition selection combobox
+A self-contained React component that replaces the separate search input and select dropdown on Screen 0. Renders a text input that shows a floating suggestion list, filtered in real time as the patient types.
+Location: frontend/ConditionCombobox.tsx
+Props:
+typescriptinterface ConditionComboboxProps {
+  conditions: ConditionSummary[];   // full canonical list, never mutated
+  selectedId: string | null;        // currently selected condition id
+  onChange: (id: string | null) => void;
+}
+Internal state:
+* inputValue: string — text currently shown in the input
+* isOpen: boolean — whether the suggestion list is visible
+* activeIndex: number | null — which suggestion is keyboard-highlighted
+
+filteredConditions is a derived value computed on every render from filterConditions(conditions, inputValue). It is never stored in state, which guarantees filtering is always from the canonical list and never incremental.
+Behaviour:
+* On focus: opens the suggestion list showing all conditions (input is empty, full list returned).
+* On typing: updates inputValue, reopens the list, clears activeIndex, and calls onChange(null) to invalidate any previous selection.
+* On suggestion click: sets inputValue to the condition label, closes the list, calls onChange(condition.id).
+* On selection via keyboard Enter: same outcome as click.
+* On blur: closes the list after a 150ms delay. The delay is necessary because mousedown on a suggestion fires the input blur event before the click registers. Without the delay the list closes before the selection is applied. The blur timeout is cancelled if the user refocuses the input or clicks a suggestion.
+* Escape closes the list without clearing the input or selection. Tab closes the list and allows natural focus movement.
+
+Keyboard navigation:
+* ArrowDown — moves highlight down, wraps from last to first
+* ArrowUp — moves highlight up, wraps from first to last
+* Enter — selects the highlighted condition if one exists
+* Escape — closes the list
+* Tab — closes the list, does not prevent default
+
+Suggestion list:
+* Rendered as an absolutely-positioned <ul> below the input. position: relative on the container ensures correct positioning. max-height: 300px with overflow-y: auto prevents the list extending off screen. z-index: 100 ensures it overlays subsequent page content.
+* When the filtered list is shorter than the full list, a count label is shown at the top of the list: "Showing X of Y conditions."
+* When inputValue is non-empty but no tags or labels matched and filterConditions fell back to the full list, a message is shown instead of the count: "No matching conditions — try different words, or scroll below."
+
+ARIA:
+* Follows the ARIA combobox pattern. The input has role="combobox", aria-expanded, aria-autocomplete="list", aria-controls pointing to the listbox, and aria-activedescendant pointing to the active option when keyboard-highlighted. The list has role="listbox". Each item has role="option" and aria-selected. IDs are generated with useId() to prevent collisions.
+Dependencies: search.ts (filterConditions), types.ts (ConditionSummary). No external library.
+
+Condition search_tags — ruleset schema
+search_tags is an optional field in the presentation block of each ruleset JSON file. It provides synonyms, abbreviations, and colloquial terms that patients might type when searching for a condition.
+Location in ruleset: inside presentation, alongside label and free_text_prompt.
+Example:
+json"presentation": {
+  "label": "Urinary symptoms",
+  "free_text_prompt": "Tell us about your symptoms and when they started.",
+  "search_tags": ["UTI", "cystitis", "bladder infection", "burning urine"]
+}
+```
+
+**Design rationale:** search tags are presentation-layer metadata, not clinical content. Placing them inside the `presentation` block keeps clinical schema (questions, safety rules, encoder definitions) free of search concerns. Tags are written and maintained by whoever edits the ruleset JSON — there is no automatic synonym generation.
+
+**Validation** (enforced by `condition_registry.py` at startup — any failure aborts startup):
+
+- `search_tags` is optional. Absent means empty list, not an error.
+- If present, must be a list.
+- Each item must be a non-empty string after stripping whitespace.
+- Each item must not exceed `SEARCH_TAGS_MAX_TAG_LENGTH` (60) characters.
+- Total count must not exceed `SEARCH_TAGS_MAX_COUNT` (20) tags.
+- Case-insensitive duplicates are silently removed with a logged warning. First occurrence is kept.
+- `search_tags` is added to the presentation allow-list in `condition_registry.py`. Any other unexpected key in `presentation` still aborts startup.
+
+**Exposure:** `condition_registry.list_conditions()` returns `search_tags` alongside `id` and `label`. Search tags are never exposed in the clinical engine, safety engine, or any backend module other than the registry.
+
+**Maintenance note:** tags are the only mechanism for synonym matching. There is no automatic or ML-based synonym expansion. If a condition is renamed or new colloquial terms become common, the JSON file must be updated manually.
+
 ---
 
 ### 3.20 admin_context.py — Admin authentication boundary
