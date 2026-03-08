@@ -1,0 +1,39 @@
+{
+  "condition_id": "general_consultation",
+
+  "presentation": {
+    "label": "General consultation",
+    "free_text_prompt": "Please describe what you would like to discuss with the practice."
+  },
+
+  "questions": [
+    {
+      "question_id": "general_consultation_1",
+      "question": "When did this problem start?",
+      "answer_key": "problem_onset",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "general_consultation_2",
+      "question": "What impact is this having on you?",
+      "answer_key": "problem_impact",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "general_consultation_3",
+      "question": "Have you tried anything so far to help with this problem?",
+      "answer_key": "problem_tried",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {}
+  }
+}

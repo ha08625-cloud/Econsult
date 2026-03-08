@@ -14,6 +14,7 @@ import type {
   ConditionPresentation,
 } from "./types";
 import ConditionCombobox from "./ConditionCombobox";
+import { GENERAL_CONSULTATION_ID } from "./constants";
 
 // ---------------------------------
 // Helpers
@@ -124,6 +125,17 @@ export default function App() {
   // ---------------------------------
 
   if (screen === "SELECT_CONDITION") {
+    // Exclude the general consultation condition from the combobox.
+    // It is available via the blank form button below instead.
+    const selectableConditions: ConditionSummary[] = conditions
+      ? conditions.filter((c) => c.id !== GENERAL_CONSULTATION_ID)
+      : [];
+
+    function handleBlankForm() {
+      setSelectedConditionId(GENERAL_CONSULTATION_ID);
+      setScreen("FREE_TEXT");
+    }
+
     return (
       <div>
         <h1>Start consultation</h1>
@@ -137,7 +149,7 @@ export default function App() {
             </label>
 
             <ConditionCombobox
-              conditions={conditions}
+              conditions={selectableConditions}
               selectedId={selectedConditionId}
               onChange={setSelectedConditionId}
             />
@@ -149,6 +161,20 @@ export default function App() {
             >
               Continue
             </button>
+
+            <div style={{
+              marginTop: "2em",
+              paddingTop: "1.5em",
+              borderTop: "1px solid #ddd",
+            }}>
+              <p style={{ margin: "0 0 0.75em 0", color: "#555" }}>
+                If you cannot find a condition that matches your problem, you
+                can use a blank form instead.
+              </p>
+              <button onClick={handleBlankForm}>
+                Use blank form
+              </button>
+            </div>
           </>
         )}
       </div>
