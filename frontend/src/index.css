@@ -1,68 +1,428 @@
+/* ============================================================
+   Econsult patient frontend — global styles
+   Palette: white surfaces, NHS blue accents, light grey background
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&display=swap');
+
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+  --bg:             #f0f4f7;
+  --surface:        #ffffff;
+  --border:         #c8d2dc;
+  --border-focus:   #005eb8;
+  --text:           #1a2332;
+  --text-muted:     #5a6a7a;
+  --text-label:     #2c3e50;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  --nhs-blue:       #005eb8;
+  --nhs-blue-dark:  #003d7a;
+  --nhs-blue-light: #e8f0fb;
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --danger:         #b91c1c;
+  --danger-bg:      #fef2f2;
+  --danger-border:  #fca5a5;
+
+  --warning-bg:     #fffbeb;
+  --warning-border: #fcd34d;
+  --warning-text:   #78350f;
+
+  --info-bg:        #eff6ff;
+  --info-border:    #93c5fd;
+
+  --suggested:      #d1fae5;
+  --suggested-border: #6ee7b7;
+  --suggested-text: #065f46;
+
+  --radius-sm:      3px;
+  --radius:         5px;
+  --radius-lg:      8px;
+
+  --font: 'Source Sans 3', 'Segoe UI', sans-serif;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
-a:hover {
-  color: #535bf2;
+
+html, body {
+  height: 100%;
 }
 
 body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* ============================================================
+   Page structure
+   ============================================================ */
+
+.page-header {
+  background: var(--nhs-blue);
+  padding: 0 24px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+}
+
+.page-header-title {
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.page-container {
+  max-width: 580px;
+  margin: 40px auto;
+  padding: 0 20px;
+}
+
+.screen-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 36px 40px;
+}
+
+/* ============================================================
+   Typography
+   ============================================================ */
 
 h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--nhs-blue);
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
+h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+p {
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
+p:last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================================
+   Form elements
+   ============================================================ */
+
+.field {
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-label);
+  margin-bottom: 6px;
+}
+
+input[type="text"],
+textarea,
+select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 15px;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+input[type="text"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(0, 94, 184, 0.15);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+/* ============================================================
+   Radio buttons (Yes / No)
+   ============================================================ */
+
+.radio-group {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--text);
+  padding: 8px 16px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.12s, background 0.12s;
+  user-select: none;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+.radio-option:hover {
+  border-color: var(--nhs-blue);
+  background: var(--nhs-blue-light);
+}
+
+.radio-option input[type="radio"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--nhs-blue);
+}
+
+.radio-option.selected {
+  border-color: var(--nhs-blue);
+  background: var(--nhs-blue-light);
+  font-weight: 600;
+}
+
+/* ============================================================
+   Buttons
+   ============================================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 24px;
+  border-radius: var(--radius);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--nhs-blue);
+  color: #ffffff;
+  border-color: var(--nhs-blue);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: var(--nhs-blue-dark);
+  border-color: var(--nhs-blue-dark);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--nhs-blue);
+  border-color: var(--nhs-blue);
+}
+
+.btn-secondary:not(:disabled):hover {
+  background: var(--nhs-blue-light);
+}
+
+.btn-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  align-items: center;
+}
+
+/* ============================================================
+   Alert / info boxes
+   ============================================================ */
+
+.alert {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border-left: 4px solid transparent;
+  margin-bottom: 20px;
+  font-size: 15px;
+}
+
+.alert strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.alert-danger {
+  background: var(--danger-bg);
+  border-left-color: var(--danger);
+  color: var(--danger);
+}
+
+.alert-info {
+  background: var(--info-bg);
+  border-left-color: var(--nhs-blue);
+  color: var(--text);
+}
+
+.alert-warning {
+  background: var(--warning-bg);
+  border-left-color: var(--warning-border);
+  color: var(--warning-text);
+}
+
+/* ============================================================
+   Question cards (EDIT screen)
+   ============================================================ */
+
+.question-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}
+
+.question-card.suggested {
+  border-color: var(--suggested-border);
+  background: var(--suggested);
+}
+
+.suggested-badge {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--suggested-text);
+  background: transparent;
+  letter-spacing: 0.03em;
+}
+
+/* ============================================================
+   Review screen answer list
+   ============================================================ */
+
+.review-list {
+  list-style: none;
+  margin-bottom: 20px;
+}
+
+.review-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+  font-size: 15px;
+}
+
+.review-item:last-child {
+  border-bottom: none;
+}
+
+.review-question {
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.review-answer {
+  font-weight: 600;
+  color: var(--text);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Description box (free text display on EDIT/REVIEW)
+   ============================================================ */
+
+.description-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  font-size: 15px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ============================================================
+   Dividers and spacing utilities
+   ============================================================ */
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
+}
+
+.mt-sm  { margin-top: 12px; }
+.mt-md  { margin-top: 20px; }
+.mt-lg  { margin-top: 32px; }
+.mb-sm  { margin-bottom: 12px; }
+.mb-md  { margin-bottom: 20px; }
+
+/* ============================================================
+   Loading / status text
+   ============================================================ */
+
+.status-text {
+  color: var(--text-muted);
+  font-size: 15px;
+  padding: 16px 0;
+}
+
+/* ============================================================
+   Done screen
+   ============================================================ */
+
+.done-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--nhs-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.done-icon svg {
+  stroke: #ffffff;
 }

@@ -8,40 +8,82 @@ import type {
 
 const API_BASE = ""; // same-origin
 
+// ---------------------------------
+// Typed error
+// ---------------------------------
+
+export class ApiError extends Error {
+  status: number | null;
+
+  constructor(message: string, status: number | null) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function friendlyErrorMessage(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 409) {
+      return "Please check you do not have this form open in another tab. If you do, close the other tab and try again.";
+    }
+    if (e.status !== null && e.status >= 500) {
+      return "The server encountered a problem. Please try again in a moment.";
+    }
+    return "Something went wrong. Please try again.";
+  }
+  // fetch() itself threw — likely a network failure
+  return "Could not reach the server. Please check your internet connection and try again.";
+}
+
+// ---------------------------------
+// Internal helpers
+// ---------------------------------
+
 async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(API_BASE + url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(API_BASE + url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError("Network failure", null);
+  }
 
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
+    throw new ApiError(`HTTP ${res.status}`, res.status);
   }
 
   return (await res.json()) as T;
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(API_BASE + url, {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(API_BASE + url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+  } catch {
+    throw new ApiError("Network failure", null);
+  }
 
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
+    throw new ApiError(`HTTP ${res.status}`, res.status);
   }
 
   return (await res.json()) as T;
 }
 
-// -------------------------------
+// ---------------------------------
 // Condition discovery (Screens 0-1)
-// -------------------------------
+// ---------------------------------
 
 export async function getConditions(): Promise<{
   conditions: ConditionSummary[];
@@ -55,9 +97,9 @@ export async function getConditionPresentation(
   return getJson(`/conditions/${encodeURIComponent(conditionId)}/presentation`);
 }
 
-// -------------------------------
+// ---------------------------------
 // Form session endpoints
-// -------------------------------
+// ---------------------------------
 
 export async function initForm(conditionId: string, freeText: string | null): Promise<{
   runtime_id: string;

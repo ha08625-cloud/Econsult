@@ -37,7 +37,7 @@
   "safety": {
     "rules": {
       "fever_with_urinary_symptoms": {
-        "all": [
+        "any": [
           { "is_true": "fever_present" }
         ],
         "message": "You should seek urgent medical advice if you have a fever with urinary symptoms."

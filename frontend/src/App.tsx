@@ -5,6 +5,7 @@ import {
   finishForm,
   getConditions,
   getConditionPresentation,
+  friendlyErrorMessage,
 } from "./api";
 import type {
   ClientStateView,
@@ -29,6 +30,27 @@ function initialiseEditableAnswers(
   }, {} as Record<string, boolean | string | null>);
 }
 
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <header className="page-header">
+        <span className="page-header-title">Online Consultation</span>
+      </header>
+      <div className="page-container">
+        <div className="screen-card">{children}</div>
+      </div>
+    </>
+  );
+}
+
+function InlineError({ message }: { message: string }) {
+  return (
+    <div className="alert alert-danger" style={{ marginTop: "16px", marginBottom: 0 }}>
+      <p style={{ margin: 0 }}>{message}</p>
+    </div>
+  );
+}
+
 // ---------------------------------
 // App
 // ---------------------------------
@@ -47,6 +69,7 @@ export default function App() {
   // Shared UI state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
+  const [screenError, setScreenError] = useState<string | null>(null);
 
   // Screen 0 state (condition discovery)
   const [conditions, setConditions] = useState<ConditionSummary[] | null>(null);
@@ -55,6 +78,11 @@ export default function App() {
   // Screen 1 state (presentation framing)
   const [presentation, setPresentation] = useState<ConditionPresentation | null>(null);
   const [freeText, setFreeText] = useState<string>("");
+
+  // Clear inline error whenever the screen changes
+  useEffect(() => {
+    setScreenError(null);
+  }, [screen]);
 
   // ---------------------------------
   // Condition list fetch (Screen 0)
@@ -71,13 +99,14 @@ export default function App() {
         const res = await getConditions();
         if (cancelled) return;
         if (!res.conditions || res.conditions.length === 0) {
-          setFatalError("No conditions available");
+          setFatalError("No conditions are currently available. Please contact the practice directly.");
           return;
         }
         setConditions(res.conditions);
       } catch (e) {
         if (!cancelled) {
-          setFatalError(String(e));
+          // Cannot show the form at all without conditions — fatal
+          setFatalError(friendlyErrorMessage(e));
         }
       }
     }
@@ -95,28 +124,36 @@ export default function App() {
 
   if (fatalError) {
     return (
-      <div>
-        <h1>Fatal error</h1>
-        <p>{fatalError}</p>
-        <button
-          onClick={() => {
-            setFatalError(null);
-            setScreen("SELECT_CONDITION");
-            setRuntimeId(null);
-            setVersion(null);
-            setClientState(null);
-            setEditableAnswers(null);
-            setAdditionalText("");
-            setSafetyMessages([]);
-            setConditions(null);
-            setSelectedConditionId(null);
-            setPresentation(null);
-            setFreeText("");
-          }}
-        >
-          Restart
-        </button>
-      </div>
+      <PageShell>
+        <h1>Unable to load the form</h1>
+        <div className="alert alert-danger">
+          <p>{fatalError}</p>
+        </div>
+        <p style={{ color: "var(--text-muted)", fontSize: "14px", marginTop: "12px" }}>
+          If this problem persists, please contact the practice directly.
+        </p>
+        <div className="btn-row">
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setFatalError(null);
+              setScreen("SELECT_CONDITION");
+              setRuntimeId(null);
+              setVersion(null);
+              setClientState(null);
+              setEditableAnswers(null);
+              setAdditionalText("");
+              setSafetyMessages([]);
+              setConditions(null);
+              setSelectedConditionId(null);
+              setPresentation(null);
+              setFreeText("");
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      </PageShell>
     );
   }
 
@@ -125,8 +162,6 @@ export default function App() {
   // ---------------------------------
 
   if (screen === "SELECT_CONDITION") {
-    // Exclude the general consultation condition from the combobox.
-    // It is available via the blank form button below instead.
     const selectableConditions: ConditionSummary[] = conditions
       ? conditions.filter((c) => c.id !== GENERAL_CONSULTATION_ID)
       : [];
@@ -137,47 +172,46 @@ export default function App() {
     }
 
     return (
-      <div>
-        <h1>Start consultation</h1>
+      <PageShell>
+        <h1>Start your consultation</h1>
 
         {conditions === null ? (
-          <p>Loading conditions...</p>
+          <p className="status-text">Loading...</p>
         ) : (
           <>
-            <label htmlFor="condition-combobox-input">
-              What is your consultation about?
-            </label>
+            <div className="field">
+              <label htmlFor="condition-combobox-input">
+                What is your consultation about?
+              </label>
+              <ConditionCombobox
+                conditions={selectableConditions}
+                selectedId={selectedConditionId}
+                onChange={setSelectedConditionId}
+              />
+            </div>
 
-            <ConditionCombobox
-              conditions={selectableConditions}
-              selectedId={selectedConditionId}
-              onChange={setSelectedConditionId}
-            />
-
-            <button
-              disabled={selectedConditionId === null}
-              onClick={() => setScreen("FREE_TEXT")}
-              style={{ marginTop: "1em" }}
-            >
-              Continue
-            </button>
-
-            <div style={{
-              marginTop: "2em",
-              paddingTop: "1.5em",
-              borderTop: "1px solid #ddd",
-            }}>
-              <p style={{ margin: "0 0 0.75em 0", color: "#555" }}>
-                If you cannot find a condition that matches your problem, you
-                can use a blank form instead.
-              </p>
-              <button onClick={handleBlankForm}>
-                Use blank form
+            <div className="btn-row">
+              <button
+                className="btn btn-primary"
+                disabled={selectedConditionId === null}
+                onClick={() => setScreen("FREE_TEXT")}
+              >
+                Continue
               </button>
             </div>
+
+            <hr className="divider" />
+
+            <p style={{ color: "var(--text-muted)", fontSize: "14px", marginBottom: "12px" }}>
+              If you cannot find a condition that matches your problem, you can
+              use a blank form instead.
+            </p>
+            <button className="btn btn-secondary" onClick={handleBlankForm}>
+              Use blank form
+            </button>
           </>
         )}
-      </div>
+      </PageShell>
     );
   }
 
@@ -197,91 +231,120 @@ export default function App() {
           const res = await getConditionPresentation(selectedConditionId);
           setPresentation(res);
         } catch (e) {
-          setFatalError(String(e));
+          // Presentation load failure: go back to condition selection
+          // so the patient can try again without losing anything meaningful
+          setScreenError(friendlyErrorMessage(e));
+          setPresentation(null);
         }
       })();
 
       return (
-        <div>
-          <p>Loading...</p>
-        </div>
+        <PageShell>
+          {screenError ? (
+            <>
+              <h1>Something went wrong</h1>
+              <InlineError message={screenError} />
+              <div className="btn-row">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setScreenError(null);
+                    setScreen("SELECT_CONDITION");
+                  }}
+                >
+                  Back
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setScreenError(null);
+                    setPresentation(null);
+                  }}
+                >
+                  Try again
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="status-text">Loading...</p>
+          )}
+        </PageShell>
       );
     }
 
     if (presentation === null) {
       return (
-        <div>
-          <p>Loading...</p>
-        </div>
+        <PageShell>
+          <p className="status-text">Loading...</p>
+        </PageShell>
       );
     }
 
     return (
-      <div>
+      <PageShell>
         <h1>{presentation.label}</h1>
 
-        <div style={{
-          backgroundColor: "#fee",
-          padding: "1em",
-          marginBottom: "1em",
-          border: "1px solid #c00",
-          borderRadius: "4px",
-        }}>
+        <div className="alert alert-danger">
           <strong>Important safety information</strong>
-          <p style={{ marginBottom: 0 }}>{presentation.universal_safety_warning}</p>
+          <p>{presentation.universal_safety_warning}</p>
         </div>
 
         {presentation.practice_signposting &&
           presentation.practice_signposting.length > 0 && (
-            <div style={{
-              backgroundColor: "#eef",
-              padding: "1em",
-              marginBottom: "1em",
-              border: "1px solid #00c",
-              borderRadius: "4px",
-            }}>
+            <div className="alert alert-info">
               <strong>Information from your practice</strong>
               {presentation.practice_signposting.map((info, i) => (
-                <p key={i} style={{ marginBottom: i === presentation.practice_signposting!.length - 1 ? 0 : undefined }}>
-                  {info}
-                </p>
+                <p key={i}>{info}</p>
               ))}
             </div>
           )}
 
-        <label>
-          {presentation.free_text_prompt ?? "Describe your symptoms"}
+        <div className="field">
+          <label htmlFor="free-text-input">
+            {presentation.free_text_prompt ?? "Describe your symptoms"}
+          </label>
           <textarea
+            id="free-text-input"
             value={freeText}
-            onChange={(e) => setFreeText(e.target.value)}
+            onChange={(e) => {
+              setFreeText(e.target.value);
+              if (screenError) setScreenError(null);
+            }}
+            rows={5}
           />
-        </label>
+        </div>
 
-        <button
-          disabled={isSubmitting}
-          onClick={async () => {
-            try {
-              setIsSubmitting(true);
-              const res = await initForm(selectedConditionId, freeText || null);
-              setRuntimeId(res.runtime_id);
-              setVersion(res.version);
-              setClientState(res.client_state);
-              setEditableAnswers(initialiseEditableAnswers(res.client_state));
-              setAdditionalText(res.client_state.additional_text ?? "");
-              setPresentation(null);
-              setSelectedConditionId(null);
-              setFreeText("");
-              setScreen("EDIT");
-            } catch (e) {
-              setFatalError(String(e));
-            } finally {
-              setIsSubmitting(false);
-            }
-          }}
-        >
-          {isSubmitting ? "Submitting\u2026" : "Continue"}
-        </button>
-      </div>
+        {screenError && <InlineError message={screenError} />}
+
+        <div className="btn-row">
+          <button
+            className="btn btn-primary"
+            disabled={isSubmitting}
+            onClick={async () => {
+              setScreenError(null);
+              try {
+                setIsSubmitting(true);
+                const res = await initForm(selectedConditionId, freeText || null);
+                setRuntimeId(res.runtime_id);
+                setVersion(res.version);
+                setClientState(res.client_state);
+                setEditableAnswers(initialiseEditableAnswers(res.client_state));
+                setAdditionalText(res.client_state.additional_text ?? "");
+                setPresentation(null);
+                setSelectedConditionId(null);
+                setFreeText("");
+                setScreen("EDIT");
+              } catch (e) {
+                setScreenError(friendlyErrorMessage(e));
+              } finally {
+                setIsSubmitting(false);
+              }
+            }}
+          >
+            {isSubmitting ? "Please wait\u2026" : "Continue"}
+          </button>
+        </div>
+      </PageShell>
     );
   }
 
@@ -302,54 +365,52 @@ export default function App() {
     });
 
     return (
-      <div>
+      <PageShell>
         <h1>{clientState.condition_label}</h1>
 
         {clientState.free_text && (
-          <div>
-            <h3>Your description</h3>
-            <p>{clientState.free_text}</p>
+          <div className="description-box">
+            {clientState.free_text}
           </div>
         )}
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-          }}
-        >
+        <form onSubmit={(e) => e.preventDefault()}>
           {clientState.questions.map((q) => (
-            <div key={q.answer_key}>
+            <div
+              key={q.answer_key}
+              className={`question-card${q.suggested ? " suggested" : ""}`}
+            >
               <label>
                 {q.question_text}
-                {q.required && " *"}
+                {q.required && <span style={{ color: "var(--danger)", marginLeft: "4px" }}>*</span>}
               </label>
 
               {q.answer_type === "boolean" ? (
-                <div>
-                  <label>
+                <div className="radio-group">
+                  <label
+                    className={`radio-option${editableAnswers[q.answer_key] === true ? " selected" : ""}`}
+                  >
                     <input
                       type="radio"
                       name={q.answer_key}
                       checked={editableAnswers[q.answer_key] === true}
                       onChange={() => {
-                        setEditableAnswers({
-                          ...editableAnswers,
-                          [q.answer_key]: true,
-                        });
+                        setEditableAnswers({ ...editableAnswers, [q.answer_key]: true });
+                        if (screenError) setScreenError(null);
                       }}
                     />
                     Yes
                   </label>
-                  <label>
+                  <label
+                    className={`radio-option${editableAnswers[q.answer_key] === false ? " selected" : ""}`}
+                  >
                     <input
                       type="radio"
                       name={q.answer_key}
                       checked={editableAnswers[q.answer_key] === false}
                       onChange={() => {
-                        setEditableAnswers({
-                          ...editableAnswers,
-                          [q.answer_key]: false,
-                        });
+                        setEditableAnswers({ ...editableAnswers, [q.answer_key]: false });
+                        if (screenError) setScreenError(null);
                       }}
                     />
                     No
@@ -360,65 +421,72 @@ export default function App() {
                   type="text"
                   value={(editableAnswers[q.answer_key] as string | null) || ""}
                   onChange={(e) => {
-                    setEditableAnswers({
-                      ...editableAnswers,
-                      [q.answer_key]: e.target.value,
-                    });
+                    setEditableAnswers({ ...editableAnswers, [q.answer_key]: e.target.value });
+                    if (screenError) setScreenError(null);
                   }}
                 />
               )}
 
               {q.suggested && (
-                <div>
-                  <small><small>Suggested answer — please check</small></small>
-                </div>
+                <span className="suggested-badge">
+                  Pre-filled from your description — please check
+                </span>
               )}
             </div>
           ))}
 
-          <div style={{ marginTop: "1.5em" }}>
+          <div className="field mt-md">
             <label htmlFor="additional-text">
-              If you wish to add any additional information, you can write it
-              here. For example, if you have answered yes to any of the symptoms
-              above, you can give details here.
+              Additional information (optional)
             </label>
+            <p style={{ fontSize: "14px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 400 }}>
+              If you answered yes to any symptoms above, you can give details here.
+            </p>
             <textarea
               id="additional-text"
               value={additionalText}
-              onChange={(e) => setAdditionalText(e.target.value)}
+              onChange={(e) => {
+                setAdditionalText(e.target.value);
+                if (screenError) setScreenError(null);
+              }}
               rows={4}
-              style={{ width: "100%", marginTop: "0.5em" }}
             />
           </div>
 
-          <button
-            disabled={!allRequiredAnswered || isSubmitting}
-            onClick={async () => {
-              try {
-                setIsSubmitting(true);
-                const payload: ClientAnswerReturn = {
-                  runtime_id: runtimeId,
-                  base_version: version,
-                  answers: editableAnswers,
-                  additional_text: additionalText.trim() || null,
-                };
-                const res = await updateForm(payload);
-                setVersion(res.version);
-                setClientState(res.client_state);
-                setSafetyMessages(res.safety_messages);
-                setEditableAnswers(null);
-                setScreen("REVIEW");
-              } catch (e) {
-                setFatalError(String(e));
-              } finally {
-                setIsSubmitting(false);
-              }
-            }}
-          >
-            {isSubmitting ? "Submitting\u2026" : "Review"}
-          </button>
+          {screenError && <InlineError message={screenError} />}
+
+          <div className="btn-row">
+            <button
+              className="btn btn-primary"
+              disabled={!allRequiredAnswered || isSubmitting}
+              onClick={async () => {
+                setScreenError(null);
+                try {
+                  setIsSubmitting(true);
+                  const payload: ClientAnswerReturn = {
+                    runtime_id: runtimeId,
+                    base_version: version,
+                    answers: editableAnswers,
+                    additional_text: additionalText.trim() || null,
+                  };
+                  const res = await updateForm(payload);
+                  setVersion(res.version);
+                  setClientState(res.client_state);
+                  setSafetyMessages(res.safety_messages);
+                  setEditableAnswers(null);
+                  setScreen("REVIEW");
+                } catch (e) {
+                  setScreenError(friendlyErrorMessage(e));
+                } finally {
+                  setIsSubmitting(false);
+                }
+              }}
+            >
+              {isSubmitting ? "Please wait\u2026" : "Review answers"}
+            </button>
+          </div>
         </form>
-      </div>
+      </PageShell>
     );
   }
 
@@ -435,66 +503,85 @@ export default function App() {
     const hasSafetyBlock = safetyMessages.length > 0;
 
     return (
-      <div>
-        <h1>Review</h1>
+      <PageShell>
+        <h1>Review your answers</h1>
 
         <h3>{clientState.condition_label}</h3>
 
-        {clientState.free_text && <p>{clientState.free_text}</p>}
+        {clientState.free_text && (
+          <div className="description-box mb-md">
+            {clientState.free_text}
+          </div>
+        )}
 
-        <ul>
+        <ul className="review-list">
           {clientState.questions.map((q) => (
-            <li key={q.answer_key}>
-              <strong>{q.question_text}</strong>:{" "}
-              {q.current_value === null || q.current_value === ""
-                ? "(not answered)"
-                : String(q.current_value)}
+            <li key={q.answer_key} className="review-item">
+              <span className="review-question">{q.question_text}</span>
+              <span className="review-answer">
+                {q.current_value === null || q.current_value === ""
+                  ? <em style={{ color: "var(--text-muted)", fontWeight: 400 }}>Not answered</em>
+                  : String(q.current_value) === "true"
+                    ? "Yes"
+                    : String(q.current_value) === "false"
+                      ? "No"
+                      : String(q.current_value)}
+              </span>
             </li>
           ))}
         </ul>
 
         {clientState.additional_text && (
-          <div>
+          <>
             <h3>Additional information</h3>
-            <p>{clientState.additional_text}</p>
-          </div>
+            <div className="description-box mb-md">
+              {clientState.additional_text}
+            </div>
+          </>
         )}
 
         {hasSafetyBlock && (
-          <div>
-            <h3>Important</h3>
+          <div className="alert alert-danger">
+            <strong>Important — action required</strong>
             {safetyMessages.map((m) => (
               <p key={m.rule_id}>{m.message}</p>
             ))}
           </div>
         )}
 
-        <button
-          onClick={() => {
-            setEditableAnswers(initialiseEditableAnswers(clientState));
-            setScreen("EDIT");
-          }}
-        >
-          Back
-        </button>
+        {screenError && <InlineError message={screenError} />}
 
-        <button
-          disabled={hasSafetyBlock || isSubmitting}
-          onClick={async () => {
-            try {
-              setIsSubmitting(true);
-              await finishForm(runtimeId, version);
-              setScreen("DONE");
-            } catch (e) {
-              setFatalError(String(e));
-            } finally {
-              setIsSubmitting(false);
-            }
-          }}
-        >
-          {isSubmitting ? "Submitting\u2026" : "Submit"}
-        </button>
-      </div>
+        <div className="btn-row">
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              setEditableAnswers(initialiseEditableAnswers(clientState));
+              setScreen("EDIT");
+            }}
+          >
+            Back
+          </button>
+
+          <button
+            className="btn btn-primary"
+            disabled={hasSafetyBlock || isSubmitting}
+            onClick={async () => {
+              setScreenError(null);
+              try {
+                setIsSubmitting(true);
+                await finishForm(runtimeId, version);
+                setScreen("DONE");
+              } catch (e) {
+                setScreenError(friendlyErrorMessage(e));
+              } finally {
+                setIsSubmitting(false);
+              }
+            }}
+          >
+            {isSubmitting ? "Submitting\u2026" : "Submit"}
+          </button>
+        </div>
+      </PageShell>
     );
   }
 
@@ -504,14 +591,19 @@ export default function App() {
 
   if (screen === "DONE") {
     return (
-      <div>
-        <h1>Thank you</h1>
-        <p>Your consultation has been submitted.</p>
-        <p>
+      <PageShell>
+        <div className="done-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
+        <h1>Consultation submitted</h1>
+        <p>Your consultation has been submitted successfully.</p>
+        <p style={{ color: "var(--text-muted)" }}>
           If you do not receive a response from the practice within 48 hours,
           please contact them directly.
         </p>
-      </div>
+      </PageShell>
     );
   }
 
