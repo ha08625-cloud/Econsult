@@ -280,11 +280,11 @@ Responsibilities:
 * Load all ruleset JSON files from the data directory at startup
 * Validate presence and correctness of presentation blocks
 * Extract and retain: condition_id, presentation.label, full presentation block,
-  and absolute ruleset file path
+  search_tags, and absolute ruleset file path
 * Provide lookup methods for the HTTP layer
 
 Public interface:
-* list_conditions() → list of {id, label}
+* list_conditions() → list of {id, label, search_tags}
 * get_presentation(condition_id) → presentation dict
 * get_ruleset_path(condition_id) → absolute file path
 * has_condition(condition_id) → bool
@@ -294,7 +294,7 @@ Properties:
 * Immutable after initialisation
 * Any validation failure aborts startup (fail-fast)
 * No hot reload, no lazy loading
-* Only imports stdlib (os, json, typing)
+* Only imports stdlib (os, json, typing, logging)
 
 This module must never:
 * Expose questions, encoder definitions, safety rules, or ruleset hashes
@@ -308,9 +308,20 @@ Validation rules (fail-fast at startup):
 * presentation block must exist
 * presentation.label must be a non-empty string
 * presentation.free_text_prompt must be a string if present
-* No unexpected keys in presentation (allow-list: label, free_text_prompt)
+* presentation.search_tags must be a list if present
+* Each search tag must be a non-empty string after stripping whitespace
+* Each search tag must not exceed SEARCH_TAGS_MAX_TAG_LENGTH (60) characters
+* Total search tags must not exceed SEARCH_TAGS_MAX_COUNT (20) per condition
+* Case-insensitive duplicate tags are silently removed with a logged warning;
+  first occurrence is kept
+* No unexpected keys in presentation (allow-list: label, free_text_prompt,
+  search_tags)
 * No duplicate condition_id across rulesets
 * Data directory must exist and contain at least one JSON file
+
+Constants (named, not magic numbers):
+* SEARCH_TAGS_MAX_COUNT = 20
+* SEARCH_TAGS_MAX_TAG_LENGTH = 60
 
 Note: pre_form_information is no longer supported in presentation blocks.
 Practice-specific signposting is handled by presentation_service.py using
@@ -709,6 +720,18 @@ json"presentation": {
 
 **Maintenance note:** tags are the only mechanism for synonym matching. There is no automatic or ML-based synonym expansion. If a condition is renamed or new colloquial terms become common, the JSON file must be updated manually.
 
+### 3.19.6 constants.ts — Frontend application constants
+Single file for frontend-wide constants that must be kept in one place.
+Contains:
+
+GENERAL_CONSULTATION_ID: string — the condition_id of the general consultation
+(blank form) ruleset. Must match the condition_id field in general.json exactly.
+Used in App.tsx to filter this condition from the combobox and to set
+selectedConditionId when the blank form button is clicked.
+
+If the general consultation ruleset is ever renamed, update this constant and
+this constant only. Do not hardcode the string elsewhere in the frontend.
+
 ---
 
 ### 3.20 admin_context.py — Admin authentication boundary
@@ -976,7 +999,7 @@ delivery_email is stored at submission time from the practice record.
 If the practice email is updated after submission, historical records
 still reflect the address that was actually used.
 
-## 8. Clinical ruleset structure
+## 8.1 Clinical ruleset structure
 
 {
 "question_id": "urinary_symptoms_1",    # unique identifier
@@ -1010,6 +1033,51 @@ still reflect the address that was actually used.
 * The only source of information is the patient - signals can be derived from encoders reading free text or direct input from the patient.  Information from other sources, e.g. EHRs, is not within the scope of this project
 * Therefore there is no reason to have a signal_id separate from a question_id - the encoder is a helper to speed up a certain subset of questions, not its own class of information
 * The question and the encoder prompt are different wordings of the SAME clinical concept optimised for different consumers (one human, one ML) - if one changes, the other MUST be reviewed or they may diverge dangerously
+
+
+### 8.2 search_tags — Presentation-layer synonym metadata
+
+An optional field in the presentation block of each ruleset JSON.
+Provides synonyms, abbreviations, and colloquial terms that patients may type
+when searching for a condition in the combobox.
+
+Example:
+```json
+"presentation": {
+  "label": "Urinary symptoms",
+  "free_text_prompt": "Tell us about your symptoms and when they started.",
+  "search_tags": ["UTI", "cystitis", "bladder infection", "burning urine"]
+}
+```
+
+Design rationale: tags are presentation-layer metadata, not clinical content.
+They belong inside the presentation block alongside label and free_text_prompt.
+Clinical schema (questions, safety rules, encoder definitions) is unaffected.
+
+Tags are maintained manually in the JSON by whoever edits the ruleset.
+There is no automatic or ML-based synonym expansion.
+
+Validation is enforced by condition_registry.py at startup. See section 3.12.
+
+### 8.3 general.json — Generic fallback condition
+
+A standard ruleset processed identically to all other conditions by the backend.
+It is the target of the "Use blank form" button on Screen 0.
+
+condition_id: "general_consultation" — this value is also stored in
+constants.ts as GENERAL_CONSULTATION_ID. If it changes, both must be updated.
+
+Questions: three open-ended text questions (problem_onset, problem_impact,
+problem_tried). All are answer_type "text", send_to_encoder false.
+
+Safety rules: empty. The universal safety warning shown on Screen 1 provides
+the only safety netting for this pathway.
+
+This condition is registered in the registry and appears in GET /conditions
+like any other condition. The frontend filters it from the combobox using
+GENERAL_CONSULTATION_ID. It is never displayed in search results.
+
+No search_tags are defined — this condition is unreachable via the combobox.
 
 ---
 
