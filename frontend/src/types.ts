@@ -35,6 +35,7 @@ export interface SafetyMessage {
 export interface ConditionSummary {
   id: string;
   label: string;
+  search_tags: string[];
 }
 
 export interface ConditionPresentation {

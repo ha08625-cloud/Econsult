@@ -13,6 +13,7 @@ import type {
   ConditionSummary,
   ConditionPresentation,
 } from "./types";
+import { filterConditions } from "./search";
 
 // ---------------------------------
 // Helpers
@@ -49,6 +50,7 @@ export default function App() {
   // Screen 0 state (condition discovery)
   const [conditions, setConditions] = useState<ConditionSummary[] | null>(null);
   const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Screen 1 state (presentation framing)
   const [presentation, setPresentation] = useState<ConditionPresentation | null>(null);
@@ -108,6 +110,7 @@ export default function App() {
             setSafetyMessages([]);
             setConditions(null);
             setSelectedConditionId(null);
+            setSearchQuery("");
             setPresentation(null);
             setFreeText("");
           }}
@@ -123,6 +126,21 @@ export default function App() {
   // ---------------------------------
 
   if (screen === "SELECT_CONDITION") {
+    // filteredConditions is derived fresh from the canonical list on every render.
+    // It is never stored in state — this guarantees filtering is never incremental.
+    const filteredConditions: ConditionSummary[] = conditions
+      ? filterConditions(conditions, searchQuery)
+      : [];
+
+    // True only when the query produced no matches and we fell back to the full list.
+    const noMatchFallback: boolean =
+      conditions !== null &&
+      searchQuery.trim().length > 0 &&
+      filteredConditions.length === conditions.length &&
+      !conditions.some((c) =>
+        c.label.toLowerCase().includes(searchQuery.toLowerCase().trim())
+      );
+
     return (
       <div>
         <h1>Start consultation</h1>
@@ -131,20 +149,65 @@ export default function App() {
           <p>Loading conditions...</p>
         ) : (
           <>
-            <label>
-              What is your consultation about?
-              <select
-                value={selectedConditionId ?? ""}
-                onChange={(e) => setSelectedConditionId(e.target.value || null)}
-              >
-                <option value="">-- Select --</option>
-                {conditions.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+            <div>
+              <label htmlFor="condition-search">
+                What is your consultation about?
+              </label>
+              <input
+                id="condition-search"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  const newQuery = e.target.value;
+                  setSearchQuery(newQuery);
+
+                  // If the currently selected condition would no longer appear
+                  // in the filtered list, clear the selection.
+                  if (selectedConditionId !== null) {
+                    const newFiltered = filterConditions(conditions, newQuery);
+                    const stillVisible = newFiltered.some(
+                      (c) => c.id === selectedConditionId
+                    );
+                    if (!stillVisible) {
+                      setSelectedConditionId(null);
+                    }
+                  }
+                }}
+                placeholder="Type to search conditions..."
+                autoComplete="off"
+              />
+            </div>
+
+            {noMatchFallback && (
+              <p style={{ color: "#666", fontSize: "0.9em", marginTop: "0.5em" }}>
+                No matching conditions found — try different words, or scroll the
+                full list below.
+              </p>
+            )}
+
+            {!noMatchFallback &&
+              conditions.length > 0 &&
+              filteredConditions.length < conditions.length && (
+                <p style={{ color: "#666", fontSize: "0.9em", marginTop: "0.5em" }}>
+                  Showing {filteredConditions.length} of {conditions.length} conditions
+                </p>
+              )}
+
+            <label htmlFor="condition-select">
+              Select a condition
             </label>
+            <select
+              id="condition-select"
+              value={selectedConditionId ?? ""}
+              onChange={(e) => setSelectedConditionId(e.target.value || null)}
+            >
+              <option value="">-- Select --</option>
+              {filteredConditions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
 
             <button
               disabled={selectedConditionId === null}
@@ -247,6 +310,7 @@ export default function App() {
               setAdditionalText(res.client_state.additional_text ?? "");
               setPresentation(null);
               setSelectedConditionId(null);
+              setSearchQuery("");
               setFreeText("");
               setScreen("EDIT");
             } catch (e) {

@@ -22,9 +22,16 @@ data from practice_repository.py. Universal safety warnings are defined
 as constants in presentation_service.py.
 """
 
+import logging
 import os
 import json
 from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+# Limits for search_tags validation. Named constants so they are easy to adjust.
+SEARCH_TAGS_MAX_COUNT = 20
+SEARCH_TAGS_MAX_TAG_LENGTH = 60
 
 
 class ConditionNotFound(Exception):
@@ -84,19 +91,25 @@ class ConditionRegistry:
 
         # Validate and extract presentation
         presentation = raw.get("presentation")
-        self._validate_presentation(presentation, condition_id, path)
+        search_tags = self._validate_presentation(presentation, condition_id, path)
 
         # Store only what the registry needs
         self._conditions[condition_id] = {
             "label": presentation["label"],
             "presentation": presentation,
+            "search_tags": search_tags,
             "ruleset_path": os.path.abspath(path),
         }
         self._load_order.append(condition_id)
 
     def _validate_presentation(
         self, presentation: Optional[dict], condition_id: str, path: str
-    ) -> None:
+    ) -> List[str]:
+        """
+        Validate the presentation block.
+        Returns the cleaned search_tags list (may be empty).
+        Raises RegistryValidationError on any structural or content problem.
+        """
         prefix = f"condition '{condition_id}' in {path}"
 
         if presentation is None:
@@ -123,20 +136,104 @@ class ConditionRegistry:
                 f"presentation.free_text_prompt must be a string for {prefix}"
             )
 
-        # No nested objects, no templating, no clinical references
-        allowed_keys = {"label", "free_text_prompt"}
+        # search_tags is optional — validate and normalise if present
+        search_tags = self._validate_and_normalise_tags(
+            presentation.get("search_tags"), condition_id, path
+        )
+
+        # No unexpected keys
+        allowed_keys = {"label", "free_text_prompt", "search_tags"}
         extra = set(presentation.keys()) - allowed_keys
         if extra:
             raise RegistryValidationError(
                 f"Unexpected keys in presentation for {prefix}: {extra}"
             )
 
+        return search_tags
+
+    def _validate_and_normalise_tags(
+        self,
+        raw_tags,
+        condition_id: str,
+        path: str,
+    ) -> List[str]:
+        """
+        Validate and normalise search_tags from the presentation block.
+
+        Rules:
+        - Absent or None: return empty list (not an error)
+        - Must be a list
+        - Each item must be a string
+        - Each item stripped must be non-empty
+        - Each item stripped must not exceed SEARCH_TAGS_MAX_TAG_LENGTH
+        - Total count must not exceed SEARCH_TAGS_MAX_COUNT
+        - Duplicates (case-insensitive) are silently removed; first occurrence kept
+        - Returns the cleaned, stripped list
+        """
+        prefix = f"condition '{condition_id}' in {path}"
+
+        if raw_tags is None:
+            return []
+
+        if not isinstance(raw_tags, list):
+            raise RegistryValidationError(
+                f"presentation.search_tags must be a list for {prefix}"
+            )
+
+        if len(raw_tags) > SEARCH_TAGS_MAX_COUNT:
+            raise RegistryValidationError(
+                f"presentation.search_tags exceeds maximum of {SEARCH_TAGS_MAX_COUNT} "
+                f"tags for {prefix} (found {len(raw_tags)})"
+            )
+
+        cleaned: List[str] = []
+        seen_lower: set = set()
+
+        for i, item in enumerate(raw_tags):
+            if not isinstance(item, str):
+                raise RegistryValidationError(
+                    f"presentation.search_tags item {i} must be a string for {prefix}"
+                )
+
+            stripped = item.strip()
+
+            if not stripped:
+                raise RegistryValidationError(
+                    f"presentation.search_tags item {i} is empty after stripping "
+                    f"for {prefix}"
+                )
+
+            if len(stripped) > SEARCH_TAGS_MAX_TAG_LENGTH:
+                raise RegistryValidationError(
+                    f"presentation.search_tags item {i} exceeds maximum length of "
+                    f"{SEARCH_TAGS_MAX_TAG_LENGTH} characters for {prefix}"
+                )
+
+            lower = stripped.lower()
+            if lower in seen_lower:
+                logger.warning(
+                    "Duplicate search_tag '%s' removed for condition '%s' in %s",
+                    stripped,
+                    condition_id,
+                    path,
+                )
+                continue
+
+            seen_lower.add(lower)
+            cleaned.append(stripped)
+
+        return cleaned
+
     # --- Public interface ---
 
     def list_conditions(self) -> List[dict]:
-        """Returns ordered list of {id, label} for all conditions."""
+        """Returns ordered list of {id, label, search_tags} for all conditions."""
         return [
-            {"id": cid, "label": self._conditions[cid]["label"]}
+            {
+                "id": cid,
+                "label": self._conditions[cid]["label"],
+                "search_tags": self._conditions[cid]["search_tags"],
+            }
             for cid in self._load_order
         ]
 

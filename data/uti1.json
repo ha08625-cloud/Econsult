@@ -3,7 +3,8 @@
 
   "presentation": {
     "label": "Urinary symptoms",
-    "free_text_prompt": "Tell us about your symptoms"
+    "free_text_prompt": "Tell us about your symptoms and when they started.",
+    "search_tags": ["UTI", "cystitis", "bladder infection", "burning urine", "frequent urination", "urinary tract infection", "dysuria", "painful urination", "needing to pee", "peeing a lot"]
   },
   
   "questions": [
@@ -36,7 +37,7 @@
   "safety": {
     "rules": {
       "fever_with_urinary_symptoms": {
-        "any": [
+        "all": [
           { "is_true": "fever_present" }
         ],
         "message": "You should seek urgent medical advice if you have a fever with urinary symptoms."
