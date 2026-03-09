@@ -30,7 +30,13 @@ export interface SafetyMessage {
   message: string;
 }
 
-// --- Condition discovery and presentation (Screens 0-1 only) ---
+// --- Pre-session safety gate (Screen 0) ---
+
+export interface SafetyWarning {
+  universal_safety_warning: string;
+}
+
+// --- Condition discovery and presentation (Screens 1-2) ---
 
 export interface ConditionSummary {
   id: string;
