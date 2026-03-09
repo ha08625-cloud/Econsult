@@ -5,6 +5,7 @@ Early prototype updates
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
 - non blocking advisory messages
+- Attach photos
 - Add a public_slug column - More flexibility, but adds complexity
 
 Late prototype updates
