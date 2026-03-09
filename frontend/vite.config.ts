@@ -13,6 +13,7 @@ export default defineConfig({
     proxy: {
       '/conditions': 'http://localhost:8000',
       '/form': 'http://localhost:8000',
+      '/safety-warning': 'http://localhost:8000',
     }
   }
 })
