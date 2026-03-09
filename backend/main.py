@@ -153,6 +153,11 @@ async def api_error_handler(_, exc: APIError):
 # Condition discovery (pre-session, no state)
 # ---------------------------------------------------------------------------
 
+@app.get("/safety-warning")
+async def get_safety_warning():
+    return {"universal_safety_warning": presentation_service.get_universal_safety_warning()}
+
+
 @app.get("/conditions")
 async def list_conditions():
     return {"conditions": registry.list_conditions()}
