@@ -4,36 +4,44 @@
   "presentation": {
     "label": "Ear pain",
     "free_text_prompt": "Tell us more about your ear pain.  You may want to tell us when it started, which side it is affecting, whether you have had other symptoms like a cold, and whether there is hearing loss or discharge",
-    "pre_form_information": [
-      "Many ear infections can be dealt with by the pharmacy"
-    ]
+    "search_tags": ["ear pain", "earache", "ear infection", "otitis", "glue ear", "ear discharge", "blocked ear", "hearing loss", "ear ache", "painful ear", "otitis media", "otitis externa", "swimmer's ear"]
   },
+
   "questions": [
     {
       "question_id": "ear_pain_1",
       "question": "Have you had a fever with this ear pain?",
       "answer_key": "fever_present",
       "answer_type": "Boolean",
-      "send_to_encoder": false,
-      "encoder_prompt": null
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had a fever?"
     },
     {
       "question_id": "ear_pain_2",
       "question": "Have you noticed any discharge coming from the ear?",
       "answer_key": "ear_discharge_present",
       "answer_type": "Boolean",
-      "send_to_encoder": false,
-      "encoder_prompt": null
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate there is discharge coming from the ear?"
     },
     {
       "question_id": "ear_pain_3",
       "question": "Have you experienced any hearing loss in the affected ear?",
       "answer_key": "hearing_loss_present",
       "answer_type": "Boolean",
-      "send_to_encoder": false,
-      "encoder_prompt": null
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has experienced hearing loss?"
+    },
+    {
+      "question_id": "ear_pain_4",
+      "question": "Have you had any associated cold symptoms such as sore throat, cough or runny nose?",
+      "answer_key": "urti_symptoms_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response mention sore throat, cough or runny nose?"
     }
   ],
+
   "safety": {
     "rules": {}
   }
