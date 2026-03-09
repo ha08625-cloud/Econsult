@@ -361,22 +361,32 @@ async def form_finish(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Static file serving (production only)
+# Static file serving
 # All API routes must be registered before this block.
-# In DEV_MODE, Vite serves the frontend on its own port with a proxy.
-# In production, FastAPI serves the built frontend from frontend/dist/.
+# Served whenever frontend/dist exists - i.e. on Railway after the build step.
+# Skipped automatically in local dev because Vite has not built dist/ there.
+# DEV_MODE does not control this - it only controls email and auth behaviour.
 # The catch-all route must come last so it never intercepts API requests.
 # ---------------------------------------------------------------------------
 
-if not _is_dev_mode():
-    FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+_FRONTEND_DIST = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+)
+_FRONTEND_ASSETS = os.path.join(_FRONTEND_DIST, "assets")
+_FRONTEND_INDEX = os.path.join(_FRONTEND_DIST, "index.html")
 
+logger.info("Looking for frontend dist at: %s", _FRONTEND_DIST)
+
+if os.path.isdir(_FRONTEND_ASSETS):
+    logger.info("Frontend dist found - mounting static files")
     app.mount(
         "/assets",
-        StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")),
+        StaticFiles(directory=_FRONTEND_ASSETS),
         name="assets",
     )
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_frontend(full_path: str):
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
+        return FileResponse(_FRONTEND_INDEX)
+else:
+    logger.info("Frontend dist not found - static file serving disabled (local dev mode)")
