@@ -13,7 +13,7 @@ Single-tenant deployment:
 """
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import uuid
 import os
 import logging
@@ -344,3 +344,25 @@ async def form_finish(request: Request):
     repo.close_session(runtime_id, version)
 
     return {"submission_id": submission_id}
+
+
+# ---------------------------------------------------------------------------
+# Static file serving (production only)
+# All API routes must be registered before this block.
+# In DEV_MODE, Vite serves the frontend on its own port with a proxy.
+# In production, FastAPI serves the built frontend from frontend/dist/.
+# The catch-all route must come last so it never intercepts API requests.
+# ---------------------------------------------------------------------------
+
+if not _is_dev_mode():
+    FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+
+    app.mount(
+        "/assets",
+        StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")),
+        name="assets",
+    )
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend(full_path: str):
+        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
