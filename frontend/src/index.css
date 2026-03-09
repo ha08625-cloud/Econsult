@@ -426,3 +426,40 @@ textarea {
 .done-icon svg {
   stroke: #ffffff;
 }
+
+/* ============================================================
+   Safety gate (Screen 0)
+   ============================================================ */
+
+.safety-confirm-row {
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+.safety-confirm-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.safety-confirm-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: var(--nhs-blue);
+  cursor: pointer;
+}
+
+.safety-gate-hint {
+  font-size: 14px;
+  color: var(--danger);
+  margin-top: 10px;
+  margin-bottom: 0;
+}
