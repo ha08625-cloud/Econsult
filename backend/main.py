@@ -298,6 +298,7 @@ async def form_finish(request: Request):
 
     runtime_id = payload["runtime_id"]
     version = payload["version"]
+    contact_preferences = payload["contact_preferences"]
 
     try:
         row = repo.get_latest(runtime_id)
@@ -337,6 +338,7 @@ async def form_finish(request: Request):
             condition_label=condition_label,
             clinical_output=clinical,
             submission_id=submission_id,
+            contact_preferences=contact_preferences,
         )
         submission_repo.update_delivery_status(
             submission_id=submission_id,
