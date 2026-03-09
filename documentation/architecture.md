@@ -1156,15 +1156,27 @@ Patient-facing frontend running via Vite dev server (port 5173) with API
 * Narrow scope — Practices can only configure signposting, not safety warnings,
   labels, or clinical content
 
-### 12.2 Information architecture
+### 12.3 Data flow
 
-Three distinct types of pre-form information, each with clear ownership:
+The universal safety warning is fetched separately from condition presentation,
+before condition selection, so it can be shown on the first screen the patient
+sees. The two fetches serve different purposes and are deliberately kept apart.
 
-| Type | Example | Ownership | Storage |
-|------|---------|-----------|---------|
-| Universal Safety Warning | "Call 999 if chest pain..." | Centralised, immutable | Config constant |
-| Practice Signposting | "Self-refer to physio: 0800..." | Practice-specific, editable | Database |
-| Form Context | "Tell us about your symptoms" | Centralised, per-condition | Ruleset JSON |
+**Pre-session safety gate (Screen 0):**
+1. Patient accesses the form via the practice's website
+2. GET /safety-warning called — returns the universal safety warning constant
+3. Frontend renders the warning and requires checkbox confirmation before proceeding
+4. Patient cannot continue until they confirm the warning does not apply to them
+
+**Condition presentation (Screen 2):**
+1. Patient selects a condition on Screen 1
+2. GET /conditions/{id}/presentation called
+3. presentation_service composes response:
+   a. Fetches condition presentation from registry (immutable, in-memory)
+   b. Fetches practice signposting from database using practice_id from app.state
+   c. Returns composed dict (universal_safety_warning field still present for
+      API backwards compatibility but is not displayed by the frontend here)
+4. Frontend renders condition label, free_text_prompt, and practice_signposting
 
 ### 12.3 Data flow
 
@@ -1221,20 +1233,66 @@ A 409 on a form endpoint means a session version conflict. The most likely cause
 
 | Screen | Failure point | Recovery |
 |---|---|---|
-| Screen 0 — loading conditions | Fetch fails | Fatal — form cannot be shown without condition list |
-| Screen 1 — loading presentation | Fetch fails | Inline error with Back and Try again buttons; condition selection preserved |
-| Screen 1 — submitting free text | initForm fails | Inline error; free text preserved in state |
-| Screen 2 — submitting answers | updateForm fails | Inline error; all answers preserved in editableAnswers |
-| Screen 3 — final submit | finishForm fails | Inline error; review screen intact, patient can retry |
-```
+| Screen 0 — loading safety warning | Fetch fails | Inline error with Try again button; no state to lose |
+| Screen 1 — loading conditions | Fetch fails | Fatal — form cannot be shown without condition list |
+| Screen 2 — loading presentation | Fetch fails | Inline error with Back and Try again buttons; condition selection preserved |
+| Screen 2 — submitting free text | initForm fails | Inline error; free text preserved in state |
+| Screen 3 — submitting answers | updateForm fails | Inline error; all answers preserved in editableAnswers |
+| Screen 4 — final submit | finishForm fails | Inline error; review screen intact, patient can retry |
 
----
+## Section 14 — Safety Gate
 
-Add this to the bottom of your local `architecture.md`. No other files need updating for this change.
+### 14.1 Purpose
 
-Git commit message:
-```
-docs: add Section 13 frontend error handling to architecture.md
+Existing online consultation systems display a universal safety warning on
+the first page the patient sees, before they have selected a condition or
+begun filling in any form. This is the established NHS pattern and exists
+for a clear reason: a patient experiencing a medical emergency should be
+redirected to 999 or A&E before they have invested time filling in a form.
 
-Covers ApiError class, fatalError vs screenError distinction,
-error message mapping by status code, and recoverability by screen.
+Displaying the warning after condition selection, as this system originally
+did, is the wrong order. The patient has already spent time on the form.
+Moving it to the first screen ensures no patient in an emergency proceeds
+further than the first page.
+
+### 14.2 Implementation
+
+**New endpoint:** `GET /safety-warning`
+- No authentication required
+- No condition ID required
+- No session required
+- Returns `{"universal_safety_warning": "..."}` from the
+  `UNIVERSAL_SAFETY_WARNING` constant in `presentation_service.py`
+- The constant remains in exactly one place; this endpoint exposes it
+  without duplicating it
+
+**Frontend gate (Screen 0 — SAFETY_WARNING):**
+- Warning text is fetched on mount via `getSafetyWarning()`
+- A checkbox labelled "I confirm that none of the above apply to me" must
+  be ticked before the Continue button is enabled
+- While the checkbox is unticked, a red hint message reads:
+  "If any of the above apply to you, please call 999 or go to A&E
+  immediately. Do not use this form."
+- Fetch failures show an inline error with a Try again button; no state
+  is lost because no session exists yet at this point
+
+### 14.3 Safety principle
+
+The Continue button being disabled — rather than showing a warning and
+allowing the patient to proceed anyway — is deliberate. A patient having
+a heart attack should have no path to submitting an online form. The gate
+is a hard block, not an advisory.
+
+The checkbox confirmation creates a moment of active acknowledgement. The
+patient must read the warning and make a positive declaration before the
+form is accessible. This matches the pattern used by established NHS online
+consultation platforms.
+
+### 14.4 What did not change
+
+- `UNIVERSAL_SAFETY_WARNING` constant location: still in `presentation_service.py`
+- `GET /conditions/{id}/presentation` still returns `universal_safety_warning`
+  in its response for API backwards compatibility, but the frontend no longer
+  displays it there
+- No changes to any clinical engine module
+- No database changes
