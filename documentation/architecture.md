@@ -1136,8 +1136,7 @@ However:
 * Email delivery of clinical output to practice on form completion
 * DEV_MODE for local development without SMTP configuration
 * question_labels stored in ClinicalOutput for self-contained audit records
-Patient-facing frontend running via Vite dev server (port 5173) with API
-  proxy to FastAPI (port 8000)
+* Patient-facing frontend served as built static files from frontend/dist/ in production, or via Vite dev server (port 5173) with API proxy to FastAPI (port 8000) in local development
 * Admin frontend served as static file at /admin-portal/admin.html
 
 
@@ -1296,3 +1295,82 @@ consultation platforms.
   displays it there
 - No changes to any clinical engine module
 - No database changes
+
+## Section 15 — Deployment
+
+### 15.1 Platform
+
+The application is deployed on Railway (railway.app). Railway provides a
+single-server cloud environment that clones the GitHub repository, runs the
+build script, and starts the server process. Deployments are triggered
+automatically on every push to the main branch.
+
+### 15.2 Build process
+
+Railway runs `build.sh` from the project root on every deployment. The script:
+1. Installs Python dependencies from `requirements.txt`
+2. Runs `npm install` and `npm run build` in the `frontend/` directory,
+   producing a built bundle in `frontend/dist/`
+3. Starts uvicorn
+
+The build environment requires both Python 3.12 and Node.js 22, configured
+in `railway.toml`.
+
+### 15.3 Static file serving
+
+In production, FastAPI serves the built frontend directly. On startup,
+`main.py` checks whether `frontend/dist/assets` exists on disk. If it does,
+it mounts the assets directory and registers a catch-all route that returns
+`index.html` for all unmatched paths. This allows the React app to handle
+its own client-side routing.
+
+This check is filesystem-based, not DEV_MODE-based. In local development,
+`frontend/dist` does not exist (the developer runs Vite separately), so
+static file serving is automatically skipped. No code change is required
+when switching between local and production environments.
+
+### 15.4 Database
+
+The database is SQLite, stored as `runtime.db` in the working directory.
+Railway's filesystem is ephemeral: the database is wiped on every
+deployment or container restart.
+
+Consequences:
+- In-flight form sessions are lost on restart. For a demo deployment with
+  low traffic this is acceptable.
+- The practice record is re-seeded automatically on every startup via
+  `_validate_startup()` in `main.py`, so the app is always ready to serve
+  requests after a restart without manual intervention.
+- Completed submission records are also lost on restart. In DEV_MODE no
+  emails are sent, so there is no external record of submissions either.
+  This is acceptable for a demonstration deployment.
+
+If submissions need to survive restarts in a future version, the correct
+fix is to migrate from SQLite to a managed Postgres instance (Railway
+provides this as an add-on).
+
+### 15.5 Environment variables
+
+The following environment variables must be set in the Railway dashboard:
+
+| Variable       | Purpose                                      |
+|----------------|----------------------------------------------|
+| PRACTICE_ID    | Practice identifier, must match seeded record |
+| DEV_MODE       | Set to 1 to skip SMTP and ADMIN_TOKEN checks  |
+| DB_PATH        | Path to SQLite file (runtime.db)              |
+| DATA_DIR       | Path to condition JSON directory (data)       |
+
+PRACTICE_NAME and PRACTICE_EMAIL are optional. If not set, PRACTICE_NAME
+defaults to the value of PRACTICE_ID and PRACTICE_EMAIL defaults to
+demo@demo.net.
+
+### 15.6 Current deployment mode
+
+The hosted demo runs with DEV_MODE=1. This means:
+- No emails are sent on form submission
+- Admin endpoints accept any non-empty bearer token
+- SMTP environment variables are not required
+
+This is intentional for a demonstration deployment. DEV_MODE must be
+removed and SMTP variables configured before the app is used for any
+real clinical submissions.
