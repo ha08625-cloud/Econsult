@@ -14,7 +14,6 @@ Single-tenant deployment:
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
-from contextlib import asynccontextmanager
 import uuid
 import os
 import logging
@@ -65,6 +64,19 @@ def _is_dev_mode() -> bool:
 
 def _validate_startup(practice_repo: PracticeRepository) -> str:
     practice_id = _require_env("PRACTICE_ID")
+
+    # Seed the practice record if it does not exist.
+    # Handles cloud deployments where the database starts empty on every
+    # container restart. Safe to run on every startup - skips if already present.
+    if not practice_repo.practice_exists(practice_id):
+        practice_name = os.environ.get("PRACTICE_NAME", practice_id)
+        practice_email = os.environ.get("PRACTICE_EMAIL", "demo@demo.net")
+        logger.info("Practice '%s' not found - seeding record now", practice_id)
+        practice_repo.create_practice(
+            practice_id=practice_id,
+            name=practice_name,
+            email=practice_email,
+        )
 
     count = practice_repo.count_practices()
     if count > 1:
@@ -119,31 +131,7 @@ def _validate_startup(practice_repo: PracticeRepository) -> str:
 DATA_DIR = os.environ.get("DATA_DIR", "data")
 DB_PATH = os.environ.get("DB_PATH", "runtime.db")
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Runs once at server startup, before any requests are handled.
-    # Seeds the database with the practice record if it does not exist.
-    # This is the correct place for seeding because environment variables
-    # are available at runtime but not during the Railway build phase.
-    practice_id = os.environ.get("PRACTICE_ID")
-    if practice_id:
-        practice_name = os.environ.get("PRACTICE_NAME", practice_id)
-        practice_email = os.environ.get("PRACTICE_EMAIL", "demo@demo.net")
-        _practice_repo = PracticeRepository(DB_PATH)
-        if not _practice_repo.practice_exists(practice_id):
-            logger.info("Seeding practice record for '%s'", practice_id)
-            _practice_repo.create_practice(
-                practice_id=practice_id,
-                name=practice_name,
-                email=practice_email,
-            )
-        else:
-            logger.info("Practice '%s' already exists, skipping seed", practice_id)
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 repo = RuntimeStateRepository(DB_PATH)
 registry = ConditionRegistry(DATA_DIR)
@@ -153,6 +141,7 @@ presentation_service = PresentationService(registry, practice_repo)
 
 # Startup validation -- runs at import time (when FastAPI loads the module).
 # Any failure here prevents the application from starting.
+# Also seeds the practice record if it does not already exist.
 app.state.practice_id = _validate_startup(practice_repo)
 app.state.registry = registry
 app.state.practice_repo = practice_repo
