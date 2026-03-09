@@ -1,0 +1,80 @@
+{
+  "condition_id": "gynae_bleeding",
+
+  "presentation": {
+    "label": "Vaginal bleeding",
+    "free_text_prompt": "Tell us more about the bleeding, including when it started and any other symptoms you have noticed.",
+    "search_tags": ["vaginal bleeding", "bleeding between periods", "irregular bleeding", "post coital bleeding", "bleeding after sex", "spotting", "intermenstrual bleeding", "abnormal bleeding", "gynae bleeding", "gynaecological bleeding", "heavy periods", "irregular periods", "smear test", "cervical screening"]
+  },
+
+  "questions": [
+    {
+      "question_id": "gynae_bleeding_1",
+      "question": "Did the bleeding occur after sexual intercourse?",
+      "answer_key": "post_coital_bleeding",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate bleeding after sexual intercourse?"
+    },
+    {
+      "question_id": "gynae_bleeding_2",
+      "question": "Has this bleeding happened more than once?",
+      "answer_key": "recurrent_unexpected_bleeding",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the bleeding has happened more than once?"
+    },
+    {
+      "question_id": "gynae_bleeding_3",
+      "question": "Have you had a smear test done in the last 6 months?",
+      "answer_key": "recent_smear_test",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gynae_bleeding_4",
+      "question": "Have you noticed any vaginal discharge?",
+      "answer_key": "discharge_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response mention any vaginal discharge?"
+    },
+    {
+      "question_id": "gynae_bleeding_5",
+      "question": "Do you have any pelvic pain?",
+      "answer_key": "pelvic_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response mention pelvic pain or lower abdominal pain?"
+    },
+    {
+      "question_id": "gynae_bleeding_6",
+      "question": "Have you started, stopped or changed any hormonal contraception in the last 6 months?",
+      "answer_key": "recent_contraception_change",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has started, stopped or changed any hormonal contraception in the last 6 months?"
+    },
+    {
+      "question_id": "gynae_bleeding_7",
+      "question": "Are your periods usually regular?",
+      "answer_key": "periods_usually_regular",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient usually has regular periods?"
+    },
+    {
+      "question_id": "gynae_bleeding_8",
+      "question": "How heavy was the bleeding? (e.g. spotting, like a period, or heavier - you may want to mention how many pads or tampons you needed)",
+      "answer_key": "bleeding_heaviness_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {}
+  }
+}
