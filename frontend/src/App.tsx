@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
+  getSafetyWarning,
   initForm,
   updateForm,
   finishForm,
@@ -56,7 +57,9 @@ function InlineError({ message }: { message: string }) {
 // ---------------------------------
 
 export default function App() {
-  const [screen, setScreen] = useState<"SELECT_CONDITION" | "FREE_TEXT" | "EDIT" | "REVIEW" | "DONE">("SELECT_CONDITION");
+  const [screen, setScreen] = useState<
+    "SAFETY_WARNING" | "SELECT_CONDITION" | "FREE_TEXT" | "EDIT" | "REVIEW" | "DONE"
+  >("SAFETY_WARNING");
 
   // Session state (populated after /form/init)
   const [runtimeId, setRuntimeId] = useState<string | null>(null);
@@ -71,21 +74,49 @@ export default function App() {
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
 
-  // Screen 0 state (condition discovery)
+  // Screen 0 state (safety gate)
+  const [safetyWarningText, setSafetyWarningText] = useState<string | null>(null);
+  const [safetyConfirmed, setSafetyConfirmed] = useState(false);
+
+  // Screen 1 state (condition discovery)
   const [conditions, setConditions] = useState<ConditionSummary[] | null>(null);
   const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
 
-  // Screen 1 state (presentation framing)
+  // Screen 2 state (presentation framing)
   const [presentation, setPresentation] = useState<ConditionPresentation | null>(null);
   const [freeText, setFreeText] = useState<string>("");
 
-  // Clear inline error whenever the screen changes
+  // Clear inline error on screen change
   useEffect(() => {
     setScreenError(null);
   }, [screen]);
 
   // ---------------------------------
-  // Condition list fetch (Screen 0)
+  // Safety warning fetch (Screen 0)
+  // ---------------------------------
+
+  useEffect(() => {
+    if (screen !== "SAFETY_WARNING") return;
+    if (safetyWarningText !== null) return;
+
+    let cancelled = false;
+
+    async function fetchWarning() {
+      try {
+        const res = await getSafetyWarning();
+        if (!cancelled) setSafetyWarningText(res.universal_safety_warning);
+      } catch (e) {
+        if (!cancelled) setScreenError(friendlyErrorMessage(e));
+      }
+    }
+
+    fetchWarning();
+
+    return () => { cancelled = true; };
+  }, [screen, safetyWarningText]);
+
+  // ---------------------------------
+  // Condition list fetch (Screen 1)
   // ---------------------------------
 
   useEffect(() => {
@@ -105,7 +136,6 @@ export default function App() {
         setConditions(res.conditions);
       } catch (e) {
         if (!cancelled) {
-          // Cannot show the form at all without conditions — fatal
           setFatalError(friendlyErrorMessage(e));
         }
       }
@@ -113,9 +143,7 @@ export default function App() {
 
     fetchConditions();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [screen, conditions]);
 
   // ---------------------------------
@@ -137,7 +165,9 @@ export default function App() {
             className="btn btn-primary"
             onClick={() => {
               setFatalError(null);
-              setScreen("SELECT_CONDITION");
+              setScreen("SAFETY_WARNING");
+              setSafetyWarningText(null);
+              setSafetyConfirmed(false);
               setRuntimeId(null);
               setVersion(null);
               setClientState(null);
@@ -158,7 +188,76 @@ export default function App() {
   }
 
   // ---------------------------------
-  // Screen 0: SELECT_CONDITION
+  // Screen 0: SAFETY_WARNING
+  // ---------------------------------
+
+  if (screen === "SAFETY_WARNING") {
+    return (
+      <PageShell>
+        <h1>Before you continue</h1>
+
+        {safetyWarningText === null && !screenError && (
+          <p className="status-text">Loading...</p>
+        )}
+
+        {screenError && (
+          <>
+            <InlineError message={screenError} />
+            <div className="btn-row">
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setScreenError(null);
+                  setSafetyWarningText(null);
+                }}
+              >
+                Try again
+              </button>
+            </div>
+          </>
+        )}
+
+        {safetyWarningText !== null && (
+          <>
+            <div className="alert alert-danger">
+              <strong>Important — read before continuing</strong>
+              <p>{safetyWarningText}</p>
+            </div>
+
+            <div className="safety-confirm-row">
+              <label className="safety-confirm-label">
+                <input
+                  type="checkbox"
+                  checked={safetyConfirmed}
+                  onChange={(e) => setSafetyConfirmed(e.target.checked)}
+                />
+                <span>I confirm that none of the above apply to me</span>
+              </label>
+            </div>
+
+            {!safetyConfirmed && (
+              <p className="safety-gate-hint">
+                If any of the above apply to you, please call 999 or go to A&amp;E immediately. Do not use this form.
+              </p>
+            )}
+
+            <div className="btn-row">
+              <button
+                className="btn btn-primary"
+                disabled={!safetyConfirmed}
+                onClick={() => setScreen("SELECT_CONDITION")}
+              >
+                Continue
+              </button>
+            </div>
+          </>
+        )}
+      </PageShell>
+    );
+  }
+
+  // ---------------------------------
+  // Screen 1: SELECT_CONDITION
   // ---------------------------------
 
   if (screen === "SELECT_CONDITION") {
@@ -216,7 +315,7 @@ export default function App() {
   }
 
   // ---------------------------------
-  // Screen 1: FREE_TEXT
+  // Screen 2: FREE_TEXT
   // ---------------------------------
 
   if (screen === "FREE_TEXT") {
@@ -231,8 +330,6 @@ export default function App() {
           const res = await getConditionPresentation(selectedConditionId);
           setPresentation(res);
         } catch (e) {
-          // Presentation load failure: go back to condition selection
-          // so the patient can try again without losing anything meaningful
           setScreenError(friendlyErrorMessage(e));
           setPresentation(null);
         }
@@ -283,11 +380,6 @@ export default function App() {
     return (
       <PageShell>
         <h1>{presentation.label}</h1>
-
-        <div className="alert alert-danger">
-          <strong>Important safety information</strong>
-          <p>{presentation.universal_safety_warning}</p>
-        </div>
 
         {presentation.practice_signposting &&
           presentation.practice_signposting.length > 0 && (
@@ -349,7 +441,7 @@ export default function App() {
   }
 
   // ---------------------------------
-  // Screen 2: EDIT
+  // Screen 3: EDIT
   // ---------------------------------
 
   if (screen === "EDIT") {
@@ -491,7 +583,7 @@ export default function App() {
   }
 
   // ---------------------------------
-  // Screen 3: REVIEW
+  // Screen 4: REVIEW
   // ---------------------------------
 
   if (screen === "REVIEW") {
@@ -586,7 +678,7 @@ export default function App() {
   }
 
   // ---------------------------------
-  // Screen 4: DONE
+  // Screen 5: DONE
   // ---------------------------------
 
   if (screen === "DONE") {
