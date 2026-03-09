@@ -5,9 +5,13 @@ Early prototype updates
 - add personal information e.g. name, DOB
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
+- database-backed email delivery queue with retries
 - non blocking advisory messages
 - Attach photos
 - Add a public_slug column - More flexibility, but adds complexity
+- HTTPS for web traffic
+- TLS for SMTP
+- encrypted database storage
 
 Late prototype updates
 - Deterministic data augmentation
