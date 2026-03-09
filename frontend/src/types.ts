@@ -50,3 +50,18 @@ export interface ConditionPresentation {
   universal_safety_warning: string;
   practice_signposting?: string[];
 }
+
+// --- Contact preferences (Screen 4) ---
+
+export type ContactMethod = "email" | "text" | "phone";
+
+export type DoctorPreference = "any" | "usual";
+
+export interface ContactPreferences {
+  contact_methods: ContactMethod[];          // min length 1
+  email_address: string | null;             // required if "email" in contact_methods
+  phone_number: string | null;              // required if "text" or "phone" in contact_methods
+  best_time_to_call: string | null;         // required if "phone" in contact_methods
+  doctor_preference: DoctorPreference;
+  usual_doctor_name: string | null;         // required if doctor_preference === "usual"
+}
