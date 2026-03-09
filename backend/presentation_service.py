@@ -34,6 +34,8 @@ from practice_repository import PracticeRepository
 
 # Universal safety warning shown to all patients before all conditions.
 # This is intentionally hardcoded - it should not be editable by practices.
+# Displayed on the first screen the patient sees, before condition selection.
+# Also included in get_patient_presentation() for backwards compatibility.
 UNIVERSAL_SAFETY_WARNING = (
     "If you are experiencing any of the following, do not use this service. "
     "Call 999 or go to A&E immediately: chest pain, difficulty breathing, "
@@ -56,6 +58,16 @@ class PresentationService:
     ):
         self._condition_registry = condition_registry
         self._practice_repository = practice_repository
+
+    def get_universal_safety_warning(self) -> str:
+        """
+        Return the universal safety warning text.
+
+        This is a module-level constant, not practice- or condition-specific.
+        Called by the GET /safety-warning endpoint to serve the pre-condition
+        safety gate screen. No condition ID or practice ID required.
+        """
+        return UNIVERSAL_SAFETY_WARNING
 
     def get_patient_presentation(
         self,
