@@ -4,6 +4,7 @@ import type {
   ConditionSummary,
   ConditionPresentation,
   SafetyMessage,
+  SafetyWarning,
 } from "./types";
 
 const API_BASE = ""; // same-origin
@@ -82,7 +83,15 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 // ---------------------------------
-// Condition discovery (Screens 0-1)
+// Pre-session safety gate (Screen 0)
+// ---------------------------------
+
+export async function getSafetyWarning(): Promise<SafetyWarning> {
+  return getJson("/safety-warning");
+}
+
+// ---------------------------------
+// Condition discovery (Screens 1-2)
 // ---------------------------------
 
 export async function getConditions(): Promise<{
