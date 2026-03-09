@@ -19,6 +19,7 @@ import os
 import smtplib
 from email.message import EmailMessage
 from datetime import datetime
+from typing import Optional
 
 from contracts.serialisation_contracts import ClinicalOutput
 
@@ -41,10 +42,52 @@ def _format_answer(value) -> str:
     return str(value)
 
 
+def _format_contact_preferences(cp: dict) -> list[str]:
+    """
+    Return lines for the contact preferences section.
+    Omits any field that is null or empty rather than printing 'None'.
+    """
+    lines = [
+        "",
+        "CONTACT PREFERENCES",
+        "-" * 40,
+    ]
+
+    methods = cp.get("contact_methods") or []
+    method_labels = {"email": "Email", "text": "Text message", "phone": "Phone call"}
+    readable_methods = ", ".join(method_labels.get(m, m) for m in methods)
+    if readable_methods:
+        lines.append(f"  Contact methods: {readable_methods}")
+
+    email_address = cp.get("email_address")
+    if email_address:
+        lines.append(f"  Email address: {email_address}")
+
+    phone_number = cp.get("phone_number")
+    if phone_number:
+        lines.append(f"  Phone number: {phone_number}")
+
+    best_time = cp.get("best_time_to_call")
+    if best_time:
+        lines.append(f"  Best time to call: {best_time}")
+
+    doctor_pref = cp.get("doctor_preference")
+    if doctor_pref == "usual":
+        lines.append("  Doctor preference: Usual doctor")
+        usual_name = cp.get("usual_doctor_name")
+        if usual_name:
+            lines.append(f"  Usual doctor name: {usual_name}")
+    elif doctor_pref == "any":
+        lines.append("  Doctor preference: Soonest available doctor")
+
+    return lines
+
+
 def _format_body(
     condition_label: str,
     clinical_output: ClinicalOutput,
     submission_id: str,
+    contact_preferences: Optional[dict] = None,
 ) -> str:
     lines = [
         "E-CONSULTATION SUBMISSION",
@@ -83,6 +126,9 @@ def _format_body(
         for msg in clinical_output.safety_messages:
             lines.append(f"  [{msg.get('id', '')}] {msg.get('text', '')}")
 
+    if contact_preferences:
+        lines += _format_contact_preferences(contact_preferences)
+
     lines += [
         "",
         "=" * 40,
@@ -98,9 +144,10 @@ def send_clinical_output(
     condition_label: str,
     clinical_output: ClinicalOutput,
     submission_id: str,
+    contact_preferences: Optional[dict] = None,
 ) -> None:
     subject = f"E-consultation: {condition_label} [{submission_id}]"
-    body = _format_body(condition_label, clinical_output, submission_id)
+    body = _format_body(condition_label, clinical_output, submission_id, contact_preferences)
 
     if _is_dev_mode():
         print("[DEV_MODE] Email send skipped. Would have sent:")
