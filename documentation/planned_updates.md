@@ -1,5 +1,7 @@
 Early prototype updates
-- Suggestion conditions in addition to safety conditions
+- Form for someone else, e.g. a child
+- add contact details and choice of response
+- add timer so cant be submitted out of hours
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
 - non blocking advisory messages
