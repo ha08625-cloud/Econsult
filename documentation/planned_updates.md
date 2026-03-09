@@ -2,6 +2,7 @@ Early prototype updates
 - Form for someone else, e.g. a child
 - add contact details and choice of response
 - add timer so cant be submitted out of hours
+- add personal information e.g. name, DOB
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
 - non blocking advisory messages
