@@ -5,6 +5,7 @@ import type {
   ConditionPresentation,
   SafetyMessage,
   SafetyWarning,
+  ContactPreferences,
 } from "./types";
 
 const API_BASE = ""; // same-origin
@@ -130,11 +131,16 @@ export async function updateForm(payload: ClientAnswerReturn): Promise<{
   return postJson("/form/update", payload);
 }
 
-export async function finishForm(runtimeId: string, version: number): Promise<{
+export async function finishForm(
+  runtimeId: string,
+  version: number,
+  contactPreferences: ContactPreferences,
+): Promise<{
   submission_id: string;
 }> {
   return postJson("/form/finish", {
     runtime_id: runtimeId,
     version: version,
+    contact_preferences: contactPreferences,
   });
 }
