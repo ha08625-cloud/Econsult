@@ -374,7 +374,7 @@ async def form_finish(request: Request):
 # Served whenever frontend/dist exists - i.e. on Railway after the build step.
 # Skipped automatically in local dev because Vite has not built dist/ there.
 # DEV_MODE does not control this - it only controls email and auth behaviour.
-# The catch-all route must come last so it never intercepts API requests.
+# The catch-all route must come last so it never intercepts API requests
 # ---------------------------------------------------------------------------
 
 _FRONTEND_DIST = os.path.normpath(
