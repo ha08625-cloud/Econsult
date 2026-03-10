@@ -714,6 +714,11 @@ export default function App() {
       return null;
     }
 
+    // Capture narrowed values as constants so TypeScript can trust them
+    // inside nested functions like validateAndSubmit.
+    const contactRuntimeId: string = runtimeId;
+    const contactVersion: number = version;
+
     const cp = contactPreferences;
     const methods = cp.contact_methods;
     const wantsPhone = methods.includes("phone");
@@ -782,7 +787,7 @@ export default function App() {
       setIsSubmitting(true);
       setScreenError(null);
 
-      finishForm(runtimeId, version, cleanPreferences)
+      finishForm(contactRuntimeId, contactVersion, cleanPreferences)
         .then(() => {
           setScreen("DONE");
         })
