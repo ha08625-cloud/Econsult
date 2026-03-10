@@ -37,7 +37,7 @@ project_root/
 │
 ├── frontend/
 │   ├── admin/
-│   │   └── admin.html
+│   │   └── index.html
 │   ├── src/
 │   │   ├── App.tsx
 │   │   ├── ConditionCombobox.tsx
