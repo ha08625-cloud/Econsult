@@ -3,7 +3,7 @@
 
   "presentation": {
     "label": "Administrative: sick note request",
-    "free_text_prompt": "Tell us about your symptoms and when they started.",
+    "free_text_prompt": "Tell us about why you need a sick note and what sort of note you need.",
     "search_tags": ["sick note", "fit note", "sick certificate", "time off work", "off sick", "medical certificate", "return to work", "altered duties", "reduced hours", "fit for work"]
   },
 
