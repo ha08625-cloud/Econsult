@@ -156,6 +156,11 @@ app.include_router(admin_router, prefix="/admin", tags=["admin"])
 _ADMIN_PORTAL_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "frontend", "admin")
 )
+if not os.path.isdir(_ADMIN_PORTAL_DIR):
+    raise RuntimeError(
+        f"Admin portal directory not found: {_ADMIN_PORTAL_DIR}. "
+        f"__file__ is: {__file__}"
+    )
 app.mount("/admin-portal", StaticFiles(directory=_ADMIN_PORTAL_DIR, html=True), name="admin-portal")
 
 
@@ -374,7 +379,7 @@ async def form_finish(request: Request):
 # Served whenever frontend/dist exists - i.e. on Railway after the build step.
 # Skipped automatically in local dev because Vite has not built dist/ there.
 # DEV_MODE does not control this - it only controls email and auth behaviour.
-# The catch-all route must come last so it never intercepts API requests
+# The catch-all route must come last so it never intercepts API requests.
 # ---------------------------------------------------------------------------
 
 _FRONTEND_DIST = os.path.normpath(
