@@ -394,7 +394,7 @@ form/finish flow:
 Static file serving:
 - StaticFiles from starlette.staticfiles is mounted at /admin-portal,
   serving files from frontend/admin/ with html=True
-- html=True means a bare request to /admin-portal/ serves admin.html automatically
+- html=True means a bare request to /admin-portal/ serves index.html automatically
 - The mount must be registered after app.include_router(admin_router) to avoid
   the catch-all StaticFiles handler intercepting admin API routes
 - The directory path is relative to the working directory at uvicorn startup,
@@ -816,7 +816,7 @@ This module must never import: clinical engine modules, presentation_service, se
 
 ---
 
-### 3.22 frontend/admin/admin.html — Admin frontend
+### 3.22 frontend/admin/index.html — Admin frontend
 
 A single self-contained HTML file serving the practice admin UI.
 No build step. React 18 and JSX loaded via CDN. Babel-standalone
@@ -1169,7 +1169,7 @@ However:
 * DEV_MODE for local development without SMTP configuration
 * question_labels stored in ClinicalOutput for self-contained audit records
 * Patient-facing frontend served as built static files from frontend/dist/ in production, or via Vite dev server (port 5173) with API proxy to FastAPI (port 8000) in local development
-* Admin frontend served as static file at /admin-portal/admin.html
+* Admin frontend served as static file at /admin-portal/index.html
 
 
 ## Section 12 — Practice Configuration Architecture
