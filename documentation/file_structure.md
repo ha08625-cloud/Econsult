@@ -40,15 +40,32 @@ project_root/
 │   │   └── admin.html
 │   ├── src/
 │   │   ├── App.tsx
+│   │   ├── ConditionCombobox.tsx
 │   │   ├── api.ts
+│   │   ├── constants.ts
 │   │   ├── index.css
 │   │   ├── main.tsx
+│   │   ├── search.ts
 │   │   └── types.ts
+│   ├── eslint.config.js
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── tsconfig.app.json
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
 │   └── vite.config.ts
 │
 ├── data/
 │   └── uti1.json
 │
+├── .env
+├── build.sh
+├── conftest.py
+├── create_practice.py
+├── fix_practice.py
+├── railway.toml
+├── requirements.txt
+├── runtime.db
 └── migrate_phase1a1.py     # one-shot migration script, run from project root
 ```
 
