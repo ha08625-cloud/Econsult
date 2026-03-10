@@ -4,22 +4,12 @@
   "presentation": {
     "label": "Administrative: sick note request",
     "free_text_prompt": "Tell us about your symptoms and when they started.",
-    "pre_form_information": [
-      "If you are feeling very unwell, seek urgent medical help."
-    ]
+    "search_tags": ["sick note", "fit note", "sick certificate", "time off work", "off sick", "medical certificate", "return to work", "altered duties", "reduced hours", "fit for work"]
   },
-  
+
   "questions": [
     {
       "question_id": "admin_sick_note_1",
-      "question": "Are you requesting a sick note for time off work or school?",
-      "answer_key": "sick_note_requested",
-      "answer_type": "Boolean",
-      "send_to_encoder": false,
-      "encoder_prompt": null
-    },
-    {
-      "question_id": "admin_sick_note_2",
       "question": "Is this sick note related to a recent illness or health problem?",
       "answer_key": "recent_illness_related",
       "answer_type": "Boolean",
@@ -27,14 +17,47 @@
       "encoder_prompt": null
     },
     {
-      "question_id": "admin_sick_note_3",
+      "question_id": "admin_sick_note_2",
       "question": "Have you already been seen by a clinician for this issue?",
       "answer_key": "previous_clinician_review",
       "answer_type": "Boolean",
       "send_to_encoder": false,
       "encoder_prompt": null
+    },
+    {
+      "question_id": "admin_sick_note_3",
+      "question": "What date should the sick note start from?",
+      "answer_key": "sick_note_start_date",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "admin_sick_note_4",
+      "question": "What date should the sick note end?",
+      "answer_key": "sick_note_end_date",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "admin_sick_note_5",
+      "question": "Is this sick note related to a long term health problem?",
+      "answer_key": "long_term_condition_related",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "admin_sick_note_6",
+      "question": "Is the sick note request for time off work, or for amendments to your work such as altered duties or reduced hours? If you are requesting amended duties, please tell us exactly what you have agreed with your workplace.",
+      "answer_key": "work_amendment_detail",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
     }
   ],
+
   "safety": {
     "rules": {}
   }
