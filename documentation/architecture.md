@@ -349,6 +349,10 @@ Endpoints:
 - POST /form/init — create session
 - POST /form/update — apply patient answers
 - POST /form/finish — close session, persist submission, send email
+- POST /form/finish — now requires contact_preferences block in payload.
+  See request_validation.py for validation rules. contact_preferences is
+  passed through to email_service only; it is not stored in the database
+  and has no effect on clinical output or audit records.
 
 Rules:
 - No clinical logic
@@ -375,17 +379,19 @@ must not silently degrade into sending forms to the wrong destination.
 
 form/finish flow:
 1. Validate payload and load runtime state
-2. Call finish_runtime_state → (ClinicalOutput, AuditOutput)
-3. Get delivery_email from practice_repo (captured at submission time for audit)
-4. Generate submission_id
-5. Create submission record with delivery_status = "pending"
-6. Attempt email send
-7. On success: update delivery_status = "sent"
-8. On EmailDeliveryError: update delivery_status = "failed", log error
+2. Extract contact_preferences from validated payload
+3. Call finish_runtime_state → (ClinicalOutput, AuditOutput)
+4. Get delivery_email from practice_repo (captured at submission time for audit)
+5. Generate submission_id
+6. Create submission record with delivery_status = "pending"
+7. Attempt email send
+8. On success: update delivery_status = "sent"
+9. On EmailDeliveryError: update delivery_status = "failed", log error
    (do not re-raise — the patient has completed the form)
-9. Close the session
-10. Return submission_id
-11. Static file serving:
+10. Close the session
+11. Return submission_id
+
+Static file serving:
 - StaticFiles from starlette.staticfiles is mounted at /admin-portal,
   serving files from frontend/admin/ with html=True
 - html=True means a bare request to /admin-portal/ serves admin.html automatically
@@ -492,7 +498,19 @@ Configuration via environment variables:
 
 Public interface:
 - send_clinical_output(to_email, condition_label, clinical_output,
-  submission_id) → None
+  submission_id, contact_preferences=None) → None
+
+contact_preferences is an optional dict passed through from the finish
+payload. When present, a CONTACT PREFERENCES section is appended to the
+email body after the clinical content. When absent or None, the section
+is omitted entirely. Null optional fields within the block (phone_number,
+best_time_to_call, usual_doctor_name) are omitted line-by-line rather
+than printed as "None".
+
+contact_preferences is accepted as a plain dict, not a typed dataclass.
+It is presentation-only data with no clinical significance and no need
+for engine-level typing. The email service is not responsible for
+validating it — that is done upstream in request_validation.py.
 
 Raises EmailDeliveryError on any SMTP failure. The error message is
 suitable for storage in submission_records.delivery_error.
@@ -553,6 +571,10 @@ Contains:
 * SafetyMessage — rule_id + message text
 * ConditionSummary — id + label for condition list
 * ConditionPresentation — label, free_text_prompt, universal_safety_warning, practice_signposting
+*  ContactMethod — union type: "email" | "text" | "phone"
+* DoctorPreference — union type: "any" | "usual"
+* ContactPreferences — contact method selection, contact details,
+  and doctor preference collected on Screen 5 (CONTACT)
 
 Rules:
 * No clinical logic
@@ -569,7 +591,9 @@ Functions:
 * getConditionPresentation(conditionId) — GET /conditions/{id}/presentation
 * initForm(conditionId, freeText) — POST /form/init
 * updateForm(payload) — POST /form/update
-* finishForm(runtimeId, version) — POST /form/finish
+* finishForm(runtimeId, version, contactPreferences) — POST /form/finish
+  Accepts a ContactPreferences object and includes it as contact_preferences
+  in the POST body.
 
 Rules:
 * No business logic
@@ -582,37 +606,47 @@ Rules:
 
 ### 3.19.3 App.tsx — React UI
 
-Stateless renderer implementing a five-screen flow.
+Stateless renderer implementing a six-screen flow.
 
-File is App.tsx (TypeScript + JSX). An earlier version was App.jsx but was
-renamed when TypeScript generic syntax caused Vite/Babel parse errors in a
-.jsx file.
-
-* Screen 0 (SELECT_CONDITION): fetches GET /conditions, renders dropdown
-* Screen 1 (FREE_TEXT): fetches GET /conditions/{id}/presentation,
+* Screen 0 (SAFETY_WARNING): displays universal safety warning, requires
+  confirmation before continuing
+* Screen 1 (SELECT_CONDITION): fetches GET /conditions, renders combobox
+* Screen 2 (FREE_TEXT): fetches GET /conditions/{id}/presentation,
   renders framing text + free text input, submits to POST /form/init
-* Screen 2 (EDIT): renders questions from ClientStateView, collects answers, additionalText state is added to the EDIT screen, included in the ClientAnswerReturn payload, and shown on the REVIEW screen only when non-empty
-  submits to POST /form/update
-* Screen 3 (REVIEW): displays answers + safety messages,
-  submits to POST /form/finish or returns to EDIT
-* Screen 4 (DONE): confirmation
+* Screen 3 (EDIT): renders questions from ClientStateView, collects answers.
+  additionalText state is collected here, included in the ClientAnswerReturn
+  payload, and shown on the REVIEW screen only when non-empty.
+  Submits to POST /form/update.
+* Screen 4 (REVIEW): displays answers + safety messages.
+  Submit button transitions to Screen 5 (CONTACT) rather than calling
+  the API directly. Returns to EDIT via Back.
+* Screen 5 (CONTACT): collects contact preferences (method, contact details,
+  doctor preference). Submits to POST /form/finish with the complete
+  ContactPreferences payload. Returns to REVIEW via Back without losing
+  REVIEW state.
+* Screen 6 (DONE): confirmation
 
-Rules:
-* No clinical logic
-* No branching based on answer values
-* No hidden questions
-* No local safety evaluation
-* All rendering driven by server-provided ClientStateView
-* Session begins at POST /form/init (Screen 1 → Screen 2 transition)
-* Screens 0 and 1 are pre-session (no runtime_id exists)
-* Fatal errors reset all state and return to Screen 0
-* All type imports must use `import type` syntax (same reason as api.ts)
+Contact screen behaviour:
+* At least one contact method must be selected before submission
+* Phone number field is shown when "text" or "phone" is selected
+* Email address field is shown when "email" is selected
+* Best time to call field is shown when "phone" is selected
+* Doctor name field is shown when "usual doctor" is selected in the dropdown
+* UK phone validation: strips spaces, checks for 07 or +44 prefix,
+  enforces length 10–13 digits. International numbers are rejected.
+* Validation fires on Submit with inline per-field error messages.
+  No alert boxes.
+* contactPreferences state is reset to defaults each time the patient
+  enters the CONTACT screen from REVIEW.
 
 State management:
 * Pre-session state: selectedConditionId, presentation, freeText
-* Session state: runtimeId, version, clientState, editableAnswers, safetyMessages
+* Session state: runtimeId, version, clientState, editableAnswers,
+  safetyMessages, additionalText
+* Contact state: contactPreferences, contactErrors
 * Pre-session state is discarded after /form/init succeeds
 * Session state is never round-tripped back to pre-session screens
+* contactPreferences is not persisted to the server until final submission
 
 Development:
 * Served via Vite dev server on port 5173 during development
@@ -621,8 +655,6 @@ Development:
 * Start command from project root:
     cd frontend && npm run dev
   FastAPI must also be running on port 8000 in a separate terminal
-
-Here is the new architecture section. This slots in after section 3.19.3 (App.tsx) and before whatever follows it.
 
 ### 3.19.4 search.ts — Condition search and filtering
 A single-purpose frontend module containing all condition filtering logic for the combobox. Nothing else in the frontend contains matching logic.
