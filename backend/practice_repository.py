@@ -8,7 +8,7 @@ This module is responsible for:
 - Initialising practice-related tables on startup
 - CRUD operations for practices (including email)
 - CRUD operations for practice signposting
-- JSON validation for signposting content
+- HTML sanitisation for signposting content
 - Email format validation
 
 This module must never:
@@ -17,10 +17,22 @@ This module must never:
 - Handle authentication (that belongs in practice_context, Phase 1B)
 """
 
+import re
 import sqlite3
 import json
 from contextlib import contextmanager
 from typing import List, Optional
+
+import nh3
+
+
+# Maximum permitted length for raw signposting HTML before sanitisation.
+# Enforced in sanitise_signposting_html before nh3 runs.
+MAX_SIGNPOSTING_LENGTH = 5000
+
+# The exact HTML string emitted by Quill 2.0.2 when the editor is empty.
+# Used as a sentinel in tests and in the sanitiser's empty-content check.
+QUILL_EMPTY_OUTPUT = "<p></p>"
 
 
 class PracticeNotFound(Exception):
@@ -29,13 +41,74 @@ class PracticeNotFound(Exception):
 
 
 class InvalidSignpostingData(Exception):
-    """Raised when signposting JSON is malformed or invalid."""
+    """Raised when signposting HTML is too long or otherwise invalid."""
     pass
 
 
 class InvalidEmailError(Exception):
     """Raised when an email address fails validation."""
     pass
+
+
+def sanitise_signposting_html(raw: str) -> str | None:
+    """
+    Sanitise a raw HTML string from the Quill editor before storage.
+
+    Steps:
+    1. Reject input exceeding MAX_SIGNPOSTING_LENGTH characters.
+    2. Run nh3.clean() with an explicit allowlist of tags, attributes,
+       and URL schemes.
+    3. After sanitisation, strip all remaining tags and check whether
+       any non-whitespace characters survive. If not, return None —
+       the content is effectively empty and the row should not be stored.
+
+    Allowed tags : p, strong, em, a, ul, ol, li, br
+    Allowed attrs: href, rel, target on <a> only
+    Allowed URL schemes on href: http, https (blocks javascript: URIs)
+
+    Note on rel/target: Quill 2.0.2 automatically adds
+    rel="noopener noreferrer" and target="_blank" to every link it
+    produces. These must survive sanitisation. Stripping them would
+    silently remove a security attribute.
+
+    Note on bare text: nh3 does not wrap bare text nodes in <p> tags.
+    In normal use this does not arise because Quill wraps all content
+    in block elements. The sanitiser does not handle bare unwrapped
+    text and there is no test case for it.
+
+    Returns:
+        Sanitised HTML string, or None if content is empty after
+        sanitisation.
+
+    Raises:
+        InvalidSignpostingData: if raw exceeds MAX_SIGNPOSTING_LENGTH.
+    """
+    if len(raw) > MAX_SIGNPOSTING_LENGTH:
+        raise InvalidSignpostingData(
+            f"Signposting must not exceed {MAX_SIGNPOSTING_LENGTH} characters "
+            f"(received {len(raw)})"
+        )
+
+    clean = nh3.clean(
+        raw,
+        tags={"p", "strong", "em", "a", "ul", "ol", "li", "br"},
+        attributes={"a": {"href", "target"}},
+        url_schemes={"http", "https"},
+        # link_rel is intentionally omitted: the default is 'noopener noreferrer',
+        # which nh3 injects automatically on every <a> tag.
+        # Do NOT add 'rel' to the attributes dict — nh3 reserves it and will panic.
+        # DOMPurify in admin.html and App.tsx must still allow 'rel' in ALLOWED_ATTR
+        # because the stored HTML will contain rel="noopener noreferrer".
+    )
+
+    # Strip all tags from the sanitised output and check whether
+    # any non-whitespace content survives. An empty result means
+    # the input contained no displayable content.
+    text_only = re.sub(r"<[^>]+>", "", clean)
+    if not text_only.strip():
+        return None
+
+    return clean
 
 
 class PracticeRepository:
@@ -175,17 +248,25 @@ class PracticeRepository:
 
     def get_signposting(
         self, practice_id: str, condition_id: str
-    ) -> Optional[List[str]]:
+    ) -> Optional[str]:
         """
         Get signposting for a practice and condition.
 
         Returns:
         - None if no signposting is configured (row does not exist)
-        - List of strings if configured (may be empty list)
+        - HTML string if configured
 
         Does not validate that practice_id or condition_id exist.
         This is intentional - allows graceful degradation if practice
         is deleted but signposting query is still made.
+
+        NOTE: despite the column name 'signposting_json', this column
+        stores a plain HTML string, not JSON. The column name is a
+        legacy misnomer from the original list-of-strings design.
+        See architecture.md Section 15.4 for the migration assumption
+        that makes this format change safe in the current Railway deployment.
+        JSON error handling has been removed because this column no
+        longer contains JSON.
         """
         with self._conn() as conn:
             row = conn.execute(
@@ -200,38 +281,36 @@ class PracticeRepository:
             if row is None:
                 return None
 
-            try:
-                items = json.loads(row["signposting_json"])
-            except json.JSONDecodeError as e:
-                print(
-                    f"WARNING: Malformed signposting JSON for "
-                    f"{practice_id}/{condition_id}: {e}"
-                )
-                return None
-
-            return items
+            return row["signposting_json"]
 
     def set_signposting(
-        self, practice_id: str, condition_id: str, items: List[str]
+        self, practice_id: str, condition_id: str, html: str
     ) -> None:
         """
         Set signposting for a practice and condition.
 
-        Validates:
-        - practice_id exists
-        - items is a list
-        - each item is a non-empty string
+        Sanitises the HTML input via sanitise_signposting_html before
+        writing. If the sanitised result is None (empty content), the
+        row is deleted rather than written — an empty write is treated
+        as an instruction to clear signposting.
 
         Raises:
         - PracticeNotFound if practice does not exist
-        - InvalidSignpostingData if items fail validation
+        - InvalidSignpostingData if html exceeds MAX_SIGNPOSTING_LENGTH
+
+        NOTE: despite the column name 'signposting_json', this column
+        stores a plain HTML string, not JSON. See architecture.md
+        Section 15.4.
         """
         if not self.practice_exists(practice_id):
             raise PracticeNotFound(f"Practice not found: {practice_id}")
 
-        self._validate_signposting_items(items)
+        sanitised = sanitise_signposting_html(html)
 
-        signposting_json = json.dumps(items)
+        if sanitised is None:
+            # Empty content: delete any existing row rather than writing.
+            self.delete_signposting(practice_id, condition_id)
+            return
 
         with self._conn() as conn:
             conn.execute(
@@ -242,7 +321,7 @@ class PracticeRepository:
                 DO UPDATE SET signposting_json = excluded.signposting_json,
                               updated_at = CURRENT_TIMESTAMP
                 """,
-                (practice_id, condition_id, signposting_json),
+                (practice_id, condition_id, sanitised),
             )
 
     def delete_signposting(self, practice_id: str, condition_id: str) -> None:
@@ -258,28 +337,3 @@ class PracticeRepository:
                 """,
                 (practice_id, condition_id),
             )
-
-    def _validate_signposting_items(self, items: List[str]) -> None:
-        """
-        Validate signposting items.
-
-        Rules:
-        - Must be a list
-        - Each item must be a string
-        - Each item must be non-empty after stripping whitespace
-        - Empty list is allowed (explicit "no signposting")
-        """
-        if not isinstance(items, list):
-            raise InvalidSignpostingData(
-                f"Signposting must be a list, got {type(items).__name__}"
-            )
-
-        for i, item in enumerate(items):
-            if not isinstance(item, str):
-                raise InvalidSignpostingData(
-                    f"Signposting item {i} must be a string, got {type(item).__name__}"
-                )
-            if item.strip() == "":
-                raise InvalidSignpostingData(
-                    f"Signposting item {i} must be non-empty"
-                )

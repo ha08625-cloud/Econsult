@@ -87,7 +87,7 @@ class PresentationService:
                 - label: str (condition label)
                 - free_text_prompt: str | None
                 - universal_safety_warning: str
-                - practice_signposting: list[str] | None
+                - practice_signposting: str | None
 
         Raises:
             ConditionNotFound: If condition_id does not exist
@@ -95,16 +95,20 @@ class PresentationService:
         Behaviour:
             - If no signposting is configured for this practice and condition,
               practice_signposting is None
-            - If signposting is configured, practice_signposting is the list of strings
-            - Empty list from database is returned as None (nothing to display)
+            - If signposting is configured, practice_signposting is a sanitised
+              HTML string. The repository guarantees it is never an empty string —
+              empty content is stored as a deleted row, not as an empty value.
         """
         # Get condition presentation (raises ConditionNotFound if invalid)
         condition_presentation = self._condition_registry.get_presentation(condition_id)
 
-        # Get practice-specific signposting
-        signposting = self._practice_repository.get_signposting(practice_id, condition_id)
-        # Convert empty list to None (nothing to display)
-        practice_signposting = signposting if signposting else None
+        # Get practice-specific signposting.
+        # get_signposting returns either a non-empty HTML string or None —
+        # the repository never stores an empty string, so no further
+        # normalisation is needed here.
+        practice_signposting = self._practice_repository.get_signposting(
+            practice_id, condition_id
+        )
 
         return {
             "label": condition_presentation["label"],

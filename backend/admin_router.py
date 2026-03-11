@@ -19,18 +19,25 @@ from fastapi.responses import JSONResponse
 
 from admin_context import AdminContext, require_admin
 from condition_registry import ConditionNotFound
+from practice_repository import InvalidSignpostingData, MAX_SIGNPOSTING_LENGTH
 
 router = APIRouter()
 
 
-def _normalise_signposting(items) -> list | None:
+def _normalise_signposting(value) -> str | None:
     """
     Normalise signposting for API responses.
-    Empty list and None both become None — nothing to display.
+
+    Returns None if value is None or an empty/whitespace-only string.
+    Returns the string unchanged otherwise.
+
+    Uses an explicit isinstance check rather than relying on Python
+    truthiness so that the intent is clear and a future type change
+    does not produce silent incorrect behaviour.
     """
-    if not items:
+    if not isinstance(value, str) or not value.strip():
         return None
-    return items
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +69,7 @@ async def get_signposting(
 ):
     """
     Return current signposting for a condition.
-    Returns signposting: null if nothing is configured or list is empty.
+    Returns {"condition_id": ..., "signposting": <html string or null>}.
     """
     registry = request.app.state.registry
     practice_repo = request.app.state.practice_repo
@@ -70,11 +77,11 @@ async def get_signposting(
     if not registry.has_condition(condition_id):
         raise HTTPException(status_code=404, detail=f"Unknown condition: {condition_id}")
 
-    items = practice_repo.get_signposting(admin.practice_id, condition_id)
+    html = practice_repo.get_signposting(admin.practice_id, condition_id)
 
     return {
         "condition_id": condition_id,
-        "signposting": _normalise_signposting(items),
+        "signposting": _normalise_signposting(html),
     }
 
 
@@ -85,19 +92,27 @@ async def put_signposting(
     admin: AdminContext = Depends(require_admin),
 ):
     """
-    Replace the signposting list for a condition.
+    Set or clear signposting for a condition.
 
-    Accepts: {"signposting": ["item 1", "item 2"]}
+    Accepts: {"signposting": "<p>html string</p>"}
 
-    Validation:
-    - signposting key must be present and a list
-    - each item must be a string
-    - each item must be non-empty after stripping whitespace
-    - empty list is valid (explicit "no signposting")
+    The signposting value is always a string. Empty or whitespace-only
+    content is treated as an instruction to clear signposting — the
+    repository will delete any existing row rather than write empty content.
 
-    Strips whitespace from each item before writing.
-    Stores the stripped list (including empty list) in the database.
-    Normalises empty list to null only in the response.
+    Validation (in order):
+    1. Body must be valid JSON
+    2. signposting key must be present and must be a string
+    3. Length must not exceed MAX_SIGNPOSTING_LENGTH characters
+
+    The router catches InvalidSignpostingData from the repository and
+    converts it to HTTP 400. This should only arise from the length check
+    (the sanitiser raises it before nh3 runs). It never produces a 500
+    from sanitisation failures.
+
+    Returns {"condition_id": ..., "signposting": <sanitised html or null>}.
+    A null response means the content was empty after sanitisation and no
+    row was written.
     """
     registry = request.app.state.registry
     practice_repo = request.app.state.practice_repo
@@ -111,33 +126,35 @@ async def put_signposting(
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     if not isinstance(body, dict) or "signposting" not in body:
-        raise HTTPException(status_code=400, detail="Body must be {\"signposting\": [...]}")
+        raise HTTPException(
+            status_code=400,
+            detail='Body must be {"signposting": "..."}',
+        )
 
-    raw_items = body["signposting"]
+    raw = body["signposting"]
 
-    if not isinstance(raw_items, list):
-        raise HTTPException(status_code=400, detail="signposting must be a list")
+    if not isinstance(raw, str):
+        raise HTTPException(
+            status_code=400,
+            detail=f"signposting must be a string, got {type(raw).__name__}",
+        )
 
-    stripped = []
-    for i, item in enumerate(raw_items):
-        if not isinstance(item, str):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Item {i} must be a string, got {type(item).__name__}",
-            )
-        clean = item.strip()
-        if not clean:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Item {i} is empty or whitespace-only after stripping",
-            )
-        stripped.append(clean)
+    if len(raw) > MAX_SIGNPOSTING_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Signposting must not exceed {MAX_SIGNPOSTING_LENGTH} characters",
+        )
 
-    practice_repo.set_signposting(admin.practice_id, condition_id, stripped)
+    try:
+        practice_repo.set_signposting(admin.practice_id, condition_id, raw)
+    except InvalidSignpostingData as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    saved = practice_repo.get_signposting(admin.practice_id, condition_id)
 
     return {
         "condition_id": condition_id,
-        "signposting": _normalise_signposting(stripped),
+        "signposting": _normalise_signposting(saved),
     }
 
 

@@ -1381,6 +1381,36 @@ If submissions need to survive restarts in a future version, the correct
 fix is to migrate from SQLite to a managed Postgres instance (Railway
 provides this as an add-on).
 
+### 15.4.1 signposting_json column format change (rich text signposting)
+
+The signposting_json column in practice_signposting stores a plain HTML
+string as of the rich text signposting feature. The column name is a
+legacy misnomer from the original list-of-strings design.
+
+This format change required no migration because Railway wipes the
+database on every deployment.
+
+Any future move to a persistent database must include a migration script.
+Do not assume the column contains JSON.
+
+nh3 API constraint: the rel attribute on <a> tags is reserved by nh3
+and injected automatically via the link_rel parameter (default:
+'noopener noreferrer'). Do not pass rel through the attributes dict —
+nh3 will panic at runtime. The correct call is:
+
+    nh3.clean(
+        raw,
+        tags={...},
+        attributes={"a": {"href", "target"}},
+        url_schemes={"http", "https"},
+    )
+
+DOMPurify allowlist duplication: SIGNPOSTING_PURIFY_CONFIG appears in
+admin.html and App.tsx. It must match the nh3 allowlist above exactly.
+If the allowlist changes, update all three locations. ALLOWED_ATTR must
+include rel because nh3 injects rel="noopener noreferrer" into the stored
+HTML and DOMPurify must not strip it on render.
+
 ### 15.5 Environment variables
 
 The following environment variables must be set in the Railway dashboard:
