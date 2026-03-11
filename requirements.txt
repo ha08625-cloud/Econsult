@@ -4,3 +4,4 @@ starlette==0.52.1
 pydantic==2.12.5
 anyio==4.12.1
 python-multipart==0.0.9
+nh3==0.3.3
