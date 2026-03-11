@@ -31,7 +31,7 @@ import { GENERAL_CONSULTATION_ID } from "./constants";
 //
 // rel is included because nh3 automatically injects rel="noopener noreferrer"
 // into stored HTML. DOMPurify must not strip it on render.
-const SIGNPOSTING_PURIFY_CONFIG: DOMPurify.Config = {
+const SIGNPOSTING_PURIFY_CONFIG = {
   ALLOWED_TAGS: ["p", "strong", "em", "a", "ul", "ol", "li", "br"],
   ALLOWED_ATTR: ["href", "rel", "target"],
   ALLOWED_URI_REGEXP: /^https?:/i,
