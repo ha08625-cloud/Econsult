@@ -1,40 +1,16 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Practice Admin</title>
-
-  <!-- React + Babel via CDN (in-browser transpilation, internal tool only) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-
-  <!-- Quill 2.0.2 — pinned. If upgrading, re-run Session 0 verification tests. -->
-  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
-
-  <!-- DOMPurify 3.1.6 — pinned. Must stay in sync with App.tsx and practice_repository.py. -->
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-
-  <style>
-    /* ------------------------------------------------------------------ */
-    /* Design direction: clinical utilitarian — NHS-adjacent palette,      */
-    /* monospaced accents, generous whitespace, zero decoration noise      */
-    /* ------------------------------------------------------------------ */
-
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
-
-    :root {
-      --bg:           #f4f6f8;
-      --surface:      #ffffff;
-      --border:       #d8dee6;
-      --border-focus: #1a6fa8;
-      --text:         #1a2332;
-      --text-muted:   #6b7a8d;
-      --accent:       #1a6fa8;
-      --accent-hover: #145a8a;
-      --danger:       #c0392b;
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Econsult</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>      --danger:       #c0392b;
       --danger-bg:    #fdf2f2;
       --success:      #1a7a4a;
       --success-bg:   #f0faf4;
