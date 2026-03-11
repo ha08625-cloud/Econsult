@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import DOMPurify from "dompurify";
 import {
   getSafetyWarning,
   initForm,
@@ -19,6 +20,22 @@ import type {
 } from "./types";
 import ConditionCombobox from "./ConditionCombobox";
 import { GENERAL_CONSULTATION_ID } from "./constants";
+
+// DOMPurify config for rendering practice signposting HTML.
+//
+// NOTE: this config must match the nh3 allowlist in practice_repository.py
+// exactly. If the allowlist changes, update all three locations:
+//   1. practice_repository.py  — nh3.clean() call
+//   2. admin.html              — SIGNPOSTING_PURIFY_CONFIG constant
+//   3. App.tsx                 — this constant
+//
+// rel is included because nh3 automatically injects rel="noopener noreferrer"
+// into stored HTML. DOMPurify must not strip it on render.
+const SIGNPOSTING_PURIFY_CONFIG: DOMPurify.Config = {
+  ALLOWED_TAGS: ["p", "strong", "em", "a", "ul", "ol", "li", "br"],
+  ALLOWED_ATTR: ["href", "rel", "target"],
+  ALLOWED_URI_REGEXP: /^https?:/i,
+};
 
 // ---------------------------------
 // Helpers
@@ -414,14 +431,16 @@ export default function App() {
       <PageShell>
         <h1>{presentation.label}</h1>
 
-        {presentation.practice_signposting &&
-          presentation.practice_signposting.length > 0 && (
-            <div className="alert alert-info">
-              <strong>Information from your practice</strong>
-              {presentation.practice_signposting.map((info, i) => (
-                <p key={i}>{info}</p>
-              ))}
-            </div>
+        {presentation.practice_signposting && (
+            <div
+              className="alert alert-info"
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(
+                  presentation.practice_signposting,
+                  SIGNPOSTING_PURIFY_CONFIG
+                )
+              }}
+            />
           )}
 
         <div className="field">
