@@ -432,6 +432,7 @@ Responsibilities:
 - CRUD operations for practices (practice_id, name, email)
 - CRUD operations for practice-specific signposting per condition
 - Email format validation
+- HTML sanitisation for signposting content via nh3
 
 Public interface:
 - create_practice(practice_id, name, email) → None
@@ -439,8 +440,9 @@ Public interface:
 - get_email(practice_id) → str (raises PracticeNotFound if absent)
 - practice_exists(practice_id) → bool
 - count_practices() → int
-- get_signposting(practice_id, condition_id) → list[str] | None
-- set_signposting(practice_id, condition_id, items) → None
+- get_signposting(practice_id, condition_id) → str | None
+- set_signposting(practice_id, condition_id, html) → None
+- sanitise_signposting_html(raw) → str | None  (module-level function)
 - delete_signposting(practice_id, condition_id) → None
 
 Email validation rules:
@@ -544,7 +546,7 @@ Output keys:
 - label: str
 - free_text_prompt: str | None
 - universal_safety_warning: str
-- practice_signposting: list[str] | None (None if not configured or empty)
+- practice_signposting: str | None  (sanitised HTML string, or None if not configured)
 
 This module performs COMPOSITION, not MERGING. Each source populates a
 distinct field. There is no field-level override logic.
@@ -570,7 +572,7 @@ Contains:
 * ClientAnswerReturn — payload sent back on update (runtime_id, base_version, answers)
 * SafetyMessage — rule_id + message text
 * ConditionSummary — id + label for condition list
-* ConditionPresentation — label, free_text_prompt, universal_safety_warning, practice_signposting
+* ConditionPresentation — label, free_text_prompt, universal_safety_warning, practice_signposting (string | undefined — sanitised HTML rendered via DOMPurify)
 *  ContactMethod — union type: "email" | "text" | "phone"
 * DoctorPreference — union type: "any" | "usual"
 * ContactPreferences — contact method selection, contact details,
@@ -801,15 +803,15 @@ All endpoints declare Depends(require_admin) and receive an AdminContext. Resour
 Endpoints:
 * GET /admin/conditions — returns all condition IDs and labels from the registry. This is a raw administrative view separate from the patient-facing GET /conditions, which composes full presentation data. Keeping them separate means a change to either cannot accidentally affect the other.
 * GET /admin/conditions/{condition_id}/signposting — returns current signposting or null. Returns null (not 404) when no signposting is configured; absence of signposting is a valid configured state, not an error.
-* PUT /admin/conditions/{condition_id}/signposting — replaces the full signposting list. Always sends the complete desired state; no partial update or append. Input validation (performed in the router before calling the repository): body must be {"signposting": [...]}, each item must be a string, each item is stripped of whitespace, each item must be non-empty after stripping, empty list is valid. The stripped list is written to the database as-is (including empty list). The response normalises empty list to null.
+* PUT /admin/conditions/{condition_id}/signposting — sets signposting for a condition. Body must be {"signposting": "..."} where the value is a string. Empty or whitespace-only content is treated as an instruction to clear — the repository deletes the row and returns {"signposting": null}. Length is pre-checked against MAX_SIGNPOSTING_LENGTH before the repository call. InvalidSignpostingData from the repository is caught and converted to HTTP 400.
 * DELETE /admin/conditions/{condition_id}/signposting — removes the database row entirely. Idempotent. Returns 204 no body. Semantically distinct from PUT []: the row is deleted rather than updated, which preserves the distinction at the database level and in any future audit log, even though GET normalises both to null for current consumers.
 
-Response normalisation rule: empty list and null are both returned as null in all responses. This is consistent with how presentation_service.py behaves and means GET does not expose whether signposting was explicitly cleared or never set. That distinction is preserved at the database level only.
-Validation responsibility split:
+Response normalisation rule: None and empty/whitespace-only strings are both returned as null in all responses.
 
-The router is the primary validation layer for HTTP input (types, whitespace, empty strings)
-The repository's own validation acts as a backstop but the router validates first
-condition_id is validated against the registry in the router; the repository has no knowledge of valid condition IDs and does not raise on unknown ones
+Validation responsibility split:
+* The router is the primary validation layer for HTTP input (types, whitespace, empty strings)
+* The repository's own validation acts as a backstop but the router validates first
+* condition_id is validated against the registry in the router; the repository has no knowledge of valid condition IDs and does not raise on unknown ones
 
 Known limitation: the condition registry is immutable after startup. A new condition JSON file added to data/ while the server is running will return 404 from admin endpoints until the server is restarted. This is intentional.
 This module must never import: clinical engine modules, presentation_service, serialisation, projection, runtime_state.
@@ -1360,6 +1362,10 @@ This check is filesystem-based, not DEV_MODE-based. In local development,
 `frontend/dist` does not exist (the developer runs Vite separately), so
 static file serving is automatically skipped. No code change is required
 when switching between local and production environments.
+
+The admin portal (backend/admin/index.html) is a standalone CDN-based page served 
+by FastAPI's StaticFiles at /admin-portal. It is not part of the Vite build pipeline 
+and must not be placed inside the frontend/ directory, which Vite processes on build.
 
 ### 15.4 Database
 
