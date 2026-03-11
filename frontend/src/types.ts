@@ -48,7 +48,7 @@ export interface ConditionPresentation {
   label: string;
   free_text_prompt?: string;
   universal_safety_warning: string;
-  practice_signposting?: string[];
+  practice_signposting?: string;
 }
 
 // --- Contact preferences (Screen 4) ---
