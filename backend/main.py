@@ -13,7 +13,7 @@ Single-tenant deployment:
 """
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 import uuid
 import os
 import logging
@@ -128,8 +128,13 @@ def _validate_startup(practice_repo: PracticeRepository) -> str:
 # Application factory
 # ---------------------------------------------------------------------------
 
-DATA_DIR = os.environ.get("DATA_DIR", "data")
-DB_PATH = os.environ.get("DB_PATH", "runtime.db")
+# Resolve paths relative to the project root (one level up from backend/).
+# This ensures correct resolution regardless of the working directory when
+# uvicorn is started. Environment variables override the defaults, which
+# allows different paths in different deployment environments if needed.
+_PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(_PROJECT_ROOT, "data")
+DB_PATH = os.environ.get("DB_PATH") or os.path.join(_PROJECT_ROOT, "runtime.db")
 
 app = FastAPI()
 
@@ -148,7 +153,15 @@ app.state.practice_repo = practice_repo
 
 # Admin router -- prefix and tag applied here so admin_router.py stays decoupled
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
-app.mount("/admin-portal", StaticFiles(directory="frontend/admin", html=True), name="admin-portal")
+_ADMIN_PORTAL_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "admin")
+)
+if not os.path.isdir(_ADMIN_PORTAL_DIR):
+    raise RuntimeError(
+        f"Admin portal directory not found: {_ADMIN_PORTAL_DIR}. "
+        f"__file__ is: {__file__}"
+    )
+app.mount("/admin-portal", StaticFiles(directory=_ADMIN_PORTAL_DIR, html=True), name="admin-portal")
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +311,6 @@ async def form_finish(request: Request):
 
     runtime_id = payload["runtime_id"]
     version = payload["version"]
-    contact_preferences = payload["contact_preferences"]
 
     try:
         row = repo.get_latest(runtime_id)
@@ -338,7 +350,6 @@ async def form_finish(request: Request):
             condition_label=condition_label,
             clinical_output=clinical,
             submission_id=submission_id,
-            contact_preferences=contact_preferences,
         )
         submission_repo.update_delivery_status(
             submission_id=submission_id,
@@ -379,16 +390,17 @@ _FRONTEND_INDEX = os.path.join(_FRONTEND_DIST, "index.html")
 
 logger.info("Looking for frontend dist at: %s", _FRONTEND_DIST)
 
-if os.path.isdir(_FRONTEND_ASSETS):
+if os.path.isdir(_FRONTEND_DIST):
     logger.info("Frontend dist found - mounting static files")
+    # Mount the entire dist directory with html=True.
+    # html=True makes StaticFiles serve index.html for unknown paths,
+    # which is the correct SPA fallback behaviour.
+    # This must be the LAST mount registered so it does not intercept
+    # requests intended for /admin-portal or /admin.
     app.mount(
-        "/assets",
-        StaticFiles(directory=_FRONTEND_ASSETS),
-        name="assets",
+        "/",
+        StaticFiles(directory=_FRONTEND_DIST, html=True),
+        name="frontend",
     )
-
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_frontend(full_path: str):
-        return FileResponse(_FRONTEND_INDEX)
 else:
     logger.info("Frontend dist not found - static file serving disabled (local dev mode)")
