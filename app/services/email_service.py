@@ -21,7 +21,7 @@ from email.message import EmailMessage
 from datetime import datetime
 from typing import Optional
 
-from contracts.serialisation_contracts import ClinicalOutput
+from app.models.serialisation_contracts import ClinicalOutput
 
 
 class EmailDeliveryError(Exception):
