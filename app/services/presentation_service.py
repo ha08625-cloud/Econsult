@@ -28,8 +28,8 @@ and passed in explicitly. There is no concept of a missing or optional
 practice in this deployment model.
 """
 
-from condition_registry import ConditionRegistry, ConditionNotFound
-from practice_repository import PracticeRepository
+from app.core.condition_registry import ConditionRegistry, ConditionNotFound
+from app.repositories.practice_repository import PracticeRepository
 
 
 # Universal safety warning shown to all patients before all conditions.
