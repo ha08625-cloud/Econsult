@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional
 
-from contracts.serialisation_contracts import ClinicalOutput, AuditOutput
+from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
 
 
 VALID_STATUSES = {"pending", "sent", "failed"}
