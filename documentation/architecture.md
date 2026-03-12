@@ -1339,16 +1339,29 @@ single-server cloud environment that clones the GitHub repository, runs the
 build script, and starts the server process. Deployments are triggered
 automatically on every push to the main branch.
 
+The original Nixpacks builder was replaced with a Dockerfile in March 2026
+after Railway migrated to Railpack (their Nixpacks successor). Railpack
+failed to generate a build plan for this project's mixed Python/Node
+structure without a clear error message. A Dockerfile was the recommended
+solution and gives complete control over the build environment.
+
+railway.toml now contains only `builder = "DOCKERFILE"`. The Nixpacks
+phase configuration it previously contained is no longer valid and has
+been removed.
+
 ### 15.2 Build process
 
-Railway runs `build.sh` from the project root on every deployment. The script:
-1. Installs Python dependencies from `requirements.txt`
-2. Runs `npm install` and `npm run build` in the `frontend/` directory,
-   producing a built bundle in `frontend/dist/`
-3. Starts uvicorn
+Railway runs the build via a two-stage Dockerfile at the project root.
 
-The build environment requires both Python 3.12 and Node.js 22, configured
-in `railway.toml`.
+Stage 1 (frontend-build): Node 22 image. Installs npm dependencies from
+frontend/package.json and runs npm run build, producing frontend/dist/.
+
+Stage 2 (runtime): Python 3.12-slim image. Installs Python dependencies
+from requirements.txt, copies backend/, data/, backend/admin/, and the
+built frontend/dist/ from stage 1. Starts uvicorn via the Dockerfile CMD.
+
+The previous build.sh script is retained as documentation but is no longer
+called during deployment.
 
 ### 15.3 Static file serving
 
