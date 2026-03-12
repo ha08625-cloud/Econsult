@@ -393,7 +393,7 @@ form/finish flow:
 
 Static file serving:
 - StaticFiles from starlette.staticfiles is mounted at /admin-portal,
-  serving files from frontend/admin/ with html=True
+  serving files from admin/ with html=True
 - html=True means a bare request to /admin-portal/ serves index.html automatically
 - The mount must be registered after app.include_router(admin_router) to avoid
   the catch-all StaticFiles handler intercepting admin API routes
@@ -661,7 +661,7 @@ Development:
 ### 3.19.4 search.ts — Condition search and filtering
 A single-purpose frontend module containing all condition filtering logic for the combobox. Nothing else in the frontend contains matching logic.
 
-Location: frontend/search.ts
+Location: frontend/src/search.ts
 
 Exported functions:
 * normalise(text): string — lowercases and trims a string. Applied to both query and all strings being compared.
@@ -686,11 +686,10 @@ Constants (named, not magic numbers):
 * FUZZY_THRESHOLD_LONG = 2
 
 Dependencies: types.ts (ConditionSummary type only). No backend dependency. No external library.
-Tests: tests/test_search.mjs. Run with node tests/test_search.mjs. Covers all three matching layers, threshold boundary conditions, fallback behaviour, and case insensitivity.
 
 ### 3.19.5 ConditionCombobox.tsx — Condition selection combobox
 A self-contained React component that replaces the separate search input and select dropdown on Screen 0. Renders a text input that shows a floating suggestion list, filtered in real time as the patient types.
-Location: frontend/ConditionCombobox.tsx
+Location: frontend/src/ConditionCombobox.tsx
 Props:
 typescriptinterface ConditionComboboxProps {
   conditions: ConditionSummary[];   // full canonical list, never mutated
