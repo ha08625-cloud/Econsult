@@ -400,3 +400,11 @@ if os.path.isdir(_FRONTEND_DIST):
     )
 else:
     logger.info("Frontend dist not found - static file serving disabled (local dev mode)")
+
+@app.get("/debug/admin-files")
+async def debug_admin_files():
+    import os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin")
+    if os.path.isdir(path):
+        return {"files": os.listdir(path), "path": path}
+    return {"error": "directory not found", "path": path}
