@@ -9,8 +9,8 @@ Encoder may never overwrite patient input.
 Encoder influence is fully contained in this module.
 """
 
-from contracts.runtime_state import RuntimeState
-from contracts.encoder_contracts import EncoderOutput, EncoderSignalDefinition
+from app.models.runtime_state import RuntimeState
+from app.services.encoder_contracts import EncoderOutput, EncoderSignalDefinition
 from typing import Iterable
 
 
