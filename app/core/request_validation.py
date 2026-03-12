@@ -1,4 +1,4 @@
-from errors import INVALID_PAYLOAD
+from app.core.errors import INVALID_PAYLOAD
 
 VALID_CONTACT_METHODS = {"email", "text", "phone"}
 VALID_DOCTOR_PREFERENCES = {"any", "usual"}
