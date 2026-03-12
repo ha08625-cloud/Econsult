@@ -128,11 +128,11 @@ def _validate_startup(practice_repo: PracticeRepository) -> str:
 # Application factory
 # ---------------------------------------------------------------------------
 
-# Resolve paths relative to the project root (one level up from backend/).
+# Resolve paths relative to the project root.
 # This ensures correct resolution regardless of the working directory when
 # uvicorn is started. Environment variables override the defaults, which
 # allows different paths in different deployment environments if needed.
-_PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(_PROJECT_ROOT, "data")
 DB_PATH = os.environ.get("DB_PATH") or os.path.join(_PROJECT_ROOT, "runtime.db")
 
@@ -153,9 +153,7 @@ app.state.practice_repo = practice_repo
 
 # Admin router -- prefix and tag applied here so admin_router.py stays decoupled
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
-_ADMIN_PORTAL_DIR = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "admin")
-)
+_ADMIN_PORTAL_DIR = os.path.join(_PROJECT_ROOT, "admin")
 if not os.path.isdir(_ADMIN_PORTAL_DIR):
     raise RuntimeError(
         f"Admin portal directory not found: {_ADMIN_PORTAL_DIR}. "
@@ -382,9 +380,7 @@ async def form_finish(request: Request):
 # The catch-all route must come last so it never intercepts API requests.
 # ---------------------------------------------------------------------------
 
-_FRONTEND_DIST = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-)
+_FRONTEND_DIST = os.path.join(_PROJECT_ROOT, "frontend", "dist")
 _FRONTEND_ASSETS = os.path.join(_FRONTEND_DIST, "assets")
 _FRONTEND_INDEX = os.path.join(_FRONTEND_DIST, "index.html")
 
