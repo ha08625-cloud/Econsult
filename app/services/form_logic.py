@@ -7,7 +7,7 @@ Can be fully unit tested without the pipeline or encoder.
 
 from datetime import datetime
 from typing import Any, Dict, Optional
-from apps.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
+from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
 from app.services.ruleset import ruleset_hash
 
 
