@@ -19,30 +19,30 @@ import os
 import logging
 from datetime import datetime, timezone
 
-from persistence import (
+from app.core.persistence import (
     RuntimeStateRepository,
     RuntimeStateNotFound,
     VersionConflict,
     SessionClosed,
 )
-from contracts.runtime_state import RuntimeState
-from condition_registry import ConditionRegistry, ConditionNotFound
-from practice_repository import PracticeRepository
-from presentation_service import PresentationService
-from submission_repository import SubmissionRepository
-from request_validation import (
+from app.models.runtime_state import RuntimeState
+from app.core.condition_registry import ConditionRegistry, ConditionNotFound
+from app.repositories.practice_repository import PracticeRepository
+from app.services.presentation_service import PresentationService
+from app.repositories.submission_repository import SubmissionRepository
+from app.core.request_validation import (
     validate_init_payload,
     validate_update_payload,
     validate_finish_payload,
 )
-from errors import APIError, INVALID_PAYLOAD, UNKNOWN_RUNTIME_ID, VERSION_CONFLICT, SESSION_CLOSED
-from engine_adapters import (
+from app.core.errors import APIError, INVALID_PAYLOAD, UNKNOWN_RUNTIME_ID, VERSION_CONFLICT, SESSION_CLOSED
+from app.services.engine_adapters import (
     init_runtime_state,
     apply_update_and_evaluate,
     finish_runtime_state,
 )
-from email_service import send_clinical_output, EmailDeliveryError
-from admin_router import router as admin_router
+from app.services.email_service import send_clinical_output, EmailDeliveryError
+from app.routers.admin_router import router as admin_router
 from starlette.staticfiles import StaticFiles
 
 logger = logging.getLogger(__name__)
