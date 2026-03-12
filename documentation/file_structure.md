@@ -59,14 +59,14 @@ project_root/
 │   └── uti1.json
 │
 ├── .env
+├── Dockerfile
 ├── build.sh
 ├── conftest.py
 ├── create_practice.py
 ├── fix_practice.py
 ├── railway.toml
 ├── requirements.txt
-├── runtime.db
-└── migrate_phase1a1.py     # one-shot migration script, run from project root
+└── runtime.db
 ```
 
 ## Import mapping: Claude server (flat) vs local
