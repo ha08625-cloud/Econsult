@@ -17,9 +17,9 @@ This module must never import:
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from admin_context import AdminContext, require_admin
-from condition_registry import ConditionNotFound
-from practice_repository import InvalidSignpostingData, MAX_SIGNPOSTING_LENGTH
+from app.core.admin_context import AdminContext, require_admin
+from app.core.condition_registry import ConditionNotFound
+from app.repositories.practice_repository import InvalidSignpostingData, MAX_SIGNPOSTING_LENGTH
 
 router = APIRouter()
 
