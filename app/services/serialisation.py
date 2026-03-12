@@ -15,8 +15,8 @@ Architectural guarantee:
     data (questions, safety rules, encoder definitions).
 """
 
-from contracts.runtime_state import RuntimeState
-from contracts.serialisation_contracts import ClinicalOutput, AuditOutput
+from app.models.runtime_state import RuntimeState
+from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
 
 
 def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label: str) -> dict:
