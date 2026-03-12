@@ -1,6 +1,6 @@
 from typing import Dict
-from contracts.explicit_answers import ExplicitAnswers
-from contracts.runtime_state import SafetyEvaluation
+from app.services.explicit_answers import ExplicitAnswers
+from app.models.runtime_state import SafetyEvaluation
 
 
 def evaluate_safety(
