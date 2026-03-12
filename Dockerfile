@@ -23,7 +23,7 @@ COPY backend/ ./backend/
 COPY data/ ./data/
 
 # Copy admin portal (standalone CDN page, not part of Vite build)
-COPY backend/admin/ ./backend/admin/
+COPY admin/ .admin/
 
 # Copy built frontend from build stage
 COPY --from=frontend-build /frontend/dist ./frontend/dist
