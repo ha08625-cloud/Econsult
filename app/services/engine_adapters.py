@@ -15,23 +15,23 @@ Architectural guarantee:
 
 from typing import Dict, Any, List, Optional, Tuple
 
-from contracts.runtime_state import RuntimeState
-from contracts.encoder_contracts import EncoderOutput, EncoderSignalDefinition
-from projection import project_explicit_answers
-from safety_engine import evaluate_safety
-from serialisation import serialize_client_state, clinical_output, audit_output
-from contracts.serialisation_contracts import ClinicalOutput, AuditOutput
-from ruleset import load_ruleset, ruleset_hash, extract_encoder_definitions
-from encoder_stub import extract_signals
-from encoder_mapping import apply_encoder_output
-from form_logic import (
+from app.models.runtime_state import RuntimeState
+from app.services.encoder_contracts import EncoderOutput, EncoderSignalDefinition
+from app.services.projection import project_explicit_answers
+from app.services.safety_engine import evaluate_safety
+from app.services.serialisation import serialize_client_state, clinical_output, audit_output
+from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
+from app.services.ruleset import load_ruleset, ruleset_hash, extract_encoder_definitions
+from app.services.encoder_stub import extract_signals
+from app.services.encoder_mapping import apply_encoder_output
+from app.services.form_logic import (
     initialise_runtime_state,
     apply_additional_text,
     apply_patient_answers,
     normalise_encoder_provenance,
     validate_required_answers,
 )
-from api_models import SafetyMessage
+from app.models.api_models import SafetyMessage
 
 
 def init_runtime_state(
