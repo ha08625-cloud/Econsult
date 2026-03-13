@@ -153,14 +153,6 @@ app.state.practice_repo = practice_repo
 
 # Admin router -- prefix and tag applied here so admin_router.py stays decoupled
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
-_ADMIN_PORTAL_DIR = os.path.join(_PROJECT_ROOT, "admin")
-if not os.path.isdir(_ADMIN_PORTAL_DIR):
-    raise RuntimeError(
-        f"Admin portal directory not found: {_ADMIN_PORTAL_DIR}. "
-        f"__file__ is: {__file__}"
-    )
-app.mount("/admin-portal", StaticFiles(directory=_ADMIN_PORTAL_DIR, html=True), name="admin-portal")
-
 
 # ---------------------------------------------------------------------------
 # Error handling
