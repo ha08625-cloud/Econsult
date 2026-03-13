@@ -19,23 +19,7 @@ import type {
   ContactMethod,
 } from "./types";
 import ConditionCombobox from "./ConditionCombobox";
-import { GENERAL_CONSULTATION_ID } from "./constants";
-
-// DOMPurify config for rendering practice signposting HTML.
-//
-// NOTE: this config must match the nh3 allowlist in practice_repository.py
-// exactly. If the allowlist changes, update all three locations:
-//   1. practice_repository.py  — nh3.clean() call
-//   2. admin.html              — SIGNPOSTING_PURIFY_CONFIG constant
-//   3. App.tsx                 — this constant
-//
-// rel is included because nh3 automatically injects rel="noopener noreferrer"
-// into stored HTML. DOMPurify must not strip it on render.
-const SIGNPOSTING_PURIFY_CONFIG = {
-  ALLOWED_TAGS: ["p", "strong", "em", "a", "ul", "ol", "li", "br"],
-  ALLOWED_ATTR: ["href", "rel", "target"],
-  ALLOWED_URI_REGEXP: /^https?:/i,
-};
+import { GENERAL_CONSULTATION_ID, SIGNPOSTING_PURIFY_CONFIG } from './constants';
 
 // ---------------------------------
 // Helpers
