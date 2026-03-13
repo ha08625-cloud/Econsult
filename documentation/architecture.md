@@ -1350,17 +1350,19 @@ been removed.
 
 ### 15.2 Build process
 
-Railway runs the build via a two-stage Dockerfile at the project root.
-
 Stage 1 (frontend-build): Node 22 image. Installs npm dependencies from
 frontend/package.json and runs npm run build, producing frontend/dist/.
 
 Stage 2 (runtime): Python 3.12-slim image. Installs Python dependencies
-from requirements.txt, copies backend/, data/, backend/admin/, and the
-built frontend/dist/ from stage 1. Starts uvicorn via the Dockerfile CMD.
+from requirements.txt, copies app/, data/, and the built frontend/dist/
+from stage 1. Starts uvicorn via the Dockerfile CMD.
 
-The previous build.sh script is retained as documentation but is no longer
-called during deployment.
+The Vite build produces two entry points:
+- dist/index.html — patient-facing form
+- dist/admin-ui/index.html — admin portal
+
+Both are served by the existing StaticFiles mount at / in main.py.
+The previous admin/ directory (CDN-based standalone page) has been deleted.
 
 ### 15.3 Static file serving
 
@@ -1378,6 +1380,11 @@ when switching between local and production environments.
 The admin portal (backend/admin/index.html) is a standalone CDN-based page served 
 by FastAPI's StaticFiles at /admin-portal. It is not part of the Vite build pipeline 
 and must not be placed inside the frontend/ directory, which Vite processes on build.
+
+The admin portal (admin-ui) is built by Vite as a second entry point and
+output to dist/admin-ui/. It is served at /admin-ui/ by the same
+StaticFiles mount as the patient form. The previous standalone
+admin/index.html served at /admin-portal has been removed.
 
 ### 15.4 Database
 
@@ -1423,11 +1430,11 @@ nh3 will panic at runtime. The correct call is:
         url_schemes={"http", "https"},
     )
 
-DOMPurify allowlist duplication: SIGNPOSTING_PURIFY_CONFIG appears in
-admin.html and App.tsx. It must match the nh3 allowlist above exactly.
-If the allowlist changes, update all three locations. ALLOWED_ATTR must
-include rel because nh3 injects rel="noopener noreferrer" into the stored
-HTML and DOMPurify must not strip it on render.
+DOMPurify allowlist: SIGNPOSTING_PURIFY_CONFIG is defined once in
+frontend/src/constants.ts and imported by both App.tsx and the admin
+portal (admin-ui/src/SignpostingEditor.tsx). It must match the nh3
+allowlist in practice_repository.py exactly. If the allowlist changes,
+update both constants.ts and practice_repository.py.
 
 ### 15.5 Environment variables
 
