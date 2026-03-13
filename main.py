@@ -385,6 +385,7 @@ _FRONTEND_ASSETS = os.path.join(_FRONTEND_DIST, "assets")
 _FRONTEND_INDEX = os.path.join(_FRONTEND_DIST, "index.html")
 
 logger.warning("DIST CHECK: exists=%s path=%s", os.path.isdir(_FRONTEND_DIST), _FRONTEND_DIST)
+logger.warning("DIST CONTENTS: %s", os.listdir(_FRONTEND_DIST))
 
 if os.path.isdir(_FRONTEND_DIST):
     logger.info("Frontend dist found - mounting static files")
