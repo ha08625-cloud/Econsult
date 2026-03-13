@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout and import mapping
-# Last updated: 2026-03-12
+# Last updated: 2026-03-13
 
 ## Local directory layout
 
@@ -47,26 +47,38 @@ project_root/
 │       ├── persistence.py
 │       └── request_validation.py
 │
-├── admin/                              # Admin portal static file. No build step.
-│   └── index.html
-│
-├── frontend/                           # Patient-facing React app.
-│   ├── src/
+├── frontend/                           # All frontend code. Single Vite build pipeline.
+│   │
+│   ├── src/                            # Patient-facing React app.
 │   │   ├── App.tsx
 │   │   ├── ConditionCombobox.tsx
 │   │   ├── api.ts
-│   │   ├── constants.ts
+│   │   ├── constants.ts                # Shared constants (patient form + admin portal)
 │   │   ├── index.css
 │   │   ├── main.tsx
 │   │   ├── search.ts
 │   │   └── types.ts
+│   │
+│   ├── admin-ui/                       # Admin portal React app. Separate Vite entry point.
+│   │   ├── index.html                  # Vite entry point for admin portal
+│   │   └── src/
+│   │       ├── App.tsx
+│   │       ├── EditorView.tsx
+│   │       ├── SignpostingEditor.tsx
+│   │       ├── TokenView.tsx
+│   │       ├── api.ts
+│   │       ├── index.css
+│   │       ├── main.tsx
+│   │       └── types.ts
+│   │
 │   ├── eslint.config.js
-│   ├── index.html
+│   ├── index.html                      # Vite entry point for patient form
 │   ├── package-lock.json
+│   ├── package.json
 │   ├── tsconfig.app.json
 │   ├── tsconfig.json
 │   ├── tsconfig.node.json
-│   └── vite.config.ts
+│   └── vite.config.ts                  # Two entry points: index.html + admin-ui/index.html
 │
 ├── data/                               # Condition rulesets (JSON). Clinical content only.
 │   ├── uti1.json
@@ -160,11 +172,49 @@ Database access for persistent records. No business logic.
 - general.json: general condition ruleset
 - Future condition rulesets go here
 
-## Frontend files (frontend/src/)
+## Frontend: patient form (frontend/src/)
 
 - types.ts: frontend-visible contracts only. No logic.
 - api.ts: typed HTTP client functions. No business logic.
 - App.tsx: React UI, stateless renderer. All intelligence lives on the server.
 - ConditionCombobox.tsx: condition search and selection component
-- constants.ts: shared frontend constants
+- constants.ts: shared constants used by both the patient form and the admin
+  portal. Includes GENERAL_CONSULTATION_ID and SIGNPOSTING_PURIFY_CONFIG.
 - search.ts: search utility
+
+## Frontend: admin portal (frontend/admin-ui/src/)
+
+Separate Vite entry point. Built alongside the patient form into frontend/dist/.
+Served at /admin-ui/ in production by the same StaticFiles mount as the patient form.
+
+- types.ts: admin-facing types (ConditionSummary, SaveStatus)
+- api.ts: fetchConditions, fetchSignposting, putSignposting. All requests include
+  a Bearer token header. No business logic.
+- TokenView.tsx: token input form. Calls fetchConditions to validate the token.
+- SignpostingEditor.tsx: Quill 2.0.2 rich text editor. Loads, saves, and tracks
+  unsaved changes for a single condition's signposting content.
+- EditorView.tsx: condition selector shell. Renders SignpostingEditor with
+  key={selectedId} to force a clean remount on every condition switch.
+- App.tsx: token gate. Renders TokenView until a valid token is held, then
+  EditorView.
+- main.tsx: entry point. Mounts App into #root.
+- index.css: admin portal styles, extracted from the previous CDN-based
+  admin/index.html.
+
+## Shared frontend constants
+
+SIGNPOSTING_PURIFY_CONFIG lives in frontend/src/constants.ts and is imported
+by both frontend/src/App.tsx and frontend/admin-ui/src/SignpostingEditor.tsx.
+It must match the nh3 allowlist in practice_repository.py exactly. If the
+allowlist changes, update both locations:
+  1. app/repositories/practice_repository.py  — nh3.clean() call
+  2. frontend/src/constants.ts                — SIGNPOSTING_PURIFY_CONFIG
+
+## Build output
+
+The Vite build produces frontend/dist/ with two entry points:
+  - frontend/dist/index.html          patient form
+  - frontend/dist/admin-ui/index.html admin portal
+
+Both are served by the StaticFiles mount at / in main.py. No separate backend
+route is needed for the admin portal. Admin API endpoints remain at /admin/.
