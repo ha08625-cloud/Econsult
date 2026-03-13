@@ -371,6 +371,10 @@ async def debug_admin_files():
         return {"files": os.listdir(path), "path": path}
     return {"error": "directory not found", "path": path}
 
+@app.get("/healthz")
+async def health():
+    return {"ok": True}
+
 # ---------------------------------------------------------------------------
 # Static file serving
 # All API routes must be registered before this block.
