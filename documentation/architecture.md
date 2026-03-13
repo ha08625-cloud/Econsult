@@ -1446,6 +1446,7 @@ The following environment variables must be set in the Railway dashboard:
 | DEV_MODE       | Set to 1 to skip SMTP and ADMIN_TOKEN checks  |
 | DB_PATH        | Path to SQLite file (runtime.db)              |
 | DATA_DIR       | Path to condition JSON directory (data)       |
+| PORT           | Injected by Railway. uvicorn binds to this port. Do not hardcode 8000. |
 
 PRACTICE_NAME and PRACTICE_EMAIL are optional. If not set, PRACTICE_NAME
 defaults to the value of PRACTICE_ID and PRACTICE_EMAIL defaults to
