@@ -16,7 +16,7 @@ This module must never:
 - Manage table creation (that is done once in app/core/db.init_database)
 """
 
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, Json
 from psycopg2.errors import UniqueViolation
 
 from app.core.db import get_conn
@@ -83,6 +83,10 @@ class RuntimeStateRepository:
         (indicates a concurrent update).
 
         Returns the new version number.
+
+        Note: state_dict is wrapped in psycopg2.extras.Json() before being passed
+        to the query. psycopg2 does not automatically adapt plain dicts to JSONB —
+        explicit wrapping is required.
         """
         with get_conn(self.database_url) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
@@ -115,7 +119,7 @@ class RuntimeStateRepository:
                         (runtime_id, version, ruleset_hash, state_json, is_closed)
                     VALUES (%s, %s, %s, %s, FALSE)
                     """,
-                    (runtime_id, new_version, ruleset_hash, state_dict),
+                    (runtime_id, new_version, ruleset_hash, Json(state_dict)),
                 )
 
         return new_version
@@ -132,6 +136,10 @@ class RuntimeStateRepository:
         Raises psycopg2.errors.UniqueViolation if runtime_id already exists.
         Unlike the old SQLite implementation, this does not use ON CONFLICT DO NOTHING —
         a duplicate runtime_id is a programming error and should propagate.
+
+        Note: state_dict is wrapped in psycopg2.extras.Json() before being passed
+        to the query. psycopg2 does not automatically adapt plain dicts to JSONB —
+        explicit wrapping is required.
         """
         with get_conn(self.database_url) as conn:
             with conn.cursor() as cur:
@@ -141,7 +149,7 @@ class RuntimeStateRepository:
                         (runtime_id, version, ruleset_hash, state_json, is_closed)
                     VALUES (%s, 1, %s, %s, FALSE)
                     """,
-                    (runtime_id, ruleset_hash, state_dict),
+                    (runtime_id, ruleset_hash, Json(state_dict)),
                 )
 
     def close_session(self, runtime_id: str, version: int) -> None:
