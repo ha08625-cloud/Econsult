@@ -1388,40 +1388,45 @@ admin/index.html served at /admin-portal has been removed.
 
 ### 15.4 Database
 
-The database is SQLite, stored as `runtime.db` in the working directory.
-Railway's filesystem is ephemeral: the database is wiped on every
-deployment or container restart.
+The database is Postgres, managed by Railway as an add-on service.
+The connection string is injected into the application as `DATABASE_URL`.
+The previous SQLite approach (`runtime.db`, `DB_PATH`) has been removed.
 
-Consequences:
-- In-flight form sessions are lost on restart. For a demo deployment with
-  low traffic this is acceptable.
-- The practice record is re-seeded automatically on every startup via
-  `_validate_startup()` in `main.py`, so the app is always ready to serve
-  requests after a restart without manual intervention.
-- Completed submission records are also lost on restart. In DEV_MODE no
-  emails are sent, so there is no external record of submissions either.
-  This is acceptable for a demonstration deployment.
+All three repositories (RuntimeStateRepository, PracticeRepository,
+SubmissionRepository) accept `database_url: str` in their constructors.
+The shared connection module `app/core/db.py` is the only file in the
+codebase that imports psycopg2.
 
-If submissions need to survive restarts in a future version, the correct
-fix is to migrate from SQLite to a managed Postgres instance (Railway
-provides this as an add-on).
+Table initialisation is handled by `init_database(database_url)` in
+`app/core/db.py`, called once at startup from `main.py`. It uses
+`CREATE TABLE IF NOT EXISTS` and is safe to call on an already-initialised
+database.
 
-### 15.4.1 signposting_json column format change (rich text signposting)
+Known gap — schema migrations: `init_database()` is a one-time
+bootstrapper for a fresh database. It does not handle future schema changes.
+`CREATE TABLE IF NOT EXISTS` is a silent no-op if a table already exists,
+so adding or changing columns requires a separate migration step.
+The correct long-term solution is Alembic. This must be adopted before any
+schema change is required. `init_database()` is the single location that
+will eventually be replaced by `alembic upgrade head`.
+
+JSONB columns: `state_json` (runtime_state_versions),
+`clinical_output_json`, and `audit_output_json` (submission_records)
+are stored as JSONB. psycopg2 does not automatically adapt plain Python
+dicts to JSONB — all write paths wrap dicts in `psycopg2.extras.Json()`
+explicitly. Read paths receive Python dicts directly from psycopg2 — no
+`json.loads()` call is needed or correct.
+
+### 15.4.1 signposting_json column format
 
 The signposting_json column in practice_signposting stores a plain HTML
-string as of the rich text signposting feature. The column name is a
-legacy misnomer from the original list-of-strings design.
-
-This format change required no migration because Railway wipes the
-database on every deployment.
-
-Any future move to a persistent database must include a migration script.
-Do not assume the column contains JSON.
+string. The column name is a legacy misnomer from the original
+list-of-strings design. Do not assume the column contains JSON.
 
 nh3 API constraint: the rel attribute on <a> tags is reserved by nh3
-and injected automatically via the link_rel parameter (default:
-'noopener noreferrer'). Do not pass rel through the attributes dict —
-nh3 will panic at runtime. The correct call is:
+and injected automatically (default: 'noopener noreferrer'). Do not pass
+rel through the attributes dict — nh3 will panic at runtime. The correct
+call is:
 
     nh3.clean(
         raw,
@@ -1436,21 +1441,45 @@ portal (admin-ui/src/SignpostingEditor.tsx). It must match the nh3
 allowlist in practice_repository.py exactly. If the allowlist changes,
 update both constants.ts and practice_repository.py.
 
+### 15.4.2 Test database
+
+Known gap: the repository integration tests (`tests/test_repositories.py`)
+run against the same Railway Postgres instance as the deployed application.
+There is no dedicated test database. Each test generates unique IDs and
+cleans up rows in a finally block, but a buggy test could corrupt or delete
+live data.
+
+This is acceptable for a single-developer project at this stage. A
+dedicated test database must be provisioned before a second developer joins
+or before any real patient data is stored.
+
+To run the tests locally, set `TEST_DATABASE_URL` in your `.env` file to
+the `DATABASE_PUBLIC_URL` value from the Railway Postgres service dashboard
+(the external-facing URL, not the internal `DATABASE_URL`). This file must
+not be committed to version control.
+
+    python -m tests.test_repositories
+
 ### 15.5 Environment variables
 
 The following environment variables must be set in the Railway dashboard:
 
-| Variable       | Purpose                                      |
-|----------------|----------------------------------------------|
-| PRACTICE_ID    | Practice identifier, must match seeded record |
-| DEV_MODE       | Set to 1 to skip SMTP and ADMIN_TOKEN checks  |
-| DB_PATH        | Path to SQLite file (runtime.db)              |
-| DATA_DIR       | Path to condition JSON directory (data)       |
-| PORT           | Injected by Railway. uvicorn binds to this port. Do not hardcode 8000. |
+| Variable        | Purpose                                                                  |
+|-----------------|--------------------------------------------------------------------------|
+| PRACTICE_ID     | Practice identifier, must match seeded record                            |
+| DATABASE_URL    | Postgres connection string, injected automatically by Railway            |
+| DEV_MODE        | Set to 1 to skip SMTP and ADMIN_TOKEN checks                             |
+| DATA_DIR        | Path to condition JSON directory (data)                                  |
+| PORT            | Injected by Railway. uvicorn binds to this port. Do not hardcode 8000.   |
+
+DB_PATH has been removed. It was the SQLite file path and is no longer used.
 
 PRACTICE_NAME and PRACTICE_EMAIL are optional. If not set, PRACTICE_NAME
 defaults to the value of PRACTICE_ID and PRACTICE_EMAIL defaults to
 demo@demo.net.
+
+Local development requires a `.env` file (not committed to version control)
+containing `TEST_DATABASE_URL` for running repository integration tests.
 
 ### 15.6 Current deployment mode
 
