@@ -2,7 +2,7 @@
 HTTP layer.
 
 Thin wrapper over engine_adapters. No clinical logic.
-Imports: engine_adapters, persistence, condition_registry, request_validation, errors.
+Imports: engine_adapters, runtime_state_repository, condition_registry, request_validation, errors.
 
 Single-tenant deployment:
 - PRACTICE_ID environment variable is required at startup
@@ -19,12 +19,13 @@ import os
 import logging
 from datetime import datetime, timezone
 
-from app.core.persistence import (
+from app.repositories.runtime_state_repository import (
     RuntimeStateRepository,
     RuntimeStateNotFound,
     VersionConflict,
     SessionClosed,
 )
+from app.core.db import init_database
 from app.models.runtime_state import RuntimeState
 from app.core.condition_registry import ConditionRegistry, ConditionNotFound
 from app.repositories.practice_repository import PracticeRepository
@@ -129,19 +130,25 @@ def _validate_startup(practice_repo: PracticeRepository) -> str:
 # ---------------------------------------------------------------------------
 
 # Resolve paths relative to the project root.
-# This ensures correct resolution regardless of the working directory when
-# uvicorn is started. Environment variables override the defaults, which
-# allows different paths in different deployment environments if needed.
 _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("DATA_DIR") or os.path.join(_PROJECT_ROOT, "data")
-DB_PATH = os.environ.get("DB_PATH") or os.path.join(_PROJECT_ROOT, "runtime.db")
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("Required environment variable not set: DATABASE_URL")
 
 app = FastAPI()
 
-repo = RuntimeStateRepository(DB_PATH)
+# Initialise all database tables once at startup.
+# Uses CREATE TABLE IF NOT EXISTS - safe to call on an already-initialised database.
+# Known gap: does not handle schema migrations. Alembic must be adopted before
+# any schema change is required. See architecture.md Section 15.4.
+init_database(DATABASE_URL)
+
+repo = RuntimeStateRepository(DATABASE_URL)
 registry = ConditionRegistry(DATA_DIR)
-practice_repo = PracticeRepository(DB_PATH)
-submission_repo = SubmissionRepository(DB_PATH)
+practice_repo = PracticeRepository(DATABASE_URL)
+submission_repo = SubmissionRepository(DATABASE_URL)
 presentation_service = PresentationService(registry, practice_repo)
 
 # Startup validation -- runs at import time (when FastAPI loads the module).
@@ -393,11 +400,6 @@ logger.warning("DIST CONTENTS: %s", os.listdir(_FRONTEND_DIST))
 
 if os.path.isdir(_FRONTEND_DIST):
     logger.info("Frontend dist found - mounting static files")
-    # Mount the entire dist directory with html=True.
-    # html=True makes StaticFiles serve index.html for unknown paths,
-    # which is the correct SPA fallback behaviour.
-    # This must be the LAST mount registered so it does not intercept
-    # requests intended for /admin-portal or /admin.
     app.mount(
         "/",
         StaticFiles(directory=_FRONTEND_DIST, html=True),
