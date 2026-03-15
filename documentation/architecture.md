@@ -1397,18 +1397,50 @@ SubmissionRepository) accept `database_url: str` in their constructors.
 The shared connection module `app/core/db.py` is the only file in the
 codebase that imports psycopg2.
 
-Table initialisation is handled by `init_database(database_url)` in
-`app/core/db.py`, called once at startup from `main.py`. It uses
-`CREATE TABLE IF NOT EXISTS` and is safe to call on an already-initialised
-database.
+#### Schema migrations (Alembic)
 
-Known gap — schema migrations: `init_database()` is a one-time
-bootstrapper for a fresh database. It does not handle future schema changes.
-`CREATE TABLE IF NOT EXISTS` is a silent no-op if a table already exists,
-so adding or changing columns requires a separate migration step.
-The correct long-term solution is Alembic. This must be adopted before any
-schema change is required. `init_database()` is the single location that
-will eventually be replaced by `alembic upgrade head`.
+Schema migrations are managed by Alembic. `alembic_upgrade()` in
+`app/core/db.py` runs `alembic upgrade head` at application startup,
+applying any pending migrations before the application serves requests.
+If a migration fails, the application fails to start. This is correct
+behaviour — a failed migration must prevent startup.
+
+Configuration:
+- `alembic.ini` at the project root contains no secrets. The database URL
+  is injected at runtime by `alembic/env.py` reading `DATABASE_URL` from
+  the environment.
+- `alembic/env.py` sets `target_metadata = None` (no SQLAlchemy ORM models).
+  The advisory lock is enabled by default and must not be disabled.
+- Migration files live in `alembic/versions/`. Each file contains
+  `upgrade()` and `downgrade()` functions.
+
+Migration workflow:
+1. Write a new migration file in `alembic/versions/`.
+2. Run `alembic upgrade head` locally against a test database to verify.
+3. Push to main. Railway deployment runs migrations automatically at startup.
+
+Rollback procedure:
+To roll back a migration in production, run `alembic downgrade -1` (or to
+a specific revision) manually against the live database, then redeploy the
+older code version. There is no automated rollback mechanism. The
+`downgrade()` functions in each migration file exist for this purpose.
+
+Concurrent startup limitation:
+Running migrations at application startup works for a single-developer,
+single-instance deployment. If two Railway instances start simultaneously
+(e.g. during a deployment overlap), concurrent migration attempts could
+conflict. Alembic's default advisory lock mitigates this, but the behaviour
+under contention is not well-documented for all Postgres configurations.
+This is acceptable for now and must be revisited before scaling.
+
+The initial migration (`0001_initial_schema.py`) uses `CREATE TABLE IF NOT
+EXISTS` as a one-time concession because the database predates Alembic.
+Future migrations must not use `IF NOT EXISTS`.
+
+The previous `init_database()` function has been replaced by
+`alembic_upgrade()`. `init_database()` is retained as deprecated in
+`app/core/db.py` until `alembic_upgrade()` is confirmed working on Railway,
+then it will be deleted.
 
 JSONB columns: `state_json` (runtime_state_versions),
 `clinical_output_json`, and `audit_output_json` (submission_records)
