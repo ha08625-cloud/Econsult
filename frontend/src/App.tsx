@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import DOMPurify from "dompurify";
 import {
   getSafetyWarning,
+  getAvailability,
   initForm,
   updateForm,
   finishForm,
@@ -110,6 +111,13 @@ export default function App() {
   const [safetyWarningText, setSafetyWarningText] = useState<string | null>(null);
   const [safetyConfirmed, setSafetyConfirmed] = useState(false);
 
+  // Screen 0 state (availability)
+  // null = not yet fetched. Fail-open: if the fetch fails, these stay null
+  // and the form proceeds as normal.
+  const [availabilityClosedMessage, setAvailabilityClosedMessage] = useState<string | null>(null);
+  const [afterHoursNotice, setAfterHoursNotice] = useState<string | null>(null);
+  const [practiceIsOpen, setPracticeIsOpen] = useState<boolean | null>(null);
+
   // Screen 1 state (condition discovery)
   const [conditions, setConditions] = useState<ConditionSummary[] | null>(null);
   const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
@@ -146,6 +154,42 @@ export default function App() {
 
     return () => { cancelled = true; };
   }, [screen, safetyWarningText]);
+
+  // ---------------------------------
+  // Availability fetch (Screen 0)
+  // ---------------------------------
+  // Fetched alongside the safety warning. If the fetch fails for any reason
+  // (network error, any non-200 response), fail open: the form proceeds as
+  // normal with no closed message banner and no after-hours notice.
+  // A fetch failure must never lock patients out.
+
+  useEffect(() => {
+    if (screen !== "SAFETY_WARNING") return;
+    // Only fetch once — if practiceIsOpen has been set, we already fetched.
+    if (practiceIsOpen !== null) return;
+
+    let cancelled = false;
+
+    async function fetchAvailability() {
+      try {
+        const res = await getAvailability();
+        if (cancelled) return;
+        setPracticeIsOpen(res.is_open);
+        setAvailabilityClosedMessage(res.closed_message);
+        setAfterHoursNotice(res.after_hours_notice);
+      } catch {
+        // Fail open — silently ignore any error.
+        // The form proceeds as normal.
+        if (!cancelled) {
+          setPracticeIsOpen(true);
+        }
+      }
+    }
+
+    fetchAvailability();
+
+    return () => { cancelled = true; };
+  }, [screen, practiceIsOpen]);
 
   // ---------------------------------
   // Condition list fetch (Screen 1)
@@ -212,6 +256,9 @@ export default function App() {
               setFreeText("");
               setContactPreferences(initialiseContactPreferences());
               setContactErrors({});
+              setPracticeIsOpen(null);
+              setAvailabilityClosedMessage(null);
+              setAfterHoursNotice(null);
             }}
           >
             Try again
@@ -226,9 +273,32 @@ export default function App() {
   // ---------------------------------
 
   if (screen === "SAFETY_WARNING") {
+    // Practice is closed: is_open is explicitly false (not null, not true).
+    const isClosed = practiceIsOpen === false;
+
     return (
       <PageShell>
         <h1>Before you continue</h1>
+
+        {/* Closed message banner — above safety warning */}
+        {isClosed && availabilityClosedMessage && (
+          <div
+            className="alert alert-warning"
+            style={{ marginBottom: "16px" }}
+          >
+            <strong>This service is currently closed</strong>
+            <p style={{ margin: "8px 0 0 0" }}>{availabilityClosedMessage}</p>
+          </div>
+        )}
+
+        {isClosed && !availabilityClosedMessage && (
+          <div
+            className="alert alert-warning"
+            style={{ marginBottom: "16px" }}
+          >
+            <strong>This service is currently closed</strong>
+          </div>
+        )}
 
         {safetyWarningText === null && !screenError && (
           <p className="status-text">Loading...</p>
@@ -258,6 +328,16 @@ export default function App() {
               <p>{safetyWarningText}</p>
             </div>
 
+            {/* After-hours notice — below safety warning, above form controls */}
+            {afterHoursNotice && !isClosed && (
+              <div
+                className="alert alert-info"
+                style={{ marginBottom: "16px" }}
+              >
+                <p style={{ margin: 0 }}>{afterHoursNotice}</p>
+              </div>
+            )}
+
             <div className="safety-confirm-row">
               <label className="safety-confirm-label">
                 <input
@@ -278,7 +358,7 @@ export default function App() {
             <div className="btn-row">
               <button
                 className="btn btn-primary"
-                disabled={!safetyConfirmed}
+                disabled={!safetyConfirmed || isClosed}
                 onClick={() => setScreen("SELECT_CONDITION")}
               >
                 Continue
