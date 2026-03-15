@@ -1,5 +1,5 @@
 Early prototype updates
-- Singposting to a website e.g. ADHD referral information
+- split frontend/src/App.tsx and main.py
 - Form for someone else, e.g. a child
 - add contact details and choice of response
 - add timer so cant be submitted out of hours
