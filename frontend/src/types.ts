@@ -36,6 +36,14 @@ export interface SafetyWarning {
   universal_safety_warning: string;
 }
 
+// --- Availability (Screen 0) ---
+
+export interface AvailabilityResult {
+  is_open: boolean;
+  closed_message: string | null;
+  after_hours_notice: string | null;
+}
+
 // --- Condition discovery and presentation (Screens 1-2) ---
 
 export interface ConditionSummary {
