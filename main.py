@@ -27,8 +27,10 @@ from app.repositories.runtime_state_repository import (
 )
 from app.core.db import alembic_upgrade
 from app.models.runtime_state import RuntimeState
+from app.models.availability_models import AvailabilityConfig
 from app.core.condition_registry import ConditionRegistry, ConditionNotFound
 from app.repositories.practice_repository import PracticeRepository
+from app.repositories.availability_repository import AvailabilityRepository
 from app.services.presentation_service import PresentationService
 from app.repositories.submission_repository import SubmissionRepository
 from app.core.request_validation import (
@@ -42,6 +44,7 @@ from app.services.engine_adapters import (
     apply_update_and_evaluate,
     finish_runtime_state,
 )
+from app.services import availability_service
 from app.services.email_service import send_clinical_output, EmailDeliveryError
 from app.routers.admin_router import router as admin_router
 from starlette.staticfiles import StaticFiles
@@ -149,6 +152,7 @@ repo = RuntimeStateRepository(DATABASE_URL)
 registry = ConditionRegistry(DATA_DIR)
 practice_repo = PracticeRepository(DATABASE_URL)
 submission_repo = SubmissionRepository(DATABASE_URL)
+availability_repo = AvailabilityRepository(DATABASE_URL)
 presentation_service = PresentationService(registry, practice_repo)
 
 # Startup validation -- runs at import time (when FastAPI loads the module).
@@ -157,6 +161,11 @@ presentation_service = PresentationService(registry, practice_repo)
 app.state.practice_id = _validate_startup(practice_repo)
 app.state.registry = registry
 app.state.practice_repo = practice_repo
+app.state.availability_repo = availability_repo
+
+# Insert default availability row if absent.
+# Must run after _validate_startup ensures the practice row exists.
+availability_repo.init_availability(app.state.practice_id)
 
 # Admin router -- prefix and tag applied here so admin_router.py stays decoupled
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
@@ -207,11 +216,57 @@ async def get_presentation(condition_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Availability (public, no auth)
+# ---------------------------------------------------------------------------
+
+@app.get("/availability")
+async def get_availability():
+    """
+    Evaluate and return current availability for patients.
+
+    Returns {"is_open": bool, "closed_message": str|null, "after_hours_notice": str|null}.
+
+    If the database raises an exception, the exception propagates and FastAPI
+    returns HTTP 500. The frontend treats any non-200 response as fail-open.
+    """
+    practice_id = app.state.practice_id
+    row = availability_repo.get_availability(practice_id)
+    config = AvailabilityConfig.from_row(row)
+    result = availability_service.evaluate_availability(config, datetime.now(timezone.utc))
+
+    return {
+        "is_open": result.is_open,
+        "closed_message": result.closed_message,
+        "after_hours_notice": result.after_hours_notice,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Form session endpoints
 # ---------------------------------------------------------------------------
 
 @app.post("/form/init")
 async def form_init(request: Request):
+    # --- Availability check (fail-open) ---
+    # If the check fails for any reason, log and proceed as if open.
+    # A database failure must never lock patients out.
+    try:
+        practice_id = app.state.practice_id
+        row = availability_repo.get_availability(practice_id)
+        config = AvailabilityConfig.from_row(row)
+        result = availability_service.evaluate_availability(
+            config, datetime.now(timezone.utc)
+        )
+        if not result.is_open:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": result.closed_message},
+            )
+    except Exception:
+        logger.exception(
+            "Availability check failed during form/init — proceeding as open (fail-open)"
+        )
+
     payload = await request.json()
     validate_init_payload(payload)
 
