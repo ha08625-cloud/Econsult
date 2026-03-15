@@ -5,7 +5,7 @@
  * The server validates this token via admin_context.py.
  */
 
-import type { ConditionSummary } from "./types";
+import type { ConditionSummary, AvailabilityConfig } from "./types";
 
 async function apiFetch(
   path: string,
@@ -84,4 +84,51 @@ export async function putSignposting(
   }
   const data = await res.json();
   return data.signposting ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Availability
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetches the current availability configuration.
+ */
+export async function fetchAvailability(
+  token: string
+): Promise<AvailabilityConfig> {
+  const res = await apiFetch("/admin/availability", token);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  return (await res.json()) as AvailabilityConfig;
+}
+
+/**
+ * Updates the availability configuration.
+ * Returns the updated config as stored by the server.
+ * Throws with the server's detail message on validation failure.
+ */
+export async function putAvailability(
+  token: string,
+  config: {
+    is_active: boolean;
+    weekly_open_days: string[];
+    open_time: string;
+    close_time: string;
+    closed_message: string | null;
+  }
+): Promise<AvailabilityConfig> {
+  const res = await apiFetch("/admin/availability", token, {
+    method: "PUT",
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) {
+    let detail = `Server error: ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch (_) {
+      // ignore parse errors
+    }
+    throw new Error(detail);
+  }
+  return (await res.json()) as AvailabilityConfig;
 }
