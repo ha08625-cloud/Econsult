@@ -11,3 +11,12 @@ export type SaveStatus = {
   type: "success" | "error";
   text: string;
 };
+
+export interface AvailabilityConfig {
+  practice_id: string;
+  is_active: boolean;
+  weekly_open_days: string[];
+  open_time: string;
+  close_time: string;
+  closed_message: string | null;
+}
