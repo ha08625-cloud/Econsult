@@ -5,6 +5,7 @@ import type {
   ConditionPresentation,
   SafetyMessage,
   SafetyWarning,
+  AvailabilityResult,
   ContactPreferences,
 } from "./types";
 
@@ -16,16 +17,23 @@ const API_BASE = ""; // same-origin
 
 export class ApiError extends Error {
   status: number | null;
+  detail: string | null;
 
-  constructor(message: string, status: number | null) {
+  constructor(message: string, status: number | null, detail: string | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 }
 
 export function friendlyErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {
+    if (e.status === 503 && e.detail) {
+      // 503 from POST /form/init — practice is closed.
+      // detail contains the closed_message from the server.
+      return e.detail;
+    }
     if (e.status === 409) {
       return "Please check you do not have this form open in another tab. If you do, close the other tab and try again.";
     }
@@ -57,6 +65,17 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   }
 
   if (!res.ok) {
+    // For 503 responses, extract the detail field for the closed message.
+    if (res.status === 503) {
+      let detail: string | null = null;
+      try {
+        const body = await res.json();
+        detail = body.detail ?? null;
+      } catch {
+        // If we can't parse the body, proceed with null detail.
+      }
+      throw new ApiError(`HTTP ${res.status}`, res.status, detail);
+    }
     throw new ApiError(`HTTP ${res.status}`, res.status);
   }
 
@@ -89,6 +108,14 @@ async function getJson<T>(url: string): Promise<T> {
 
 export async function getSafetyWarning(): Promise<SafetyWarning> {
   return getJson("/safety-warning");
+}
+
+// ---------------------------------
+// Availability (Screen 0)
+// ---------------------------------
+
+export async function getAvailability(): Promise<AvailabilityResult> {
+  return getJson("/availability");
 }
 
 // ---------------------------------
