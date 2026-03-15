@@ -6,3 +6,5 @@ anyio==4.12.1
 python-multipart==0.0.9
 nh3==0.3.3
 psycopg2-binary==2.9.9
+alembic==1.13.3
+tzdata
