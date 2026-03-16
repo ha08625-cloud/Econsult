@@ -21,62 +21,12 @@ import type {
 } from "./types";
 import ConditionCombobox from "./ConditionCombobox";
 import { GENERAL_CONSULTATION_ID, SIGNPOSTING_PURIFY_CONFIG } from './constants';
-
-// ---------------------------------
-// Helpers
-// ---------------------------------
-
-function initialiseEditableAnswers(
-  clientState: ClientStateView
-): Record<string, boolean | string | null> {
-  return clientState.questions.reduce((acc, q) => {
-    acc[q.answer_key] = q.current_value ?? null;
-    return acc;
-  }, {} as Record<string, boolean | string | null>);
-}
-
-function initialiseContactPreferences(): ContactPreferences {
-  return {
-    contact_methods: [],
-    email_address: null,
-    phone_number: null,
-    best_time_to_call: null,
-    doctor_preference: "any",
-    usual_doctor_name: null,
-  };
-}
-
-/**
- * UK phone number client-side validation.
- * Strips spaces, checks starts with 07 or +44, length 10–13 digits.
- */
-function isValidUkPhone(value: string): boolean {
-  const stripped = value.replace(/\s+/g, "");
-  if (!/^\+?[\d]+$/.test(stripped)) return false;
-  const digitsOnly = stripped.replace(/^\+44/, "0");
-  return /^07\d{8,11}$/.test(digitsOnly) || /^0[1-9]\d{8,9}$/.test(digitsOnly);
-}
-
-function PageShell({ children }: { children: React.ReactNode }) {
-  return (
-    <>
-      <header className="page-header">
-        <span className="page-header-title">Online Consultation</span>
-      </header>
-      <div className="page-container">
-        <div className="screen-card">{children}</div>
-      </div>
-    </>
-  );
-}
-
-function InlineError({ message }: { message: string }) {
-  return (
-    <div className="alert alert-danger" style={{ marginTop: "16px", marginBottom: 0 }}>
-      <p style={{ margin: 0 }}>{message}</p>
-    </div>
-  );
-}
+import {
+  initialiseEditableAnswers,
+  initialiseContactPreferences,
+  isValidUkPhone,
+} from "./helpers";
+import { PageShell, InlineError } from "./layout";
 
 // ---------------------------------
 // App
@@ -243,25 +193,51 @@ export default function App() {
           <button
             className="btn btn-primary"
             onClick={() => {
-              setFatalError(null);
+              // RESET CHECKLIST — every useState in App.tsx must appear below.
+              // If you add a new useState to this file, add it here too.
+              // screen
               setScreen("SAFETY_WARNING");
-              setSafetyWarningText(null);
-              setSafetyConfirmed(false);
+              // runtimeId
               setRuntimeId(null);
+              // version
               setVersion(null);
+              // clientState
               setClientState(null);
+              // editableAnswers
               setEditableAnswers(null);
+              // additionalText
               setAdditionalText("");
+              // safetyMessages
               setSafetyMessages([]);
-              setConditions(null);
-              setSelectedConditionId(null);
-              setPresentation(null);
-              setFreeText("");
+              // contactPreferences
               setContactPreferences(initialiseContactPreferences());
+              // contactErrors
               setContactErrors({});
-              setPracticeIsOpen(null);
+              // isSubmitting
+              setIsSubmitting(false);
+              // fatalError
+              setFatalError(null);
+              // screenError — cleared by the screen change useEffect above, but explicit here for safety
+              setScreenError(null);
+              // safetyWarningText
+              setSafetyWarningText(null);
+              // safetyConfirmed
+              setSafetyConfirmed(false);
+              // availabilityClosedMessage
               setAvailabilityClosedMessage(null);
+              // afterHoursNotice
               setAfterHoursNotice(null);
+              // practiceIsOpen
+              setPracticeIsOpen(null);
+              // conditions
+              setConditions(null);
+              // selectedConditionId
+              setSelectedConditionId(null);
+              // presentation
+              setPresentation(null);
+              // freeText
+              setFreeText("");
+              // submittedAfterHours
               setSubmittedAfterHours(false);
             }}
           >
