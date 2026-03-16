@@ -126,6 +126,9 @@ export default function App() {
   const [presentation, setPresentation] = useState<ConditionPresentation | null>(null);
   const [freeText, setFreeText] = useState<string>("");
 
+  // DONE screen state (populated from /form/finish response)
+  const [submittedAfterHours, setSubmittedAfterHours] = useState(false);
+
   // Clear inline error on screen change
   useEffect(() => {
     setScreenError(null);
@@ -259,6 +262,7 @@ export default function App() {
               setPracticeIsOpen(null);
               setAvailabilityClosedMessage(null);
               setAfterHoursNotice(null);
+              setSubmittedAfterHours(false);
             }}
           >
             Try again
@@ -871,7 +875,8 @@ export default function App() {
       setScreenError(null);
 
       finishForm(contactRuntimeId, contactVersion, cleanPreferences)
-        .then(() => {
+        .then((res) => {
+          setSubmittedAfterHours(res.submitted_after_hours ?? false);
           setScreen("DONE");
         })
         .catch((e) => {
@@ -1072,10 +1077,16 @@ export default function App() {
         </div>
         <h1>Consultation submitted</h1>
         <p>Your consultation has been submitted successfully.</p>
-        <p style={{ color: "var(--text-muted)" }}>
-          If you do not hear back from the practice within the timeframe indicated,
-          please contact them directly.
-        </p>
+        {submittedAfterHours ? (
+          <p style={{ color: "var(--text-muted)" }}>
+            The practice is now closed — your submission will be reviewed on the next working day.
+          </p>
+        ) : (
+          <p style={{ color: "var(--text-muted)" }}>
+            If you do not hear back from the practice within the timeframe indicated,
+            please contact them directly.
+          </p>
+        )}
       </PageShell>
     );
   }
