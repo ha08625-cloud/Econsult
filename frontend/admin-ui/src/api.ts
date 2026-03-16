@@ -23,6 +23,21 @@ async function apiFetch(
 }
 
 /**
+ * Extract a detail message from a non-ok response, or fall back to
+ * a generic "Server error: {status}" string.
+ */
+async function extractErrorDetail(res: Response): Promise<string> {
+  let detail = `Server error: ${res.status}`;
+  try {
+    const body = await res.json();
+    if (body.detail) detail = body.detail;
+  } catch (_) {
+    // ignore parse errors
+  }
+  return detail;
+}
+
+/**
  * Fetches the list of conditions.
  * Throws "UNAUTHORIZED" if the token is rejected.
  * Throws a descriptive error string for other failures.
@@ -73,14 +88,7 @@ export async function putSignposting(
     }
   );
   if (!res.ok) {
-    let detail = `Server error: ${res.status}`;
-    try {
-      const body = await res.json();
-      if (body.detail) detail = body.detail;
-    } catch (_) {
-      // ignore parse errors
-    }
-    throw new Error(detail);
+    throw new Error(await extractErrorDetail(res));
   }
   const data = await res.json();
   return data.signposting ?? null;
@@ -104,7 +112,6 @@ export async function fetchAvailability(
 /**
  * Updates the availability configuration.
  * Returns the updated config as stored by the server.
- * Throws with the server's detail message on validation failure.
  */
 export async function putAvailability(
   token: string,
@@ -121,14 +128,50 @@ export async function putAvailability(
     body: JSON.stringify(config),
   });
   if (!res.ok) {
-    let detail = `Server error: ${res.status}`;
-    try {
-      const body = await res.json();
-      if (body.detail) detail = body.detail;
-    } catch (_) {
-      // ignore parse errors
-    }
-    throw new Error(detail);
+    throw new Error(await extractErrorDetail(res));
+  }
+  return (await res.json()) as AvailabilityConfig;
+}
+
+// ---------------------------------------------------------------------------
+// Override
+// ---------------------------------------------------------------------------
+
+/**
+ * Set a manual override (force-open or force-closed).
+ * expires_at must be a UTC ISO datetime string.
+ * Returns the updated raw config.
+ */
+export async function postOverride(
+  token: string,
+  override: {
+    status: string;
+    expires_at: string;
+    message: string | null;
+  }
+): Promise<AvailabilityConfig> {
+  const res = await apiFetch("/admin/availability/override", token, {
+    method: "POST",
+    body: JSON.stringify(override),
+  });
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res));
+  }
+  return (await res.json()) as AvailabilityConfig;
+}
+
+/**
+ * Clear any active override. Idempotent.
+ * Returns the updated raw config.
+ */
+export async function deleteOverride(
+  token: string
+): Promise<AvailabilityConfig> {
+  const res = await apiFetch("/admin/availability/override", token, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res));
   }
   return (await res.json()) as AvailabilityConfig;
 }
