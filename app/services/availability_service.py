@@ -7,6 +7,7 @@ app.models.availability_models. Fully testable without a database.
 Functions:
 - validate_availability_config: raises ValueError on invalid config input
 - validate_override: raises ValueError on invalid override input
+- validate_exception: raises ValueError on invalid exception input
 - deactivation_clears_override: returns True if override should be cleared
 - evaluate_availability: returns AvailabilityResult from config + current time
 """
@@ -15,7 +16,11 @@ import datetime
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
-from app.models.availability_models import AvailabilityConfig, AvailabilityResult
+from app.models.availability_models import (
+    AvailabilityConfig,
+    AvailabilityException,
+    AvailabilityResult,
+)
 
 LONDON_TZ = ZoneInfo("Europe/London")
 
@@ -98,6 +103,48 @@ def validate_override(
         )
 
 
+def validate_exception(
+    exception_type: str,
+    open_time: datetime.time | None,
+    close_time: datetime.time | None,
+) -> None:
+    """
+    Validate exception parameters.
+
+    Raises ValueError if:
+    - exception_type is not "closed" or "custom_hours"
+    - exception_type is "custom_hours" and either open_time or close_time is None
+    - exception_type is "closed" and either open_time or close_time is not None
+    - open_time == close_time when both are present
+    - open_time >= close_time when both are present (overnight hours not supported)
+    """
+    if exception_type not in ("closed", "custom_hours"):
+        raise ValueError(
+            f"exception_type must be 'closed' or 'custom_hours', got '{exception_type}'"
+        )
+
+    if exception_type == "custom_hours":
+        if open_time is None or close_time is None:
+            raise ValueError(
+                "custom_hours exception requires both open_time and close_time"
+            )
+        if open_time == close_time:
+            raise ValueError(
+                f"open_time and close_time must not be equal (both are {open_time})"
+            )
+        if open_time >= close_time:
+            raise ValueError(
+                f"open_time ({open_time}) must be before close_time ({close_time}). "
+                "Overnight hours are not supported."
+            )
+
+    if exception_type == "closed":
+        if open_time is not None or close_time is not None:
+            raise ValueError(
+                "closed exception must not have open_time or close_time"
+            )
+
+
 def deactivation_clears_override(is_active: bool) -> bool:
     """
     Return True if the override should be cleared.
@@ -112,11 +159,13 @@ def deactivation_clears_override(is_active: bool) -> bool:
 def evaluate_availability(
     config: AvailabilityConfig,
     now_utc: datetime.datetime,
+    exceptions: list[AvailabilityException] | None = None,
 ) -> AvailabilityResult:
     """
     Evaluate whether the practice is currently open.
 
     Takes a typed AvailabilityConfig and the current UTC datetime.
+    Optionally takes a list of AvailabilityException entries.
     Returns an AvailabilityResult.
 
     Evaluation order:
@@ -124,7 +173,10 @@ def evaluate_availability(
     2. If an active override exists (override_status not null, expires_at > now):
        - "open": return open with after-hours notice from config close_time.
        - "closed": return closed with override_message (or fallback to closed_message).
-    3. Otherwise: evaluate weekly schedule.
+    3. If a per-date exception exists for today (Europe/London):
+       - "closed": return closed with config closed_message.
+       - "custom_hours": evaluate exception open_time/close_time against London time.
+    4. Otherwise: evaluate weekly schedule.
     """
     if not config.is_active:
         return AvailabilityResult(
@@ -163,10 +215,39 @@ def evaluate_availability(
                 after_hours_notice=None,
             )
 
-    # --- Weekly schedule ---
+    # --- Per-date exception check ---
+    if exceptions is None:
+        exceptions = []
+
     now_london = now_utc.astimezone(LONDON_TZ)
-    current_day = _WEEKDAY_TO_ABBR[now_london.weekday()]
+    today_london = now_london.date()
     current_time = now_london.time()
+
+    for exc in exceptions:
+        if exc.exception_date == today_london:
+            if exc.exception_type == "closed":
+                return AvailabilityResult(
+                    is_open=False,
+                    closed_message=config.closed_message,
+                    after_hours_notice=None,
+                )
+            # custom_hours
+            time_open = exc.open_time <= current_time < exc.close_time
+            if time_open:
+                after_hours_notice = _build_after_hours_notice(exc.close_time)
+                return AvailabilityResult(
+                    is_open=True,
+                    closed_message=None,
+                    after_hours_notice=after_hours_notice,
+                )
+            return AvailabilityResult(
+                is_open=False,
+                closed_message=config.closed_message,
+                after_hours_notice=None,
+            )
+
+    # --- Weekly schedule ---
+    current_day = _WEEKDAY_TO_ABBR[now_london.weekday()]
 
     day_open = current_day in config.weekly_open_days
     time_open = config.open_time <= current_time < config.close_time
