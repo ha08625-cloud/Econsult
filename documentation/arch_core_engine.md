@@ -26,9 +26,21 @@
 * Generate ClientStateView projection
 * Constraint: Each submission produces exactly one new RuntimeState version and exactly one safety evaluation.
 
-# Modules:
+## (Ruleset & Session Validation)
+* Ruleset hash mismatch between session and current ruleset
+* Duplicate or unstable IDs
+* Duplicate or unstable answer_keys
+* Missing or invalid presentation block in ruleset → startup abort
+* Duplicate condition_id across rulesets → startup abort
+* Presentation containing unexpected keys → startup abort
+* Version mismatch on update or finish
+* Submission attempt after session closure
+* Client submission of any RuntimeState or projection data
+* Incomplete required answers on submission
 
-## form_logic.py — Deterministic functional core
+## Modules:
+
+### form_logic.py — Deterministic functional core
 
 Responsibilities:
 * Initialise runtime state (including answer_type from ruleset)
@@ -50,7 +62,7 @@ Function names:
 * normalise_encoder_provenance(runtime) → None (mutates)
 * validate_required_answers(runtime) → None (raises ValueError)
 
-## runtime_state.py — Canonical runtime data contracts
+### runtime_state.py — Canonical runtime data contracts
 
 Defines the shape of all in‑flight state.
 
@@ -68,7 +80,7 @@ Properties:
 
 This module defines what state can exist, not how it is used.
 
-## ruleset.py — Clinical definitions and extraction metadata
+### ruleset.py — Clinical definitions and extraction metadata
 
 Responsibilities:
 * Load rulesets from JSON
@@ -105,7 +117,7 @@ metadata. The condition_label needed for ClientStateView is passed in
 explicitly by the HTTP layer. The clinical engine operates exactly as
 if presentation metadata never existed.
 
-## condition_registry.py — Condition discovery and presentation
+### condition_registry.py — Condition discovery and presentation
 
 Responsibilities:
 * Load all ruleset JSON files from the data directory at startup
