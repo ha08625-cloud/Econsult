@@ -1,6 +1,13 @@
 **Scope:** Finalizing forms, auditing, persisting submission records, sending emails.
 **Key Files:** `serialization.py`, `serialisation_contracts.py`, `submission_repository.py`, `email_service.py`
 
+## Submission & Delivery Lifecycle
+* Transaction Order: On form/finish, a submission_record MUST be created in the database with delivery_status = "pending" BEFORE any email send is attempted. This ensures the record exists even if the process crashes during delivery.
+* Outcomes: >   * Success -> delivery_status = "sent", delivered_at = now.
+* Failure -> delivery_status = "failed", delivery_error = exception message.
+* Failures are Operational, not Clinical: Email failures are NOT surfaced to the patient and NO automatic retry is implemented. The patient receives a submission ID regardless of delivery outcome.
+* Audit Integrity: delivery_email is captured from the practice record at submission time and hardcoded into the submission record so historical audits reflect the actual address used.
+
 ### serialization.py — Output views
 
 Responsibilities:
