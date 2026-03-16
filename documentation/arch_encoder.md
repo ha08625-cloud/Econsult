@@ -33,6 +33,9 @@ encoder_confirmed	encoder_corrected	yes
 patient	encoder	no
 patient	encoder_confirmed	no
 
+Validation:
+"If send_to_encoder = true, then encoder_prompt must not be null and answer_type must be Boolean"
+
 ## Modules
 
 ### encoder_stub.py — Replaceable encoder façade
