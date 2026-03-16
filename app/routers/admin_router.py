@@ -9,6 +9,7 @@ This module is responsible for:
 - Admin condition list
 - Availability configuration
 - Manual override management
+- Per-date exception management
 
 This module must never import:
 - Clinical engine modules (form_logic, safety_engine, encoder_mapping, etc.)
@@ -29,12 +30,17 @@ from app.repositories.practice_repository import InvalidSignpostingData, MAX_SIG
 from app.services.availability_service import (
     validate_availability_config,
     validate_override,
+    validate_exception,
     deactivation_clears_override,
 )
+from app.models.availability_models import AvailabilityException
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+LONDON_TZ = ZoneInfo("Europe/London")
 
 
 def _normalise_signposting(value) -> str | None:
@@ -65,6 +71,23 @@ def _format_availability_response(config: dict) -> dict:
     if config.get("override_expires_at") is not None:
         config["override_expires_at"] = config["override_expires_at"].isoformat()
     return config
+
+
+def _format_exception_response(exc: dict) -> dict:
+    """
+    Format a raw exception dict for JSON response.
+
+    Converts date to ISO string. Converts time objects to HH:MM strings
+    if present.
+    """
+    result = {
+        "exception_date": exc["exception_date"].isoformat(),
+        "exception_type": exc["exception_type"],
+        "open_time": exc["open_time"].strftime("%H:%M") if exc.get("open_time") else None,
+        "close_time": exc["close_time"].strftime("%H:%M") if exc.get("close_time") else None,
+        "note": exc.get("note"),
+    }
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -477,3 +500,176 @@ async def delete_override(
 
     updated = availability_repo.get_availability(admin.practice_id)
     return _format_availability_response(updated)
+
+
+# ---------------------------------------------------------------------------
+# Per-date exceptions (Stage 4)
+# ---------------------------------------------------------------------------
+
+@router.get("/availability/exceptions")
+async def list_exceptions(
+    request: Request,
+    admin: AdminContext = Depends(require_admin),
+):
+    """
+    Return all exceptions on or after today (Europe/London time).
+
+    Includes today's exception if one exists — the admin needs to verify
+    what is currently active. Ordered by date ascending.
+    """
+    availability_repo = request.app.state.availability_repo
+    today_london = datetime.datetime.now(timezone.utc).astimezone(LONDON_TZ).date()
+    rows = availability_repo.get_exceptions(admin.practice_id, today_london)
+    return {
+        "exceptions": [_format_exception_response(r) for r in rows],
+    }
+
+
+@router.put("/availability/exceptions/{date}")
+async def put_exception(
+    date: str,
+    request: Request,
+    admin: AdminContext = Depends(require_admin),
+):
+    """
+    Create or update an exception for a specific date.
+
+    Accepts:
+    {
+        "exception_type": "closed" | "custom_hours",
+        "open_time": "09:00" | null,
+        "close_time": "13:00" | null,
+        "note": "Staff training day" | null
+    }
+
+    For "closed" exceptions, open_time and close_time must be null.
+    For "custom_hours" exceptions, both open_time and close_time are required.
+
+    Returns the exception as stored.
+    """
+    availability_repo = request.app.state.availability_repo
+
+    # --- Parse date from URL path ---
+    try:
+        exception_date = datetime.date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid date format: '{date}'. Expected YYYY-MM-DD.",
+        )
+
+    # --- Parse body ---
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+    # --- Extract and type-check fields ---
+
+    exception_type = body.get("exception_type")
+    if not isinstance(exception_type, str):
+        raise HTTPException(
+            status_code=400,
+            detail="exception_type must be a string ('closed' or 'custom_hours')",
+        )
+
+    open_time_str = body.get("open_time")
+    close_time_str = body.get("close_time")
+
+    open_time = None
+    close_time = None
+
+    if open_time_str is not None:
+        if not isinstance(open_time_str, str):
+            raise HTTPException(
+                status_code=400,
+                detail="open_time must be a string in HH:MM format or null",
+            )
+        try:
+            open_time = datetime.time.fromisoformat(open_time_str)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid open_time format: '{open_time_str}'. Expected HH:MM.",
+            )
+
+    if close_time_str is not None:
+        if not isinstance(close_time_str, str):
+            raise HTTPException(
+                status_code=400,
+                detail="close_time must be a string in HH:MM format or null",
+            )
+        try:
+            close_time = datetime.time.fromisoformat(close_time_str)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid close_time format: '{close_time_str}'. Expected HH:MM.",
+            )
+
+    note = body.get("note")
+    if note is not None and not isinstance(note, str):
+        raise HTTPException(
+            status_code=400,
+            detail="note must be a string or null",
+        )
+
+    # --- Validate via service layer ---
+
+    try:
+        validate_exception(
+            exception_type=exception_type,
+            open_time=open_time,
+            close_time=close_time,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # --- Persist ---
+
+    availability_repo.set_exception(
+        practice_id=admin.practice_id,
+        exception_date=exception_date,
+        exception_type=exception_type,
+        open_time=open_time,
+        close_time=close_time,
+        note=note,
+    )
+
+    # --- Return the stored exception ---
+
+    return _format_exception_response({
+        "exception_date": exception_date,
+        "exception_type": exception_type,
+        "open_time": open_time,
+        "close_time": close_time,
+        "note": note,
+    })
+
+
+@router.delete("/availability/exceptions/{date}", status_code=204)
+async def delete_exception(
+    date: str,
+    request: Request,
+    admin: AdminContext = Depends(require_admin),
+):
+    """
+    Delete an exception for a specific date.
+
+    Idempotent — no error if no exception existed for this date.
+    Returns 204 No Content.
+    """
+    availability_repo = request.app.state.availability_repo
+
+    try:
+        exception_date = datetime.date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid date format: '{date}'. Expected YYYY-MM-DD.",
+        )
+
+    availability_repo.delete_exception(admin.practice_id, exception_date)
