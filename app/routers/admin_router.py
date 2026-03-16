@@ -8,6 +8,7 @@ This module is responsible for:
 - Signposting management per condition
 - Admin condition list
 - Availability configuration
+- Manual override management
 
 This module must never import:
 - Clinical engine modules (form_logic, safety_engine, encoder_mapping, etc.)
@@ -17,6 +18,7 @@ This module must never import:
 
 import datetime
 import logging
+from datetime import timezone
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -24,7 +26,11 @@ from fastapi.responses import JSONResponse
 from app.core.admin_context import AdminContext, require_admin
 from app.core.condition_registry import ConditionNotFound
 from app.repositories.practice_repository import InvalidSignpostingData, MAX_SIGNPOSTING_LENGTH
-from app.services.availability_service import validate_availability_config
+from app.services.availability_service import (
+    validate_availability_config,
+    validate_override,
+    deactivation_clears_override,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +51,20 @@ def _normalise_signposting(value) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return None
     return value
+
+
+def _format_availability_response(config: dict) -> dict:
+    """
+    Format a raw availability config dict for JSON response.
+
+    Converts time objects to HH:MM strings. Converts override_expires_at
+    to ISO format string if present.
+    """
+    config["open_time"] = config["open_time"].strftime("%H:%M")
+    config["close_time"] = config["close_time"].strftime("%H:%M")
+    if config.get("override_expires_at") is not None:
+        config["override_expires_at"] = config["override_expires_at"].isoformat()
+    return config
 
 
 # ---------------------------------------------------------------------------
@@ -203,12 +223,7 @@ async def get_availability(
     """
     availability_repo = request.app.state.availability_repo
     config = availability_repo.get_availability(admin.practice_id)
-
-    # Convert time objects to strings for JSON serialisation.
-    config["open_time"] = config["open_time"].strftime("%H:%M")
-    config["close_time"] = config["close_time"].strftime("%H:%M")
-
-    return config
+    return _format_availability_response(config)
 
 
 @router.put("/availability")
@@ -233,8 +248,10 @@ async def put_availability(
     - weekly_open_days must contain only valid day abbreviations.
     - open_time and close_time must not be equal.
 
+    If is_active is set to false, any existing override is auto-cleared.
     Logs a warning if is_active is true and weekly_open_days is empty.
     Returns the updated config by fetching it back from the repository.
+    Returns HTTP 400 with a descriptive message if validation fails.
     """
     availability_repo = request.app.state.availability_repo
 
@@ -321,6 +338,11 @@ async def put_availability(
         closed_message=closed_message,
     )
 
+    # --- Auto-clear override on deactivation ---
+
+    if deactivation_clears_override(is_active):
+        availability_repo.clear_override(admin.practice_id)
+
     # --- Log warning for empty-days misconfiguration ---
 
     if is_active and not weekly_open_days:
@@ -333,7 +355,125 @@ async def put_availability(
     # --- Return updated config ---
 
     updated = availability_repo.get_availability(admin.practice_id)
-    updated["open_time"] = updated["open_time"].strftime("%H:%M")
-    updated["close_time"] = updated["close_time"].strftime("%H:%M")
+    return _format_availability_response(updated)
 
-    return updated
+
+# ---------------------------------------------------------------------------
+# Override
+# ---------------------------------------------------------------------------
+
+@router.post("/availability/override")
+async def post_override(
+    request: Request,
+    admin: AdminContext = Depends(require_admin),
+):
+    """
+    Set a manual override (force-open or force-closed).
+
+    Accepts:
+    {
+        "status": "open" | "closed",
+        "expires_at": "2025-06-02T18:30:00Z",
+        "message": "Optional message for patients" | null
+    }
+
+    expires_at must be a timezone-aware ISO datetime string.
+    The backend rejects timezone-naive datetimes.
+    The valid window is: now < expires_at <= now + 24 hours.
+
+    Returns the updated raw config.
+    """
+    availability_repo = request.app.state.availability_repo
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+    # --- Extract and type-check fields ---
+
+    status = body.get("status")
+    if not isinstance(status, str):
+        raise HTTPException(
+            status_code=400,
+            detail="status must be a string ('open' or 'closed')",
+        )
+
+    expires_at_str = body.get("expires_at")
+    if not isinstance(expires_at_str, str):
+        raise HTTPException(
+            status_code=400,
+            detail="expires_at must be an ISO datetime string",
+        )
+
+    try:
+        expires_at = datetime.datetime.fromisoformat(expires_at_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid expires_at format: '{expires_at_str}'. Expected ISO datetime.",
+        )
+
+    # Reject timezone-naive datetimes. During BST, a London-local time
+    # submitted without an offset would be stored as if it were UTC,
+    # causing the override to expire one hour late.
+    if expires_at.tzinfo is None:
+        raise HTTPException(
+            status_code=400,
+            detail="expires_at must include a timezone offset (e.g. 'Z' or '+01:00'). "
+                   "Timezone-naive datetimes are rejected to prevent BST/UTC confusion.",
+        )
+
+    message = body.get("message")
+    if message is not None and not isinstance(message, str):
+        raise HTTPException(
+            status_code=400,
+            detail="message must be a string or null",
+        )
+
+    # --- Validate via service layer ---
+
+    now_utc = datetime.datetime.now(timezone.utc)
+    try:
+        validate_override(
+            status=status,
+            expires_at=expires_at,
+            now_utc=now_utc,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # --- Persist ---
+
+    availability_repo.set_override(
+        practice_id=admin.practice_id,
+        override_status=status,
+        override_expires_at=expires_at,
+        override_message=message,
+    )
+
+    # --- Return updated config ---
+
+    updated = availability_repo.get_availability(admin.practice_id)
+    return _format_availability_response(updated)
+
+
+@router.delete("/availability/override")
+async def delete_override(
+    request: Request,
+    admin: AdminContext = Depends(require_admin),
+):
+    """
+    Clear any active override.
+
+    Idempotent — no error if no override was active.
+    Returns the updated raw config.
+    """
+    availability_repo = request.app.state.availability_repo
+    availability_repo.clear_override(admin.practice_id)
+
+    updated = availability_repo.get_availability(admin.practice_id)
+    return _format_availability_response(updated)
