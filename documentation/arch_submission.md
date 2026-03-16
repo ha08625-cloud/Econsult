@@ -1,6 +1,14 @@
 **Scope:** Finalizing forms, auditing, persisting submission records, sending emails.
 **Key Files:** `serialization.py`, `serialisation_contracts.py`, `submission_repository.py`, `email_service.py`
 
+
+## Validation
+* PRACTICE_ID environment variable not set → startup abort
+* Database contains more than one practice → startup abort
+* PRACTICE_ID does not match any practice in database → startup abort
+* Practice has no email address → startup abort
+* SMTP environment variables not set in production mode → startup abort
+
 ## Submission & Delivery Lifecycle
 * Transaction Order: On form/finish, a submission_record MUST be created in the database with delivery_status = "pending" BEFORE any email send is attempted. This ensures the record exists even if the process crashes during delivery.
 * Outcomes: >   * Success -> delivery_status = "sent", delivered_at = now.
