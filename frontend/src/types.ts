@@ -59,6 +59,15 @@ export interface ConditionPresentation {
   practice_signposting?: string;
 }
 
+// Discriminated union for the presentation fetch lifecycle.
+// No idle state — this value is only rendered inside the FREE_TEXT screen block,
+// and both transitions into FREE_TEXT reset it to "loading" before navigating.
+// If a future developer adds a third path to FREE_TEXT, they must do the same.
+export type PresentationState =
+  | { status: "loading" }
+  | { status: "success"; data: ConditionPresentation }
+  | { status: "error"; message: string };
+
 // --- Form finish response ---
 
 export interface FinishFormResult {

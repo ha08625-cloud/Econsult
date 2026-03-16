@@ -15,18 +15,68 @@ import type {
   ClientAnswerReturn,
   SafetyMessage,
   ConditionSummary,
-  ConditionPresentation,
+  PresentationState,
   ContactPreferences,
   ContactMethod,
 } from "./types";
 import ConditionCombobox from "./ConditionCombobox";
 import { GENERAL_CONSULTATION_ID, SIGNPOSTING_PURIFY_CONFIG } from './constants';
-import {
-  initialiseEditableAnswers,
-  initialiseContactPreferences,
-  isValidUkPhone,
-} from "./helpers";
-import { PageShell, InlineError } from "./layout";
+
+// ---------------------------------
+// Helpers
+// ---------------------------------
+
+function initialiseEditableAnswers(
+  clientState: ClientStateView
+): Record<string, boolean | string | null> {
+  return clientState.questions.reduce((acc, q) => {
+    acc[q.answer_key] = q.current_value ?? null;
+    return acc;
+  }, {} as Record<string, boolean | string | null>);
+}
+
+function initialiseContactPreferences(): ContactPreferences {
+  return {
+    contact_methods: [],
+    email_address: null,
+    phone_number: null,
+    best_time_to_call: null,
+    doctor_preference: "any",
+    usual_doctor_name: null,
+  };
+}
+
+/**
+ * UK phone number client-side validation.
+ * Strips spaces, checks starts with 07 or +44, length 10–13 digits.
+ */
+function isValidUkPhone(value: string): boolean {
+  const stripped = value.replace(/\s+/g, "");
+  if (!/^\+?[\d]+$/.test(stripped)) return false;
+  const digitsOnly = stripped.replace(/^\+44/, "0");
+  return /^07\d{8,11}$/.test(digitsOnly) || /^0[1-9]\d{8,9}$/.test(digitsOnly);
+}
+
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <header className="page-header">
+        <span className="page-header-title">Online Consultation</span>
+      </header>
+      <div className="page-container">
+        <div className="screen-card">{children}</div>
+      </div>
+    </>
+  );
+}
+
+function InlineError({ message }: { message: string }) {
+  return (
+    <div className="alert alert-danger" style={{ marginTop: "16px", marginBottom: 0 }}>
+      <p style={{ margin: 0 }}>{message}</p>
+    </div>
+  );
+}
 
 // ---------------------------------
 // App
@@ -73,7 +123,14 @@ export default function App() {
   const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
 
   // Screen 2 state (presentation framing)
-  const [presentation, setPresentation] = useState<ConditionPresentation | null>(null);
+  // No idle state — this value is only rendered inside the FREE_TEXT screen block.
+  // Both transitions into FREE_TEXT reset this to "loading" before navigating.
+  // If a future developer adds a third path to FREE_TEXT, they must do the same.
+  const [presentationState, setPresentationState] = useState<PresentationState>({ status: "loading" });
+  // presentationFetchTrigger is a counter whose only purpose is to signal
+  // "please re-fetch, even though selectedConditionId has not changed".
+  // It is incremented at every navigation boundary into FREE_TEXT and by retryPresentation.
+  const [presentationFetchTrigger, setPresentationFetchTrigger] = useState(0);
   const [freeText, setFreeText] = useState<string>("");
 
   // DONE screen state (populated from /form/finish response)
@@ -176,6 +233,39 @@ export default function App() {
   }, [screen, conditions]);
 
   // ---------------------------------
+  // Presentation fetch (Screen 2)
+  // ---------------------------------
+  // Fires when selectedConditionId changes or when presentationFetchTrigger
+  // is incremented (navigation into FREE_TEXT, or retry).
+  //
+  // Note: in development with React StrictMode, this effect fires twice on
+  // every FREE_TEXT entry. The cancelled flag discards the first result.
+  // You will see two network requests in the browser dev tools — this is
+  // expected and not a bug.
+
+  useEffect(() => {
+    if (selectedConditionId === null) return;
+
+    let cancelled = false;
+    // Belt-and-braces: Step 3 already sets loading at the navigation boundary,
+    // but this also covers the case where selectedConditionId changes without
+    // a screen transition (cannot happen today, but guards future refactors).
+    setPresentationState({ status: "loading" });
+
+    async function fetchPresentation() {
+      try {
+        const res = await getConditionPresentation(selectedConditionId!);
+        if (!cancelled) setPresentationState({ status: "success", data: res });
+      } catch (e) {
+        if (!cancelled) setPresentationState({ status: "error", message: friendlyErrorMessage(e) });
+      }
+    }
+
+    fetchPresentation();
+    return () => { cancelled = true; };
+  }, [selectedConditionId, presentationFetchTrigger]);
+
+  // ---------------------------------
   // Fatal error handling
   // ---------------------------------
 
@@ -193,51 +283,26 @@ export default function App() {
           <button
             className="btn btn-primary"
             onClick={() => {
-              // RESET CHECKLIST — every useState in App.tsx must appear below.
-              // If you add a new useState to this file, add it here too.
-              // screen
-              setScreen("SAFETY_WARNING");
-              // runtimeId
-              setRuntimeId(null);
-              // version
-              setVersion(null);
-              // clientState
-              setClientState(null);
-              // editableAnswers
-              setEditableAnswers(null);
-              // additionalText
-              setAdditionalText("");
-              // safetyMessages
-              setSafetyMessages([]);
-              // contactPreferences
-              setContactPreferences(initialiseContactPreferences());
-              // contactErrors
-              setContactErrors({});
-              // isSubmitting
-              setIsSubmitting(false);
-              // fatalError
               setFatalError(null);
-              // screenError — cleared by the screen change useEffect above, but explicit here for safety
-              setScreenError(null);
-              // safetyWarningText
+              setScreen("SAFETY_WARNING");
               setSafetyWarningText(null);
-              // safetyConfirmed
               setSafetyConfirmed(false);
-              // availabilityClosedMessage
-              setAvailabilityClosedMessage(null);
-              // afterHoursNotice
-              setAfterHoursNotice(null);
-              // practiceIsOpen
-              setPracticeIsOpen(null);
-              // conditions
+              setRuntimeId(null);
+              setVersion(null);
+              setClientState(null);
+              setEditableAnswers(null);
+              setAdditionalText("");
+              setSafetyMessages([]);
               setConditions(null);
-              // selectedConditionId
               setSelectedConditionId(null);
-              // presentation
-              setPresentation(null);
-              // freeText
+              setPresentationState({ status: "loading" });
+              setPresentationFetchTrigger(0);
               setFreeText("");
-              // submittedAfterHours
+              setContactPreferences(initialiseContactPreferences());
+              setContactErrors({});
+              setPracticeIsOpen(null);
+              setAvailabilityClosedMessage(null);
+              setAfterHoursNotice(null);
               setSubmittedAfterHours(false);
             }}
           >
@@ -361,6 +426,8 @@ export default function App() {
 
     function handleBlankForm() {
       setSelectedConditionId(GENERAL_CONSULTATION_ID);
+      setPresentationState({ status: "loading" });
+      setPresentationFetchTrigger(k => k + 1);
       setScreen("FREE_TEXT");
     }
 
@@ -387,7 +454,11 @@ export default function App() {
               <button
                 className="btn btn-primary"
                 disabled={selectedConditionId === null}
-                onClick={() => setScreen("FREE_TEXT")}
+                onClick={() => {
+                  setPresentationState({ status: "loading" });
+                  setPresentationFetchTrigger(k => k + 1);
+                  setScreen("FREE_TEXT");
+                }}
               >
                 Continue
               </button>
@@ -418,58 +489,44 @@ export default function App() {
       return null;
     }
 
-    if (presentation === null && !isSubmitting) {
-      (async () => {
-        try {
-          const res = await getConditionPresentation(selectedConditionId);
-          setPresentation(res);
-        } catch (e) {
-          setScreenError(friendlyErrorMessage(e));
-          setPresentation(null);
-        }
-      })();
-
-      return (
-        <PageShell>
-          {screenError ? (
-            <>
-              <h1>Something went wrong</h1>
-              <InlineError message={screenError} />
-              <div className="btn-row">
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setScreenError(null);
-                    setScreen("SELECT_CONDITION");
-                  }}
-                >
-                  Back
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => {
-                    setScreenError(null);
-                    setPresentation(null);
-                  }}
-                >
-                  Try again
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="status-text">Loading...</p>
-          )}
-        </PageShell>
-      );
+    function retryPresentation() {
+      setPresentationState({ status: "loading" });
+      setPresentationFetchTrigger(k => k + 1);
     }
 
-    if (presentation === null) {
+    if (presentationState.status === "loading") {
       return (
         <PageShell>
           <p className="status-text">Loading...</p>
         </PageShell>
       );
     }
+
+    if (presentationState.status === "error") {
+      return (
+        <PageShell>
+          <h1>Something went wrong</h1>
+          <InlineError message={presentationState.message} />
+          <div className="btn-row">
+            <button
+              className="btn btn-secondary"
+              onClick={() => setScreen("SELECT_CONDITION")}
+            >
+              Back
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={retryPresentation}
+            >
+              Try again
+            </button>
+          </div>
+        </PageShell>
+      );
+    }
+
+    // status === "success"
+    const presentation = presentationState.data;
 
     return (
       <PageShell>
@@ -518,7 +575,7 @@ export default function App() {
                 setClientState(res.client_state);
                 setEditableAnswers(initialiseEditableAnswers(res.client_state));
                 setAdditionalText(res.client_state.additional_text ?? "");
-                setPresentation(null);
+                setPresentationState({ status: "loading" });
                 setSelectedConditionId(null);
                 setFreeText("");
                 setScreen("EDIT");

@@ -88,6 +88,36 @@ Self-contained combobox for condition selection. `filteredConditions` is a deriv
 
 ---
 
+## Presentation Fetch (Screen 2)
+
+`GET /conditions/{id}/presentation` is fetched via a `useEffect` in `App.tsx`. The result is held in a `PresentationState` discriminated union (defined in `types.ts`):
+
+```typescript
+type PresentationState =
+  | { status: "loading" }
+  | { status: "success"; data: ConditionPresentation }
+  | { status: "error"; message: string }
+```
+
+There is no `idle` state. `presentationState` is only rendered inside the `FREE_TEXT` screen block, and both transitions into `FREE_TEXT` reset it to `loading` before navigating. If a future developer adds a third path to `FREE_TEXT`, they must do the same — failing to reset guarantees the patient will see stale data from a previous condition.
+
+The `useEffect` depends on `[selectedConditionId, presentationFetchTrigger]`. `presentationFetchTrigger` is an integer counter in `App.tsx` whose only purpose is to signal "please re-fetch even though `selectedConditionId` has not changed." It is incremented at both navigation boundaries and by `retryPresentation`. This solves two problems that a dependency on `selectedConditionId` alone cannot handle:
+
+- **Same-condition re-entry after error:** the patient selects condition A, advances, gets a fetch error, goes back, and clicks Continue again without changing their selection. `selectedConditionId` has not changed, so the effect would not re-fire without the trigger increment.
+- **Retry:** the error screen offers a "Try again" button. Incrementing the trigger causes the effect to re-run; the retry does not call any fetch function directly.
+
+The `useEffect` uses a `cancelled` boolean flag for cleanup. In development with React StrictMode, the effect fires twice on every `FREE_TEXT` entry — the flag ensures only the second result is used. Two network requests per entry in the browser dev tools during development is expected and not a bug.
+
+The `FREE_TEXT` render block branches on `presentationState.status`:
+
+- `"loading"` — spinner only
+- `"error"` — error message with Back and Try again buttons; Back returns to `SELECT_CONDITION`, Try again calls `retryPresentation`
+- `"success"` — the full presentation form; `presentation` is narrowed from `presentationState.data`
+
+The `screenError` state variable is not used for presentation fetch errors. It remains in use on the `FREE_TEXT` success render for `initForm` submission errors only.
+
+---
+
 ## Search Tags (Ruleset Schema)
 
 `search_tags` is an optional field inside the `presentation` block of each ruleset JSON. It provides synonyms and colloquial terms for `search.ts` to match against.
