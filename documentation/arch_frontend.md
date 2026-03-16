@@ -1,6 +1,23 @@
 * **Scope:** Stateless React rendering, condition search, combobox, fetching APIs.  This document covers frontend
 * **Key Files:** `App.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`
 
+## Frontend Error Handling Constraints
+
+**CORE INVARIANT:** Patient input MUST NEVER be destroyed by a recoverable error. Error classification happens at the API boundary, never in component logic.
+
+### Error States (Enforced via React State)
+* **`fatalError`:** Replaces the current screen entirely. 
+  * *Constraint:* ONLY use this for genuinely unrecoverable situations (e.g., the condition list fails to load on Screen 1, or an invalid internal state like missing `runtime_id`).
+* **`screenError`:** Displays an inline message and preserves user answers. 
+  * *Constraint:* Use for ALL recoverable failures (network errors, 5xx, and 4xx on submission endpoints). 
+  * *Behavior:* Automatically clear this state on every screen transition or when the patient resumes editing.
+
+### API Boundary Rules (`api.ts`)
+* **`ApiError`:** All fetch calls MUST be wrapped to throw `ApiError` rather than a standard `Error`.
+* **Payload:** `ApiError` must carry the HTTP `status` (number) or `null` for network-level failures.
+* **User Messages:** Component logic MUST NOT hardcode error messages. It must delegate to `friendlyErrorMessage(e)` to generate patient-facing text based on the status code. 
+* **Special Case (409):** A 409 status on a form endpoint indicates a session version conflict (optimistic concurrency failure, e.g., multiple tabs open).
+
 ## Frontend modules
 
 The frontend is a stateless renderer. It contains no clinical logic,
