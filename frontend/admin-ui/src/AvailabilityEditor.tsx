@@ -8,6 +8,7 @@
  * - Closed message textarea
  * - Save button calling PUT /admin/availability
  * - Override panel: force open / force closed with expiry
+ * - Exceptions panel: per-date closures and custom hours
  *
  * If is_active is true and no days are selected, a confirmation dialog
  * is shown before saving.
@@ -22,8 +23,11 @@ import {
   putAvailability,
   postOverride,
   deleteOverride,
+  fetchExceptions,
+  putException,
+  deleteException,
 } from "./api";
-import type { AvailabilityConfig, SaveStatus } from "./types";
+import type { AvailabilityConfig, AvailabilityException, SaveStatus } from "./types";
 
 interface Props {
   token: string;
@@ -53,6 +57,19 @@ function formatLondonTime(isoString: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+  }).format(date);
+}
+
+/**
+ * Format a YYYY-MM-DD date string for display: "Mon 14 Jul 2025"
+ */
+function formatExceptionDate(dateStr: string): string {
+  const date = new Date(dateStr + "T12:00:00"); // noon to avoid timezone shifts
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
   }).format(date);
 }
 
@@ -91,6 +108,15 @@ function maxExpiryLocal(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * Get today's date in YYYY-MM-DD format for the date input min attribute.
+ */
+function todayDateString(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export default function AvailabilityEditor({ token }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -114,6 +140,20 @@ export default function AvailabilityEditor({ token }: Props) {
   const [overrideFormMessage, setOverrideFormMessage] = useState("");
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [isOverrideSubmitting, setIsOverrideSubmitting] = useState(false);
+
+  // Exceptions state
+  const [exceptions, setExceptions] = useState<AvailabilityException[]>([]);
+  const [exceptionsLoading, setExceptionsLoading] = useState(false);
+  const [exceptionsError, setExceptionsError] = useState<string | null>(null);
+  const [exceptionFormOpen, setExceptionFormOpen] = useState(false);
+  const [excFormDate, setExcFormDate] = useState("");
+  const [excFormType, setExcFormType] = useState<"closed" | "custom_hours">("closed");
+  const [excFormOpenTime, setExcFormOpenTime] = useState("09:00");
+  const [excFormCloseTime, setExcFormCloseTime] = useState("13:00");
+  const [excFormNote, setExcFormNote] = useState("");
+  const [excFormError, setExcFormError] = useState<string | null>(null);
+  const [excFormSubmitting, setExcFormSubmitting] = useState(false);
+  const [excDeleting, setExcDeleting] = useState<string | null>(null);
 
   function syncFormState(cfg: AvailabilityConfig) {
     setConfig(cfg);
@@ -147,6 +187,31 @@ export default function AvailabilityEditor({ token }: Props) {
     load();
     return () => { cancelled = true; };
   }, [token]);
+
+  // Load exceptions when isActive becomes true (or on mount if already active)
+  useEffect(() => {
+    if (!isActive) return;
+
+    let cancelled = false;
+
+    async function loadExceptions() {
+      setExceptionsLoading(true);
+      setExceptionsError(null);
+      try {
+        const exc = await fetchExceptions(token);
+        if (!cancelled) setExceptions(exc);
+      } catch (err) {
+        if (!cancelled) {
+          setExceptionsError(err instanceof Error ? err.message : "Unknown error");
+        }
+      } finally {
+        if (!cancelled) setExceptionsLoading(false);
+      }
+    }
+
+    loadExceptions();
+    return () => { cancelled = true; };
+  }, [token, isActive]);
 
   function toggleDay(day: string) {
     setWeeklyOpenDays((prev) =>
@@ -235,6 +300,58 @@ export default function AvailabilityEditor({ token }: Props) {
       setOverrideError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsOverrideSubmitting(false);
+    }
+  }
+
+  // --- Exception handlers ---
+
+  function openExceptionForm() {
+    setExcFormDate("");
+    setExcFormType("closed");
+    setExcFormOpenTime("09:00");
+    setExcFormCloseTime("13:00");
+    setExcFormNote("");
+    setExcFormError(null);
+    setExceptionFormOpen(true);
+  }
+
+  async function handleExceptionSubmit() {
+    if (!excFormDate) {
+      setExcFormError("Please select a date.");
+      return;
+    }
+
+    setExcFormSubmitting(true);
+    setExcFormError(null);
+
+    try {
+      await putException(token, excFormDate, {
+        exception_type: excFormType,
+        open_time: excFormType === "custom_hours" ? excFormOpenTime : null,
+        close_time: excFormType === "custom_hours" ? excFormCloseTime : null,
+        note: excFormNote.trim() || null,
+      });
+      // Reload exceptions list
+      const updated = await fetchExceptions(token);
+      setExceptions(updated);
+      setExceptionFormOpen(false);
+    } catch (err) {
+      setExcFormError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setExcFormSubmitting(false);
+    }
+  }
+
+  async function handleDeleteException(date: string) {
+    setExcDeleting(date);
+    try {
+      await deleteException(token, date);
+      setExceptions((prev) => prev.filter((e) => e.exception_date !== date));
+    } catch (err) {
+      // Show a brief alert — not worth a dedicated error state per row
+      alert(err instanceof Error ? err.message : "Failed to delete exception");
+    } finally {
+      setExcDeleting(null);
     }
   }
 
@@ -524,6 +641,205 @@ export default function AvailabilityEditor({ token }: Props) {
                       className="btn btn-outline"
                       onClick={() => setOverrideFormOpen(false)}
                       disabled={isOverrideSubmitting}
+                      style={{ fontSize: "13px" }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ---- Exceptions panel ---- */}
+          {isActive && (
+            <>
+              <hr className="divider" />
+              <p className="section-label">Date exceptions</p>
+              <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "16px" }}>
+                Set closures or different hours for specific dates (e.g. bank holidays, training days).
+              </p>
+
+              {exceptionsLoading && (
+                <div className="loading-row" style={{ marginBottom: "12px" }}>
+                  <span className="spinner dark" />
+                  Loading exceptions...
+                </div>
+              )}
+
+              {exceptionsError && (
+                <div className="alert alert-error" style={{ marginBottom: "12px" }}>
+                  Could not load exceptions: {exceptionsError}
+                </div>
+              )}
+
+              {/* Exceptions list */}
+              {!exceptionsLoading && exceptions.length > 0 && (
+                <div style={{ marginBottom: "16px" }}>
+                  {exceptions.map((exc) => (
+                    <div
+                      key={exc.exception_date}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "10px 12px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--btn-radius)",
+                        marginBottom: "6px",
+                        background: "var(--surface)",
+                        fontSize: "14px",
+                      }}
+                    >
+                      <div>
+                        <strong>{formatExceptionDate(exc.exception_date)}</strong>
+                        <span style={{ marginLeft: "10px", color: "var(--text-muted)" }}>
+                          {exc.exception_type === "closed"
+                            ? "Closed"
+                            : `${exc.open_time} – ${exc.close_time}`}
+                        </span>
+                        {exc.note && (
+                          <span style={{ marginLeft: "10px", color: "var(--text-muted)", fontStyle: "italic" }}>
+                            {exc.note}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        className="btn btn-outline"
+                        style={{ fontSize: "12px", padding: "2px 10px" }}
+                        disabled={excDeleting === exc.exception_date}
+                        onClick={() => handleDeleteException(exc.exception_date)}
+                      >
+                        {excDeleting === exc.exception_date ? "..." : "Delete"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!exceptionsLoading && exceptions.length === 0 && !exceptionsError && (
+                <p style={{ fontSize: "13px", color: "var(--text-muted)", marginBottom: "12px" }}>
+                  No upcoming exceptions.
+                </p>
+              )}
+
+              {/* Add exception button / form */}
+              {!exceptionFormOpen && (
+                <button className="btn btn-outline" onClick={openExceptionForm}>
+                  Add exception
+                </button>
+              )}
+
+              {exceptionFormOpen && (
+                <div
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--card-radius)",
+                    padding: "16px",
+                    marginTop: "12px",
+                    background: "var(--bg)",
+                  }}
+                >
+                  <div style={{ marginBottom: "12px" }}>
+                    <label htmlFor="exc-date">Date</label>
+                    <input
+                      id="exc-date"
+                      type="date"
+                      value={excFormDate}
+                      min={todayDateString()}
+                      onChange={(e) => setExcFormDate(e.target.value)}
+                      style={{
+                        width: "100%", padding: "9px 12px",
+                        border: "1px solid var(--border)", borderRadius: "var(--btn-radius)",
+                        fontFamily: "inherit", fontSize: "15px",
+                        color: "var(--text)", background: "var(--surface)",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: "12px" }}>
+                    <label htmlFor="exc-type">Type</label>
+                    <select
+                      id="exc-type"
+                      value={excFormType}
+                      onChange={(e) => setExcFormType(e.target.value as "closed" | "custom_hours")}
+                      style={{
+                        width: "100%", padding: "9px 12px",
+                        border: "1px solid var(--border)", borderRadius: "var(--btn-radius)",
+                        fontFamily: "inherit", fontSize: "15px",
+                        color: "var(--text)", background: "var(--surface)",
+                      }}
+                    >
+                      <option value="closed">Closed all day</option>
+                      <option value="custom_hours">Custom hours</option>
+                    </select>
+                  </div>
+
+                  {excFormType === "custom_hours" && (
+                    <div style={{ display: "flex", gap: "16px", marginBottom: "12px" }}>
+                      <div style={{ flex: 1 }}>
+                        <label htmlFor="exc-open-time">Open time</label>
+                        <input
+                          id="exc-open-time"
+                          type="time"
+                          value={excFormOpenTime}
+                          onChange={(e) => setExcFormOpenTime(e.target.value)}
+                          style={{
+                            width: "100%", padding: "9px 12px",
+                            border: "1px solid var(--border)", borderRadius: "var(--btn-radius)",
+                            fontFamily: "inherit", fontSize: "15px",
+                            color: "var(--text)", background: "var(--surface)",
+                          }}
+                        />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label htmlFor="exc-close-time">Close time</label>
+                        <input
+                          id="exc-close-time"
+                          type="time"
+                          value={excFormCloseTime}
+                          onChange={(e) => setExcFormCloseTime(e.target.value)}
+                          style={{
+                            width: "100%", padding: "9px 12px",
+                            border: "1px solid var(--border)", borderRadius: "var(--btn-radius)",
+                            fontFamily: "inherit", fontSize: "15px",
+                            color: "var(--text)", background: "var(--surface)",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ marginBottom: "12px" }}>
+                    <label htmlFor="exc-note">Note (optional)</label>
+                    <input
+                      id="exc-note"
+                      type="text"
+                      value={excFormNote}
+                      onChange={(e) => setExcFormNote(e.target.value)}
+                      placeholder="e.g. Bank holiday, Staff training"
+                    />
+                  </div>
+
+                  {excFormError && (
+                    <div className="alert alert-error" style={{ marginTop: 0, marginBottom: "12px" }}>
+                      {excFormError}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleExceptionSubmit}
+                      disabled={excFormSubmitting}
+                      style={{ fontSize: "13px" }}
+                    >
+                      {excFormSubmitting ? "Saving..." : "Save exception"}
+                    </button>
+                    <button
+                      className="btn btn-outline"
+                      onClick={() => setExceptionFormOpen(false)}
+                      disabled={excFormSubmitting}
                       style={{ fontSize: "13px" }}
                     >
                       Cancel
