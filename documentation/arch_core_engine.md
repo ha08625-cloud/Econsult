@@ -1,5 +1,10 @@
 # Core Data Flows
 
+## RuntimeState Rules
+* Purpose: Represents the full, lossless, versioned state of a form. It is an engineering and safety artefact, NOT a medical record.
+* Immutability: RuntimeState is append-only/versioned. It MUST NEVER be mutated in place.
+* Lifecycle: Persisted server-side for the session. On final submission, it is serialized into ClinicalOutput (lossy) and AuditOutput (lossless). Once closed, the session is read-only. Neither output contract may ever re-enter the engine.
+
 ## Form Initialisation Flow:
 * Load ruleset
 * Initialise RuntimeState
