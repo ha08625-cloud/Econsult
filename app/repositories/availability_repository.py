@@ -7,6 +7,8 @@ Methods:
 - init_availability: insert default row if absent (startup)
 - get_availability: return all columns as dict
 - set_availability: upsert full config (caller validates first)
+- set_override: update the three override columns
+- clear_override: set all three override columns to NULL
 """
 
 from psycopg2.extras import RealDictCursor
@@ -48,7 +50,9 @@ class AvailabilityRepository:
                 cur.execute(
                     """
                     SELECT practice_id, is_active, weekly_open_days,
-                           open_time, close_time, closed_message
+                           open_time, close_time, closed_message,
+                           override_status, override_expires_at,
+                           override_message
                     FROM practice_availability
                     WHERE practice_id = %s
                     """,
@@ -100,4 +104,48 @@ class AvailabilityRepository:
                         close_time,
                         closed_message,
                     ),
+                )
+
+    def set_override(
+        self,
+        practice_id: str,
+        override_status: str,
+        override_expires_at,
+        override_message: str | None,
+    ) -> None:
+        """
+        Update the three override columns.
+
+        The caller is responsible for calling validate_override() first.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE practice_availability
+                    SET override_status = %s,
+                        override_expires_at = %s,
+                        override_message = %s
+                    WHERE practice_id = %s
+                    """,
+                    (override_status, override_expires_at, override_message, practice_id),
+                )
+
+    def clear_override(self, practice_id: str) -> None:
+        """
+        Set all three override columns to NULL.
+
+        Idempotent — no error if no override was active.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE practice_availability
+                    SET override_status = NULL,
+                        override_expires_at = NULL,
+                        override_message = NULL
+                    WHERE practice_id = %s
+                    """,
+                    (practice_id,),
                 )
