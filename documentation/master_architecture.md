@@ -1,6 +1,6 @@
 # Econsult System Architecture (Hub)
 
-**LLM INSTRUCTIONS:** This is the master map of the system. Do NOT assume architectural details. Use this document to understand the global invariants and locate the specific domain documentation (Spokes) and codebase files relevant to the user's request. Read the codebase files directly for implementation details (function signatures, schemas, etc.).
+**LLM INSTRUCTIONS:** This is the master map of the system. Do NOT assume architectural details. Use this document to understand the global invariants and locate the specific domain documentation (Spokes). Read the codebase files directly for implementation details (function signatures, schemas, etc.).  All codebase files exist in Claude's project files and are directly accessible.  Claude project files mostly have flat file names for simplicity - full paths are used only if there is ambiguity e.g. frontend/index.html vs frontend/admin-ui/index.html.  See file_structure.md for the definitive file structure
 
 ## 1. Project-Level Invariants (Strictly Enforced)
 
@@ -75,3 +75,8 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Scope:** Layout and constraints for the clinical ruleset schemas
 * **Domain Doc:** Domain Doc: docs/arch_ruleset_schema.md
 * **Key Files:** Found in /data/ directory
+
+### 3.11 Infrastructure, Database & Deployment
+* **Scope:** Railway deployment configurations, the Dockerfile multi-stage build (Vite + Python), static file serving logic, Alembic database migrations, required environment variables, and Postgres/JSONB data quirks.
+* **Domain Doc:** `docs/arch_infrastructure.md`
+* **Key Files:** `Dockerfile`, `app/core/db.py` (Alembic initialization), `alembic/env.py`, `main.py` (for static serving mounts).
