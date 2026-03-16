@@ -9,7 +9,12 @@ Methods:
 - set_availability: upsert full config (caller validates first)
 - set_override: update the three override columns
 - clear_override: set all three override columns to NULL
+- get_exceptions: return all exceptions on or after a given date
+- set_exception: upsert a single exception row
+- delete_exception: delete a single exception row (idempotent)
 """
+
+import datetime
 
 from psycopg2.extras import RealDictCursor
 
@@ -148,4 +153,90 @@ class AvailabilityRepository:
                     WHERE practice_id = %s
                     """,
                     (practice_id,),
+                )
+
+    # ------------------------------------------------------------------
+    # Per-date exceptions (Stage 4)
+    # ------------------------------------------------------------------
+
+    def get_exceptions(
+        self, practice_id: str, from_date: datetime.date
+    ) -> list[dict]:
+        """
+        Return all exceptions on or after from_date, ordered by date ascending.
+
+        Used both by the evaluation path (which checks only today's
+        exception) and by GET /admin/availability/exceptions (which
+        displays all upcoming exceptions to the admin).
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT practice_id, exception_date, exception_type,
+                           open_time, close_time, note
+                    FROM practice_availability_exceptions
+                    WHERE practice_id = %s AND exception_date >= %s
+                    ORDER BY exception_date ASC
+                    """,
+                    (practice_id, from_date),
+                )
+                rows = cur.fetchall()
+        return [dict(r) for r in rows]
+
+    def set_exception(
+        self,
+        practice_id: str,
+        exception_date: datetime.date,
+        exception_type: str,
+        open_time: datetime.time | None,
+        close_time: datetime.time | None,
+        note: str | None,
+    ) -> None:
+        """
+        Upsert a single exception row.
+
+        No validation is performed here. The caller is responsible for
+        calling validate_exception() before calling this method.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO practice_availability_exceptions
+                        (practice_id, exception_date, exception_type,
+                         open_time, close_time, note)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (practice_id, exception_date) DO UPDATE SET
+                        exception_type = EXCLUDED.exception_type,
+                        open_time = EXCLUDED.open_time,
+                        close_time = EXCLUDED.close_time,
+                        note = EXCLUDED.note
+                    """,
+                    (
+                        practice_id,
+                        exception_date,
+                        exception_type,
+                        open_time,
+                        close_time,
+                        note,
+                    ),
+                )
+
+    def delete_exception(
+        self, practice_id: str, exception_date: datetime.date
+    ) -> None:
+        """
+        Delete a single exception row.
+
+        Idempotent — no error if the row does not exist.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM practice_availability_exceptions
+                    WHERE practice_id = %s AND exception_date = %s
+                    """,
+                    (practice_id, exception_date),
                 )
