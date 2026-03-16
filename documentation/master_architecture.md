@@ -25,38 +25,38 @@ The system is a server-owned, session-backed pipeline composed of strictly separ
 When modifying or adding features, locate the relevant capability below to identify the associated Domain Architecture Document and key files.
 
 ### 3.1 Core Engine & Clinical Logic
-* **Scope:** Form initialization, ruleset loading, applying patient answers, projecting state.
-* **Domain Doc:** `docs/arch_core_engine.md` *(Note: create this file)*
+* **Scope:** Contains core data flows for form initialization and submission, ruleset loading, applying patient answers, projecting state. 
+* **Domain Doc:** `docs/arch_core_engine.md`
 * **Key Files:** `form_logic.py`, `runtime_state.py`, `ruleset.py`, `condition_registry.py`, `engine_adapters.py`
 
 ### 3.2 Clinical Safety & Projection
 * **Scope:** Evaluating explicit patient answers against safety rules, blocking submissions.
-* **Domain Doc:** `docs/arch_safety.md` *(Note: create this file)*
+* **Domain Doc:** `docs/arch_safety.md`
 * **Key Files:** `safety_engine.py`, `projection.py`, `explicit_answers.py`
 
 ### 3.3 Encoder & ML Boundary
 * **Scope:** Prompting encoders, mapping ML signals to answers, enforcing provenance.
-* **Domain Doc:** `docs/arch_encoder.md` *(Note: create this file)*
+* **Domain Doc:** `docs/arch_encoder.md`
 * **Key Files:** `encoder_mapping.py`, `encoder_stub.py`, `encoder_contracts.py`
 
 ### 3.4 Practice Availability & Scheduling
 * **Scope:** Weekly opening hours, per-date exceptions, manual overrides, fail-open logic.
-* **Domain Doc:** `docs/arch_availability.md` *(Note: create this file)*
+* **Domain Doc:** `docs/arch_availability.md`
 * **Key Files:** `availability_service.py`, `availability_repository.py`, `availability_models.py`
 
 ### 3.5 Submission, Serialization & Delivery
 * **Scope:** Finalizing forms, auditing, persisting submission records, sending emails.
-* **Domain Doc:** `docs/arch_submission.md` *(Note: create this file)*
+* **Domain Doc:** `docs/arch_submission.md`
 * **Key Files:** `serialization.py`, `serialisation_contracts.py`, `submission_repository.py`, `email_service.py`
 
 ### 3.6 Frontend (Patient UI & Search)
 * **Scope:** Stateless React rendering, condition search, combobox, fetching APIs.
-* **Domain Doc:** `docs/arch_frontend.md` *(Note: create this file)*
+* **Domain Doc:** `docs/arch_frontend.md`
 * **Key Files:** `App.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`
 
 ### 3.7 Admin Portal & Configuration
 * **Scope:** Admin authentication, editing signposting, configuring availability.
-* **Domain Doc:** `docs/arch_admin.md` *(Note: create this file)*
+* **Domain Doc:** `docs/arch_admin.md`
 * **Key Files:** `admin_router.py`, `admin_context.py`, `practice_repository.py`, `frontend/admin-ui/src/*`
 
 ### 3.8 HTTP Orchestration & App Entry
