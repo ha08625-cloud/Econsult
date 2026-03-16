@@ -1,58 +1,6 @@
 
 
-### 7.1 Canonical RuntimeState (lossless, backend-owned)
-Purpose:
-Represent the full, lossless state of a form at a specific point in time
-Support auditability, safety review, and deterministic replay
-Enable strict versioned updates and conflict detection
-Properties:
-Backend-owned
-Append-only or versioned
-Never round-tripped through the client
-Never mutated in place
-Short-lived and retention-limited
-Engineering and safety artefact, not a medical record
-RuntimeState is persisted server-side for the lifetime of the session and is collapsed into outputs on final submission.
 
-### 7.2 Output states (post-submission)
-On successful final submission:
-RuntimeState is serialized into:
-ClinicalOutput (lossy, portable)
-AuditOutput (lossless, inspectable)
-The session is closed and becomes read-only
-No further RuntimeState access is required
-ClinicalOutput:
-Intended for clinician and patient use
-Excludes encoder internals, provenance, and rule traces
-AuditOutput:
-Retains full provenance and evaluation history
-Intended for debugging, safety review, and regulation
-Never re-enters the engine
-
-### 7.3 Submission records (post-session, delivery tracking)
-
-On form/finish, a submission_record is created before the email is sent.
-This ensures the record exists even if the process crashes during delivery.
-
-Lifecycle:
-1. submission_record created with delivery_status = "pending"
-2. Email send attempted
-3. On success: delivery_status = "sent", delivered_at = now
-4. On failure: delivery_status = "failed", delivery_error = exception message
-
-A "failed" record is the recovery mechanism for email delivery failures.
-Manual inspection of failed records (via list_by_status("failed")) is the
-supported recovery path for MVP. No automatic retry is implemented.
-
-The patient receives a submission_id regardless of delivery outcome. Email
-failure is not surfaced to the patient — it is an operational concern, not
-a clinical one. The patient is shown a message on Screen 4 advising them
-to contact the practice directly if they do not receive a response within
-48 hours.
-
-delivery_email is stored at submission time from the practice record.
-If the practice email is updated after submission, historical records
-still reflect the address that was actually used.
 
 ## 8.1 Clinical ruleset structure
 
