@@ -7,14 +7,23 @@
  * - Open time and close time inputs
  * - Closed message textarea
  * - Save button calling PUT /admin/availability
+ * - Override panel: force open / force closed with expiry
  *
  * If is_active is true and no days are selected, a confirmation dialog
  * is shown before saving.
+ *
+ * Override active check uses UTC comparison (Date.now() is UTC-safe).
+ * Override expiry display uses Europe/London formatting via Intl.DateTimeFormat.
  */
 
 import { useEffect, useState } from "react";
-import { fetchAvailability, putAvailability } from "./api";
-import type { SaveStatus } from "./types";
+import {
+  fetchAvailability,
+  putAvailability,
+  postOverride,
+  deleteOverride,
+} from "./api";
+import type { AvailabilityConfig, SaveStatus } from "./types";
 
 interface Props {
   token: string;
@@ -30,18 +39,90 @@ const ALL_DAYS = [
   { key: "sun", label: "Sun" },
 ] as const;
 
+/**
+ * Format a UTC ISO timestamp in Europe/London local time for display.
+ * During BST the UTC offset is +1, so displaying in UTC would show
+ * the wrong time to a UK-based admin.
+ */
+function formatLondonTime(isoString: string): string {
+  const date = new Date(isoString);
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+/**
+ * Check whether an override is currently active.
+ * Uses Date.now() which is UTC-safe. Local time must not be used.
+ */
+function isOverrideActive(config: AvailabilityConfig): boolean {
+  return (
+    config.override_status !== null &&
+    config.override_expires_at !== null &&
+    new Date(config.override_expires_at).getTime() > Date.now()
+  );
+}
+
+/**
+ * Build a default expiry datetime string for the override form.
+ * Returns a local datetime string suitable for datetime-local input,
+ * set to 2 hours from now rounded to nearest 15 minutes.
+ */
+function defaultExpiryLocal(): string {
+  const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
+  // Round to nearest 15 minutes
+  d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
+  // Format as YYYY-MM-DDTHH:MM for datetime-local input
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Build a max expiry datetime string for the override form (24 hours ahead).
+ */
+function maxExpiryLocal(): string {
+  const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function AvailabilityEditor({ token }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
 
-  // Form state
+  // Full config from server (includes override fields)
+  const [config, setConfig] = useState<AvailabilityConfig | null>(null);
+
+  // Form state for schedule editing
   const [isActive, setIsActive] = useState(false);
   const [weeklyOpenDays, setWeeklyOpenDays] = useState<string[]>([]);
   const [openTime, setOpenTime] = useState("08:00");
   const [closeTime, setCloseTime] = useState("18:30");
   const [closedMessage, setClosedMessage] = useState("");
+
+  // Override form state
+  const [overrideFormOpen, setOverrideFormOpen] = useState(false);
+  const [overrideFormStatus, setOverrideFormStatus] = useState<"open" | "closed">("closed");
+  const [overrideFormExpiry, setOverrideFormExpiry] = useState(defaultExpiryLocal());
+  const [overrideFormMessage, setOverrideFormMessage] = useState("");
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+  const [isOverrideSubmitting, setIsOverrideSubmitting] = useState(false);
+
+  function syncFormState(cfg: AvailabilityConfig) {
+    setConfig(cfg);
+    setIsActive(cfg.is_active);
+    setWeeklyOpenDays(cfg.weekly_open_days);
+    setOpenTime(cfg.open_time);
+    setCloseTime(cfg.close_time);
+    setClosedMessage(cfg.closed_message ?? "");
+  }
 
   // Load config on mount
   useEffect(() => {
@@ -51,13 +132,9 @@ export default function AvailabilityEditor({ token }: Props) {
       setIsLoading(true);
       setLoadError(null);
       try {
-        const config = await fetchAvailability(token);
+        const cfg = await fetchAvailability(token);
         if (cancelled) return;
-        setIsActive(config.is_active);
-        setWeeklyOpenDays(config.weekly_open_days);
-        setOpenTime(config.open_time);
-        setCloseTime(config.close_time);
-        setClosedMessage(config.closed_message ?? "");
+        syncFormState(cfg);
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : "Unknown error");
@@ -79,7 +156,6 @@ export default function AvailabilityEditor({ token }: Props) {
   }
 
   async function handleSave() {
-    // Empty-days confirmation dialog
     if (isActive && weeklyOpenDays.length === 0) {
       const confirmed = window.confirm(
         "No days are selected. Saving this configuration will close the form to patients on every day of the week. Are you sure?"
@@ -98,13 +174,7 @@ export default function AvailabilityEditor({ token }: Props) {
         close_time: closeTime,
         closed_message: closedMessage.trim() || null,
       });
-
-      // Sync form state with what the server returned
-      setIsActive(updated.is_active);
-      setWeeklyOpenDays(updated.weekly_open_days);
-      setOpenTime(updated.open_time);
-      setCloseTime(updated.close_time);
-      setClosedMessage(updated.closed_message ?? "");
+      syncFormState(updated);
       setSaveStatus({ type: "success", text: "Saved" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -113,6 +183,62 @@ export default function AvailabilityEditor({ token }: Props) {
       setIsSaving(false);
     }
   }
+
+  // --- Override handlers ---
+
+  function openOverrideForm(status: "open" | "closed") {
+    setOverrideFormStatus(status);
+    setOverrideFormExpiry(defaultExpiryLocal());
+    setOverrideFormMessage("");
+    setOverrideError(null);
+    setOverrideFormOpen(true);
+  }
+
+  async function handleOverrideSubmit() {
+    setIsOverrideSubmitting(true);
+    setOverrideError(null);
+
+    try {
+      // Convert local datetime-local value to UTC ISO string.
+      // The datetime-local input gives us a string without timezone info.
+      // We construct a Date from it (which interprets it as local time)
+      // and then call toISOString() to get UTC.
+      const localDate = new Date(overrideFormExpiry);
+      if (isNaN(localDate.getTime())) {
+        setOverrideError("Please enter a valid date and time.");
+        return;
+      }
+      const utcIso = localDate.toISOString();
+
+      const updated = await postOverride(token, {
+        status: overrideFormStatus,
+        expires_at: utcIso,
+        message: overrideFormMessage.trim() || null,
+      });
+      syncFormState(updated);
+      setOverrideFormOpen(false);
+    } catch (err) {
+      setOverrideError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setIsOverrideSubmitting(false);
+    }
+  }
+
+  async function handleClearOverride() {
+    setIsOverrideSubmitting(true);
+    setOverrideError(null);
+
+    try {
+      const updated = await deleteOverride(token);
+      syncFormState(updated);
+    } catch (err) {
+      setOverrideError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setIsOverrideSubmitting(false);
+    }
+  }
+
+  // --- Render ---
 
   if (loadError) {
     return (
@@ -124,6 +250,8 @@ export default function AvailabilityEditor({ token }: Props) {
       </div>
     );
   }
+
+  const hasActiveOverride = config !== null && isOverrideActive(config);
 
   return (
     <div className="card">
@@ -179,7 +307,7 @@ export default function AvailabilityEditor({ token }: Props) {
             </p>
           </div>
 
-          {/* Settings — only shown when active */}
+          {/* Schedule settings — only shown when active */}
           {isActive && (
             <>
               <hr className="divider" />
@@ -198,10 +326,7 @@ export default function AvailabilityEditor({ token }: Props) {
                         type="button"
                         onClick={() => toggleDay(d.key)}
                         className={selected ? "btn btn-primary" : "btn btn-outline"}
-                        style={{
-                          minWidth: "52px",
-                          justifyContent: "center",
-                        }}
+                        style={{ minWidth: "52px", justifyContent: "center" }}
                       >
                         {d.label}
                       </button>
@@ -211,32 +336,19 @@ export default function AvailabilityEditor({ token }: Props) {
               </div>
 
               {/* Time inputs */}
-              <div
-                style={{
-                  display: "flex",
-                  gap: "16px",
-                  marginBottom: "20px",
-                }}
-              >
+              <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
                 <div style={{ flex: 1 }}>
                   <label htmlFor="avail-open-time">Open time</label>
                   <input
                     id="avail-open-time"
                     type="time"
                     value={openTime}
-                    onChange={(e) => {
-                      setOpenTime(e.target.value);
-                      setSaveStatus(null);
-                    }}
+                    onChange={(e) => { setOpenTime(e.target.value); setSaveStatus(null); }}
                     style={{
-                      width: "100%",
-                      padding: "9px 12px",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--btn-radius)",
-                      fontFamily: "inherit",
-                      fontSize: "15px",
-                      color: "var(--text)",
-                      background: "var(--surface)",
+                      width: "100%", padding: "9px 12px",
+                      border: "1px solid var(--border)", borderRadius: "var(--btn-radius)",
+                      fontFamily: "inherit", fontSize: "15px",
+                      color: "var(--text)", background: "var(--surface)",
                     }}
                   />
                 </div>
@@ -246,19 +358,12 @@ export default function AvailabilityEditor({ token }: Props) {
                     id="avail-close-time"
                     type="time"
                     value={closeTime}
-                    onChange={(e) => {
-                      setCloseTime(e.target.value);
-                      setSaveStatus(null);
-                    }}
+                    onChange={(e) => { setCloseTime(e.target.value); setSaveStatus(null); }}
                     style={{
-                      width: "100%",
-                      padding: "9px 12px",
-                      border: "1px solid var(--border)",
-                      borderRadius: "var(--btn-radius)",
-                      fontFamily: "inherit",
-                      fontSize: "15px",
-                      color: "var(--text)",
-                      background: "var(--surface)",
+                      width: "100%", padding: "9px 12px",
+                      border: "1px solid var(--border)", borderRadius: "var(--btn-radius)",
+                      fontFamily: "inherit", fontSize: "15px",
+                      color: "var(--text)", background: "var(--surface)",
                     }}
                   />
                 </div>
@@ -270,33 +375,18 @@ export default function AvailabilityEditor({ token }: Props) {
                 <textarea
                   id="avail-closed-message"
                   value={closedMessage}
-                  onChange={(e) => {
-                    setClosedMessage(e.target.value);
-                    setSaveStatus(null);
-                  }}
+                  onChange={(e) => { setClosedMessage(e.target.value); setSaveStatus(null); }}
                   rows={3}
                   placeholder="Message shown to patients when the form is closed"
                   style={{
-                    width: "100%",
-                    padding: "9px 12px",
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--btn-radius)",
-                    fontFamily: "inherit",
-                    fontSize: "15px",
-                    color: "var(--text)",
-                    background: "var(--surface)",
-                    resize: "vertical",
+                    width: "100%", padding: "9px 12px",
+                    border: "1px solid var(--border)", borderRadius: "var(--btn-radius)",
+                    fontFamily: "inherit", fontSize: "15px",
+                    color: "var(--text)", background: "var(--surface)", resize: "vertical",
                   }}
                 />
-                <p
-                  style={{
-                    fontSize: "13px",
-                    color: "var(--text-muted)",
-                    marginTop: "4px",
-                  }}
-                >
-                  Optional. If left blank, patients will see a generic closure
-                  notice.
+                <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Optional. If left blank, patients will see a generic closure notice.
                 </p>
               </div>
             </>
@@ -304,26 +394,145 @@ export default function AvailabilityEditor({ token }: Props) {
 
           {/* Save button and status */}
           <div className="editor-actions">
-            <button
-              className="btn btn-primary"
-              onClick={handleSave}
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <>
-                  <span className="spinner" />
-                  Saving...
-                </>
-              ) : (
-                "Save"
-              )}
+            <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (<><span className="spinner" /> Saving...</>) : "Save"}
             </button>
             {saveStatus && (
-              <span className={`save-status ${saveStatus.type}`}>
-                {saveStatus.text}
-              </span>
+              <span className={`save-status ${saveStatus.type}`}>{saveStatus.text}</span>
             )}
           </div>
+
+          {/* ---- Override panel ---- */}
+          {isActive && (
+            <>
+              <hr className="divider" />
+              <p className="section-label">Temporary override</p>
+
+              {/* Active override display */}
+              {hasActiveOverride && config && (
+                <div
+                  className="alert alert-warning"
+                  style={{ marginTop: 0, marginBottom: "16px" }}
+                >
+                  <strong>
+                    Override active: form is forced{" "}
+                    {config.override_status === "open" ? "OPEN" : "CLOSED"}
+                  </strong>
+                  <p style={{ margin: "4px 0 0 0", fontSize: "13px" }}>
+                    Expires: {formatLondonTime(config.override_expires_at!)}
+                  </p>
+                  {config.override_message && (
+                    <p style={{ margin: "4px 0 0 0", fontSize: "13px" }}>
+                      Message: {config.override_message}
+                    </p>
+                  )}
+                  <div style={{ marginTop: "10px" }}>
+                    <button
+                      className="btn btn-outline"
+                      onClick={handleClearOverride}
+                      disabled={isOverrideSubmitting}
+                      style={{ fontSize: "13px", padding: "4px 12px" }}
+                    >
+                      {isOverrideSubmitting ? "Clearing..." : "Clear override"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Override action buttons */}
+              {!overrideFormOpen && (
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => openOverrideForm("open")}
+                  >
+                    Force open
+                  </button>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => openOverrideForm("closed")}
+                  >
+                    Force closed
+                  </button>
+                </div>
+              )}
+
+              {/* Override form */}
+              {overrideFormOpen && (
+                <div
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--card-radius)",
+                    padding: "16px",
+                    marginTop: "12px",
+                    background: "var(--bg)",
+                  }}
+                >
+                  <p style={{ fontWeight: 500, marginBottom: "12px" }}>
+                    {overrideFormStatus === "open" ? "Force form OPEN" : "Force form CLOSED"} until:
+                  </p>
+
+                  <div style={{ marginBottom: "12px" }}>
+                    <label htmlFor="override-expiry">Expiry</label>
+                    <input
+                      id="override-expiry"
+                      type="datetime-local"
+                      value={overrideFormExpiry}
+                      max={maxExpiryLocal()}
+                      onChange={(e) => setOverrideFormExpiry(e.target.value)}
+                      style={{
+                        width: "100%", padding: "9px 12px",
+                        border: "1px solid var(--border)", borderRadius: "var(--btn-radius)",
+                        fontFamily: "inherit", fontSize: "15px",
+                        color: "var(--text)", background: "var(--surface)",
+                      }}
+                    />
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
+                      Maximum 24 hours from now.
+                    </p>
+                  </div>
+
+                  {overrideFormStatus === "closed" && (
+                    <div style={{ marginBottom: "12px" }}>
+                      <label htmlFor="override-message">Message (optional)</label>
+                      <input
+                        id="override-message"
+                        type="text"
+                        value={overrideFormMessage}
+                        onChange={(e) => setOverrideFormMessage(e.target.value)}
+                        placeholder="e.g. Closed for staff training"
+                      />
+                    </div>
+                  )}
+
+                  {overrideError && (
+                    <div className="alert alert-error" style={{ marginTop: 0, marginBottom: "12px" }}>
+                      {overrideError}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleOverrideSubmit}
+                      disabled={isOverrideSubmitting}
+                      style={{ fontSize: "13px" }}
+                    >
+                      {isOverrideSubmitting ? "Saving..." : "Set override"}
+                    </button>
+                    <button
+                      className="btn btn-outline"
+                      onClick={() => setOverrideFormOpen(false)}
+                      disabled={isOverrideSubmitting}
+                      style={{ fontSize: "13px" }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
     </div>
