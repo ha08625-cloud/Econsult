@@ -346,13 +346,22 @@ Endpoints:
 - GET /conditions — list all conditions (from registry)
 - GET /conditions/{condition_id}/presentation — presentation metadata
   (no ?practice= parameter; practice_id resolved from app.state)
-- POST /form/init — create session
+- POST /form/init — create session. Availability check at the top of the handler, before any existing logic.
+Wrapped in try/except: if any exception is raised during the check,
+it is logged and the request proceeds as if open (fail-open). If the
+check completes and is_open is false, returns HTTP 503 with
+{"detail": closed_message}. A database failure must never lock
+patients out.
 - POST /form/update — apply patient answers
 - POST /form/finish — close session, persist submission, send email
 - POST /form/finish — now requires contact_preferences block in payload.
   See request_validation.py for validation rules. contact_preferences is
   passed through to email_service only; it is not stored in the database
   and has no effect on clinical output or audit records.
+- GET /availability — public, no auth. Evaluates current availability
+and returns {is_open, closed_message, after_hours_notice}. If the
+database raises an exception, FastAPI returns HTTP 500. The frontend
+treats any non-200 response as fail-open.
 
 Rules:
 - No clinical logic
@@ -372,6 +381,9 @@ Startup validation (fail-fast, in order):
 5. SMTP environment variables must be set (unless DEV_MODE=1)
 6. ADMIN_TOKEN environment variable must be set (unless DEV_MODE=1); if DEV_MODE=1 and ADMIN_TOKEN is absent, a warning is logged and any non-empty bearer token will be accepted by admin endpoints
 7. practice_id stored in app.state.practice_id
+8. availability_repo.init_availability(practice_id) — inserts default
+availability row if absent. Must run after _validate_startup ensures
+the practice row exists.
 
 Any failure in startup validation raises RuntimeError and prevents the
 application from starting. This is intentional: a misconfigured deployment
@@ -399,6 +411,10 @@ Static file serving:
   the catch-all StaticFiles handler intercepting admin API routes
 - The directory path is relative to the working directory at uvicorn startup,
   which is expected to be project_root/
+
+availability_repo = AvailabilityRepository(DATABASE_URL)
+availability_repo stored in app.state.availability_repo so the admin
+router can access it via request.app.state
 
 ---
 
@@ -577,6 +593,8 @@ Contains:
 * DoctorPreference — union type: "any" | "usual"
 * ContactPreferences — contact method selection, contact details,
   and doctor preference collected on Screen 5 (CONTACT)
+* AvailabilityResult — is_open (boolean), closed_message (string | null),
+after_hours_notice (string | null). Used by Screen 0 availability fetch.
 
 Rules:
 * No clinical logic
@@ -596,6 +614,9 @@ Functions:
 * finishForm(runtimeId, version, contactPreferences) — POST /form/finish
   Accepts a ContactPreferences object and includes it as contact_preferences
   in the POST body.
+* getSafetyWarning() — GET /safety-warning (already existed, document here for completeness alongside availability)
+* getAvailability() — GET /availability. Returns AvailabilityResult
+* ApiError now carries a detail field. postJson extracts detail from 503 responses. friendlyErrorMessage returns the server's closed message for 503 errors.
 
 Rules:
 * No business logic
@@ -657,6 +678,32 @@ Development:
 * Start command from project root:
     cd frontend && npm run dev
   FastAPI must also be running on port 8000 in a separate terminal
+
+Screen 0 (SAFETY_WARNING) now fetches GET /availability alongside the
+safety warning. Three new state variables: practiceIsOpen,
+availabilityClosedMessage, afterHoursNotice.
+Availability fetch behaviour:
+
+Runs in a separate useEffect, parallel to the safety warning fetch.
+If the fetch fails for any reason (network error, any non-200 response),
+fails open: practiceIsOpen is set to true. No closed message banner,
+no after-hours notice. A fetch failure must never lock patients out.
+
+Screen 0 rendering changes:
+
+When practice is closed (practiceIsOpen === false): a yellow warning
+banner appears above the safety warning text. The safety warning remains
+visible — a patient arriving out of hours must still see emergency safety
+information. The Continue button is disabled.
+When practice is open and afterHoursNotice is non-null: an informational
+blue notice appears below the safety warning, above the checkbox.
+
+initForm 503 handling:
+
+If POST /form/init returns 503 (practice closed between availability
+check and form submission), the detail field from the response body is
+displayed as the screen error on Screen 2 (FREE_TEXT). This is handled
+transparently via the updated friendlyErrorMessage in api.ts.
 
 ### 3.19.4 search.ts — Condition search and filtering
 A single-purpose frontend module containing all condition filtering logic for the combobox. Nothing else in the frontend contains matching logic.
@@ -765,6 +812,43 @@ selectedConditionId when the blank form button is clicked.
 If the general consultation ruleset is ever renamed, update this constant and
 this constant only. Do not hardcode the string elsewhere in the frontend.
 
+### 3.19.6 Admin portal — AvailabilityEditor.tsx
+Location: frontend/admin-ui/src/AvailabilityEditor.tsx
+A self-contained React component rendered as a card above the signposting
+editor in EditorView.tsx.
+Fetches GET /admin/availability on mount. Displays:
+
+Enable/disable checkbox (is_active). When unchecked, schedule fields
+are hidden and a description reads "The form is available at all times."
+When active: day toggle buttons (Mon–Sun), open/close time inputs
+(HTML type="time"), closed message textarea.
+Save button calling PUT /admin/availability.
+
+Empty-days confirmation:
+If is_active is true and no days are selected when Save is clicked, a
+window.confirm dialog is shown: "No days are selected. Saving this
+configuration will close the form to patients on every day of the week.
+Are you sure?" The admin must confirm before the request is sent.
+Validation errors from the API are displayed inline via the SaveStatus
+pattern used by SignpostingEditor.
+After a successful save, form state is synced to the server's response
+to ensure the UI reflects exactly what was stored.
+Admin api.ts additions:
+
+fetchAvailability(token) → AvailabilityConfig
+putAvailability(token, config) → AvailabilityConfig
+
+Admin types.ts additions:
+
+AvailabilityConfig interface (practice_id, is_active, weekly_open_days,
+open_time, close_time, closed_message)
+
+EditorView.tsx changes:
+
+Imports and renders AvailabilityEditor above the signposting card.
+Component renders a fragment (<>) instead of a single card div to
+accommodate both cards.
+
 ---
 
 ### 3.20 admin_context.py — Admin authentication boundary
@@ -817,7 +901,7 @@ This module must never import: clinical engine modules, presentation_service, se
 
 ---
 
-### 3.22 frontend/admin/index.html — Admin frontend
+### 3.22 frontend/admin-ui/src/index.html — Admin frontend
 
 A single self-contained HTML file serving the practice admin UI.
 No build step. React 18 and JSX loaded via CDN. Babel-standalone
@@ -871,6 +955,81 @@ This module must never:
 - Store the admin token in localStorage or sessionStorage
 - Contain clinical logic or safety rule evaluation
 - Make requests to any endpoint other than /admin/*
+
+### 3.23 availability_models.py — Availability data shapes
+Location: app/models/availability_models.py
+Data shapes only. No logic, no IO. No imports from service modules.
+Contains:
+
+AvailabilityConfig — represents the stored configuration from the
+practice_availability table. Fields: practice_id, is_active,
+weekly_open_days, open_time, close_time, closed_message.
+Provides from_row(dict) class method for construction from a
+database row. Extended in Stage 3 with override fields.
+AvailabilityResult — return type of evaluate_availability(). Fields:
+is_open, closed_message, after_hours_notice. Consumed by
+GET /availability and the availability check inside POST /form/init.
+
+
+### 3.24 availability_repository.py — Availability database access
+Location: app/repositories/availability_repository.py
+Database access only. No validation logic. No imports from service modules.
+Public interface:
+
+init_availability(practice_id) → None
+Inserts a default row using INSERT ... ON CONFLICT DO NOTHING.
+Called once at startup after the practice row exists.
+get_availability(practice_id) → dict
+Returns all columns. Raises ValueError if the row does not exist.
+set_availability(practice_id, is_active, weekly_open_days, open_time,
+close_time, closed_message) → None
+Upsert via ON CONFLICT DO UPDATE. No validation — the caller must
+call validate_availability_config() before calling this method.
+
+This module must never:
+
+Validate input (validation lives in availability_service.py)
+Import service modules
+
+
+### 3.25 availability_service.py — Availability evaluation logic
+Location: app/services/availability_service.py
+Pure logic. No database access. No IO. No imports from any project module
+except app.models.availability_models. Fully testable without a database.
+Public interface:
+
+validate_availability_config(weekly_open_days, open_time, close_time,
+closed_message) → None
+Raises ValueError if weekly_open_days contains invalid values or
+open_time == close_time. Does not validate open_time < close_time
+(domain constraint, not validation rule). Does not validate empty
+weekly_open_days (UI concern only).
+evaluate_availability(config, now_utc) → AvailabilityResult
+Takes an AvailabilityConfig and the current UTC datetime. Converts
+to Europe/London time using zoneinfo. Returns AvailabilityResult.
+
+Evaluation order (Stage 2):
+
+If is_active is false: return open, no messages.
+Convert now_utc to Europe/London.
+Check day is in weekly_open_days.
+Check time is >= open_time and < close_time (strictly less-than at
+close_time — at exactly close_time the practice is closed).
+If both pass: open, with after-hours notice constructed from close_time.
+Otherwise: closed, with closed_message from config.
+
+After-hours notice format: "Please note: forms submitted after {HH:MM}
+will be reviewed on the next working day." Close time is formatted in
+24-hour time (UK NHS convention).
+Fail-open principle: this service is pure logic and never fails. The
+fail-open behaviour is enforced by the callers in main.py, which wrap
+the entire availability check (repository + service) in try/except and
+proceed as open on any exception.
+This module must never:
+
+Access the database
+Import repository modules
+Make HTTP requests
 
 ## 4. Data flow
 
@@ -1488,6 +1647,18 @@ the `DATABASE_PUBLIC_URL` value from the Railway Postgres service dashboard
 not be committed to version control.
 
     python -m tests.test_repositories
+
+Migration 0002 (0002_availability_table.py):
+Creates the practice_availability table with columns: practice_id (PK,
+references practices), is_active (boolean, default false),
+weekly_open_days (TEXT[], default '{}'), open_time (TIME, default '08:00'),
+close_time (TIME, default '18:30'), closed_message (TEXT, nullable).
+Includes a CHECK constraint on weekly_open_days using the Postgres <@
+(contained by) operator to assert that every element is one of the seven
+valid day abbreviations. This makes the database self-defending against
+invalid values regardless of how the data is written. Application-layer
+validation in availability_service.py still runs first and produces a
+better error message for the caller; the constraint is the backstop.
 
 ### 15.5 Environment variables
 
