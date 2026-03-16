@@ -18,6 +18,7 @@ import uuid
 import os
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from app.repositories.runtime_state_repository import (
     RuntimeStateRepository,
@@ -27,7 +28,7 @@ from app.repositories.runtime_state_repository import (
 )
 from app.core.db import alembic_upgrade
 from app.models.runtime_state import RuntimeState
-from app.models.availability_models import AvailabilityConfig
+from app.models.availability_models import AvailabilityConfig, AvailabilityException
 from app.core.condition_registry import ConditionRegistry, ConditionNotFound
 from app.repositories.practice_repository import PracticeRepository
 from app.repositories.availability_repository import AvailabilityRepository
@@ -50,6 +51,8 @@ from app.routers.admin_router import router as admin_router
 from starlette.staticfiles import StaticFiles
 
 logger = logging.getLogger(__name__)
+
+LONDON_TZ = ZoneInfo("Europe/London")
 
 # ---------------------------------------------------------------------------
 # Startup helpers
@@ -126,6 +129,40 @@ def _validate_startup(practice_repo: PracticeRepository) -> str:
             )
 
     return practice_id
+
+
+# ---------------------------------------------------------------------------
+# Availability orchestration
+# ---------------------------------------------------------------------------
+
+def check_availability(
+    availability_repo: AvailabilityRepository,
+    practice_id: str,
+    now_utc: datetime,
+) -> availability_service.AvailabilityResult:
+    """
+    Orchestration function: fetch config + exceptions, evaluate availability.
+
+    This wires the repository and service together. It does not belong in
+    availability_service.py because the service layer has no database access.
+    This follows the same pattern as engine_adapters.py: services are pure
+    logic, orchestration lives in the calling layer.
+
+    Steps:
+    1. Fetch config from availability_repo and construct AvailabilityConfig.
+    2. Compute today's date in Europe/London time.
+    3. Fetch exceptions from today onwards and construct AvailabilityException list.
+    4. Call evaluate_availability with config, now_utc, and exceptions.
+    5. Return the AvailabilityResult.
+    """
+    row = availability_repo.get_availability(practice_id)
+    config = AvailabilityConfig.from_row(row)
+
+    today_london = now_utc.astimezone(LONDON_TZ).date()
+    exception_rows = availability_repo.get_exceptions(practice_id, today_london)
+    exceptions = [AvailabilityException.from_row(r) for r in exception_rows]
+
+    return availability_service.evaluate_availability(config, now_utc, exceptions)
 
 
 # ---------------------------------------------------------------------------
@@ -227,12 +264,12 @@ async def get_availability():
     Returns {"is_open": bool, "closed_message": str|null, "after_hours_notice": str|null}.
 
     If the database raises an exception, the exception propagates and FastAPI
-    returns HTTP 500. The frontend treats any non-200 response as fail-open.
+    returns HTTP 500. The frontend treats any non-200 as fail-open.
     """
     practice_id = app.state.practice_id
-    row = availability_repo.get_availability(practice_id)
-    config = AvailabilityConfig.from_row(row)
-    result = availability_service.evaluate_availability(config, datetime.now(timezone.utc))
+    result = check_availability(
+        availability_repo, practice_id, datetime.now(timezone.utc)
+    )
 
     return {
         "is_open": result.is_open,
@@ -252,10 +289,8 @@ async def form_init(request: Request):
     # A database failure must never lock patients out.
     try:
         practice_id = app.state.practice_id
-        row = availability_repo.get_availability(practice_id)
-        config = AvailabilityConfig.from_row(row)
-        result = availability_service.evaluate_availability(
-            config, datetime.now(timezone.utc)
+        result = check_availability(
+            availability_repo, practice_id, datetime.now(timezone.utc)
         )
         if not result.is_open:
             return JSONResponse(
@@ -422,7 +457,29 @@ async def form_finish(request: Request):
 
     repo.close_session(runtime_id, version)
 
-    return {"submission_id": submission_id}
+    # --- Submitted-after-hours flag ---
+    # Check current availability. If the practice is closed, the patient
+    # should see a message that their submission will be reviewed next
+    # working day. If the check fails, default to false — uncertainty
+    # must not alarm the patient.
+    submitted_after_hours = False
+    try:
+        finish_result = check_availability(
+            availability_repo,
+            app.state.practice_id,
+            datetime.now(timezone.utc),
+        )
+        if not finish_result.is_open:
+            submitted_after_hours = True
+    except Exception:
+        logger.exception(
+            "Availability check failed during form/finish — defaulting submitted_after_hours to false"
+        )
+
+    return {
+        "submission_id": submission_id,
+        "submitted_after_hours": submitted_after_hours,
+    }
 
 
 @app.get("/debug/admin-files")
