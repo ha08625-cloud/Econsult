@@ -1,111 +1,115 @@
-## This document contains the module descriptions for `safety_engine.py`, `projection.py`, `explicit_answers.py`
+# Clinical Safety & Projection
 
-### 1. Safety architecture (blocking, isolated)
+**LLM INSTRUCTIONS:** This document covers design decisions and strict invariants for the safety domain. Read the actual source files for function signatures and implementation details.
 
-Safety rules live in the ruleset.
-Safety evaluation is performed by a dedicated safety engine that:
-Consumes explicit answers only
-Never sees RuntimeState, AnswerState, provenance, or encoder output
-Operates on an immutable input structure
-Is deterministic, inspectable, and unit-testable in isolation
+---
 
-### 2. Explicit answer semantics
+## Scope
 
-Safety consumes an ExplicitAnswers structure with the following semantics:
-True / False → explicitly answered
-None → unknown / unanswered
-(None is never treated as False)
-Encoder-derived answers (encoder) are never visible to safety.
-Encoder-confirmed answers (encoder_confirmed) are treated as explicit only after submission normalisation.
-Encoder-corrected answers (encoder_corrected) are always treated as explicit — the patient actively overrode an encoder suggestion, which is the strongest possible signal of explicit intent.
+Evaluating explicit patient answers against safety rules, projecting `RuntimeState` to the `ExplicitAnswers` boundary, and blocking unsafe submissions.
 
-### 3. Safety engine responsibilities
+**Key files:** `safety_engine.py`, `projection.py`, `explicit_answers.py`
 
-The safety engine:
-* Evaluates safety rules against explicit answers
-* Returns structured safety outcomes (rule IDs + message text)
-* Does not decide whether submission is allowed
-* Blocking behaviour is enforced only by the pipeline, based on safety output.
+---
 
-### 4. Blocking semantics
+## Design Decisions & Invariants
 
-For the MVP:
-* Any triggered safety rule blocks form submission
-* The patient is prevented from submitting until answers are changed
-* Blocking is explicit and transparent to the patient
-* This is a medically defensible design choice and prevents unsafe overnight submissions.
+### Safety is isolated and input-restricted
 
-### Validation
-* Safety engine receiving anything other than ExplicitAnswers
-* Safety evaluation attempted before projection
-* Safety rules referencing keys absent from projected answers
-* Projection omitting any answer_key
-* Safety rule referencing absent or invalid answer_key
-* Invalid rule expressions
+The safety engine consumes `ExplicitAnswers` only — a projected, immutable view of `RuntimeState`. It never sees `RuntimeState` directly, answer provenance, or encoder output. This is a hard boundary: the safety engine has no import path to `RuntimeState`, `AnswerState`, or encoder modules.
 
-## Modules
+This isolation is intentional: safety evaluation must be deterministic, inspectable, and unit-testable in complete isolation from the rest of the pipeline.
 
-### safety_engine.py
+### The projection boundary (`projection.py`)
 
-Responsibilities:
-* Evaluate safety-critical clinical rules defined in the ruleset
-* Consume explicit answers only (post-projection)
-* Return structured safety outcomes (rule IDs + message text)
+`project_explicit_answers` is the single choke point that enforces which answers are allowed to influence safety. The allow-list is `EXPLICIT_SOURCES`:
 
-Inputs:
-* ExplicitAnswers (immutable, projected view)
-* Safety rule definitions from the ruleset
+- `patient` — directly entered by the patient
+- `encoder_confirmed` — encoder suggestion that the patient left unchanged (treated as patient-endorsed)
+- `encoder_corrected` — patient actively overrode an encoder suggestion (strongest explicit signal)
 
-Outputs:
-* SafetyEvaluation containing:
-* Triggered rule IDs
-* Corresponding safety message payloads
+All other sources (i.e. raw `encoder` answers) are projected as `None` regardless of their value. An encoder answer that has not been confirmed or corrected by the patient is treated as unknown for safety purposes.
 
-Properties:
-* Pure function: no mutation, no IO, no side effects
-* Deterministic and fully inspectable
-* Unit-testable in complete isolation
+### `None` semantics
 
-Has no access to:
-* RuntimeState
-* AnswerState
-* Answer provenance
-* Encoder output or metadata
-* Submission or blocking logic
+`None` means unknown, never `False`. A safety rule condition requiring `is_true` for a key that is `None` is not satisfied. This is not an edge case — it is a core semantic: absence of an answer must never accidentally satisfy a safety condition.
 
-Rules:
-* None represents unknown and never satisfies a condition
-* Safety rules are evaluated using explicit boolean logic only
-* The safety engine never blocks submission directly
-* Blocking decisions are enforced exclusively by the pipeline based on safety output
+### Safety rules use ANY logic
 
-Non-goals:
-* No advisory or informational guidance
-* No UI behaviour
-* No conditional workflows
-* No mutation of answers or state
+A safety rule fires if **any** of its conditions is satisfied (OR semantics). See the ruleset schema for rule structure. The engine does not support AND-only rules at the top level.
 
-### projection.py — Explicit answer projection boundary
+### Blocking is enforced by the pipeline, not the safety engine
 
-Responsibilities:
-* Project RuntimeState → ExplicitAnswers
-* Apply strict allow-list provenance rules
-* Act as the single choke point where encoder influence is excluded from safety
+The safety engine returns a `SafetyEvaluation` (triggered rule IDs + message payloads). It does not decide whether submission is allowed. The pipeline makes the blocking decision based on that output.
 
-Rules:
-* Only answers with source ∈ {patient, encoder_confirmed} are included
-* All other answers are treated as unanswered (None), even if a value exists
-* Projection is deterministic and total (all answer_keys always present)
+For the MVP: any triggered safety rule blocks submission. The patient cannot submit until their answers change. This is a deliberate, medically defensible choice to prevent unsafe overnight submissions.
 
-### explicit_answers.py — Safety-critical answer projection
+### Safety never mutates state
 
-Responsibilities:
-* Define the only data structure that safety and other post-submit rule engines may consume
-* Enforce immutability of projected answers
-* Remove all provenance, encoder metadata, and RuntimeState access
+The safety engine is a pure function — no mutation, no IO, no side effects. It does not write to `RuntimeState`, answers, or any other structure.
 
-Properties:
-* Input is a projection of RuntimeState, not RuntimeState itself
-* Answers are immutable (frozen dataclass)
-* Answer values may be True, False, or None
-* None represents unknown, not False
+---
+
+## What Safety Must Never Do
+
+- `safety_engine.py`: import or access `RuntimeState`, `AnswerState`, encoder modules, or submission logic
+- `projection.py`: include raw encoder answers (source `"encoder"`) in `ExplicitAnswers`
+- `explicit_answers.py`: be made mutable (it must remain a frozen dataclass)
+- Any safety module: block submission directly — that is the pipeline's responsibility# Clinical Safety & Projection
+
+**LLM INSTRUCTIONS:** This document covers design decisions and strict invariants for the safety domain. Read the actual source files for function signatures and implementation details.
+
+---
+
+## Scope
+
+Evaluating explicit patient answers against safety rules, projecting `RuntimeState` to the `ExplicitAnswers` boundary, and blocking unsafe submissions.
+
+**Key files:** `safety_engine.py`, `projection.py`, `explicit_answers.py`
+
+---
+
+## Design Decisions & Invariants
+
+### Safety is isolated and input-restricted
+
+The safety engine consumes `ExplicitAnswers` only — a projected, immutable view of `RuntimeState`. It never sees `RuntimeState` directly, answer provenance, or encoder output. This is a hard boundary: the safety engine has no import path to `RuntimeState`, `AnswerState`, or encoder modules.
+
+This isolation is intentional: safety evaluation must be deterministic, inspectable, and unit-testable in complete isolation from the rest of the pipeline.
+
+### The projection boundary (`projection.py`)
+
+`project_explicit_answers` is the single choke point that enforces which answers are allowed to influence safety. The allow-list is `EXPLICIT_SOURCES`:
+
+- `patient` — directly entered by the patient
+- `encoder_confirmed` — encoder suggestion that the patient left unchanged (treated as patient-endorsed)
+- `encoder_corrected` — patient actively overrode an encoder suggestion (strongest explicit signal)
+
+All other sources (i.e. raw `encoder` answers) are projected as `None` regardless of their value. An encoder answer that has not been confirmed or corrected by the patient is treated as unknown for safety purposes.
+
+### `None` semantics
+
+`None` means unknown, never `False`. A safety rule condition requiring `is_true` for a key that is `None` is not satisfied. This is not an edge case — it is a core semantic: absence of an answer must never accidentally satisfy a safety condition.
+
+### Safety rules use ANY logic
+
+A safety rule fires if **any** of its conditions is satisfied (OR semantics). See the ruleset schema for rule structure. The engine does not support AND-only rules at the top level.
+
+### Blocking is enforced by the pipeline, not the safety engine
+
+The safety engine returns a `SafetyEvaluation` (triggered rule IDs + message payloads). It does not decide whether submission is allowed. The pipeline makes the blocking decision based on that output.
+
+For the MVP: any triggered safety rule blocks submission. The patient cannot submit until their answers change. This is a deliberate, medically defensible choice to prevent unsafe overnight submissions.
+
+### Safety never mutates state
+
+The safety engine is a pure function — no mutation, no IO, no side effects. It does not write to `RuntimeState`, answers, or any other structure.
+
+---
+
+## What Safety Must Never Do
+
+- `safety_engine.py`: import or access `RuntimeState`, `AnswerState`, encoder modules, or submission logic
+- `projection.py`: include raw encoder answers (source `"encoder"`) in `ExplicitAnswers`
+- `explicit_answers.py`: be made mutable (it must remain a frozen dataclass)
+- Any safety module: block submission directly — that is the pipeline's responsibility
