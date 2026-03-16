@@ -1,88 +1,72 @@
-# This document covers the architecture for the encoder modules and the ML boundary: `encoder_mapping.py`, `encoder_stub.py`, `encoder_contracts.py`
+# Encoder & ML Boundary
 
-## Encoder logic
+**LLM INSTRUCTIONS:** This document covers design decisions and strict boundaries for the encoder domain. Read the actual source files for dataclass fields, function signatures, and implementation details.
 
-Encoders:
-* Run once on initial free text
-* Output partial {answer_key: true|false|null} map
-* Do not see questions
-* Use `encoder_prompt` as a clinical definition, not an instruction
+---
 
-Encoder output:
-* Is clearly marked as suggested
-* Can be overridden
-* Are advisory and non-authoritative
-* Are frozen at extraction time and may be confirmed or corrected by the patient
-* On submission, any remaining encoder-derived values are treated as explicitly confirmed or explicitly corrected
-* Encoder provenance is retained for audit and debugging only and is never exposed to safety logic or clinical outputs
+## Scope
 
-Allowed answer sources:
-unanswered
-encoder
-encoder_confirmed
-encoder_corrected
-patient
+Prompting encoders, mapping ML signals to answers, enforcing provenance.
 
-Allowed transitions:
-From	To	Allowed
-unanswered	encoder	yes
-unanswered	patient	yes
-encoder	encoder_confirmed	yes
-encoder	encoder_corrected	yes
-encoder_confirmed	encoder_corrected	yes
-patient	encoder	no
-patient	encoder_confirmed	no
+**Key files:** `encoder_mapping.py`, `encoder_stub.py`, `encoder_contracts.py`
 
-Validation:
-"If send_to_encoder = true, then encoder_prompt must not be null and answer_type must be Boolean"
+---
 
-## Modules
+## What the Encoder Is and Is Not
 
-### encoder_stub.py — Replaceable encoder façade
+The encoder runs **once**, on initial free text, before the patient sees any questions. It outputs a partial signal map (`answer_key → true | false | null`). It is:
 
-Responsibilities:
-* Accept free text + encoder definitions
-* Emit {answer_key: true | false | null}
+- **Advisory only.** Encoder output is non-authoritative. It surfaces suggestions to the patient; the patient confirms or corrects them.
+- **Blind.** The encoder never sees rules, questions, existing answers, or `RuntimeState`. It receives only free text and `EncoderSignalDefinition` objects (answer key + clinical prompt string). The `encoder_prompt` is a clinical definition, not an instruction.
+- **Frozen at extraction time.** Encoder-derived values are fixed when applied. On submission, any remaining encoder-derived values are treated as explicitly confirmed or corrected.
+- **Audit-only provenance.** Encoder provenance is retained in `runtime.metadata["audit"]` for debugging only. It is never exposed to safety logic or clinical outputs.
 
-Constraints:
-* Encoder never sees rules, questions or answers, RuntimeState
-* Encoder output is non‑authoritative
-* Stub logic is intentionally naive
-* This module is expected to be deleted and replaced by a real encoder without impacting any other module.
+---
 
-### encoder_mapping.py — Encoder containment layer
+## Provenance State Machine
 
-Responsibilities:
-* Apply encoder output to RuntimeState
-* Enforce provenance rules
-* Preserve raw encoder output for audit
+An answer's `source` field must follow these transitions. Any other transition is a violation.
 
-Rules:
+| From | To | Allowed |
+|---|---|---|
+| `unanswered` | `encoder` | yes |
+| `unanswered` | `patient` | yes |
+| `encoder` | `encoder_confirmed` | yes |
+| `encoder` | `encoder_corrected` | yes |
+| `encoder_confirmed` | `encoder_corrected` | yes |
+| `patient` | `encoder` | **no** |
+| `patient` | `encoder_confirmed` | **no** |
 
-* Encoder never overwrites patient input
-* Encoder only populates unanswered fields
-* Mapping failures are fatal
-* Encoder influence is fully contained in this module
+The hard rule: **encoder output must never overwrite a patient answer.** This is enforced in `encoder_mapping.py`.
 
-This is the regulatory boundary between inference and clinical data.
+---
 
-### encoder_contracts.py — Encoder boundary contracts
+## Module Responsibilities & Boundaries
 
-Defines the only data structures permitted to cross the boundary between
-an encoder implementation (stub or ML-backed) and the rest of the form engine.
+### `encoder_contracts.py` — Boundary contracts
 
-Contains:
-* EncoderSignalDefinition (frozen dataclass): answer_key + encoder_prompt
-* EncoderOutput (frozen dataclass): model_name, model_version, ruleset_hash,
-  signals dict {answer_key: True | False | None}
+Defines the **only** data structures permitted to cross the boundary between an encoder implementation and the rest of the engine: `EncoderSignalDefinition` and `EncoderOutput`. Both are frozen dataclasses.
 
-EncoderOutput.validate_against(definitions):
-* Validates that output keys exactly match the provided definitions
-* Validates that all values are True, False, or None
-* Raises ValueError/TypeError on mismatch
+- No business logic beyond output validation.
+- No imports from any engine module.
+- Imported by `encoder_mapping.py` and `engine_adapters.py` only.
 
-Properties:
-* Both dataclasses are frozen (immutable)
-* No business logic beyond validation
-* No imports from engine modules
-* Imported by encoder_mapping.py and engine_adapters.py only
+### `encoder_stub.py` — Replaceable encoder facade
+
+Accepts free text and encoder definitions, emits an `EncoderOutput`. The stub logic is intentionally naive — it exists as a placeholder. **This module is expected to be deleted and replaced by a real encoder without touching any other module.** That is the test of whether the boundary is clean.
+
+### `encoder_mapping.py` — Containment layer
+
+Applies a validated `EncoderOutput` to `RuntimeState`. This is the **regulatory boundary** between probabilistic inference and clinical state. All encoder influence is fully contained here — no other module applies encoder output.
+
+Rules enforced here:
+- Output is validated against definitions before any mutation occurs.
+- Only `unanswered` fields are populated.
+- Mapping failures are fatal (no partial application).
+- Raw encoder output is stored in `runtime.metadata["audit"]` for the audit trail.
+
+---
+
+## Ruleset Constraint
+
+If `send_to_encoder = true` on a question, then `encoder_prompt` must not be null and `answer_type` must be Boolean. This is validated at ruleset load time.
