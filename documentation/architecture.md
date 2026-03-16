@@ -17,31 +17,7 @@ No module other than the persistence layer is aware of storage.
 The RuntimeState is canonical, backend-owned, lossless, and versioned.
 Clients interact only via constrained projections and intent-only inputs.
 
-## 4. Data flow
 
-### 4.1 Form initialisation
-
-Load ruleset
-Initialise RuntimeState
-Extract encoder definitions and mappings
-Run encoder (if free text present)
-Apply encoder mapping
-Return canonical RuntimeState
-
-### 4.2 Form submission
-Load the latest RuntimeState version for the session
-Validate version consistency (optimistic concurrency)
-Apply patient updates
-Normalise encoder provenance
-Validate completeness of required answers
-Project RuntimeState → ExplicitAnswers
-Evaluate safety rules using the safety engine
-If any safety rules are triggered:
-Submission is blocked
-Safety messages are returned
-Persist a new, versioned RuntimeState
-Generate ClientStateView projection
-Each submission produces exactly one new RuntimeState version and exactly one safety evaluation.
 
 ## 5. Encoder logic
 
