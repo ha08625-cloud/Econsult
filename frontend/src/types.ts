@@ -59,6 +59,13 @@ export interface ConditionPresentation {
   practice_signposting?: string;
 }
 
+// --- Form finish response ---
+
+export interface FinishFormResult {
+  submission_id: string;
+  submitted_after_hours: boolean;
+}
+
 // --- Contact preferences (Screen 4) ---
 
 export type ContactMethod = "email" | "text" | "phone";
