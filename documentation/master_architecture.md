@@ -63,9 +63,14 @@ When modifying or adding features, locate the relevant capability below to ident
 ### 3.8 HTTP Orchestration & App Entry
 * **Scope:** FastAPI application, startup fail-fast validation, routing, error translation.
 * **Domain Doc:** Domain Doc: docs/arch_http_boundary.md
-* **Key Files:** Key Files: main.py, request_validation.py
+* **Key Files:** main.py, request_validation.py
 
 ### 3.9 API Boundary & Presentation
 * **Scope:** Composing pre-session presentation data.
 * **Domain Doc:** docs/arch_presentation.md
 * **Key Files:** presentation_service.py
+
+### 3.10 Clinical Ruleset Schema
+* **Scope:** Layout and constraints for the clinical ruleset schemas
+* **Domain Doc:** Domain Doc: docs/arch_ruleset_schema.md
+* **Key Files:** Found in /data/ directory
