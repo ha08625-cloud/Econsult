@@ -58,3 +58,8 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Scope:** Admin authentication, editing signposting, configuring availability.
 * **Domain Doc:** `docs/arch_admin.md` *(Note: create this file)*
 * **Key Files:** `admin_router.py`, `admin_context.py`, `practice_repository.py`, `frontend/admin-ui/src/*`
+
+### 3.8 HTTP Orchestration & App Entry
+* **Scope:** FastAPI application, startup fail-fast validation, routing, error translation.
+* **Domain Doc:** Domain Doc: docs/arch_http_boundary.md
+* **Key Files:** Key Files: main.py, request_validation.py
