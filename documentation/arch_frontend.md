@@ -8,7 +8,7 @@
 
 Stateless React rendering of a six-screen patient form flow, condition search, and API communication.
 
-**Key files:** `App.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`, `constants.ts`
+**Key files:** `App.tsx`, `helpers.ts`, `layout.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`, `constants.ts`
 
 ---
 
@@ -51,6 +51,14 @@ Two error states — the classification decision must be made at the API boundar
 
 ### `App.tsx`
 Owns all screen state and transitions. The only file that knows the screen order. Contains no clinical logic.
+
+The reset function (triggered on fatal error) manually clears every `useState` in the file. It carries an explicit per-variable checklist comment — if a new `useState` is added to `App.tsx`, it must also appear in that reset block.
+
+### `helpers.ts`
+Pure functions with no React dependency: state initialisers and client-side validation. Nothing in this file should have side effects, make API calls, or import from any other local module except `types.ts`.
+
+### `layout.tsx`
+Structural React wrappers (`PageShell`, `InlineError`) with no knowledge of application state. References global CSS class names from `index.css` — that coupling is intentional. Must not import from `api.ts`, `helpers.ts`, or any screen component.
 
 ### `api.ts`
 Typed fetch wrappers for all backend endpoints. No business logic, no data transformation beyond JSON serialisation. Payload field names must match backend expectations exactly. All type imports must use `import type` syntax (required by `verbatimModuleSyntax` in tsconfig).
