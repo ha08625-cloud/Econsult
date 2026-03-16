@@ -8,6 +8,9 @@ practice_availability table. Includes override fields (Stage 3).
 
 AvailabilityResult: the return type of evaluate_availability(). Consumed
 by GET /availability and the availability check inside POST /form/init.
+
+AvailabilityException: represents a single row from the
+practice_availability_exceptions table (Stage 4).
 """
 
 from dataclasses import dataclass, field
@@ -48,3 +51,24 @@ class AvailabilityResult:
     is_open: bool
     closed_message: Optional[str]
     after_hours_notice: Optional[str]
+
+
+@dataclass
+class AvailabilityException:
+    practice_id: str
+    exception_date: datetime.date
+    exception_type: str  # "closed" or "custom_hours"
+    open_time: Optional[datetime.time]
+    close_time: Optional[datetime.time]
+    note: Optional[str]
+
+    @classmethod
+    def from_row(cls, row: dict) -> "AvailabilityException":
+        return cls(
+            practice_id=row["practice_id"],
+            exception_date=row["exception_date"],
+            exception_type=row["exception_type"],
+            open_time=row.get("open_time"),
+            close_time=row.get("close_time"),
+            note=row.get("note"),
+        )
