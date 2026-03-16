@@ -1712,8 +1712,9 @@ Every failure path defaults to open.
 Data shapes only. No logic, no IO.
 
 AvailabilityConfig: represents the stored row from practice_availability.
-Constructed via `from_row(dict)` from the repository output. Extended in
-Stage 3 with override fields.
+Constructed via `from_row(dict)` from the repository output. Includes
+three optional override fields (override_status, override_expires_at,
+override_message) added in Stage 3, all defaulting to None.
 
 AvailabilityResult: the return type of `evaluate_availability()`. Contains
 `is_open`, `closed_message`, and `after_hours_notice`. Both `GET /availability`
@@ -1727,10 +1728,17 @@ Methods:
 - `init_availability(practice_id)`: inserts a default row using
   `INSERT ... ON CONFLICT DO NOTHING`. Called once at startup after the
   practice row exists.
-- `get_availability(practice_id)`: returns all columns as a dict. Raises
-  `ValueError` if the row does not exist.
-- `set_availability(...)`: upserts the full config. No validation — the
-  caller is responsible for calling `validate_availability_config()` first.
+- `get_availability(practice_id)`: returns all columns (including
+  override columns) as a dict. Raises `ValueError` if the row does not
+  exist.
+- `set_availability(...)`: upserts the schedule config. No validation —
+  the caller is responsible for calling `validate_availability_config()`
+  first.
+- `set_override(practice_id, override_status, override_expires_at,
+  override_message)`: updates the three override columns. The caller
+  is responsible for calling `validate_override()` first.
+- `clear_override(practice_id)`: sets all three override columns to
+  NULL. Idempotent — no error if no override was active.
 
 #### availability_service.py (app/services/)
 
@@ -1743,10 +1751,23 @@ contains invalid values or `open_time == close_time`. Does not validate
 error given the domain constraint against overnight hours). Does not
 validate empty `weekly_open_days` (that is a UI concern only).
 
-`evaluate_availability(config, now_utc)`: converts UTC to Europe/London
-time, checks the day and time against the config, and returns an
-`AvailabilityResult`. When `is_active` is false, always returns open with
-no messages.
+`validate_override(status, expires_at, now_utc)`: raises `ValueError` if
+status is not "open"/"closed", expires_at is null or timezone-naive,
+expires_at is not in the future, or expires_at exceeds 24 hours from now.
+The valid window is: now_utc < expires_at <= now_utc + 24 hours.
+
+`deactivation_clears_override(is_active)`: returns True when is_active
+is false, signalling that overrides should be cleared on deactivation.
+The admin router calls this after PUT /admin/availability and, if true,
+calls clear_override on the repository.
+
+`evaluate_availability(config, now_utc)`: evaluation order is:
+(1) is_active false: return open with no messages.
+(2) Active override (override_status not null and expires_at > now_utc):
+force-open returns open with after-hours notice; force-closed returns
+closed with override_message (falling back to closed_message via
+explicit is-not-None check).
+(3) Weekly schedule: converts UTC to Europe/London, checks day and time.
 
 Dependency rules:
 - availability_service must NOT import any repository module
@@ -1811,14 +1832,21 @@ service with different clinical logic. The evaluation assumes
 
 ### 16.7 Database schema
 
-Table `practice_availability` (created by migration 0002):
+Table `practice_availability` (created by migration 0002, extended by
+migration 0003):
 
-    practice_id      TEXT PRIMARY KEY REFERENCES practices(practice_id)
-    is_active        BOOLEAN NOT NULL DEFAULT false
-    weekly_open_days TEXT[]  NOT NULL DEFAULT '{}'
-    open_time        TIME   NOT NULL DEFAULT '08:00'
-    close_time       TIME   NOT NULL DEFAULT '18:30'
-    closed_message   TEXT
+    practice_id          TEXT PRIMARY KEY REFERENCES practices(practice_id)
+    is_active            BOOLEAN NOT NULL DEFAULT false
+    weekly_open_days     TEXT[]  NOT NULL DEFAULT '{}'
+    open_time            TIME   NOT NULL DEFAULT '08:00'
+    close_time           TIME   NOT NULL DEFAULT '18:30'
+    closed_message       TEXT
+    override_status      TEXT CHECK (override_status IN ('open', 'closed'))
+    override_expires_at  TIMESTAMPTZ
+    override_message     TEXT
+
+The three override columns (added by migration 0003) are all nullable.
+A null override_status means no override is active.
 
 The `weekly_open_days` column has a CHECK constraint using the Postgres
 `<@` operator to assert that every element is one of the seven valid day
@@ -1842,13 +1870,26 @@ startup.
 ### 16.9 Admin endpoints
 
 `GET /admin/availability`: returns the raw config dict with times
-formatted as HH:MM strings. Requires admin auth. Does not call
-`evaluate_availability`.
+formatted as HH:MM strings and override_expires_at as ISO string.
+Requires admin auth. Does not call `evaluate_availability`.
 
-`PUT /admin/availability`: accepts the full config, validates via the
-service layer, persists via the repository, and returns the updated config.
-Logs a warning if `is_active` is true and `weekly_open_days` is empty.
-Returns HTTP 400 if validation fails.
+`PUT /admin/availability`: accepts the schedule config, validates via
+the service layer, persists via the repository, and returns the updated
+config. Logs a warning if `is_active` is true and `weekly_open_days` is
+empty. If `is_active` is set to false, auto-clears any existing override
+(sets all three override columns to NULL). Returns HTTP 400 if
+validation fails.
+
+`POST /admin/availability/override`: sets a manual force-open or
+force-closed override. Accepts `status` ("open" or "closed"),
+`expires_at` (timezone-aware ISO datetime string), and `message`
+(string or null). Validates via `validate_override` in the service
+layer. Rejects timezone-naive expires_at with HTTP 400. Returns the
+updated raw config.
+
+`DELETE /admin/availability/override`: clears any active override by
+setting all three override columns to NULL. Idempotent — no error if
+no override was active. Returns the updated raw config.
 
 ### 16.10 Banned imports
 
@@ -1870,4 +1911,81 @@ Unit tests for `availability_service.py` live in
 database. All tests construct `AvailabilityConfig` directly and pass
 controlled UTC datetimes.
 
+Tests 1-7 cover Stage 2: schedule evaluation, config validation, and
+the fail-open pattern.
+
+Tests 8-15 cover Stage 3: force-open override, force-closed with
+override message, null message fallback to closed_message, empty string
+message preserved (not fallback), expired override fallthrough to
+schedule, timezone-naive expires_at rejection, is_active=false ignoring
+force-closed override, and auto-clear on deactivation.
+
+Additional boundary tests cover: exact open/close time boundaries, BST
+offset effects, and override expiry edge cases.
+
 Run with: `python -m tests.test_availability_service`
+
+### 16.12 Manual override design
+ 
+The override system allows an admin to temporarily force the form open or
+closed regardless of the weekly schedule. This is designed for emergency
+closures, staff training days, or extending access outside normal hours.
+ 
+#### Override expiry
+ 
+`override_expires_at` is always required when setting an override. Null is
+not permitted. The valid window is `now_utc < override_expires_at <=
+now_utc + 24 hours`. A non-null `override_expires_at` that has passed is
+treated as no override — the evaluation falls through to the weekly
+schedule. Expiry is strictly less-than: at exactly `override_expires_at`,
+the override is no longer active.
+ 
+#### Timezone requirement for expires_at
+ 
+The admin UI submits `expires_at` as a UTC ISO string. The backend rejects
+timezone-naive datetime strings with a clear error message. During BST, a
+London-local time submitted without an offset would be stored as if it
+were UTC, causing the override to expire one hour late.
+ 
+#### Auto-clear on deactivation
+ 
+When `PUT /admin/availability` sets `is_active` to false, any existing
+override is cleared (all three override columns set to NULL). This
+prevents stale override data from silently taking effect if the admin
+later re-enables `is_active`. The logic is split: the service layer
+function `deactivation_clears_override` returns a boolean, and the admin
+router calls `clear_override` on the repository when true. The repository
+writes only what it is told.
+ 
+#### Override message fallback chain
+ 
+When an override is active and `override_status` is `"closed"`:
+(1) If `override_message is not None` (including empty string `""`): use
+`override_message`. (2) If `override_message is None`: use
+`closed_message`. (3) If both are None: return None. The explicit
+`is None` check ensures that an empty string configured as the override
+message is treated as an intentional choice, not as absent.
+ 
+#### Admin portal override display
+ 
+Active override is determined in JavaScript:
+`override_status !== null && new Date(override_expires_at) > new Date()`.
+`Date.now()` is UTC-safe. Local time must not be used for this comparison.
+ 
+When displaying `override_expires_at` to the admin, the timestamp is
+formatted in Europe/London local time using `Intl.DateTimeFormat` with
+`timeZone: "Europe/London"`. This ensures correctness during BST.
+ 
+#### Force-open after-hours notice
+ 
+When a force-open override is active, the after-hours notice is still
+constructed from the config's `close_time`. The override is temporary and
+the patient should still be aware of the normal schedule.
+ 
+### 16.13 Migration history
+ 
+| Migration | Description |
+|---|---|
+| 0001 | Initial schema: four existing tables with IF NOT EXISTS |
+| 0002 | practice_availability table (weekly schedule, closed message) |
+| 0003 | Three override columns on practice_availability |
