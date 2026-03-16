@@ -7,6 +7,7 @@ import type {
   SafetyWarning,
   AvailabilityResult,
   ContactPreferences,
+  FinishFormResult,
 } from "./types";
 
 const API_BASE = ""; // same-origin
@@ -162,9 +163,7 @@ export async function finishForm(
   runtimeId: string,
   version: number,
   contactPreferences: ContactPreferences,
-): Promise<{
-  submission_id: string;
-}> {
+): Promise<FinishFormResult> {
   return postJson("/form/finish", {
     runtime_id: runtimeId,
     version: version,
