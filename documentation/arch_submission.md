@@ -1,146 +1,70 @@
-**Scope:** Finalizing forms, auditing, persisting submission records, sending emails.
-**Key Files:** `serialization.py`, `serialisation_contracts.py`, `submission_repository.py`, `email_service.py`
+# Submission, Serialization & Delivery
 
+**LLM INSTRUCTIONS:** This document covers design decisions and strict boundaries for the submission domain. Read the actual source files for function signatures, field names, and schema details.
 
-## Validation
-* PRACTICE_ID environment variable not set → startup abort
-* Database contains more than one practice → startup abort
-* PRACTICE_ID does not match any practice in database → startup abort
-* Practice has no email address → startup abort
-* SMTP environment variables not set in production mode → startup abort
+---
 
-## Submission & Delivery Lifecycle
-* Transaction Order: On form/finish, a submission_record MUST be created in the database with delivery_status = "pending" BEFORE any email send is attempted. This ensures the record exists even if the process crashes during delivery.
-* Outcomes: >   * Success -> delivery_status = "sent", delivered_at = now.
-* Failure -> delivery_status = "failed", delivery_error = exception message.
-* Failures are Operational, not Clinical: Email failures are NOT surfaced to the patient and NO automatic retry is implemented. The patient receives a submission ID regardless of delivery outcome.
-* Audit Integrity: delivery_email is captured from the practice record at submission time and hardcoded into the submission record so historical audits reflect the actual address used.
+## Scope
 
-### serialization.py — Output views
+Finalizing forms, persisting submission records, auditing, and sending clinical output by email.
 
-Responsibilities:
-* Produce ClientStateView (for frontend rendering)
-* Produce ClinicalOutput (lossy, portable)
-* Produce AuditOutput (lossless, for debugging and regulation)
+**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `email_service.py`
 
-Functions:
-* serialize_client_state(runtime, ruleset, condition_label) → dict
-* clinical_output(runtime) → ClinicalOutput
-* audit_output(runtime) → AuditOutput
+---
 
-Dependencies:
-* runtime_state.py (RuntimeState)
-* serialisation_contracts.py (ClinicalOutput, AuditOutput)
+## Submission Lifecycle — Critical Invariants
 
-Rules:
-* Serialisation never mutates state
-* Clinical output excludes encoder internals
-* condition_label is passed in explicitly by the calling layer;
-  this function never accesses presentation metadata from the ruleset
-* RuntimeState must never be mutated or destroyed by serialisation,
-  only read and projected
+- A `submission_record` MUST be created in the database with `delivery_status = "pending"` **before** any email send is attempted. This ensures the record exists even if the process crashes during delivery.
+- Email delivery failures are **operational, not clinical**. They are never surfaced to the patient. The patient always receives a submission ID regardless of delivery outcome.
+- No automatic retry is implemented. Retry decisions belong to the calling layer, not the repository or email service.
+- `delivery_email` is captured from the practice record **at submission time** and stored in the submission record. Historical audits reflect the actual address used even if the practice email is later changed.
 
-Architectural guarantee:
-This module never accesses presentation metadata directly.
-The condition_label for ClientStateView is passed in explicitly
-by the calling layer. The ruleset parameter is used only for
-question text and answer_type, never for presentation data.
+---
 
-### serialisation_contracts.py
+## Design Decisions
 
-Defines the explicit, immutable data structures that may leave the core
-form engine as serialized outputs.
+### Output Contracts (`serialisation_contracts.py`)
 
-These contracts enforce a hard boundary between:
-- Internal runtime state (lossless, mutable, provenance-aware)
-- External outputs (lossy or lossless, immutable, purpose-specific)
+There are two output types, each with a distinct purpose:
 
-This module contains no logic and no knowledge of RuntimeState internals.
-It exists to make output schemas explicit, inspectable, and enforceable.
+- **`ClinicalOutput`** — lossy by design. Strips provenance and encoder internals. Safe for clinical and patient use. Contains `question_labels` (answer_key → question text at submission time) so the record is self-contained and interpretable without reloading the ruleset.
+- **`AuditOutput`** — lossless. Contains full `runtime_state` snapshot, safety evaluation, and ruleset version. Intended for debugging, safety review, and regulatory inspection.
 
-Key principles:
-- ClinicalOutput is lossy by design and safe for clinical and patient use
-- AuditOutput is lossless and intended for debugging, safety review, and regulation
-- Neither contract may be used as an input back into the engine
+Neither contract may be used as an input back into the engine. This module contains no logic.
 
-ClinicalOutput fields:
-- condition_id: str
-- free_text: str
-- answers: Dict[str, Any] — answer values only, no provenance
-- safety_messages: List[dict]
-- question_labels: Dict[str, str] — answer_key to question text at submission time
+**Note on `additional_text`:** `ClinicalOutput` includes an `additional_text` field (separate from `free_text`). Check `serialisation_contracts.py` for the current field list — the doc should not be the source of truth for field names.
 
-question_labels is populated by serialisation.py from the ruleset at submission
-time. Storing it in ClinicalOutput means the record is self-contained: a future
-reader can interpret answers without reloading the ruleset. If the question text
-ever changes, historical submissions still reflect the wording that was shown to
-the patient.
+### Serialisation (`serialisation.py`)
 
-### submission_repository.py — Submission record database access
+- Produces `ClientStateView` (for frontend rendering), `ClinicalOutput`, and `AuditOutput`.
+- Serialisation **never mutates state**.
+- `condition_label` is passed in explicitly by the calling layer. This module never accesses presentation metadata from the ruleset directly.
+- The ruleset parameter is used only for question text and `answer_type`, never for presentation data.
 
-Responsibilities:
-- Initialise submission_records table on startup
-- Create submission records at form completion
-- Update delivery status after email send attempt
-- Retrieve and list submission records for manual inspection
+### Submission Repository (`submission_repository.py`)
 
-Public interface:
-- create_submission(submission_id, practice_id, condition_id,
-  clinical_output, audit_output, delivery_email) → None
-- update_delivery_status(submission_id, status,
-  delivered_at=None, delivery_error=None) → None
-- get_submission(submission_id) → dict
-- list_by_status(status) → list[dict]
+- Owns the `submission_records` table.
+- `delivery_status` values: `"pending"`, `"sent"`, `"failed"`.
+- `list_by_status` raises `InvalidDeliveryStatus` on unrecognised values. A typo must not silently return an empty list when the caller expected failures.
+- Must never: send emails, import engine modules, or make retry decisions.
 
-delivery_status values: "pending", "sent", "failed"
-list_by_status raises InvalidDeliveryStatus on unrecognised values — a typo
-must not silently return an empty list when the caller expected failures.
+### Email Service (`email_service.py`)
 
-delivery_email is stored at submission time from the practice record, not
-looked up later. This means the audit trail reflects where the form was
-actually sent, even if the practice email is updated afterwards.
+- Formats `ClinicalOutput` as a plain text email and sends via SMTP.
+- In `DEV_MODE`, skips sending and logs the full email to stdout instead.
+- `contact_preferences` is an optional dict passed through from the finish payload. When present, a contact preferences section is appended to the email body. Fields within it are omitted if null or empty — they are never printed as `"None"`. Validation of this dict happens upstream in `request_validation.py`, not here.
+- `contact_preferences` is a plain dict, not a typed dataclass. It is presentation-only data with no clinical significance. Read `email_service.py` directly for the current expected fields.
+- Raises `EmailDeliveryError` on any SMTP failure. The error message is suitable for storage in `submission_records.delivery_error`.
+- Must never: access the database, update delivery status, import engine modules, or retry on failure.
 
-This module must never:
-- Send emails (that belongs in email_service)
-- Import engine modules
-- Make retry decisions (that belongs in the calling layer)
+---
 
-### email_service.py — Clinical output email delivery
+## Startup Validation (enforced in `main.py`)
 
-Responsibilities:
-- Format clinical output as a plain text email body
-- Send via SMTP in production mode
-- Log to stdout in DEV_MODE without sending
+These conditions abort startup rather than silently degrade:
 
-Configuration via environment variables:
-- SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASSWORD, EMAIL_FROM
-- SMTP_TIMEOUT (default 30 seconds)
-- DEV_MODE=1: skips sending, logs full email content to stdout
-
-Public interface:
-- send_clinical_output(to_email, condition_label, clinical_output,
-  submission_id, contact_preferences=None) → None
-
-contact_preferences is an optional dict passed through from the finish
-payload. When present, a CONTACT PREFERENCES section is appended to the
-email body after the clinical content. When absent or None, the section
-is omitted entirely. Null optional fields within the block (phone_number,
-best_time_to_call, usual_doctor_name) are omitted line-by-line rather
-than printed as "None".
-
-contact_preferences is accepted as a plain dict, not a typed dataclass.
-It is presentation-only data with no clinical significance and no need
-for engine-level typing. The email service is not responsible for
-validating it — that is done upstream in request_validation.py.
-
-Raises EmailDeliveryError on any SMTP failure. The error message is
-suitable for storage in submission_records.delivery_error.
-
-Email body uses clinical_output.question_labels for human-readable answer
-labels. Falls back to the raw answer_key if a label is missing.
-
-This module must never:
-- Access the database
-- Update delivery status (that belongs in submission_repository)
-- Import engine modules or condition_registry
-- Retry on failure
+- `PRACTICE_ID` env var not set
+- Database contains more than one practice
+- `PRACTICE_ID` does not match any practice in the database
+- Practice has no email address
+- SMTP env vars not set in production mode
