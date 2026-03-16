@@ -1,6 +1,29 @@
-## This document covers the module descriptions for the core engine modules: form_logic.py, runtime_state.py, ruleset.py, engine_adapters.py and condition_registry.py
+# Core Data Flows
 
-### form_logic.py — Deterministic functional core
+## Form Initialisation Flow:
+* Load ruleset
+* Initialise RuntimeState
+* Extract encoder definitions and mappings
+* Run encoder (if free text present)
+* Apply encoder mapping
+* Return canonical RuntimeState
+
+## Form Submission Flow:
+* Load the latest RuntimeState version for the session
+* Validate version consistency (optimistic concurrency)
+* Apply patient updates
+* Normalise encoder provenance
+* Validate completeness of required answers
+* Project RuntimeState → ExplicitAnswers
+* Evaluate safety rules using the safety engine
+* If any safety rules are triggered: Submission is blocked, and Safety messages are returned.
+* Persist a new, versioned RuntimeState
+* Generate ClientStateView projection
+* Constraint: Each submission produces exactly one new RuntimeState version and exactly one safety evaluation.
+
+# Modules:
+
+## form_logic.py — Deterministic functional core
 
 Responsibilities:
 * Initialise runtime state (including answer_type from ruleset)
@@ -22,7 +45,7 @@ Function names:
 * normalise_encoder_provenance(runtime) → None (mutates)
 * validate_required_answers(runtime) → None (raises ValueError)
 
-### runtime_state.py — Canonical runtime data contracts
+## runtime_state.py — Canonical runtime data contracts
 
 Defines the shape of all in‑flight state.
 
@@ -40,7 +63,7 @@ Properties:
 
 This module defines what state can exist, not how it is used.
 
-### ruleset.py — Clinical definitions and extraction metadata
+## ruleset.py — Clinical definitions and extraction metadata
 
 Responsibilities:
 * Load rulesets from JSON
@@ -53,7 +76,7 @@ Rules:
 * Encoder metadata lives in the ruleset
 * All mappings are explicit and precomputed
 
-### engine_adapters.py — Orchestration layer
+## engine_adapters.py — Orchestration layer
 
 Responsibilities:
 * Wire together: ruleset loading, encoder, form logic, projection,
@@ -77,7 +100,7 @@ metadata. The condition_label needed for ClientStateView is passed in
 explicitly by the HTTP layer. The clinical engine operates exactly as
 if presentation metadata never existed.
 
-### condition_registry.py — Condition discovery and presentation
+## condition_registry.py — Condition discovery and presentation
 
 Responsibilities:
 * Load all ruleset JSON files from the data directory at startup
