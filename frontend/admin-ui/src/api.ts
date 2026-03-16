@@ -5,7 +5,7 @@
  * The server validates this token via admin_context.py.
  */
 
-import type { ConditionSummary, AvailabilityConfig } from "./types";
+import type { ConditionSummary, AvailabilityConfig, AvailabilityException } from "./types";
 
 async function apiFetch(
   path: string,
@@ -174,4 +174,66 @@ export async function deleteOverride(
     throw new Error(await extractErrorDetail(res));
   }
   return (await res.json()) as AvailabilityConfig;
+}
+
+// ---------------------------------------------------------------------------
+// Per-date exceptions
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetches all exceptions on or after today (server determines today
+ * in Europe/London time). Ordered by date ascending.
+ */
+export async function fetchExceptions(
+  token: string
+): Promise<AvailabilityException[]> {
+  const res = await apiFetch("/admin/availability/exceptions", token);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  const data = await res.json();
+  return data.exceptions as AvailabilityException[];
+}
+
+/**
+ * Create or update an exception for a specific date.
+ * Returns the stored exception.
+ */
+export async function putException(
+  token: string,
+  date: string,
+  exception: {
+    exception_type: string;
+    open_time: string | null;
+    close_time: string | null;
+    note: string | null;
+  }
+): Promise<AvailabilityException> {
+  const res = await apiFetch(
+    `/admin/availability/exceptions/${encodeURIComponent(date)}`,
+    token,
+    {
+      method: "PUT",
+      body: JSON.stringify(exception),
+    }
+  );
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res));
+  }
+  return (await res.json()) as AvailabilityException;
+}
+
+/**
+ * Delete an exception for a specific date. Idempotent.
+ */
+export async function deleteException(
+  token: string,
+  date: string
+): Promise<void> {
+  const res = await apiFetch(
+    `/admin/availability/exceptions/${encodeURIComponent(date)}`,
+    token,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res));
+  }
 }
