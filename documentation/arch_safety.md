@@ -35,6 +35,14 @@ For the MVP:
 * Blocking is explicit and transparent to the patient
 * This is a medically defensible design choice and prevents unsafe overnight submissions.
 
+### Validation
+* Safety engine receiving anything other than ExplicitAnswers
+* Safety evaluation attempted before projection
+* Safety rules referencing keys absent from projected answers
+* Projection omitting any answer_key
+* Safety rule referencing absent or invalid answer_key
+* Invalid rule expressions
+
 ## Modules
 
 ### safety_engine.py
