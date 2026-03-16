@@ -1,47 +1,4 @@
-## 6. Safety architecture (blocking, isolated)
 
-Safety rules live in the ruleset.
-Safety evaluation is performed by a dedicated safety engine that:
-Consumes explicit answers only
-Never sees RuntimeState, AnswerState, provenance, or encoder output
-Operates on an immutable input structure
-Is deterministic, inspectable, and unit-testable in isolation
-
-### 6.1 Explicit answer semantics
-
-Safety consumes an ExplicitAnswers structure with the following semantics:
-True / False → explicitly answered
-None → unknown / unanswered
-(None is never treated as False)
-Encoder-derived answers (encoder) are never visible to safety.
-Encoder-confirmed answers (encoder_confirmed) are treated as explicit only after submission normalisation.
-Encoder-corrected answers (encoder_corrected) are always treated as explicit — the patient actively overrode an encoder suggestion, which is the strongest possible signal of explicit intent.
-
-### 6.2 Safety engine responsibilities
-
-The safety engine:
-* Evaluates safety rules against explicit answers
-* Returns structured safety outcomes (rule IDs + message text)
-* Does not decide whether submission is allowed
-* Blocking behaviour is enforced only by the pipeline, based on safety output.
-
-### 6.3 Blocking semantics
-
-For the MVP:
-* Any triggered safety rule blocks form submission
-* The patient is prevented from submitting until answers are changed
-* Blocking is explicit and transparent to the patient
-* This is a medically defensible design choice and prevents unsafe overnight submissions.
-
-## 7. State
-
-It is a session-backed, server-owned system with RuntimeState persistence.
-There is:
-No conversational memory
-No cross-session state
-No per-user identity
-No hidden workflow
-A session is defined as a server-owned, versioned RuntimeState identified by a runtime_id.
 
 ### 7.1 Canonical RuntimeState (lossless, backend-owned)
 Purpose:
