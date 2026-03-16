@@ -130,43 +130,6 @@ availability_repo = AvailabilityRepository(DATABASE_URL)
 availability_repo stored in app.state.availability_repo so the admin
 router can access it via request.app.state
 
----
-
-
-
-### 3.18 presentation_service.py — Patient-facing presentation composition
-
-Responsibilities:
-- Compose patient-facing presentation from three sources:
-  1. Universal safety warning (hardcoded constant, not editable)
-  2. Practice-specific signposting (from practice_repository)
-  3. Condition presentation (label, free_text_prompt from condition_registry)
-- Provide a single access point for all pre-form presentation data
-
-Public interface:
-- get_patient_presentation(condition_id, practice_id) → dict
-
-practice_id is always required. This service is deployed in a single-tenant
-context; there is no concept of a missing practice.
-
-Output keys:
-- label: str
-- free_text_prompt: str | None
-- universal_safety_warning: str
-- practice_signposting: str | None  (sanitised HTML string, or None if not configured)
-
-This module performs COMPOSITION, not MERGING. Each source populates a
-distinct field. There is no field-level override logic.
-
-This module must never:
-- Access clinical data
-- Modify any data
-- Handle authentication (Phase 1B)
-
-
-
-
-
 ## 4. Data flow
 
 ### 4.1 Form initialisation
