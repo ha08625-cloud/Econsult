@@ -1,4 +1,4 @@
-# Admin Portal — Vite Migration Plan (provisional)
+# Admin Portal — Vite Migration Plan (completed)
 
 ## What this plan does and does not do
 
