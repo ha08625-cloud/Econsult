@@ -24,9 +24,6 @@ COPY main.py ./
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
 
-# Copy admin portal
-COPY admin/ ./admin/
-
 # Copy data files (condition JSON rulesets)
 COPY data/ ./data/
 
