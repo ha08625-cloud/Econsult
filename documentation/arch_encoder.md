@@ -1,4 +1,39 @@
-## This document covers the architecture for the encoder modules and the ML boundary: `encoder_mapping.py`, `encoder_stub.py`, `encoder_contracts.py`
+# This document covers the architecture for the encoder modules and the ML boundary: `encoder_mapping.py`, `encoder_stub.py`, `encoder_contracts.py`
+
+## Encoder logic
+
+Encoders:
+* Run once on initial free text
+* Output partial {answer_key: true|false|null} map
+* Do not see questions
+* Use `encoder_prompt` as a clinical definition, not an instruction
+
+Encoder output:
+* Is clearly marked as suggested
+* Can be overridden
+* Are advisory and non-authoritative
+* Are frozen at extraction time and may be confirmed or corrected by the patient
+* On submission, any remaining encoder-derived values are treated as explicitly confirmed or explicitly corrected
+* Encoder provenance is retained for audit and debugging only and is never exposed to safety logic or clinical outputs
+
+Allowed answer sources:
+unanswered
+encoder
+encoder_confirmed
+encoder_corrected
+patient
+
+Allowed transitions:
+From	To	Allowed
+unanswered	encoder	yes
+unanswered	patient	yes
+encoder	encoder_confirmed	yes
+encoder	encoder_corrected	yes
+encoder_confirmed	encoder_corrected	yes
+patient	encoder	no
+patient	encoder_confirmed	no
+
+## Modules
 
 ### encoder_stub.py — Replaceable encoder façade
 
