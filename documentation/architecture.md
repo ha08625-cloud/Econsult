@@ -1392,10 +1392,7 @@ The database is Postgres, managed by Railway as an add-on service.
 The connection string is injected into the application as `DATABASE_URL`.
 The previous SQLite approach (`runtime.db`, `DB_PATH`) has been removed.
 
-All three repositories (RuntimeStateRepository, PracticeRepository,
-SubmissionRepository) accept `database_url: str` in their constructors.
-The shared connection module `app/core/db.py` is the only file in the
-codebase that imports psycopg2.
+All four repositories (RuntimeStateRepository, PracticeRepository, SubmissionRepository, AvailabilityRepository) accept database_url: str in their constructors.
 
 #### Schema migrations (Alembic)
 
@@ -1523,3 +1520,183 @@ The hosted demo runs with DEV_MODE=1. This means:
 This is intentional for a demonstration deployment. DEV_MODE must be
 removed and SMTP variables configured before the app is used for any
 real clinical submissions.
+
+## Section 16 — Availability enforcement
+
+### 16.1 Overview
+
+The availability system controls when the patient-facing form is open or
+closed. It evaluates the current time against the practice's configured
+schedule and returns a result that the frontend and form init endpoint
+both consume.
+
+The system is designed around a single principle: a failure in the
+availability system must never prevent a patient from accessing the form.
+Every failure path defaults to open.
+
+### 16.2 Module responsibilities
+
+#### availability_models.py (app/models/)
+
+Data shapes only. No logic, no IO.
+
+AvailabilityConfig: represents the stored row from practice_availability.
+Constructed via `from_row(dict)` from the repository output. Extended in
+Stage 3 with override fields.
+
+AvailabilityResult: the return type of `evaluate_availability()`. Contains
+`is_open`, `closed_message`, and `after_hours_notice`. Both `GET /availability`
+and the availability check inside `POST /form/init` consume this type.
+
+#### availability_repository.py (app/repositories/)
+
+Database access only. No validation logic. No imports from service modules.
+
+Methods:
+- `init_availability(practice_id)`: inserts a default row using
+  `INSERT ... ON CONFLICT DO NOTHING`. Called once at startup after the
+  practice row exists.
+- `get_availability(practice_id)`: returns all columns as a dict. Raises
+  `ValueError` if the row does not exist.
+- `set_availability(...)`: upserts the full config. No validation — the
+  caller is responsible for calling `validate_availability_config()` first.
+
+#### availability_service.py (app/services/)
+
+Pure logic. No database access. No imports from any project module except
+`app.models.availability_models`. Fully testable without a database.
+
+`validate_availability_config()`: raises `ValueError` if `weekly_open_days`
+contains invalid values or `open_time == close_time`. Does not validate
+`open_time < close_time` (reversed times are a self-evident data entry
+error given the domain constraint against overnight hours). Does not
+validate empty `weekly_open_days` (that is a UI concern only).
+
+`evaluate_availability(config, now_utc)`: converts UTC to Europe/London
+time, checks the day and time against the config, and returns an
+`AvailabilityResult`. When `is_active` is false, always returns open with
+no messages.
+
+Dependency rules:
+- availability_service must NOT import any repository module
+- availability_service must NOT import any clinical engine module
+- availability_service must NOT perform any IO
+
+### 16.3 Fail-open design
+
+The fail-open principle applies at every boundary:
+
+`GET /availability`: if the database raises an exception, the exception
+propagates and FastAPI returns HTTP 500. The frontend treats any non-200
+response as fail-open and shows the form as normal.
+
+`POST /form/init`: the availability check is wrapped in a try/except. If
+any exception is raised during the check, it is logged and the request
+proceeds as if the practice is open. If the check succeeds and the
+practice is closed, the endpoint returns HTTP 503 with the closed message.
+
+`POST /form/update` and `POST /form/finish`: these do not check
+availability. Once a patient has been granted a session via `POST /form/init`,
+they can complete and submit the form regardless of whether the practice
+has since closed. This is the humane choice — a patient halfway through
+a form should not have their work discarded.
+
+Frontend availability fetch failure: if `GET /availability` fails for any
+reason (network error, any non-200 response including 500), the frontend
+shows the form as normal with no closed message banner and no after-hours
+notice.
+
+### 16.4 is_active = false behaviour
+
+When `is_active` is false, the practice has not opted in to schedule
+enforcement. `GET /availability` returns `is_open: true` with null
+messages. The form behaves as if availability does not exist. This is the
+default state after `init_availability()` inserts the default row.
+
+### 16.5 After-hours notice
+
+When the practice is open and `is_active` is true, the service constructs
+a notice string from the config's `close_time`: "Please note: forms
+submitted after [HH:MM] will be reviewed on the next working day." The
+time is formatted in 24-hour notation, the standard convention for UK
+NHS systems. When the practice is closed, `is_active` is false, or there
+is no meaningful close time to reference, `after_hours_notice` is null.
+
+### 16.6 Timezone handling
+
+All availability evaluation converts UTC to Europe/London time using
+`zoneinfo.ZoneInfo("Europe/London")`. This correctly handles GMT/BST
+transitions. The `tzdata` package is in `requirements.txt` to ensure
+reliable timezone data on the Railway container.
+
+`open_time` and `close_time` are stored as TIME columns in Postgres.
+psycopg2 maps these to `datetime.time` objects automatically on read.
+These times are always interpreted in Europe/London local time.
+
+Overnight opening hours are not supported. An overnight service (where
+`open_time > close_time`) is by definition an urgent or out-of-hours
+service with different clinical logic. The evaluation assumes
+`open_time < close_time` and this is an intentional domain constraint.
+
+### 16.7 Database schema
+
+Table `practice_availability` (created by migration 0002):
+
+    practice_id      TEXT PRIMARY KEY REFERENCES practices(practice_id)
+    is_active        BOOLEAN NOT NULL DEFAULT false
+    weekly_open_days TEXT[]  NOT NULL DEFAULT '{}'
+    open_time        TIME   NOT NULL DEFAULT '08:00'
+    close_time       TIME   NOT NULL DEFAULT '18:30'
+    closed_message   TEXT
+
+The `weekly_open_days` column has a CHECK constraint using the Postgres
+`<@` operator to assert that every element is one of the seven valid day
+abbreviations (mon, tue, wed, thu, fri, sat, sun). Application-layer
+validation in `availability_service.py` runs first and produces a better
+error message; the database constraint is the backstop.
+
+### 16.8 Startup sequence
+
+The startup sequence in `main.py` is:
+
+1. `alembic_upgrade()` — runs pending migrations (creates the table if
+   migration 0002 has not yet run)
+2. `_validate_startup(practice_repo)` — seeds the practice row if absent
+3. `availability_repo.init_availability(practice_id)` — inserts the
+   default availability row if absent
+
+There is never a state where the availability row does not exist after
+startup.
+
+### 16.9 Admin endpoints
+
+`GET /admin/availability`: returns the raw config dict with times
+formatted as HH:MM strings. Requires admin auth. Does not call
+`evaluate_availability`.
+
+`PUT /admin/availability`: accepts the full config, validates via the
+service layer, persists via the repository, and returns the updated config.
+Logs a warning if `is_active` is true and `weekly_open_days` is empty.
+Returns HTTP 400 if validation fails.
+
+### 16.10 Banned imports
+
+The following import rules apply to the availability modules:
+
+- availability_service must NOT import any repository or IO module
+- availability_repository must NOT import availability_service
+- availability_models must NOT import any service or repository module
+- admin_router may import availability_service for validation only
+- Clinical engine modules (form_logic, safety_engine, encoder_mapping,
+  encoder_stub, projection, serialisation) must NOT import any
+  availability module — the clinical engine has no awareness of
+  practice scheduling
+
+### 16.11 Testing
+
+Unit tests for `availability_service.py` live in
+`tests/test_availability_service.py`. They test the pure logic with no
+database. All tests construct `AvailabilityConfig` directly and pass
+controlled UTC datetimes.
+
+Run with: `python -m tests.test_availability_service`
