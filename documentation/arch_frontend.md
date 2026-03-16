@@ -1,6 +1,18 @@
 * **Scope:** Stateless React rendering, condition search, combobox, fetching APIs.  This document covers frontend
 * **Key Files:** `App.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`
 
+## Screen 0: Pre-Session Safety Gate (Strict Constraints)
+
+**CRITICAL RULE:** The Safety Gate is a HARD BLOCK, not an advisory. A patient must actively acknowledge the warning before accessing any form logic.
+
+* **API Contract:** Frontend calls `GET /safety-warning` on mount.
+    * No authentication, condition ID, or session is required.
+    * Returns the `UNIVERSAL_SAFETY_WARNING` constant defined in `presentation_service.py`.
+* **UI Enforcement:** The "Continue" button MUST remain disabled until the "I confirm..." checkbox is ticked.
+* **Validation UX:** While unticked, display the red hint: *"If any of the above apply to you, please call 999 or go to A&E immediately. Do not use this form."*.
+* **Error Handling:** Fetch failures show an inline error with a "Try again" button. (Note: No state is lost because no session exists yet).
+* **API Quirk (Do not "fix"):** `GET /conditions/{id}/presentation` still returns `universal_safety_warning` in its payload for backend compatibility, but the frontend MUST ignore it and never display it on Screen 2.
+
 ## Frontend Error Handling Constraints
 
 **CORE INVARIANT:** Patient input MUST NEVER be destroyed by a recoverable error. Error classification happens at the API boundary, never in component logic.
