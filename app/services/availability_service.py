@@ -5,11 +5,14 @@ No database access. No imports from any project module except
 app.models.availability_models. Fully testable without a database.
 
 Functions:
-- validate_availability_config: raises ValueError on invalid input
+- validate_availability_config: raises ValueError on invalid config input
+- validate_override: raises ValueError on invalid override input
+- deactivation_clears_override: returns True if override should be cleared
 - evaluate_availability: returns AvailabilityResult from config + current time
 """
 
 import datetime
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from app.models.availability_models import AvailabilityConfig, AvailabilityResult
@@ -52,6 +55,60 @@ def validate_availability_config(
         )
 
 
+def validate_override(
+    status: str,
+    expires_at: datetime.datetime | None,
+    now_utc: datetime.datetime,
+) -> None:
+    """
+    Validate override parameters.
+
+    Raises ValueError if:
+    - status is not "open" or "closed"
+    - expires_at is None
+    - expires_at is timezone-naive (no tzinfo)
+    - expires_at <= now_utc (must be in the future)
+    - expires_at > now_utc + 24 hours (must not exceed 24 hours ahead)
+
+    The valid window is: now_utc < expires_at <= now_utc + 24 hours.
+    """
+    if status not in ("open", "closed"):
+        raise ValueError(
+            f"override status must be 'open' or 'closed', got '{status}'"
+        )
+
+    if expires_at is None:
+        raise ValueError("override expires_at is required")
+
+    if expires_at.tzinfo is None:
+        raise ValueError(
+            "override expires_at must be timezone-aware. "
+            "Submit as a UTC timestamp or with an explicit timezone offset."
+        )
+
+    if expires_at <= now_utc:
+        raise ValueError(
+            "override expires_at must be in the future"
+        )
+
+    max_expiry = now_utc + timedelta(hours=24)
+    if expires_at > max_expiry:
+        raise ValueError(
+            "override expires_at must not exceed 24 hours from now"
+        )
+
+
+def deactivation_clears_override(is_active: bool) -> bool:
+    """
+    Return True if the override should be cleared.
+
+    When is_active is set to false, any existing override is cleared to
+    prevent stale override data from silently taking effect if the admin
+    later re-enables is_active.
+    """
+    return not is_active
+
+
 def evaluate_availability(
     config: AvailabilityConfig,
     now_utc: datetime.datetime,
@@ -62,13 +119,12 @@ def evaluate_availability(
     Takes a typed AvailabilityConfig and the current UTC datetime.
     Returns an AvailabilityResult.
 
-    Logic:
+    Evaluation order:
     1. If is_active is false: always open, no messages.
-    2. Convert now_utc to Europe/London time.
-    3. Check day is in weekly_open_days.
-    4. Check time is >= open_time and < close_time.
-    5. If both pass: open with after-hours notice.
-    6. Otherwise: closed with closed_message.
+    2. If an active override exists (override_status not null, expires_at > now):
+       - "open": return open with after-hours notice from config close_time.
+       - "closed": return closed with override_message (or fallback to closed_message).
+    3. Otherwise: evaluate weekly schedule.
     """
     if not config.is_active:
         return AvailabilityResult(
@@ -77,6 +133,37 @@ def evaluate_availability(
             after_hours_notice=None,
         )
 
+    # --- Override check ---
+    if (
+        config.override_status is not None
+        and config.override_expires_at is not None
+        and config.override_expires_at > now_utc
+    ):
+        if config.override_status == "open":
+            # Override forces open. After-hours notice is still constructed
+            # from the config's close time because the override is temporary
+            # and the patient should still be aware of the normal schedule.
+            after_hours_notice = _build_after_hours_notice(config.close_time)
+            return AvailabilityResult(
+                is_open=True,
+                closed_message=None,
+                after_hours_notice=after_hours_notice,
+            )
+        else:
+            # Override forces closed. Use override_message if not None,
+            # fall back to closed_message. Explicit `is not None` check —
+            # an empty string "" is a valid configured message.
+            if config.override_message is not None:
+                message = config.override_message
+            else:
+                message = config.closed_message
+            return AvailabilityResult(
+                is_open=False,
+                closed_message=message,
+                after_hours_notice=None,
+            )
+
+    # --- Weekly schedule ---
     now_london = now_utc.astimezone(LONDON_TZ)
     current_day = _WEEKDAY_TO_ABBR[now_london.weekday()]
     current_time = now_london.time()
