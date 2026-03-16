@@ -1720,6 +1720,13 @@ AvailabilityResult: the return type of `evaluate_availability()`. Contains
 `is_open`, `closed_message`, and `after_hours_notice`. Both `GET /availability`
 and the availability check inside `POST /form/init` consume this type.
 
+`AvailabilityException`: represents a single row from the
+`practice_availability_exceptions` table. Fields: `practice_id`,
+`exception_date` (date), `exception_type` ("closed" or "custom_hours"),
+`open_time` (optional time), `close_time` (optional time), `note`
+(optional string). Has a `from_row(dict)` classmethod for construction
+from a database row.
+
 #### availability_repository.py (app/repositories/)
 
 Database access only. No validation logic. No imports from service modules.
@@ -1739,6 +1746,17 @@ Methods:
   is responsible for calling `validate_override()` first.
 - `clear_override(practice_id)`: sets all three override columns to
   NULL. Idempotent — no error if no override was active.
+
+- `get_exceptions(practice_id, from_date)`: returns all exception rows
+  on or after `from_date`, ordered by date ascending. Used both by the
+  evaluation path (which checks only today's exception) and by
+  `GET /admin/availability/exceptions` (which displays all upcoming
+  exceptions to the admin).
+- `set_exception(practice_id, exception_date, exception_type, open_time,
+  close_time, note)`: upserts a single exception row. No validation —
+  the caller is responsible for calling `validate_exception()` first.
+- `delete_exception(practice_id, exception_date)`: deletes a single
+  exception row. Idempotent — no error if the row does not exist.
 
 #### availability_service.py (app/services/)
 
@@ -1761,13 +1779,30 @@ is false, signalling that overrides should be cleared on deactivation.
 The admin router calls this after PUT /admin/availability and, if true,
 calls clear_override on the repository.
 
-`evaluate_availability(config, now_utc)`: evaluation order is:
+`validate_exception(exception_type, open_time, close_time)`: raises
+`ValueError` if exception_type is not "closed"/"custom_hours"; if
+custom_hours and either time is null; if closed and either time is not
+null; if open_time == close_time; or if open_time >= close_time
+(overnight hours are not supported — a reversed range would silently
+never match any time in the evaluation logic, so this is rejected
+explicitly).
+
+`evaluate_availability(config, now_utc, exceptions=None)`: the
+`exceptions` parameter defaults to `None`. Inside the function body,
+`None` is replaced with an empty list. This avoids the mutable default
+argument trap. The signature is backwards-compatible — existing callers
+from Stage 3 continue to work without modification. Evaluation order is:
 (1) is_active false: return open with no messages.
 (2) Active override (override_status not null and expires_at > now_utc):
 force-open returns open with after-hours notice; force-closed returns
 closed with override_message (falling back to closed_message via
 explicit is-not-None check).
-(3) Weekly schedule: converts UTC to Europe/London, checks day and time.
+(3) Per-date exception for today (Europe/London date): if exception_type
+is "closed", return closed with config closed_message; if "custom_hours",
+evaluate exception open_time/close_time against current London time.
+After-hours notice is constructed from the exception's close_time for
+custom_hours, or null for closed exceptions.
+(4) Weekly schedule: converts UTC to Europe/London, checks day and time.
 
 Dependency rules:
 - availability_service must NOT import any repository module
@@ -1793,6 +1828,13 @@ they can complete and submit the form regardless of whether the practice
 has since closed. This is the humane choice — a patient halfway through
 a form should not have their work discarded.
 
+`POST /form/finish` now returns a `submitted_after_hours` boolean. After
+the existing finish logic completes, `check_availability` is called in a
+try/except. If the result's `is_open` is false, `submitted_after_hours`
+is true. If the check fails or the result is open,
+`submitted_after_hours` is false. Uncertainty must not alarm the patient.
+The response shape is: `{"submission_id": "...", "submitted_after_hours": true|false}`.
+
 Frontend availability fetch failure: if `GET /availability` fails for any
 reason (network error, any non-200 response including 500), the frontend
 shows the form as normal with no closed message banner and no after-hours
@@ -1813,6 +1855,12 @@ submitted after [HH:MM] will be reviewed on the next working day." The
 time is formatted in 24-hour notation, the standard convention for UK
 NHS systems. When the practice is closed, `is_active` is false, or there
 is no meaningful close time to reference, `after_hours_notice` is null.
+
+When a per-date exception with custom_hours is active and the practice
+is open, the after-hours notice is constructed from the exception's
+close_time, not the config's close_time. This reflects the actual
+closing time for that day. When a per-date exception with type "closed"
+is active, after_hours_notice is null (the practice is closed all day).
 
 ### 16.6 Timezone handling
 
@@ -1854,6 +1902,22 @@ abbreviations (mon, tue, wed, thu, fri, sat, sun). Application-layer
 validation in `availability_service.py` runs first and produces a better
 error message; the database constraint is the backstop.
 
+Table `practice_availability_exceptions` (created by migration 0004):
+ 
+    practice_id     TEXT NOT NULL REFERENCES practices(practice_id)
+    exception_date  DATE NOT NULL
+    exception_type  TEXT NOT NULL CHECK (exception_type IN ('closed', 'custom_hours'))
+    open_time       TIME
+    close_time      TIME
+    note            TEXT
+    PRIMARY KEY (practice_id, exception_date)
+ 
+The composite primary key ensures one exception per practice per date.
+`open_time` and `close_time` are nullable — they are required for
+custom_hours exceptions and must be null for closed exceptions.
+Application-layer validation in `availability_service.py` enforces this;
+the database does not have a cross-column constraint.
+
 ### 16.8 Startup sequence
 
 The startup sequence in `main.py` is:
@@ -1866,6 +1930,25 @@ The startup sequence in `main.py` is:
 
 There is never a state where the availability row does not exist after
 startup.
+
+`GET /admin/availability/exceptions`: returns all exceptions on or after
+today's date (Europe/London time), ordered by date ascending. This
+includes today's exception if one exists — the admin needs to verify
+what is currently active. The `from_date` passed to the repository is
+today in Europe/London time, the same as the evaluation path. Requires
+admin auth.
+ 
+`PUT /admin/availability/exceptions/{date}`: creates or updates an
+exception for the given date (YYYY-MM-DD format in the URL path).
+Accepts `exception_type` ("closed" or "custom_hours"), `open_time` and
+`close_time` (HH:MM strings or null), and `note` (string or null).
+Validates via `validate_exception` in the service layer. Returns the
+stored exception. Returns HTTP 400 if validation fails or the date
+format is invalid.
+ 
+`DELETE /admin/availability/exceptions/{date}`: deletes the exception
+for the given date. Idempotent — no error if no exception existed.
+Returns 204 No Content.
 
 ### 16.9 Admin endpoints
 
@@ -1987,5 +2070,70 @@ the patient should still be aware of the normal schedule.
 | Migration | Description |
 |---|---|
 | 0001 | Initial schema: four existing tables with IF NOT EXISTS |
+| 0002 | availability table |
+| 0003 | availability override |
+| 0004 | practice_availability_exceptions table (per-date exceptions) |
+
+### 16.14 Per-date exceptions design
+ 
+The exception system allows an admin to define per-date schedule
+overrides for specific dates — either closing the practice entirely or
+running custom hours. This is designed for bank holidays, staff training
+days, or one-off extended hours.
+ 
+#### Exception types
+ 
+`closed`: the practice is closed all day. `open_time` and `close_time`
+must be null. The service returns `closed_message` from the config (not
+from the exception — exceptions do not carry their own closed message).
+ 
+`custom_hours`: the practice is open during different hours than the
+weekly schedule. Both `open_time` and `close_time` are required.
+Overnight hours are not supported (same domain constraint as the weekly
+schedule). The after-hours notice is constructed from the exception's
+close_time, not the config's close_time.
+ 
+#### Evaluation priority
+ 
+The evaluation order is: override > exception > weekly schedule. An
+active override always takes priority over an exception on the same day.
+This is intentional — if an admin sets a force-open override during a
+bank holiday exception, the override wins.
+ 
+#### Exception date lookup
+ 
+`get_exceptions()` is called with today's date in Europe/London time,
+not UTC. Using the UTC date would miss exceptions that begin at midnight
+London time on days not yet reached in UTC. The same repository method
+is used both by the evaluation path and by the admin GET endpoint. The
+evaluation logic takes the first matching entry for today and ignores
+the rest.
+ 
+#### check_availability orchestration function
+ 
+`check_availability(availability_repo, practice_id, now_utc)` is
+defined in `main.py`. It owns the full evaluation pipeline: fetch
+config, compute today's London date, fetch exceptions, call
+`evaluate_availability`. This function does not belong in
+`availability_service.py` because the service layer has no database
+access. Both `GET /availability` and the availability check inside
+`POST /form/init` call `check_availability`. The fail-open try/except
+wrapping lives in `main.py` around the call to `check_availability`.
+ 
+#### Submitted-after-hours flag
+ 
+`POST /form/finish` returns `submitted_after_hours` (boolean). After
+the existing finish logic, `check_availability` is called in a
+try/except. If the result's `is_open` is false, the flag is true. If
+the check fails or the result is open, the flag is false. The frontend
+uses this flag to display an appropriate confirmation message on the
+submission screen. Uncertainty defaults to false — must not alarm the
+patient.
+ 
+#### Note field
+ 
+Each exception has an optional `note` field (free text). This is for
+admin reference only (e.g. "Bank holiday", "Staff training afternoon").
+The note is not shown to patients and is not used in evaluation logic.
 | 0002 | practice_availability table (weekly schedule, closed message) |
 | 0003 | Three override columns on practice_availability |
