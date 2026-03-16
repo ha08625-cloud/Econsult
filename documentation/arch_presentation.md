@@ -1,21 +1,36 @@
-## Pre-Session Presentation Architecture
+# Pre-Session Presentation
 
-This domain handles the read-only composition of data required by the frontend before a clinical session (`RuntimeState`) is initialized. 
+**LLM INSTRUCTIONS:** This domain is small and stable. Read `presentation_service.py` directly for the return shape and method signatures.
 
-### `presentation_service.py` Boundaries
-* **Composition, Not Merging:** This module performs COMPOSITION, not MERGING. Each source (universal warning, practice signposting, condition presentation) populates a distinct field. There is NO field-level override logic.
-* **Strict Isolation:** This module MUST NEVER access clinical data, modify any data, or handle authentication.
-* **Tenancy Assumption:** The service is deployed in a single-tenant context. `practice_id` is always required; there is no concept of a missing practice.
+---
 
-## Presentation Data Flow
-The system strictly separates the universal safety warning from condition-specific presentation so the safety gate occurs before any form interaction.
+## Scope
 
-* **Step 1: Pre-session Safety Gate (Screen 0)**
-  * Endpoint: `GET /safety-warning`
-  * Action: Returns the universal safety warning constant.
-  * UI Rule: The frontend renders the warning and strictly requires checkbox confirmation before the patient can proceed to condition selection.
+Read-only composition of data required by the frontend before a clinical session (`RuntimeState`) is initialised. Covers the universal safety warning and per-condition presentation.
 
-* **Step 2: Condition Presentation (Screen 2)**
-  * Endpoint: `GET /conditions/{id}/presentation`
-  * Action: `presentation_service` composes a response by fetching the condition presentation from the registry and practice signposting from the database. 
-  * API Note: `universal_safety_warning` is still returned in this payload for API backwards compatibility, but the frontend ignores it here.
+**Key files:** `presentation_service.py`
+
+---
+
+## Design Decisions & Invariants
+
+### Composition, not merging
+`PresentationService` composes data from multiple sources into distinct fields. There is no field-level override logic — practice signposting and condition presentation occupy separate slots in the output. This is a deliberate constraint: if override logic were introduced, the boundary between clinical content and practice content would erode.
+
+### Universal safety warning is hardcoded
+`UNIVERSAL_SAFETY_WARNING` is a module-level constant, not a database value. It is intentionally not editable by practices. It is served standalone via `GET /safety-warning` and also included in `GET /conditions/{id}/presentation` for API backwards compatibility (the frontend ignores it in the latter).
+
+### Single-tenant contract
+`practice_id` is always required. There is no concept of a missing or optional practice. It is resolved from `app.state` at the HTTP layer and passed in explicitly.
+
+### Two-step pre-session flow
+1. `GET /safety-warning` — returns the universal warning. The frontend requires checkbox confirmation before the patient can proceed. This gate happens before condition selection.
+2. `GET /conditions/{id}/presentation` — returns condition label, free-text prompt, universal warning (backwards compat), and practice signposting. Raises `ConditionNotFound` for unknown condition IDs.
+
+---
+
+## What This Module Must Never Do
+
+- Access clinical data (rulesets, `RuntimeState`, answers, safety rules)
+- Modify any data — read-only composition only
+- Handle authentication
