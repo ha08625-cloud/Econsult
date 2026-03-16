@@ -19,4 +19,7 @@ export interface AvailabilityConfig {
   open_time: string;
   close_time: string;
   closed_message: string | null;
+  override_status: string | null;
+  override_expires_at: string | null;
+  override_message: string | null;
 }
