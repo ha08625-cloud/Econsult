@@ -132,7 +132,7 @@ export async function getConditions(): Promise<{
 export async function getConditionPresentation(
   conditionId: string
 ): Promise<ConditionPresentation> {
-  return getJson(`/BROKEN/${encodeURIComponent(conditionId)}/presentation`);
+  return getJson(`/conditions/${encodeURIComponent(conditionId)}/presentation`);
 }
 
 // ---------------------------------
