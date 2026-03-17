@@ -2,6 +2,11 @@
 
 **LLM INSTRUCTIONS:** This is the master map of the system. Do NOT assume architectural details. Use this document to understand the global invariants and locate the specific domain documentation (Spokes). Read the codebase files directly for implementation details (function signatures, schemas, etc.).  All codebase files exist in Claude's project files and are directly accessible.  Claude project files mostly have flat file names for simplicity - full paths are used only if there is ambiguity e.g. frontend/index.html vs frontend/admin-ui/index.html.  See file_structure.md for the definitive file structure
 
+## README
+* This system is an online medical consultation form.  This is strictly for use in UK GP surgeries, not Out Of Hours or emergency services and only for routine complaints - this should be reflected in design decisions.  
+* Current stage: prototype.  This means that we are actively building features and the form is not being used by real patients and contains no real data.  Hiding confidential data and authentication are not a priority at this stage because there is no confidential data in the databases anywhere.  All data is disposable
+* The initial build will be purely deterministic.  In later builds, we will introduce an ML encoder that will aid form filling but not make clinical decisions.  The system is designed so that the encoder modules only interact with the core system through a strictly defined API - this portion of the system is hexagonal, or plug and play.  The encoder modules are an optional extra
+
 ## 1. Project-Level Invariants (Strictly Enforced)
 
 These rules apply universally and MUST NOT be violated by any new feature or refactor:
