@@ -21,9 +21,4 @@ export default defineConfig({
       '/admin': 'http://localhost:8000',
     }
   },
-  test: {
-    environment: "jsdom",
-    setupFiles: "./src/test-setup.ts",
-    globals: true,
-  }
 })
