@@ -235,6 +235,7 @@ async def list_conditions():
 
 @app.get("/conditions/{condition_id}/presentation")
 async def get_presentation(condition_id: str):
+    raise Exception("test error")
     try:
         return presentation_service.get_patient_presentation(
             condition_id,
