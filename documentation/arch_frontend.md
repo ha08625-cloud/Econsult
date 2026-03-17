@@ -52,7 +52,9 @@ Two error states — the classification decision must be made at the API boundar
 ### `App.tsx`
 Owns all screen state and transitions. The only file that knows the screen order. Contains no clinical logic.
 
-The reset function (triggered on fatal error) manually clears every `useState` in the file. It carries an explicit per-variable checklist comment — if a new `useState` is added to `App.tsx`, it must also appear in that reset block.
+The reset function (triggered on fatal error) manually clears every `useState` in the file. It carries an explicit per-variable checklist comment directly above the reset block — if a new `useState` is added to `App.tsx`, it must also appear in that list. `presentationFetchTrigger` resets to `0`, not `null` — this is noted in the checklist comment.
+
+`App.tsx` imports layout wrappers from `layout.tsx` and helper functions from `helpers.ts`. It must not redefine anything that belongs in those modules.
 
 ### `helpers.ts`
 Pure functions with no React dependency: state initialisers and client-side validation. Nothing in this file should have side effects, make API calls, or import from any other local module except `types.ts`.
