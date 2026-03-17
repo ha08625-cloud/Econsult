@@ -28,7 +28,7 @@ export class ApiError extends Error {
   }
 }
 
- function friendlyErrorMessage(e: unknown): string {
+export function friendlyErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.status === 503 && e.detail) {
       // 503 from POST /form/init — practice is closed.
@@ -123,10 +123,16 @@ export async function getAvailability(): Promise<AvailabilityResult> {
 // Condition discovery (Screens 1-2)
 // ---------------------------------
 
+export async function getConditions(): Promise<{
+  conditions: ConditionSummary[];
+}> {
+  return getJson("/conditions");
+}
+
 export async function getConditionPresentation(
   conditionId: string
 ): Promise<ConditionPresentation> {
-  return getJson(`/BROKEN/${encodeURIComponent(conditionId)}/presentation`);
+  return getJson(`/conditions/${encodeURIComponent(conditionId)}/presentation`);
 }
 
 // ---------------------------------
