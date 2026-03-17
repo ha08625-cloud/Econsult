@@ -711,7 +711,7 @@ export default function App() {
             <button
               className="btn btn-secondary"
               disabled={isSubmitting}
-              onClick={() => setScreen(FREE_TEXT)}
+              onClick={() => setScreen("FREE_TEXT")}
             >
               Back
             </button>
