@@ -563,6 +563,13 @@ export default function App() {
 
         <div className="btn-row">
           <button
+            className="btn btn-secondary"
+            disabled={isSubmitting}
+            onClick={() => setScreen("SELECT_CONDITION")}
+          >
+            Back
+          </button>
+          <button
             className="btn btn-primary"
             disabled={isSubmitting}
             onClick={async () => {
@@ -701,6 +708,13 @@ export default function App() {
           {screenError && <InlineError message={screenError} />}
 
           <div className="btn-row">
+            <button
+              className="btn btn-secondary"
+              disabled={isSubmitting}
+              onClick={() => setScreen(FREE_TEXT)}
+            >
+              Back
+            </button>
             <button
               className="btn btn-primary"
               disabled={!allRequiredAnswered || isSubmitting}
