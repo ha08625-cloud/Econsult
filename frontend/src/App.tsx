@@ -583,7 +583,6 @@ export default function App() {
                 setEditableAnswers(initialiseEditableAnswers(res.client_state));
                 setAdditionalText(res.client_state.additional_text ?? "");
                 setPresentationState({ status: "loading" });
-                setSelectedConditionId(null);
                 setFreeText("");
                 setScreen("EDIT");
               } catch (e) {
