@@ -446,7 +446,12 @@ export default function App() {
               <ConditionCombobox
                 conditions={selectableConditions}
                 selectedId={selectedConditionId}
-                onChange={setSelectedConditionId}
+                onChange={(newId) => {
+                  if (newId !== selectedConditionId) {
+                    setFreeText("");
+                  }
+                  setSelectedConditionId(newId);
+                }}
               />
             </div>
 
