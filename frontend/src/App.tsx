@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import DOMPurify from "dompurify";
 import {
   getSafetyWarning,
@@ -21,62 +21,12 @@ import type {
 } from "./types";
 import ConditionCombobox from "./ConditionCombobox";
 import { GENERAL_CONSULTATION_ID, SIGNPOSTING_PURIFY_CONFIG } from './constants';
-
-// ---------------------------------
-// Helpers
-// ---------------------------------
-
-function initialiseEditableAnswers(
-  clientState: ClientStateView
-): Record<string, boolean | string | null> {
-  return clientState.questions.reduce((acc, q) => {
-    acc[q.answer_key] = q.current_value ?? null;
-    return acc;
-  }, {} as Record<string, boolean | string | null>);
-}
-
-function initialiseContactPreferences(): ContactPreferences {
-  return {
-    contact_methods: [],
-    email_address: null,
-    phone_number: null,
-    best_time_to_call: null,
-    doctor_preference: "any",
-    usual_doctor_name: null,
-  };
-}
-
-/**
- * UK phone number client-side validation.
- * Strips spaces, checks starts with 07 or +44, length 10–13 digits.
- */
-function isValidUkPhone(value: string): boolean {
-  const stripped = value.replace(/\s+/g, "");
-  if (!/^\+?[\d]+$/.test(stripped)) return false;
-  const digitsOnly = stripped.replace(/^\+44/, "0");
-  return /^07\d{8,11}$/.test(digitsOnly) || /^0[1-9]\d{8,9}$/.test(digitsOnly);
-}
-
-function PageShell({ children }: { children: React.ReactNode }) {
-  return (
-    <>
-      <header className="page-header">
-        <span className="page-header-title">Online Consultation</span>
-      </header>
-      <div className="page-container">
-        <div className="screen-card">{children}</div>
-      </div>
-    </>
-  );
-}
-
-function InlineError({ message }: { message: string }) {
-  return (
-    <div className="alert alert-danger" style={{ marginTop: "16px", marginBottom: 0 }}>
-      <p style={{ margin: 0 }}>{message}</p>
-    </div>
-  );
-}
+import { PageShell, InlineError } from "./layout";
+import {
+  initialiseEditableAnswers,
+  initialiseContactPreferences,
+  isValidUkPhone,
+} from "./helpers";
 
 // ---------------------------------
 // App
@@ -268,6 +218,35 @@ export default function App() {
   // ---------------------------------
   // Fatal error handling
   // ---------------------------------
+
+  // RESET CHECKLIST — every useState in App.tsx must appear below.
+  // If you add a new useState to App.tsx, add it to this list.
+  // When extracting screens in Phase 3: if a state variable moves into
+  // a child component, remove it from this list AND from the reset block.
+  //
+  // screen
+  // runtimeId
+  // version
+  // clientState
+  // editableAnswers
+  // additionalText
+  // safetyMessages
+  // contactPreferences
+  // contactErrors
+  // isSubmitting
+  // fatalError
+  // screenError
+  // safetyWarningText
+  // safetyConfirmed
+  // availabilityClosedMessage
+  // afterHoursNotice
+  // practiceIsOpen
+  // presentationState         <-- replaces: presentation
+  // presentationFetchTrigger  <-- counter, resets to 0 (not null)
+  // conditions
+  // selectedConditionId
+  // freeText
+  // submittedAfterHours
 
   if (fatalError) {
     return (
@@ -499,7 +478,6 @@ export default function App() {
       setPresentationFetchTrigger(k => k + 1);
     }
 
-    console.log(selectedConditionId)
     if (presentationState.status === "loading") {
       return (
         <PageShell>
