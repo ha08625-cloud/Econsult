@@ -494,6 +494,7 @@ export default function App() {
       setPresentationFetchTrigger(k => k + 1);
     }
 
+    console.log(selectedConditionId)
     if (presentationState.status === "loading") {
       return (
         <PageShell>
