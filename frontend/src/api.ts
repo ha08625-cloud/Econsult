@@ -10,7 +10,7 @@ import type {
   FinishFormResult,
 } from "./types";
 
-const API_BASE = ""; // same-origin
+const API_BASE = "BROKEN"; // same-origin
 
 // ---------------------------------
 // Typed error
