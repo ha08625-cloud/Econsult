@@ -8,7 +8,7 @@
 
 The FastAPI application entry point, startup validation, resource initialisation, HTTP-to-engine orchestration, and static file serving.
 
-**Key files:** `main.py`, `request_validation.py`
+**Key files:** `main.py`, `request_validation.py`, `errors.py`
 
 ---
 
@@ -16,9 +16,23 @@ The FastAPI application entry point, startup validation, resource initialisation
 
 - `main.py` is the **imperative shell only**. It MUST NOT contain clinical logic, safety rule evaluation, or encoder invocation. It translates HTTP requests into engine entry point calls.
 - Clinical presentation metadata (e.g. `condition_label`) is resolved from the registry in `main.py` and passed explicitly to engine adapters. It never enters the core engine.
-- Repositories and registries are initialised **once at startup** and stored in `app.state`. Routers read them from `app.state`, never via direct imports from `main.py`. This prevents circular imports.
+- Repositories and registries are initialised **once at startup** and stored in `app.state`. Routers access them via FastAPI `Depends` dependency provider functions, never via direct imports from `main.py`. This prevents circular imports.
 - The `/admin` prefix and `"admin"` tag are applied when the admin router is registered in `main.py`, not inside `admin_router.py`. This keeps the router decoupled from its mount point.
 - **All API routes must be registered before the static file mount block.** The catch-all static mount must come last or it will intercept API requests.
+
+---
+
+## Error Handling
+
+The `api_error_handler` is registered on `app` in `main.py`. It catches `APIError` exceptions raised anywhere in the application (including routers) and returns:
+
+```json
+{"error": {"code": "...", "message": "..."}}
+```
+
+with HTTP 422. All named error constructors live in `errors.py`. The admin frontend reads both `body.detail` (legacy) and `body.error.message` (current) — see `arch_admin.md`.
+
+`HTTPException` is used only for the 401 auth failure in `admin_context.py`. All other error paths use `APIError`.
 
 ---
 
