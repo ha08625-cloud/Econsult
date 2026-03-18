@@ -1,0 +1,89 @@
+{
+  "condition_id": "back_pain",
+
+  "presentation": {
+    "label": "Back pain",
+    "free_text_prompt": "Tell us about your back pain and when it started.",
+    "search_tags": ["back pain", "back", "spine", "lumbar", "sciatica", "disc", "injury", "ache", "stiffness", "spasm", "lower back", "upper back", "neck"]
+  },
+
+  "questions": [
+    {
+      "question_id": "back_pain_1",
+      "question": "Was the pain caused by an injury or accident?",
+      "answer_key": "injury_related",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the back pain was caused by an injury or accident?"
+    },
+    {
+      "question_id": "back_pain_2",
+      "question": "Have you noticed any weakness in your legs?",
+      "answer_key": "leg_weakness_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has noticed weakness in their legs?"
+    },
+    {
+      "question_id": "back_pain_3",
+      "question": "Have you noticed any numbness or loss of sensation in your legs?",
+      "answer_key": "leg_numbness_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has noticed numbness or loss of sensation in their legs?"
+    },
+    {
+      "question_id": "back_pain_4",
+      "question": "Have you had any incontinence of the bladder or bowels?",
+      "answer_key": "incontinence_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had any incontinence of the bladder or bowels?"
+    },
+    {
+      "question_id": "back_pain_5",
+      "question": "Have you been diagnosed with cancer?",
+      "answer_key": "cancer_diagnosis",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has been diagnosed with cancer?"
+    },
+    {
+      "question_id": "back_pain_6",
+      "question": "How long have these symptoms been going on for?",
+      "answer_key": "duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "leg_weakness_safety": {
+        "all": [
+          { "is_true": "leg_weakness_present" }
+        ],
+        "message": "One or more of your answers could indicate a more serious form of back pain and you should speak to the duty doctor urgently. Do not use this form which is for routine queries and may not be answered urgently enough."
+      },
+      "leg_numbness_safety": {
+        "all": [
+          { "is_true": "leg_numbness_present" }
+        ],
+        "message": "One or more of your answers could indicate a more serious form of back pain and you should speak to the duty doctor urgently. Do not use this form which is for routine queries and may not be answered urgently enough."
+      },
+      "incontinence_safety": {
+        "all": [
+          { "is_true": "incontinence_present" }
+        ],
+        "message": "One or more of your answers could indicate a more serious form of back pain and you should speak to the duty doctor urgently. Do not use this form which is for routine queries and may not be answered urgently enough."
+      },
+      "cancer_safety": {
+        "all": [
+          { "is_true": "cancer_diagnosis" }
+        ],
+        "message": "One or more of your answers could indicate a more serious form of back pain and you should speak to the duty doctor urgently. Do not use this form which is for routine queries and may not be answered urgently enough."
+      }
+    }
+  }
+}
