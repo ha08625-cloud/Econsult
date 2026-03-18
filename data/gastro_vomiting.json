@@ -1,0 +1,93 @@
+{
+  "condition_id": "vomiting",
+
+  "presentation": {
+    "label": "Vomiting",
+    "free_text_prompt": "Tell us about your symptoms and when they started.",
+    "search_tags": ["vomiting", "nausea", "diarrhoea", "stomach", "gastroenteritis", "bug", "food poisoning", "bowel", "cramps", "dehydration", "travel", "infection", "sick"]
+  },
+
+  "questions": [
+    {
+      "question_id": "vomiting_1",
+      "question": "How many times have you vomited in the last 24 hours?",
+      "answer_key": "vomit_frequency_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "vomiting_2",
+      "question": "Have you had any diarrhoea?",
+      "answer_key": "diarrhoea_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had diarrhoea?"
+    },
+    {
+      "question_id": "vomiting_3",
+      "question": "Have you noticed any blood in your vomit?",
+      "answer_key": "haematemesis_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has noticed blood in their vomit?"
+    },
+    {
+      "question_id": "vomiting_4",
+      "question": "Have you had severe stomach pains?",
+      "answer_key": "severe_stomach_pain",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had severe stomach pains?"
+    },
+    {
+      "question_id": "vomiting_5",
+      "question": "Have you had a fever?",
+      "answer_key": "fever_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had a fever?"
+    },
+    {
+      "question_id": "vomiting_6",
+      "question": "Have you travelled abroad recently?",
+      "answer_key": "recent_travel",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has travelled abroad recently?"
+    },
+    {
+      "question_id": "vomiting_7",
+      "question": "Have you been able to keep down fluids?",
+      "answer_key": "fluids_tolerated",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has been able to keep down fluids?"
+    },
+    {
+      "question_id": "vomiting_8",
+      "question": "How long have these symptoms been going on for?",
+      "answer_key": "duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "severe_stomach_pain_safety": {
+        "all": [
+          { "is_true": "severe_stomach_pain" }
+        ],
+        "message": "If you have experienced severe stomach pains, or have been unable to keep down any fluids, please do not fill in this form and call the surgery to speak to the duty doctor instead. This form is for routine issues and may not be answered urgently enough."
+      },
+      "unable_to_keep_fluids_safety": {
+        "all": [
+          { "is_false": "fluids_tolerated" }
+        ],
+        "message": "If you have experienced severe stomach pains, or have been unable to keep down any fluids, please do not fill in this form and call the surgery to speak to the duty doctor instead. This form is for routine issues and may not be answered urgently enough."
+      }
+    }
+  }
+}
