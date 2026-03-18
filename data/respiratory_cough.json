@@ -14,7 +14,7 @@
       "answer_key": "productive_cough",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient is producing phlegm or mucus when coughing?"
+      "encoder_prompt": "Does the response indicate that the patient is bringing up phlegm or mucus when they cough?"
     },
     {
       "question_id": "cough_2",
@@ -22,15 +22,15 @@
       "answer_key": "haemoptysis_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient has coughed up blood?"
+      "encoder_prompt": "Does the response indicate that the patient has coughed up blood?"
     },
     {
       "question_id": "cough_3",
-      "question": "Have you had any chest pain?",
+      "question": "Have you had chest pain?",
       "answer_key": "chest_pain_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient has chest pain?"
+      "encoder_prompt": "Does the response indicate that the patient has had chest pain?"
     },
     {
       "question_id": "cough_4",
@@ -38,7 +38,7 @@
       "answer_key": "fever_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient has had a fever?"
+      "encoder_prompt": "Does the response indicate that the patient has had a fever?"
     },
     {
       "question_id": "cough_5",
@@ -46,7 +46,7 @@
       "answer_key": "shortness_of_breath_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient is feeling short of breath?"
+      "encoder_prompt": "Does the response indicate that the patient is feeling short of breath?"
     },
     {
       "question_id": "cough_6",
@@ -54,15 +54,23 @@
       "answer_key": "recent_antibiotics",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient has taken antibiotics recently?"
+      "encoder_prompt": "Does the response indicate that the patient has taken antibiotics recently?"
     },
     {
       "question_id": "cough_7",
-      "question": "Have you had any recent investigations for this problem, such as blood tests, X-rays or scans?",
+      "question": "Have you had any recent investigations such as blood tests, X-rays or scans for this problem?",
       "answer_key": "recent_investigations",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient has had recent investigations such as blood tests, X-rays or scans?"
+      "encoder_prompt": "Does the response indicate that the patient has had recent investigations such as blood tests, X-rays or scans for this problem?"
+    },
+    {
+      "question_id": "cough_8",
+      "question": "How long have you had this cough?",
+      "answer_key": "duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
     }
   ],
 
