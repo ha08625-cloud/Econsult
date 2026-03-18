@@ -1,0 +1,79 @@
+{
+  "condition_id": "cough",
+
+  "presentation": {
+    "label": "Cough",
+    "free_text_prompt": "Tell us about your cough and when it started.",
+    "search_tags": ["cough", "chest", "phlegm", "sputum", "mucus", "infection", "wheeze", "breathless", "haemoptysis", "blood", "cold", "flu", "respiratory"]
+  },
+
+  "questions": [
+    {
+      "question_id": "cough_1",
+      "question": "Are you bringing up phlegm or mucus when you cough?",
+      "answer_key": "productive_cough",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is producing phlegm or mucus when coughing?"
+    },
+    {
+      "question_id": "cough_2",
+      "question": "Have you coughed up any blood?",
+      "answer_key": "haemoptysis_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has coughed up blood?"
+    },
+    {
+      "question_id": "cough_3",
+      "question": "Have you had any chest pain?",
+      "answer_key": "chest_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has chest pain?"
+    },
+    {
+      "question_id": "cough_4",
+      "question": "Have you had a fever?",
+      "answer_key": "fever_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had a fever?"
+    },
+    {
+      "question_id": "cough_5",
+      "question": "Are you feeling short of breath?",
+      "answer_key": "shortness_of_breath_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is feeling short of breath?"
+    },
+    {
+      "question_id": "cough_6",
+      "question": "Have you taken any antibiotics recently?",
+      "answer_key": "recent_antibiotics",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has taken antibiotics recently?"
+    },
+    {
+      "question_id": "cough_7",
+      "question": "Have you had any recent investigations for this problem, such as blood tests, X-rays or scans?",
+      "answer_key": "recent_investigations",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had recent investigations such as blood tests, X-rays or scans?"
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "shortness_of_breath_safety": {
+        "all": [
+          { "is_true": "shortness_of_breath_present" }
+        ],
+        "message": "This form is for routine issues and it may take several days to receive a response. If you are feeling short of breath, phone the duty doctor instead of submitting this form."
+      }
+    }
+  }
+}
