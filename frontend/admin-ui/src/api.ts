@@ -25,12 +25,17 @@ async function apiFetch(
 /**
  * Extract a detail message from a non-ok response, or fall back to
  * a generic "Server error: {status}" string.
+ *
+ * Handles two error shapes:
+ * - HTTPException format: {"detail": "..."}
+ * - APIError format:      {"error": {"code": "...", "message": "..."}}
  */
 async function extractErrorDetail(res: Response): Promise<string> {
   let detail = `Server error: ${res.status}`;
   try {
     const body = await res.json();
     if (body.detail) detail = body.detail;
+    else if (body.error?.message) detail = body.error.message;
   } catch (_) {
     // ignore parse errors
   }
@@ -62,7 +67,7 @@ export async function fetchSignposting(
     `/admin/conditions/${encodeURIComponent(conditionId)}/signposting`,
     token
   );
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
   const data = await res.json();
   return data.signposting ?? null;
 }
@@ -70,7 +75,7 @@ export async function fetchSignposting(
 /**
  * Sends signposting HTML to the PUT endpoint.
  * Empty content is handled server-side: the repository deletes the row
- * and returns {"signposting": null}. The router never returns 400 for
+ * and returns {"signposting": null}. The router never returns an error for
  * empty content.
  * Returns the sanitised HTML the server actually stored, or null if cleared.
  */
@@ -105,7 +110,7 @@ export async function fetchAvailability(
   token: string
 ): Promise<AvailabilityConfig> {
   const res = await apiFetch("/admin/availability", token);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
   return (await res.json()) as AvailabilityConfig;
 }
 
@@ -188,7 +193,7 @@ export async function fetchExceptions(
   token: string
 ): Promise<AvailabilityException[]> {
   const res = await apiFetch("/admin/availability/exceptions", token);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
   const data = await res.json();
   return data.exceptions as AvailabilityException[];
 }
