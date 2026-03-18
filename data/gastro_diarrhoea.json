@@ -1,0 +1,103 @@
+{
+  "condition_id": "diarrhoea",
+
+  "presentation": {
+    "label": "Diarrhoea",
+    "free_text_prompt": "Tell us about your symptoms and when they started.",
+    "search_tags": ["diarrhoea", "vomiting", "stomach", "bowel", "nausea", "gastro", "food poisoning", "bug", "loose stools", "cramps", "travel", "sickness"]
+  },
+
+  "questions": [
+    {
+      "question_id": "diarrhoea_1",
+      "question": "How many times have you opened your bowels in the last 24 hours?",
+      "answer_key": "bowel_frequency_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "diarrhoea_2",
+      "question": "How would you describe your stools - are they loose, watery or solid?",
+      "answer_key": "stool_consistency_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "diarrhoea_3",
+      "question": "Have you noticed any blood in your stools?",
+      "answer_key": "rectal_bleeding_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has noticed blood in their stools?"
+    },
+    {
+      "question_id": "diarrhoea_4",
+      "question": "Do you have stomach pain or cramps?",
+      "answer_key": "abdominal_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has stomach pain or cramps?"
+    },
+    {
+      "question_id": "diarrhoea_5",
+      "question": "Have you been vomiting?",
+      "answer_key": "vomiting_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has been vomiting?"
+    },
+    {
+      "question_id": "diarrhoea_6",
+      "question": "Have you had a fever?",
+      "answer_key": "fever_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had a fever?"
+    },
+    {
+      "question_id": "diarrhoea_7",
+      "question": "Have you travelled abroad recently?",
+      "answer_key": "recent_travel",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has travelled abroad recently?"
+    },
+    {
+      "question_id": "diarrhoea_8",
+      "question": "Have you been able to keep down fluids?",
+      "answer_key": "able_to_keep_down_fluid",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has been able to keep down fluids?"
+    },
+    {
+      "question_id": "diarrhoea_9",
+      "question": "Have you taken any antibiotics recently?",
+      "answer_key": "recent_antibiotics",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has taken antibiotics recently?"
+    },
+    {
+      "question_id": "diarrhoea_10",
+      "question": "How long have you had diarrhoea?",
+      "answer_key": "duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "unable_to_keep_down_fluid_safety": {
+        "all": [
+          { "is_false": "able_to_keep_down_fluid" }
+        ],
+        "message": "This form is for routine issues and it may take several days to receive a response. If you are unable to keep down fluids, phone the duty doctor instead of submitting this form."
+      }
+    }
+  }
+}
