@@ -21,11 +21,10 @@ import datetime
 import logging
 from datetime import timezone
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
 
 from app.core.admin_context import AdminContext, require_admin
-from app.core.condition_registry import ConditionNotFound
 from app.repositories.practice_repository import InvalidSignpostingData, MAX_SIGNPOSTING_LENGTH
 from app.services.availability_service import (
     validate_availability_config,
@@ -34,6 +33,12 @@ from app.services.availability_service import (
     deactivation_clears_override,
 )
 from app.models.availability_models import AvailabilityException
+from app.core.errors import (
+    CONDITION_NOT_FOUND,
+    INVALID_PAYLOAD,
+    INVALID_DATE_FORMAT,
+    INVALID_FIELD_TYPE,
+)
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -42,6 +47,24 @@ router = APIRouter()
 
 LONDON_TZ = ZoneInfo("Europe/London")
 
+
+# ---------------------------------------------------------------------------
+# Dependency providers
+# ---------------------------------------------------------------------------
+
+def get_registry(request: Request):
+    return request.app.state.registry
+
+def get_practice_repo(request: Request):
+    return request.app.state.practice_repo
+
+def get_availability_repo(request: Request):
+    return request.app.state.availability_repo
+
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
 
 def _normalise_signposting(value) -> str | None:
     """
@@ -96,14 +119,13 @@ def _format_exception_response(exc: dict) -> dict:
 
 @router.get("/conditions")
 async def admin_list_conditions(
-    request: Request,
     _: AdminContext = Depends(require_admin),
+    registry=Depends(get_registry),
 ):
     """
     Return all condition IDs and labels.
     This is a raw administrative view, separate from the patient-facing endpoint.
     """
-    registry = request.app.state.registry
     return {"conditions": registry.list_conditions()}
 
 
@@ -114,18 +136,16 @@ async def admin_list_conditions(
 @router.get("/conditions/{condition_id}/signposting")
 async def get_signposting(
     condition_id: str,
-    request: Request,
     admin: AdminContext = Depends(require_admin),
+    registry=Depends(get_registry),
+    practice_repo=Depends(get_practice_repo),
 ):
     """
     Return current signposting for a condition.
     Returns {"condition_id": ..., "signposting": <html string or null>}.
     """
-    registry = request.app.state.registry
-    practice_repo = request.app.state.practice_repo
-
     if not registry.has_condition(condition_id):
-        raise HTTPException(status_code=404, detail=f"Unknown condition: {condition_id}")
+        raise CONDITION_NOT_FOUND(condition_id)
 
     html = practice_repo.get_signposting(admin.practice_id, condition_id)
 
@@ -140,6 +160,8 @@ async def put_signposting(
     condition_id: str,
     request: Request,
     admin: AdminContext = Depends(require_admin),
+    registry=Depends(get_registry),
+    practice_repo=Depends(get_practice_repo),
 ):
     """
     Set or clear signposting for a condition.
@@ -156,49 +178,37 @@ async def put_signposting(
     3. Length must not exceed MAX_SIGNPOSTING_LENGTH characters
 
     The router catches InvalidSignpostingData from the repository and
-    converts it to HTTP 400. This should only arise from the length check
-    (the sanitiser raises it before nh3 runs). It never produces a 500
-    from sanitisation failures.
+    converts it to an INVALID_PAYLOAD error. This should only arise from
+    the length check (the sanitiser raises it before nh3 runs). It never
+    produces a 500 from sanitisation failures.
 
     Returns {"condition_id": ..., "signposting": <sanitised html or null>}.
     A null response means the content was empty after sanitisation and no
     row was written.
     """
-    registry = request.app.state.registry
-    practice_repo = request.app.state.practice_repo
-
     if not registry.has_condition(condition_id):
-        raise HTTPException(status_code=404, detail=f"Unknown condition: {condition_id}")
+        raise CONDITION_NOT_FOUND(condition_id)
 
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+        raise INVALID_PAYLOAD("Invalid JSON body")
 
     if not isinstance(body, dict) or "signposting" not in body:
-        raise HTTPException(
-            status_code=400,
-            detail='Body must be {"signposting": "..."}',
-        )
+        raise INVALID_PAYLOAD('Body must be {"signposting": "..."}')
 
     raw = body["signposting"]
 
     if not isinstance(raw, str):
-        raise HTTPException(
-            status_code=400,
-            detail=f"signposting must be a string, got {type(raw).__name__}",
-        )
+        raise INVALID_FIELD_TYPE("signposting", "a string")
 
     if len(raw) > MAX_SIGNPOSTING_LENGTH:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Signposting must not exceed {MAX_SIGNPOSTING_LENGTH} characters",
-        )
+        raise INVALID_PAYLOAD(f"Signposting must not exceed {MAX_SIGNPOSTING_LENGTH} characters")
 
     try:
         practice_repo.set_signposting(admin.practice_id, condition_id, raw)
     except InvalidSignpostingData as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise INVALID_PAYLOAD(str(e))
 
     saved = practice_repo.get_signposting(admin.practice_id, condition_id)
 
@@ -211,19 +221,17 @@ async def put_signposting(
 @router.delete("/conditions/{condition_id}/signposting", status_code=204)
 async def delete_signposting(
     condition_id: str,
-    request: Request,
     admin: AdminContext = Depends(require_admin),
+    registry=Depends(get_registry),
+    practice_repo=Depends(get_practice_repo),
 ):
     """
     Remove all signposting for a condition.
     Idempotent: no error if nothing was configured.
     Returns 204 No Content.
     """
-    registry = request.app.state.registry
-    practice_repo = request.app.state.practice_repo
-
     if not registry.has_condition(condition_id):
-        raise HTTPException(status_code=404, detail=f"Unknown condition: {condition_id}")
+        raise CONDITION_NOT_FOUND(condition_id)
 
     practice_repo.delete_signposting(admin.practice_id, condition_id)
 
@@ -234,8 +242,8 @@ async def delete_signposting(
 
 @router.get("/availability")
 async def get_availability(
-    request: Request,
     admin: AdminContext = Depends(require_admin),
+    availability_repo=Depends(get_availability_repo),
 ):
     """
     Return the raw availability configuration for the practice.
@@ -244,7 +252,6 @@ async def get_availability(
     Does not call evaluate_availability — this is the admin view of the
     stored config, not the evaluated patient-facing result.
     """
-    availability_repo = request.app.state.availability_repo
     config = availability_repo.get_availability(admin.practice_id)
     return _format_availability_response(config)
 
@@ -253,6 +260,7 @@ async def get_availability(
 async def put_availability(
     request: Request,
     admin: AdminContext = Depends(require_admin),
+    availability_repo=Depends(get_availability_repo),
 ):
     """
     Update the availability configuration.
@@ -274,69 +282,46 @@ async def put_availability(
     If is_active is set to false, any existing override is auto-cleared.
     Logs a warning if is_active is true and weekly_open_days is empty.
     Returns the updated config by fetching it back from the repository.
-    Returns HTTP 400 with a descriptive message if validation fails.
+    Returns an error with a descriptive message if validation fails.
     """
-    availability_repo = request.app.state.availability_repo
-
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+        raise INVALID_PAYLOAD("Invalid JSON body")
 
     if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+        raise INVALID_PAYLOAD("Body must be a JSON object")
 
     # --- Extract and type-check fields ---
 
     is_active = body.get("is_active")
     if not isinstance(is_active, bool):
-        raise HTTPException(
-            status_code=400,
-            detail="is_active must be a boolean",
-        )
+        raise INVALID_FIELD_TYPE("is_active", "a boolean")
 
     weekly_open_days = body.get("weekly_open_days")
     if not isinstance(weekly_open_days, list):
-        raise HTTPException(
-            status_code=400,
-            detail="weekly_open_days must be a list",
-        )
+        raise INVALID_FIELD_TYPE("weekly_open_days", "a list")
     if not all(isinstance(d, str) for d in weekly_open_days):
-        raise HTTPException(
-            status_code=400,
-            detail="weekly_open_days must contain only strings",
-        )
+        raise INVALID_FIELD_TYPE("weekly_open_days", "a list of strings")
 
     open_time_str = body.get("open_time")
     close_time_str = body.get("close_time")
     if not isinstance(open_time_str, str) or not isinstance(close_time_str, str):
-        raise HTTPException(
-            status_code=400,
-            detail="open_time and close_time must be strings in HH:MM format",
-        )
+        raise INVALID_FIELD_TYPE("open_time and close_time", "strings in HH:MM format")
 
     try:
         open_time = datetime.time.fromisoformat(open_time_str)
     except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid open_time format: '{open_time_str}'. Expected HH:MM.",
-        )
+        raise INVALID_DATE_FORMAT("open_time", open_time_str)
 
     try:
         close_time = datetime.time.fromisoformat(close_time_str)
     except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid close_time format: '{close_time_str}'. Expected HH:MM.",
-        )
+        raise INVALID_DATE_FORMAT("close_time", close_time_str)
 
     closed_message = body.get("closed_message")
     if closed_message is not None and not isinstance(closed_message, str):
-        raise HTTPException(
-            status_code=400,
-            detail="closed_message must be a string or null",
-        )
+        raise INVALID_FIELD_TYPE("closed_message", "a string or null")
 
     # --- Validate via service layer ---
 
@@ -348,7 +333,7 @@ async def put_availability(
             closed_message=closed_message,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise INVALID_PAYLOAD(str(e))
 
     # --- Persist ---
 
@@ -389,6 +374,7 @@ async def put_availability(
 async def post_override(
     request: Request,
     admin: AdminContext = Depends(require_admin),
+    availability_repo=Depends(get_availability_repo),
 ):
     """
     Set a manual override (force-open or force-closed).
@@ -406,56 +392,41 @@ async def post_override(
 
     Returns the updated raw config.
     """
-    availability_repo = request.app.state.availability_repo
-
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+        raise INVALID_PAYLOAD("Invalid JSON body")
 
     if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+        raise INVALID_PAYLOAD("Body must be a JSON object")
 
     # --- Extract and type-check fields ---
 
     status = body.get("status")
     if not isinstance(status, str):
-        raise HTTPException(
-            status_code=400,
-            detail="status must be a string ('open' or 'closed')",
-        )
+        raise INVALID_FIELD_TYPE("status", "a string ('open' or 'closed')")
 
     expires_at_str = body.get("expires_at")
     if not isinstance(expires_at_str, str):
-        raise HTTPException(
-            status_code=400,
-            detail="expires_at must be an ISO datetime string",
-        )
+        raise INVALID_FIELD_TYPE("expires_at", "an ISO datetime string")
 
     try:
         expires_at = datetime.datetime.fromisoformat(expires_at_str)
     except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid expires_at format: '{expires_at_str}'. Expected ISO datetime.",
-        )
+        raise INVALID_DATE_FORMAT("expires_at", expires_at_str)
 
     # Reject timezone-naive datetimes. During BST, a London-local time
     # submitted without an offset would be stored as if it were UTC,
     # causing the override to expire one hour late.
     if expires_at.tzinfo is None:
-        raise HTTPException(
-            status_code=400,
-            detail="expires_at must include a timezone offset (e.g. 'Z' or '+01:00'). "
-                   "Timezone-naive datetimes are rejected to prevent BST/UTC confusion.",
+        raise INVALID_PAYLOAD(
+            "expires_at must include a timezone offset (e.g. 'Z' or '+01:00'). "
+            "Timezone-naive datetimes are rejected to prevent BST/UTC confusion."
         )
 
     message = body.get("message")
     if message is not None and not isinstance(message, str):
-        raise HTTPException(
-            status_code=400,
-            detail="message must be a string or null",
-        )
+        raise INVALID_FIELD_TYPE("message", "a string or null")
 
     # --- Validate via service layer ---
 
@@ -467,7 +438,7 @@ async def post_override(
             now_utc=now_utc,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise INVALID_PAYLOAD(str(e))
 
     # --- Persist ---
 
@@ -486,8 +457,8 @@ async def post_override(
 
 @router.delete("/availability/override")
 async def delete_override(
-    request: Request,
     admin: AdminContext = Depends(require_admin),
+    availability_repo=Depends(get_availability_repo),
 ):
     """
     Clear any active override.
@@ -495,7 +466,6 @@ async def delete_override(
     Idempotent — no error if no override was active.
     Returns the updated raw config.
     """
-    availability_repo = request.app.state.availability_repo
     availability_repo.clear_override(admin.practice_id)
 
     updated = availability_repo.get_availability(admin.practice_id)
@@ -508,8 +478,8 @@ async def delete_override(
 
 @router.get("/availability/exceptions")
 async def list_exceptions(
-    request: Request,
     admin: AdminContext = Depends(require_admin),
+    availability_repo=Depends(get_availability_repo),
 ):
     """
     Return all exceptions on or after today (Europe/London time).
@@ -517,7 +487,6 @@ async def list_exceptions(
     Includes today's exception if one exists — the admin needs to verify
     what is currently active. Ordered by date ascending.
     """
-    availability_repo = request.app.state.availability_repo
     today_london = datetime.datetime.now(timezone.utc).astimezone(LONDON_TZ).date()
     rows = availability_repo.get_exceptions(admin.practice_id, today_london)
     return {
@@ -530,6 +499,7 @@ async def put_exception(
     date: str,
     request: Request,
     admin: AdminContext = Depends(require_admin),
+    availability_repo=Depends(get_availability_repo),
 ):
     """
     Create or update an exception for a specific date.
@@ -547,34 +517,26 @@ async def put_exception(
 
     Returns the exception as stored.
     """
-    availability_repo = request.app.state.availability_repo
-
     # --- Parse date from URL path ---
     try:
         exception_date = datetime.date.fromisoformat(date)
     except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid date format: '{date}'. Expected YYYY-MM-DD.",
-        )
+        raise INVALID_DATE_FORMAT("date", date)
 
     # --- Parse body ---
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
+        raise INVALID_PAYLOAD("Invalid JSON body")
 
     if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+        raise INVALID_PAYLOAD("Body must be a JSON object")
 
     # --- Extract and type-check fields ---
 
     exception_type = body.get("exception_type")
     if not isinstance(exception_type, str):
-        raise HTTPException(
-            status_code=400,
-            detail="exception_type must be a string ('closed' or 'custom_hours')",
-        )
+        raise INVALID_FIELD_TYPE("exception_type", "a string ('closed' or 'custom_hours')")
 
     open_time_str = body.get("open_time")
     close_time_str = body.get("close_time")
@@ -584,38 +546,23 @@ async def put_exception(
 
     if open_time_str is not None:
         if not isinstance(open_time_str, str):
-            raise HTTPException(
-                status_code=400,
-                detail="open_time must be a string in HH:MM format or null",
-            )
+            raise INVALID_FIELD_TYPE("open_time", "a string in HH:MM format or null")
         try:
             open_time = datetime.time.fromisoformat(open_time_str)
         except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid open_time format: '{open_time_str}'. Expected HH:MM.",
-            )
+            raise INVALID_DATE_FORMAT("open_time", open_time_str)
 
     if close_time_str is not None:
         if not isinstance(close_time_str, str):
-            raise HTTPException(
-                status_code=400,
-                detail="close_time must be a string in HH:MM format or null",
-            )
+            raise INVALID_FIELD_TYPE("close_time", "a string in HH:MM format or null")
         try:
             close_time = datetime.time.fromisoformat(close_time_str)
         except ValueError:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid close_time format: '{close_time_str}'. Expected HH:MM.",
-            )
+            raise INVALID_DATE_FORMAT("close_time", close_time_str)
 
     note = body.get("note")
     if note is not None and not isinstance(note, str):
-        raise HTTPException(
-            status_code=400,
-            detail="note must be a string or null",
-        )
+        raise INVALID_FIELD_TYPE("note", "a string or null")
 
     # --- Validate via service layer ---
 
@@ -626,7 +573,7 @@ async def put_exception(
             close_time=close_time,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise INVALID_PAYLOAD(str(e))
 
     # --- Persist ---
 
@@ -653,8 +600,8 @@ async def put_exception(
 @router.delete("/availability/exceptions/{date}", status_code=204)
 async def delete_exception(
     date: str,
-    request: Request,
     admin: AdminContext = Depends(require_admin),
+    availability_repo=Depends(get_availability_repo),
 ):
     """
     Delete an exception for a specific date.
@@ -662,14 +609,9 @@ async def delete_exception(
     Idempotent — no error if no exception existed for this date.
     Returns 204 No Content.
     """
-    availability_repo = request.app.state.availability_repo
-
     try:
         exception_date = datetime.date.fromisoformat(date)
     except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid date format: '{date}'. Expected YYYY-MM-DD.",
-        )
+        raise INVALID_DATE_FORMAT("date", date)
 
     availability_repo.delete_exception(admin.practice_id, exception_date)
