@@ -22,7 +22,6 @@ import logging
 from datetime import timezone
 
 from fastapi import APIRouter, Request, Depends
-from fastapi.responses import JSONResponse
 
 from app.core.admin_context import AdminContext, require_admin
 from app.repositories.practice_repository import InvalidSignpostingData, MAX_SIGNPOSTING_LENGTH
