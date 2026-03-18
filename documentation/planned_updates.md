@@ -1,6 +1,10 @@
-Early prototype updates
-- split frontend/src/App.tsx and main.py
+Architecture updates:
+- split frontend/src/App.tsx
+- split main.py
+
+Features
 - Form for someone else, e.g. a child
+- PDF generation
 - add personal information e.g. name, DOB
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
