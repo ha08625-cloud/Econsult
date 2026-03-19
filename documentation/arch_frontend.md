@@ -10,6 +10,8 @@ Stateless React rendering of a six-screen patient form flow, condition search, a
 
 **Key files:** `App.tsx`, `helpers.ts`, `layout.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`, `constants.ts`
 
+**Screen components (frontend/src/screens/):** Individual screens extracted from `App.tsx` during Phase 2. See file_structure.md for the current list. Each screen component owns only its own UI state; session state lives in `App.tsx` and is passed down as props.
+
 ---
 
 ## Core Invariants
@@ -50,11 +52,14 @@ Two error states — the classification decision must be made at the API boundar
 ## Module Responsibilities
 
 ### `App.tsx`
-Owns all screen state and transitions. The only file that knows the screen order. Contains no clinical logic.
+Owns all screen state and transitions. The only file that knows the screen order. Contains no clinical logic. Renders the active screen component — there is no inline JSX for screens that have been extracted to `frontend/src/screens/`.
 
 The reset function (triggered on fatal error) manually clears every `useState` in the file. It carries an explicit per-variable checklist comment directly above the reset block — if a new `useState` is added to `App.tsx`, it must also appear in that list. `presentationFetchTrigger` resets to `0`, not `null` — this is noted in the checklist comment.
 
-`App.tsx` imports layout wrappers from `layout.tsx` and helper functions from `helpers.ts`. It must not redefine anything that belongs in those modules.
+`App.tsx` imports layout wrappers from `layout.tsx`, helper functions from `helpers.ts`, and screen components from `./screens/`. It must not redefine anything that belongs in those modules.
+
+### Screen components (`frontend/src/screens/`)
+Each extracted screen is a single default export. It receives session state as props from `App.tsx` and owns only its own UI state (e.g. `isSubmitting`, `screenError`, form-local preferences). Screen components must not call `setScreen` directly — they communicate outcomes to `App.tsx` via callbacks. See file_structure.md for the current list of extracted screens and their prop interfaces.
 
 ### `helpers.ts`
 Pure functions with no React dependency: state initialisers and client-side validation. Nothing in this file should have side effects, make API calls, or import from any other local module except `types.ts`.
