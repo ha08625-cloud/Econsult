@@ -78,7 +78,7 @@
     "rules": {
       "severe_stomach_pain_safety": {
         "all": [
-          { "is_true": "severe_stomach_pain" }
+          { "is_true": "severe_stomach_pain" },
           { "is_false": "fluids_tolerated" }
         ],
         "message": "If you have experienced severe stomach pains, or have been unable to keep down any fluids, please do not fill in this form and call the surgery to speak to the duty doctor instead. This form is for routine issues and may not be answered urgently enough."
