@@ -90,9 +90,11 @@ class RuntimeState:
 
     @classmethod
     def from_dict(cls, d: dict) -> "RuntimeState":
-        if isinstance(d, str):
-            import json
-            d = json.loads(d)
+        if not isinstance(d, dict):
+            raise TypeError(
+                f"RuntimeState.from_dict expects a dict, got {type(d).__name__}. "
+                "If the caller has a JSON string, it must deserialise before calling."
+            )
         return cls(
             condition_id=d["condition_id"],
             ruleset_version=d["ruleset_version"],
