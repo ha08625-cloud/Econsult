@@ -13,7 +13,7 @@ and SubmissionNotFound in submission_repository.py.
 This module must never:
 - Import clinical engine modules
 - Perform business logic
-- Manage table creation (that is done once in app/core/db.init_database)
+- Manage table creation (handled by Alembic migrations)
 """
 
 from psycopg2.extras import RealDictCursor, Json
