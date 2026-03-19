@@ -73,7 +73,7 @@ Infrastructure concerns only. No clinical logic.
 Files:
 - app/core/admin_context.py — admin authentication context and FastAPI dependency.
 - app/core/condition_registry.py — loads and indexes condition rulesets at startup; immutable after init.
-- app/core/db.py — shared Postgres connection module. Only file that imports psycopg2. Provides get_conn() context manager and alembic_upgrade() for running migrations at startup. init_database() is retained as deprecated until alembic_upgrade() is confirmed on Railway.
+- app/core/db.py — app/core/db.py — shared Postgres connection module. Only file that imports psycopg2. Provides get_conn() context manager and alembic_upgrade() for running migrations at startup
 - app/core/errors.py — APIError and named error constants.
 - app/core/persistence.py — RuntimeStateRepository; database read/write for session state.
 - app/core/request_validation.py — validates incoming HTTP payloads.
