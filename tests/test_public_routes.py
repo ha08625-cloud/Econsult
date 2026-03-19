@@ -14,7 +14,19 @@ They are worth keeping and re-running after any routing refactor.
 
 import os
 import pytest
+from pathlib import Path
 from fastapi.testclient import TestClient
+
+# ---------------------------------------------------------------------------
+# Load .env before the skip guard runs.
+# conftest.py loads too late (after module-level skip checks fire), so we
+# load dotenv here explicitly. override=False means already-set env vars win.
+# ---------------------------------------------------------------------------
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent / ".env", override=False)
+except ImportError:
+    pass
 
 # ---------------------------------------------------------------------------
 # Skip all tests in this module if no database is configured.

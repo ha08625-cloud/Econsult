@@ -31,6 +31,7 @@ import SafetyWarningScreen from "./screens/SafetyWarningScreen";
 import type { SafetyWarningFetchState } from "./screens/SafetyWarningScreen";
 import SelectConditionScreen from "./screens/SelectConditionScreen";
 import ReviewScreen from "./screens/ReviewScreen";
+import EditScreen from "./screens/EditScreen";
 
 // ---------------------------------
 // App
@@ -471,180 +472,33 @@ if (screen === "SELECT_CONDITION") {
     );
   }
 
-  // ---------------------------------
-  // Screen 3: EDIT
-  // ---------------------------------
-
   if (screen === "EDIT") {
-    if (!clientState || !editableAnswers || runtimeId === null || version === null) {
-      setFatalError("Invalid EDIT state");
-      return null;
-    }
-
-    const allRequiredAnswered = clientState.questions.every((q) => {
-      if (!q.required) return true;
-      const v = editableAnswers[q.answer_key];
-      return v !== null && v !== undefined && v !== "";
-    });
-
-    return (
-      <PageShell>
-        <h1>{clientState.condition_label}</h1>
-
-        {clientState.free_text && (
-          <div className="description-box">
-            {clientState.free_text}
-          </div>
-        )}
-
-        <form onSubmit={(e) => e.preventDefault()}>
-          {clientState.questions.map((q) => (
-            <div
-              key={q.answer_key}
-              className={`question-card${q.suggested ? " suggested" : ""}`}
-            >
-              <label>
-                {q.question_text}
-                {q.required && <span style={{ color: "var(--danger)", marginLeft: "4px" }}>*</span>}
-              </label>
-
-              {q.answer_type === "boolean" ? (
-                <div className="radio-group">
-                  <label
-                    className={`radio-option${editableAnswers[q.answer_key] === true ? " selected" : ""}`}
-                  >
-                    <input
-                      type="radio"
-                      name={q.answer_key}
-                      checked={editableAnswers[q.answer_key] === true}
-                      onChange={() => {
-                        setEditableAnswers({ ...editableAnswers, [q.answer_key]: true });
-                        if (screenError) setScreenError(null);
-                      }}
-                    />
-                    Yes
-                  </label>
-                  <label
-                    className={`radio-option${editableAnswers[q.answer_key] === false ? " selected" : ""}`}
-                  >
-                    <input
-                      type="radio"
-                      name={q.answer_key}
-                      checked={editableAnswers[q.answer_key] === false}
-                      onChange={() => {
-                        setEditableAnswers({ ...editableAnswers, [q.answer_key]: false });
-                        if (screenError) setScreenError(null);
-                      }}
-                    />
-                    No
-                  </label>
-                </div>
-              ) : (
-                <input
-                  type="text"
-                  value={(editableAnswers[q.answer_key] as string | null) || ""}
-                  onChange={(e) => {
-                    setEditableAnswers({ ...editableAnswers, [q.answer_key]: e.target.value });
-                    if (screenError) setScreenError(null);
-                  }}
-                />
-              )}
-
-              {q.suggested && (
-                <span className="suggested-badge">
-                  Pre-filled from your description — please check
-                </span>
-              )}
-            </div>
-          ))}
-
-          <div className="field mt-md">
-            <label htmlFor="additional-text">
-              Additional information (optional)
-            </label>
-            <p style={{ fontSize: "14px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 400 }}>
-              If you answered yes to any symptoms above, you can give details here.
-            </p>
-            <textarea
-              id="additional-text"
-              value={additionalText}
-              onChange={(e) => {
-                setAdditionalText(e.target.value);
-                if (screenError) setScreenError(null);
-              }}
-              rows={4}
-            />
-          </div>
-
-          {screenError && <InlineError message={screenError} />}
-
-          <div className="btn-row">
-            <button
-              className="btn btn-secondary"
-              disabled={isSubmitting}
-              onClick={() => {
-                setPresentationState({ status: "loading" });
-                setPresentationFetchTrigger(k => k + 1);
-                setScreen("FREE_TEXT");
-              }}
-            >
-              Back
-            </button>
-            <button
-              className="btn btn-primary"
-              disabled={!allRequiredAnswered || isSubmitting}
-              onClick={async () => {
-                setScreenError(null);
-                try {
-                  setIsSubmitting(true);
-                  const payload: ClientAnswerReturn = {
-                    runtime_id: runtimeId,
-                    base_version: version,
-                    answers: editableAnswers,
-                    additional_text: additionalText.trim() || null,
-                  };
-                  const res = await updateForm(payload);
-                  setVersion(res.version);
-                  setClientState(res.client_state);
-                  setSafetyMessages(res.safety_messages);
-                  setEditableAnswers(null);
-                  setScreen("REVIEW");
-                } catch (e) {
-                  setScreenError(friendlyErrorMessage(e));
-                } finally {
-                  setIsSubmitting(false);
-                }
-              }}
-            >
-              {isSubmitting ? "Please wait\u2026" : "Review answers"}
-            </button>
-          </div>
-        </form>
-      </PageShell>
-    );
-  }
-
-  if (screen === "REVIEW") {
-  if (!clientState || runtimeId === null || version === null) {
-    setFatalError("Invalid REVIEW state");
+  if (!clientState || !editableAnswers || runtimeId === null || version === null) {
+    setFatalError("Invalid EDIT state");
     return null;
   }
 
   return (
-    <ReviewScreen
+    <EditScreen
       clientState={clientState}
-      safetyMessages={safetyMessages}
+      editableAnswers={editableAnswers}
+      additionalText={additionalText}
+      onAnswersChange={(answers) => setEditableAnswers(answers)}
+      onAdditionalTextChange={(text) => setAdditionalText(text)}
+      onContinue={(result) => {
+        setVersion(result.version);
+        setClientState(result.clientState);
+        setSafetyMessages(result.safetyMessages);
+        setEditableAnswers(null);
+        setScreen("REVIEW");
+      }}
       onBack={() => {
-        setEditableAnswers(initialiseEditableAnswers(clientState));
-        setScreen("EDIT");
+        setPresentationState({ status: "loading" });
+        setPresentationFetchTrigger((k) => k + 1);
+        setScreen("FREE_TEXT");
       }}
-      onContinue={() => {
-        setScreenError(null);
-        // TODO Step 7: remove these two lines when contactPreferences moves into ContactScreen
-        setContactPreferences(initialiseContactPreferences());
-        setContactErrors({});
-        setScreen("CONTACT");
-      }}
+      runtimeId={runtimeId}
+      version={version}
     />
   );
 }

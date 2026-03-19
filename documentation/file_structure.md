@@ -133,7 +133,11 @@ remains in App.tsx and is passed down as props.
 - frontend/src/screens/SafetyWarningScreen.tsx - Safety warning screen
 - frontend/src/screens/SafetyWarningScreen.test.tsx
 - frontend/src/screens/SelectConditionScreen.tsx - Condition Selection Screen
-- frontend/src/screens/SelectConditionScreen.tsx
+- frontend/src/screens/SelectConditionScreen.test.tsx
+- frontend/src/screens/ReviewScreen.tsx - Review Screen
+- frontend/src/screens/ReviewScreen.test.tsx
+- frontend/src/screens/EditScreen.tsx - Done Screen
+- frontend/src/screens/EditScreen.test.tsx
 
 Config files (frontend/):
 - frontend/index.html — patient form entry point.
