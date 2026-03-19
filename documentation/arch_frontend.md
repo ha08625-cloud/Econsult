@@ -34,13 +34,13 @@ Screen components live in `frontend/src/screens/`. Session state and screen tran
 
 ## State Ownership
 
-`App.tsx` owns all session state and is the only file that knows screen order. Screen components own only their own UI state (`isSubmitting`, `screenError`) and communicate outcomes to `App.tsx` via typed callbacks.
+`App.tsx` owns all session state and is the only file that knows screen order. Screen components receive session data as props and communicate outcomes to `App.tsx` via typed callbacks. Screen components own only their own transient UI state (`isSubmitting`, `screenError`, form field state).
 
 `onContinue` callbacks on screens that make API calls receive the full API result as a typed parameter — the component does not call any `App.tsx` state setters directly. `App.tsx` updates session state and navigates.
 
-The reset function in `App.tsx` manually clears every `useState` in the file. A checklist comment directly above the reset block names every variable. If a new `useState` is added to `App.tsx`, it must appear in the checklist. This is the only mechanism enforcing completeness.
+The reset function in `App.tsx` manually clears every `useState` in the file. A checklist comment directly above the reset block names every variable. If a new `useState` is added to `App.tsx`, it must appear in the checklist.
 
-**Dedicated error variables:** `App.tsx` uses `safetyFetchError` (not the generic `screenError`) for safety warning fetch failures. This is intentional — the safety warning fetch is the only fetch that lives in `App.tsx` rather than inside a screen component, so it needs its own error variable to avoid coupling to screen-local state. All other fetch errors are owned locally by the screen component that makes the call.
+**Dedicated error variable:** `App.tsx` uses `safetyFetchError` for safety warning fetch failures. This is the only fetch that lives in `App.tsx` rather than inside a screen component, so it needs its own error variable. All other fetch errors are owned locally by the screen component that makes the call.
 
 ---
 
@@ -49,7 +49,7 @@ The reset function in `App.tsx` manually clears every `useState` in the file. A 
 Two error classifications — the decision is made at the API boundary:
 
 - **`fatalError`:** Replaces the screen entirely. Use only for genuinely unrecoverable situations (missing `runtime_id`, condition list fails to load). Lives in `App.tsx`.
-- **Screen-local `screenError`:** Displays an inline message and preserves user answers. Each screen component that makes API calls declares its own error state locally — not shared through `App.tsx`. Clears automatically on navigation because screen components mount fresh.
+- **Screen-local `screenError`:** Displays an inline message and preserves user answers. Each screen component that makes API calls declares its own `screenError` locally. Clears automatically on navigation because screen components mount fresh.
 
 Component logic must never hardcode error messages — delegate to `friendlyErrorMessage(e)`. A 409 from the API indicates a session version conflict (multiple tabs).
 
@@ -63,7 +63,7 @@ Screen 0: `App.tsx` derives the union inline from raw state variables before pas
 
 Screen 2: `PresentationState` is defined in `types.ts`. There is no `idle` status — both transitions into `FREE_TEXT` reset it to `loading` before navigating. Any future third entry path must do the same.
 
-The `presentationFetchTrigger` counter in `App.tsx` exists solely to force a re-fetch when `selectedConditionId` has not changed (retry, or same-condition re-entry). Incrementing the counter is the only correct retry mechanism. **The retry callback must only call `setPresentationFetchTrigger(k => k + 1)` — not `setPresentationState({ status: "loading" })`.** The fetch effect sets loading state itself at the top of its body; setting it in the callback as well would cause a redundant double-set.
+The `presentationFetchTrigger` counter in `App.tsx` exists solely to force a re-fetch when `selectedConditionId` has not changed (retry, or same-condition re-entry). Incrementing the counter is the only correct retry mechanism. **The retry callback must only call `setPresentationFetchTrigger(k => k + 1)` — not `setPresentationState({ status: "loading" })`.** The fetch effect sets loading state itself at the top of its body.
 
 ---
 

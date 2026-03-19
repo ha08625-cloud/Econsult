@@ -27,7 +27,7 @@ from app.repositories.runtime_state_repository import (
 )
 from app.core.db import alembic_upgrade
 from app.models.runtime_state import RuntimeState
-from app.models.availability_models import AvailabilityConfig, AvailabilityException, LONDON_TZ
+from app.services.availability_orchestration import check_availability
 from app.core.condition_registry import ConditionRegistry, ConditionNotFound
 from app.repositories.practice_repository import PracticeRepository
 from app.repositories.availability_repository import AvailabilityRepository
@@ -44,7 +44,6 @@ from app.services.engine_adapters import (
     apply_update_and_evaluate,
     finish_runtime_state,
 )
-from app.services import availability_service
 from app.services.email_service import send_clinical_output, EmailDeliveryError
 from app.routers.admin_router import router as admin_router
 from starlette.staticfiles import StaticFiles
@@ -128,40 +127,6 @@ def _validate_startup(practice_repo: PracticeRepository) -> str:
             )
 
     return practice_id
-
-
-# ---------------------------------------------------------------------------
-# Availability orchestration
-# ---------------------------------------------------------------------------
-
-def check_availability(
-    availability_repo: AvailabilityRepository,
-    practice_id: str,
-    now_utc: datetime,
-) -> availability_service.AvailabilityResult:
-    """
-    Orchestration function: fetch config + exceptions, evaluate availability.
-
-    This wires the repository and service together. It does not belong in
-    availability_service.py because the service layer has no database access.
-    This follows the same pattern as engine_adapters.py: services are pure
-    logic, orchestration lives in the calling layer.
-
-    Steps:
-    1. Fetch config from availability_repo and construct AvailabilityConfig.
-    2. Compute today's date in Europe/London time.
-    3. Fetch exceptions from today onwards and construct AvailabilityException list.
-    4. Call evaluate_availability with config, now_utc, and exceptions.
-    5. Return the AvailabilityResult.
-    """
-    row = availability_repo.get_availability(practice_id)
-    config = AvailabilityConfig.from_row(row)
-
-    today_london = now_utc.astimezone(LONDON_TZ).date()
-    exception_rows = availability_repo.get_exceptions(practice_id, today_london)
-    exceptions = [AvailabilityException.from_row(r) for r in exception_rows]
-
-    return availability_service.evaluate_availability(config, now_utc, exceptions)
 
 
 # ---------------------------------------------------------------------------
