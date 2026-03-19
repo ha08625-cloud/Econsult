@@ -15,7 +15,10 @@ def evaluate_safety(
     - SafetyEvaluation with triggered rule IDs and messages
     Semantics:
     - None means unknown and never satisfies a condition
-    - Safety rules use ANY logic: a rule fires if any condition is true
+    - Safety rules use ANY logic: a rule fires if any condition is satisfied
+    - is_true: satisfied when the answer is explicitly True
+    - is_false: satisfied when the answer is explicitly False
+    - Neither is satisfied by None (unknown/unanswered)
     """
 
     evaluation = SafetyEvaluation()
@@ -27,13 +30,18 @@ def evaluate_safety(
 
         satisfied = False
         for cond in conditions:
-            key = cond.get("is_true")
-            if key is None:
-                continue
+            is_true_key = cond.get("is_true")
+            is_false_key = cond.get("is_false")
 
-            if answers.get(key) is True:
-                satisfied = True
-                break
+            if is_true_key is not None:
+                if answers.get(is_true_key) is True:
+                    satisfied = True
+                    break
+
+            if is_false_key is not None:
+                if answers.get(is_false_key) is False:
+                    satisfied = True
+                    break
 
         if satisfied:
             evaluation.triggered_rules.append(rule_id)
