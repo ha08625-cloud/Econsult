@@ -93,7 +93,7 @@
   "safety": {
     "rules": {
       "unable_to_keep_down_fluid_safety": {
-        "all": [
+        "any": [
           { "is_false": "able_to_keep_down_fluid" }
         ],
         "message": "This form is for routine issues and it may take several days to receive a response. If you are unable to keep down fluids, phone the duty doctor instead of submitting this form."
