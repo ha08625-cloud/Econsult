@@ -137,7 +137,7 @@ Config files (frontend/):
 - frontend/index.html — patient form entry point.
 - frontend/vite.config.ts — Vite build config. No test configuration; that lives in vitest.config.ts.
 - frontend/vitest.config.ts — Vitest test runner config (jsdom environment, setup file). Separated from vite.config.ts to avoid breaking the production Docker build.
-- frontend/tsconfig.json, tsconfig.app.json, tsconfig.node.json
+- frontend/tsconfig.json, tsconfig.app.json, tsconfig.node.json - test files explicitly excluded from tsconfig.json, excludes *.test.ts from build
 - frontend/package.json, package-lock.json
 - frontend/eslint.config.js
 
