@@ -10,6 +10,14 @@ from typing import Any, Dict, Optional
 from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
 from app.services.ruleset import ruleset_hash
 
+VALID_ANSWER_SOURCES = {
+    "unanswered",
+    "encoder",
+    "encoder_confirmed",
+    "encoder_corrected",
+    "patient",
+}
+
 
 def initialise_runtime_state(
     ruleset: dict,
@@ -51,21 +59,29 @@ def hydrate_runtime_state(
     Fail loud if incompatible with ruleset version.
     """
 
-    assert incoming.ruleset_version == ruleset_hash(ruleset)
+    expected_hash = ruleset_hash(ruleset)
+    if incoming.ruleset_version != expected_hash:
+        raise ValueError(
+            f"Ruleset version mismatch: state has {incoming.ruleset_version}, "
+            f"ruleset has {expected_hash}"
+        )
 
     rule_keys = {q["answer_key"] for q in ruleset["questions"]}
     state_keys = set(incoming.answers.keys())
 
-    assert rule_keys == state_keys
+    if rule_keys != state_keys:
+        missing = rule_keys - state_keys
+        extra = state_keys - rule_keys
+        raise ValueError(
+            f"Answer key mismatch between ruleset and state. "
+            f"Missing from state: {missing}, Extra in state: {extra}"
+        )
 
-    for a in incoming.answers.values():
-        assert a.source in {
-            "unanswered",
-            "encoder",
-            "encoder_confirmed",
-            "encoder_corrected",
-            "patient",
-        }
+    for key, a in incoming.answers.items():
+        if a.source not in VALID_ANSWER_SOURCES:
+            raise ValueError(
+                f"Invalid answer source '{a.source}' for answer_key '{key}'"
+            )
 
     return incoming
 
