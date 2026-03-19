@@ -10,7 +10,7 @@ This module is responsible for:
 - Retrieving submissions by ID
 - Listing submissions by delivery status
 
-Table creation is handled once at startup by app/core/db.init_database().
+Table creation is handled by Alembic migrations at startup.
 
 This module must never:
 - Access clinical engine modules (form_logic, safety_engine, etc.)
