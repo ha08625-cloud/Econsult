@@ -17,7 +17,7 @@ Ruleset loading, RuntimeState lifecycle, applying patient answers, orchestrating
 ### RuntimeState
 
 - RuntimeState is the **full, lossless, versioned** representation of in-flight form state. It is an engineering and safety artefact, not a medical record.
-- It is **append-only / versioned**. It must never be mutated in place.
+- It is append-only / versioned at the persistence layer. Each API request loads a fresh copy from the database, mutates the in-memory working copy, then persists it as a new version row. The database history is append-only; previous versions are never overwritten. The in-memory object must not survive beyond a single request boundary.
 - On final submission it is serialised into `ClinicalOutput` (lossy) and `AuditOutput` (lossless). Once closed, the session is read-only. Neither output contract may re-enter the engine.
 
 ### Form Initialisation Flow
