@@ -54,7 +54,7 @@ When modifying or adding features, locate the relevant capability below to ident
 ### 3.6 Frontend (Patient UI & Search)
 * **Scope:** Stateless React rendering, condition search, combobox, fetching APIs.
 * **Domain Doc:** `arch_frontend.md`
-* **Key Files:** `App.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`, `screens/DoneScreen.tsx`, `screens/SafetyWarningScreen.tsx`, `screens/SelectConditionScreen.tsx`
+* **Key Files:** `App.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`, `screens/DoneScreen.tsx`, `screens/SafetyWarningScreen.tsx`, `screens/SelectConditionScreen.tsx`, `screens/ReviewScreen.tsx`
 
 ### 3.7 Admin Portal & Configuration
 * **Scope:** Admin authentication, editing signposting, configuring availability. All admin errors use `APIError` constructors from `errors.py`; the only `HTTPException` in this domain is the 401 in `admin_context.py`.
