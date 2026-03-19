@@ -10,7 +10,7 @@ This module is responsible for:
 - HTML sanitisation for signposting content
 - Email format validation
 
-Table creation is handled once at startup by app/core/db.init_database().
+Table creation is handled by Alembic migrations at startup.
 
 This module must never:
 - Access clinical data (rulesets, RuntimeState, answers)
