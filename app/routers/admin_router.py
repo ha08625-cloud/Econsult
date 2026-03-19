@@ -31,20 +31,17 @@ from app.services.availability_service import (
     validate_exception,
     deactivation_clears_override,
 )
-from app.models.availability_models import AvailabilityException
+from app.models.availability_models import AvailabilityException, LONDON_TZ
 from app.core.errors import (
     CONDITION_NOT_FOUND,
     INVALID_PAYLOAD,
     INVALID_DATE_FORMAT,
     INVALID_FIELD_TYPE,
 )
-from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-LONDON_TZ = ZoneInfo("Europe/London")
 
 
 # ---------------------------------------------------------------------------
