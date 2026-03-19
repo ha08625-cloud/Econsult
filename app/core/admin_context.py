@@ -48,10 +48,6 @@ async def require_admin(request: Request) -> AdminContext:
     - Bearer value is empty
     - Token does not match ADMIN_TOKEN (when ADMIN_TOKEN is set)
     """
-    # Extract credentials manually so we control the 401 response shape
-    from fastapi.security.http import HTTPAuthorizationCredentials as Creds
-    from fastapi import Request as Req
-
     # Use the bearer scheme to parse the header
     credentials: HTTPAuthorizationCredentials | None = await _bearer_scheme(request)
 
