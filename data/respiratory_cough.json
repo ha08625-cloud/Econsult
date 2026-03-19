@@ -77,7 +77,7 @@
   "safety": {
     "rules": {
       "shortness_of_breath_safety": {
-        "all": [
+        "any": [
           { "is_true": "shortness_of_breath_present" }
         ],
         "message": "This form is for routine issues and it may take several days to receive a response. If you are feeling short of breath, phone the duty doctor instead of submitting this form."
