@@ -1,11 +1,10 @@
 """
 encoder stub
-will be replaced in entirety by real encoder
+will be replaced in entirety by real stub
 only purpose is to test output signals are received and interpreted
 """
 
 from typing import Dict, Optional, List
-
 
 def extract_signals(
     free_text: Optional[str],
@@ -13,9 +12,6 @@ def extract_signals(
 ) -> Dict[str, Optional[bool]]:
     """
     Stub encoder.
-    Input: free text + encoder definitions (answer_key + encoder_prompt pairs)
-    Output: {answer_key: True | False | None}
-
     Non-goals:
     - accuracy
     - NLP
@@ -24,6 +20,7 @@ def extract_signals(
     - realism
     """
 
+    # Fail soft
     if not free_text:
         return {d["answer_key"]: None for d in encoder_definitions}
 
