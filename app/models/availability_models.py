@@ -1,5 +1,5 @@
 """
-app/models/availability_models.py — Availability data shapes.
+Availability data shapes.
 
 Data shapes only. No logic, no IO, no imports from service modules.
 
@@ -16,6 +16,12 @@ practice_availability_exceptions table (Stage 4).
 from dataclasses import dataclass, field
 import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+# Canonical timezone constant. All availability evaluation uses Europe/London
+# local time for schedule matching and date boundary logic. Imported by
+# availability_service.py, main.py, and admin_router.py.
+LONDON_TZ = ZoneInfo("Europe/London")
 
 
 @dataclass
