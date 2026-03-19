@@ -43,7 +43,6 @@ Railway deployment, multi-stage Docker build, static file serving, Postgres + ps
 - `alembic_upgrade()` in `db.py` runs `alembic upgrade head` at application startup. A migration failure must halt startup — this is correct behaviour.
 - **No automated rollback.** Rollbacks are manual: `alembic downgrade -1` against the live database.
 - Migration files live in `alembic/versions/`. Check these files directly for the current schema.
-- `init_database()` in `db.py` is **deprecated** — it was the pre-Alembic table creation function and will be deleted once `alembic_upgrade()` is confirmed stable on Railway. Do not call it from new code.
 
 ---
 
