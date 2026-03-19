@@ -37,10 +37,18 @@ from app.repositories.practice_repository import PracticeRepository
 # Displayed on the first screen the patient sees, before condition selection.
 # Also included in get_patient_presentation() for backwards compatibility.
 UNIVERSAL_SAFETY_WARNING = (
-    "If you are experiencing any of the following, do not use this service. "
-    "Call 999 or go to A&E immediately: chest pain, difficulty breathing, "
-    "signs of a stroke (face drooping, arm weakness, speech difficulty), "
-    "severe bleeding, or loss of consciousness."
+    "If you or someone else is experiencing any of the following, do not use this service. "
+    "Call 999 or go to A&E immediately. "
+    "Chest pain or heart attack signs: central chest pain, often heavy, tight, or crushing. "
+    "Breathing difficulties: struggling to breathe, gasping, or unable to speak in full sentences. "
+    "Stroke signs (FAST): face drooping, arm weakness, or slurred speech. "
+    "Severe bleeding: bleeding that is spraying, pouring, or will not stop with pressure. "
+    "Loss of consciousness: the person is unconscious or has collapsed. "
+    "Fits or seizures: especially a first-time fit, or if the person is not waking up. "
+    "Severe allergic reaction (anaphylaxis): sudden swelling of the lips, mouth, throat, or tongue. "
+    "Acute confusion: sudden onset of confusion, agitation, or odd behaviour. "
+    "Major trauma: serious injuries from a high-speed accident or fall from height. "
+    "Suicide attempt or self-harm: immediate risk of harm to self."
 )
 
 
