@@ -19,7 +19,6 @@ import type {
   ContactPreferences,
   ContactMethod,
 } from "./types";
-import ConditionCombobox from "./ConditionCombobox";
 import { GENERAL_CONSULTATION_ID, SIGNPOSTING_PURIFY_CONFIG } from './constants';
 import { PageShell, InlineError } from "./layout";
 import {
