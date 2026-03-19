@@ -32,6 +32,8 @@ class AdminContext:
     auth_method: str  # "bearer_token" | "dev_any"
 
 
+# Intentionally duplicated from main.py. admin_context must never import
+# any project module (see arch_admin.md), so this cannot be shared.
 def _is_dev_mode() -> bool:
     return os.environ.get("DEV_MODE", "").lower() in ("1", "true")
 
