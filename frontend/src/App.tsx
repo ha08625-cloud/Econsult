@@ -32,6 +32,7 @@ import type { SafetyWarningFetchState } from "./screens/SafetyWarningScreen";
 import SelectConditionScreen from "./screens/SelectConditionScreen";
 import ReviewScreen from "./screens/ReviewScreen";
 import EditScreen from "./screens/EditScreen";
+import FreeTextScreen from "./screens/FreeTextScreen";
 
 // ---------------------------------
 // App
@@ -353,124 +354,31 @@ if (screen === "SELECT_CONDITION") {
   );
 }
 
-  // ---------------------------------
-  // Screen 2: FREE_TEXT
-  // ---------------------------------
-
-  if (screen === "FREE_TEXT") {
-    if (selectedConditionId === null) {
-      setFatalError("No condition selected");
-      return null;
-    }
-
-    function retryPresentation() {
-      setPresentationState({ status: "loading" });
-      setPresentationFetchTrigger(k => k + 1);
-    }
-
-    if (presentationState.status === "loading") {
-      return (
-        <PageShell>
-          <p className="status-text">Loading...</p>
-        </PageShell>
-      );
-    }
-
-    if (presentationState.status === "error") {
-      return (
-        <PageShell>
-          <h1>Something went wrong</h1>
-          <InlineError message={presentationState.message} />
-          <div className="btn-row">
-            <button
-              className="btn btn-secondary"
-              onClick={() => setScreen("SELECT_CONDITION")}
-            >
-              Back
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={retryPresentation}
-            >
-              Try again
-            </button>
-          </div>
-        </PageShell>
-      );
-    }
-
-    // status === "success"
-    const presentation = presentationState.data;
-
-    return (
-      <PageShell>
-        <h1>{presentation.label}</h1>
-
-        {presentation.practice_signposting && (
-            <div
-              className="alert alert-info"
-              dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(
-                  presentation.practice_signposting,
-                  SIGNPOSTING_PURIFY_CONFIG
-                )
-              }}
-            />
-          )}
-
-        <div className="field">
-          <label htmlFor="free-text-input">
-            {presentation.free_text_prompt ?? "Describe your symptoms"}
-          </label>
-          <textarea
-            id="free-text-input"
-            value={freeText}
-            onChange={(e) => {
-              setFreeText(e.target.value);
-              if (screenError) setScreenError(null);
-            }}
-            rows={5}
-          />
-        </div>
-
-        {screenError && <InlineError message={screenError} />}
-
-        <div className="btn-row">
-          <button
-            className="btn btn-secondary"
-            disabled={isSubmitting}
-            onClick={() => setScreen("SELECT_CONDITION")}
-          >
-            Back
-          </button>
-          <button
-            className="btn btn-primary"
-            disabled={isSubmitting}
-            onClick={async () => {
-              setScreenError(null);
-              try {
-                setIsSubmitting(true);
-                const res = await initForm(selectedConditionId, freeText || null);
-                setRuntimeId(res.runtime_id);
-                setVersion(res.version);
-                setClientState(res.client_state);
-                setEditableAnswers(initialiseEditableAnswers(res.client_state));
-                setAdditionalText(res.client_state.additional_text ?? "");
-                setPresentationState({ status: "loading" });
-                setScreen("EDIT");
-              } catch (e) {
-                setScreenError(friendlyErrorMessage(e));
-              } finally {
-                setIsSubmitting(false);
-              }
-            }}
-          >
-            {isSubmitting ? "Please wait\u2026" : "Continue"}
-          </button>
-        </div>
-      </PageShell>
-    );
+if (screen === "FREE_TEXT") {
+  if (selectedConditionId === null) {
+    setFatalError("No condition selected");
+    return null;
   }
+
+  return (
+    <FreeTextScreen
+      presentationState={presentationState}
+      freeText={freeText}
+      selectedConditionId={selectedConditionId}
+      onFreeTextChange={(text) => setFreeText(text)}
+      onContinue={(result) => {
+        setRuntimeId(result.runtimeId);
+        setVersion(result.version);
+        setClientState(result.clientState);
+        setEditableAnswers(result.editableAnswers);
+        setAdditionalText(result.additionalText);
+        setScreen("EDIT");
+      }}
+      onBack={() => setScreen("SELECT_CONDITION")}
+      onRetry={() => setPresentationFetchTrigger((k) => k + 1)}
+    />
+  );
+}
 
   if (screen === "EDIT") {
   if (!clientState || !editableAnswers || runtimeId === null || version === null) {

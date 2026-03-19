@@ -138,6 +138,8 @@ remains in App.tsx and is passed down as props.
 - frontend/src/screens/ReviewScreen.test.tsx
 - frontend/src/screens/EditScreen.tsx - Done Screen
 - frontend/src/screens/EditScreen.test.tsx
+- frontend/src/screens/FreeTextScreen.tsx - Free Text Screen
+- frontend/src/screens/FreeTextScreenScreen.test.tsx
 
 Config files (frontend/):
 - frontend/index.html — patient form entry point.
