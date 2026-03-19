@@ -59,6 +59,7 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
+  const [safetyFetchError, setSafetyFetchError] = useState<string | null>(null);
 
   // Screen 0 state (safety gate)
   const [safetyWarningText, setSafetyWarningText] = useState<string | null>(null);
@@ -109,7 +110,7 @@ export default function App() {
         const res = await getSafetyWarning();
         if (!cancelled) setSafetyWarningText(res.universal_safety_warning);
       } catch (e) {
-        if (!cancelled) setScreenError(friendlyErrorMessage(e));
+        if (!cancelled) setSafetyFetchError(friendlyErrorMessage(e));
       }
     }
 
@@ -295,107 +296,30 @@ export default function App() {
     );
   }
 
-  // ---------------------------------
-  // Screen 0: SAFETY_WARNING
-  // ---------------------------------
+if (screen === "SAFETY_WARNING") {
+  const safetyWarningFetchState: SafetyWarningFetchState =
+    safetyFetchError !== null
+      ? { status: "error", message: safetyFetchError }
+      : safetyWarningText !== null
+      ? { status: "success", text: safetyWarningText }
+      : { status: "loading" };
 
-  if (screen === "SAFETY_WARNING") {
-    // Practice is closed: is_open is explicitly false (not null, not true).
-    const isClosed = practiceIsOpen === false;
-
-    return (
-      <PageShell>
-        <h1>Before you continue</h1>
-
-        {/* Closed message banner — above safety warning */}
-        {isClosed && availabilityClosedMessage && (
-          <div
-            className="alert alert-warning"
-            style={{ marginBottom: "16px" }}
-          >
-            <strong>This service is currently closed</strong>
-            <p style={{ margin: "8px 0 0 0" }}>{availabilityClosedMessage}</p>
-          </div>
-        )}
-
-        {isClosed && !availabilityClosedMessage && (
-          <div
-            className="alert alert-warning"
-            style={{ marginBottom: "16px" }}
-          >
-            <strong>This service is currently closed</strong>
-          </div>
-        )}
-
-        {safetyWarningText === null && !screenError && (
-          <p className="status-text">Loading...</p>
-        )}
-
-        {screenError && (
-          <>
-            <InlineError message={screenError} />
-            <div className="btn-row">
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  setScreenError(null);
-                  setSafetyWarningText(null);
-                }}
-              >
-                Try again
-              </button>
-            </div>
-          </>
-        )}
-
-        {safetyWarningText !== null && (
-          <>
-            <div className="alert alert-danger">
-              <strong>Important — read before continuing</strong>
-              <p>{safetyWarningText}</p>
-            </div>
-
-            {/* After-hours notice — below safety warning, above form controls */}
-            {afterHoursNotice && !isClosed && (
-              <div
-                className="alert alert-info"
-                style={{ marginBottom: "16px" }}
-              >
-                <p style={{ margin: 0 }}>{afterHoursNotice}</p>
-              </div>
-            )}
-
-            <div className="safety-confirm-row">
-              <label className="safety-confirm-label">
-                <input
-                  type="checkbox"
-                  checked={safetyConfirmed}
-                  onChange={(e) => setSafetyConfirmed(e.target.checked)}
-                />
-                <span>I confirm that none of the above apply to me</span>
-              </label>
-            </div>
-
-            {!safetyConfirmed && (
-              <p className="safety-gate-hint">
-                If any of the above apply to you, please call 999 or go to A&amp;E immediately. Do not use this form.
-              </p>
-            )}
-
-            <div className="btn-row">
-              <button
-                className="btn btn-primary"
-                disabled={!safetyConfirmed || isClosed}
-                onClick={() => setScreen("SELECT_CONDITION")}
-              >
-                Continue
-              </button>
-            </div>
-          </>
-        )}
-      </PageShell>
-    );
-  }
+  return (
+    <SafetyWarningScreen
+      safetyWarningFetchState={safetyWarningFetchState}
+      safetyConfirmed={safetyConfirmed}
+      practiceIsOpen={practiceIsOpen}
+      availabilityClosedMessage={availabilityClosedMessage}
+      afterHoursNotice={afterHoursNotice}
+      onConfirmChange={(confirmed) => setSafetyConfirmed(confirmed)}
+      onRetry={() => {
+        setSafetyFetchError(null);
+        setSafetyWarningText(null);
+      }}
+      onContinue={() => setScreen("SELECT_CONDITION")}
+    />
+  );
+}
 
   // ---------------------------------
   // Screen 1: SELECT_CONDITION
