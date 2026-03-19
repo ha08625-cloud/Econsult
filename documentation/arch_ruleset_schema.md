@@ -36,7 +36,7 @@ The shape and constraints of the JSON ruleset files that define clinical behavio
   "safety": {
     "rules": {
       "<rule_id>": {
-        "all": [
+        "any": [
           { "is_true": "<answer_key>" }   // or "is_false"
         ],
         "message": "<string>"
@@ -58,7 +58,9 @@ The shape and constraints of the JSON ruleset files that define clinical behavio
 
 **Encoder questions must be Boolean.** `send_to_encoder: true` requires `answer_type: "Boolean"` and a non-null `encoder_prompt`. Non-Boolean questions must have `send_to_encoder: false` and `encoder_prompt: null`. This is validated at startup by `ruleset.py`.
 
-**Safety rules reference only declared `answer_key`s.** Every key used in a safety rule's `all` clause must exist in the `questions` list. Validated at startup.
+**Safety rules use `"any"` (OR) semantics.** A rule fires if **any** clause in its `"any"` list is satisfied. This is the correct clinical behaviour: a single red flag answer should trigger the rule. The key must be `"any"`, not `"all"` — both the validator in `ruleset.py` and the engine in `safety_engine.py` read this key.
+
+**Safety rules reference only declared `answer_key`s.** Every key used in a safety rule's `any` clause must exist in the `questions` list. Validated at startup.
 
 **`answer_key`s must be unique within a ruleset.** Duplicate keys are rejected at startup.
 
