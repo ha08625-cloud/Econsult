@@ -28,6 +28,8 @@ import {
   isValidUkPhone,
 } from "./helpers";
 import DoneScreen from "./screens/DoneScreen";
+import SafetyWarningScreen from "./screens/SafetyWarningScreen";
+import type { SafetyWarningFetchState } from "./screens/SafetyWarningScreen";
 
 // ---------------------------------
 // App
