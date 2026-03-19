@@ -1,5 +1,5 @@
 """
-app/services/availability_service.py — Availability evaluation logic.
+Availability evaluation logic.
 
 No database access. No imports from any project module except
 app.models.availability_models. Fully testable without a database.
@@ -14,15 +14,13 @@ Functions:
 
 import datetime
 from datetime import timedelta
-from zoneinfo import ZoneInfo
 
 from app.models.availability_models import (
     AvailabilityConfig,
     AvailabilityException,
     AvailabilityResult,
+    LONDON_TZ,
 )
-
-LONDON_TZ = ZoneInfo("Europe/London")
 
 VALID_DAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 
