@@ -1,16 +1,16 @@
 """
-Availability data shapes.
+app/models/availability_models.py — Availability data shapes.
 
 Data shapes only. No logic, no IO, no imports from service modules.
 
 AvailabilityConfig: represents the stored configuration from the
-practice_availability table. Includes override fields (Stage 3).
+practice_availability table. Includes override fields.
 
 AvailabilityResult: the return type of evaluate_availability(). Consumed
 by GET /availability and the availability check inside POST /form/init.
 
 AvailabilityException: represents a single row from the
-practice_availability_exceptions table (Stage 4).
+practice_availability_exceptions table.
 """
 
 from dataclasses import dataclass, field
@@ -32,7 +32,7 @@ class AvailabilityConfig:
     open_time: datetime.time
     close_time: datetime.time
     closed_message: Optional[str]
-    # Override fields (Stage 3). All nullable — null means no override.
+    # Override fields. All nullable — null means no override.
     override_status: Optional[str] = None
     override_expires_at: Optional[datetime.datetime] = None
     override_message: Optional[str] = None
