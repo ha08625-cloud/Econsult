@@ -8,7 +8,7 @@
 
 Stateless React rendering of a six-screen patient form flow, condition search, and API communication.
 
-**Key files:** `App.tsx`, `helpers.ts`, `layout.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`, `constants.ts`
+**Key files:** `App.tsx`, `helpers.ts`, `layout.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`, `constants.ts`, `screens/DoneScreen.tsx`, `screens/SafetyWarningScreen.tsx`
 
 **Screen components (frontend/src/screens/):** Individual screens extracted from `App.tsx` during Phase 2. See file_structure.md for the current list. Each screen component owns only its own UI state; session state lives in `App.tsx` and is passed down as props.
 
@@ -92,6 +92,8 @@ Self-contained combobox for condition selection. `filteredConditions` is a deriv
 - If the practice is closed: a warning banner is shown above the safety text; the Continue button is disabled. The safety warning must remain visible even when closed — a patient arriving out of hours still needs emergency information.
 - If `afterHoursNotice` is non-null and the practice is open: an informational notice is shown below the safety warning.
 - If `POST /form/init` returns 503 (closed between availability check and submission), `friendlyErrorMessage` extracts the `detail` field from the response body and displays it as a `screenError` on Screen 2.
+
+The safety warning fetch writes errors to a dedicated `safetyFetchError` state variable in `App.tsx`, not to `screenError`. The fetch state is passed to `SafetyWarningScreen` as a `SafetyWarningFetchState` discriminated union.
 
 ---
 
