@@ -1,5 +1,5 @@
 """
-HTTP layer.
+HTTP layer/imperative shell
 
 Thin wrapper over engine_adapters. No clinical logic.
 Imports: engine_adapters, runtime_state_repository, condition_registry, request_validation, errors.
@@ -18,7 +18,6 @@ import uuid
 import os
 import logging
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 from app.repositories.runtime_state_repository import (
     RuntimeStateRepository,
@@ -28,7 +27,7 @@ from app.repositories.runtime_state_repository import (
 )
 from app.core.db import alembic_upgrade
 from app.models.runtime_state import RuntimeState
-from app.models.availability_models import AvailabilityConfig, AvailabilityException
+from app.models.availability_models import AvailabilityConfig, AvailabilityException, LONDON_TZ
 from app.core.condition_registry import ConditionRegistry, ConditionNotFound
 from app.repositories.practice_repository import PracticeRepository
 from app.repositories.availability_repository import AvailabilityRepository
@@ -51,8 +50,6 @@ from app.routers.admin_router import router as admin_router
 from starlette.staticfiles import StaticFiles
 
 logger = logging.getLogger(__name__)
-
-LONDON_TZ = ZoneInfo("Europe/London")
 
 # ---------------------------------------------------------------------------
 # Startup helpers
