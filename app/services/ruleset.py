@@ -52,7 +52,7 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
 
     if "safety" in ruleset:
         for rule_id, rule in ruleset["safety"]["rules"].items():
-            for clause in rule.get("all", []):
+            for clause in rule.get("any", []):
                 key = clause.get("is_true") or clause.get("is_false")
                 if key not in seen_answer_keys:
                     raise ValueError(
