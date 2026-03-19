@@ -132,6 +132,8 @@ remains in App.tsx and is passed down as props.
 - frontend/src/screens/DoneScreen.test.tsx — component tests for DoneScreen.
 - frontend/src/screens/SafetyWarningScreen.tsx - Safety warning screen
 - frontend/src/screens/SafetyWarningScreen.test.tsx
+- frontend/src/screens/SelectConditionScreen.tsx - Condition Selection Screen
+- frontend/src/screens/SelectConditionScreen.tsx
 
 Config files (frontend/):
 - frontend/index.html — patient form entry point.

@@ -6,9 +6,9 @@
 
 ## Scope
 
-Stateless React rendering of a six-screen patient form flow, condition search, and API communication.
+Stateless React rendering of a seven-screen patient form flow, condition search, and API communication.
 
-**Key files:** `App.tsx`, `helpers.ts`, `layout.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`, `constants.ts`, `screens/DoneScreen.tsx`, `screens/SafetyWarningScreen.tsx`
+**Key files:** `App.tsx`, `helpers.ts`, `layout.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`, `constants.ts`
 
 **Screen components (frontend/src/screens/):** Individual screens extracted from `App.tsx` during Phase 2. See file_structure.md for the current list. Each screen component owns only its own UI state; session state lives in `App.tsx` and is passed down as props.
 
@@ -25,7 +25,7 @@ Stateless React rendering of a six-screen patient form flow, condition search, a
 
 ## Screen Flow
 
-Six screens in sequence: `SAFETY_WARNING` → `SELECT_CONDITION` → `FREE_TEXT` → `EDIT` → `REVIEW` → `CONTACT` → `DONE`.
+Seven screens in sequence: `SAFETY_WARNING` → `SELECT_CONDITION` → `FREE_TEXT` → `EDIT` → `REVIEW` → `CONTACT` → `DONE`.
 
 - Screen 0 (`SAFETY_WARNING`) is a hard block. The Continue button must remain disabled until the patient acknowledges. It also fetches `GET /availability` in parallel — see Availability below.
 - Screen 3 (`EDIT`) collects `additionalText` alongside question answers. This is included in the submission payload and shown on REVIEW only when non-empty.
@@ -38,12 +38,12 @@ The `SAFETY_WARNING` screen still receives `universal_safety_warning` inside the
 
 ## Error Handling (Enforced Architecture)
 
-Two error states — the classification decision must be made at the API boundary, not in component logic:
+Two error classifications — the decision must be made at the API boundary, not in component logic:
 
-- **`fatalError`:** Replaces the screen entirely. Use only for genuinely unrecoverable situations (e.g. the condition list fails to load, missing `runtime_id`).
-- **`screenError`:** Displays an inline message and preserves user answers. Use for all recoverable failures — network errors, 5xx, 4xx on submission endpoints, 503 from `/form/init` (practice closed mid-session).
+- **`fatalError`:** Replaces the screen entirely. Use only for genuinely unrecoverable situations (e.g. the condition list fails to load, missing `runtime_id`). Lives in `App.tsx`.
+- **Screen-local error state:** Displays an inline message and preserves user answers. Use for all recoverable failures — network errors, 5xx, 4xx on submission endpoints, 503 from `/form/init`. Each screen component that makes API calls declares its own `screenError` state locally. It is not a shared variable in `App.tsx`.
 
-`screenError` must be cleared on every screen transition or when the patient resumes editing.
+Screen-local error state must be cleared on every screen transition or when the patient resumes editing. Because each screen component mounts fresh on navigation, this happens automatically for extracted screens.
 
 `ApiError` (defined in `api.ts`) must be thrown by all fetch wrappers. It carries the HTTP `status` (number) or `null` for network failures. Component logic must never hardcode error messages — it delegates to `friendlyErrorMessage(e)`. A 409 indicates a session version conflict (multiple tabs).
 
@@ -77,7 +77,7 @@ TypeScript interfaces for all data the frontend receives or sends. These are pro
 All condition filtering logic lives here and nowhere else. Three-layer matching: substring on label, substring on search tags, then Levenshtein fuzzy match on tag tokens. Fuzzy matching is disabled for queries under 4 characters to prevent false positives. `filterConditions` always filters from the full canonical list passed in — never incrementally from a previous result. Returns the full list as a fallback when nothing matches (never returns empty).
 
 ### `ConditionCombobox.tsx`
-Self-contained combobox for condition selection. `filteredConditions` is a derived value computed on every render — never stored in state — which guarantees filtering is always from the canonical list. The 150ms blur delay on the input is intentional: `mousedown` on a suggestion fires `blur` before `click`, so without the delay the list closes before the selection registers.
+Self-contained combobox for condition selection. `filteredConditions` is a derived value computed on every render — never stored in state — which guarantees filtering is always from the canonical list. The 150ms blur delay on the input is intentional: `mousedown` on a suggestion fires `blur` before `click`, so without the delay the list closes before the selection registers. The input `id` is generated dynamically via React's `useId()` hook — do not attempt to target it by a stable string in tests.
 
 ### `constants.ts`
 `GENERAL_CONSULTATION_ID` must match the `condition_id` in `general.json` exactly. If the general consultation ruleset is renamed, update this constant only — it must not be hardcoded elsewhere.
@@ -91,9 +91,26 @@ Self-contained combobox for condition selection. `filteredConditions` is a deriv
 - Fail open: any failure (network, non-200) sets `practiceIsOpen = true`. No error is shown to the patient.
 - If the practice is closed: a warning banner is shown above the safety text; the Continue button is disabled. The safety warning must remain visible even when closed — a patient arriving out of hours still needs emergency information.
 - If `afterHoursNotice` is non-null and the practice is open: an informational notice is shown below the safety warning.
-- If `POST /form/init` returns 503 (closed between availability check and submission), `friendlyErrorMessage` extracts the `detail` field from the response body and displays it as a `screenError` on Screen 2.
+- If `POST /form/init` returns 503 (closed between availability check and submission), `friendlyErrorMessage` extracts the `detail` field from the response body and displays it as a screen-local error on Screen 2.
 
-The safety warning fetch writes errors to a dedicated `safetyFetchError` state variable in `App.tsx`, not to `screenError`. The fetch state is passed to `SafetyWarningScreen` as a `SafetyWarningFetchState` discriminated union.
+---
+
+## Safety Warning Fetch State (Screen 0)
+
+The safety warning fetch result is modelled as a discriminated union `SafetyWarningFetchState`, exported from `SafetyWarningScreen.tsx`:
+
+```typescript
+type SafetyWarningFetchState =
+  | { status: "loading" }
+  | { status: "success"; text: string }
+  | { status: "error"; message: string }
+```
+
+`App.tsx` holds `safetyWarningText: string | null` and `safetyFetchError: string | null` as separate state variables (written by the fetch effect), and derives `SafetyWarningFetchState` inline before passing it to `SafetyWarningScreen` as a single prop. This keeps the fetch effect simple while giving the component a clean interface with no nullable fields to cross-reference.
+
+The retry callback in `App.tsx` clears both `safetyFetchError` and `safetyWarningText`, which re-triggers the fetch effect (the effect guards on `safetyWarningText !== null`).
+
+This follows the same discriminated union pattern as `PresentationState` on Screen 2. Both patterns should be kept consistent if either is changed.
 
 ---
 
@@ -110,7 +127,7 @@ type PresentationState =
 
 There is no `idle` state. `presentationState` is only rendered inside the `FREE_TEXT` screen block, and both transitions into `FREE_TEXT` reset it to `loading` before navigating. If a future developer adds a third path to `FREE_TEXT`, they must do the same — failing to reset guarantees the patient will see stale data from a previous condition.
 
-The `useEffect` depends on `[selectedConditionId, presentationFetchTrigger]`. `presentationFetchTrigger` is an integer counter in `App.tsx` whose only purpose is to signal "please re-fetch even though `selectedConditionId` has not changed." It is incremented at both navigation boundaries and by `retryPresentation`. This solves two problems that a dependency on `selectedConditionId` alone cannot handle:
+The `useEffect` depends on `[selectedConditionId, presentationFetchTrigger]`. `presentationFetchTrigger` is an integer counter in `App.tsx` whose only purpose is to signal "please re-fetch even though `selectedConditionId` has not changed." It is incremented at both navigation boundaries and by the retry callback. This solves two problems that a dependency on `selectedConditionId` alone cannot handle:
 
 - **Same-condition re-entry after error:** the patient selects condition A, advances, gets a fetch error, goes back, and clicks Continue again without changing their selection. `selectedConditionId` has not changed, so the effect would not re-fire without the trigger increment.
 - **Retry:** the error screen offers a "Try again" button. Incrementing the trigger causes the effect to re-run; the retry does not call any fetch function directly.
@@ -120,10 +137,8 @@ The `useEffect` uses a `cancelled` boolean flag for cleanup. In development with
 The `FREE_TEXT` render block branches on `presentationState.status`:
 
 - `"loading"` — spinner only
-- `"error"` — error message with Back and Try again buttons; Back returns to `SELECT_CONDITION`, Try again calls `retryPresentation`
+- `"error"` — error message with Back and Try again buttons; Back returns to `SELECT_CONDITION`, Try again increments `presentationFetchTrigger`
 - `"success"` — the full presentation form; `presentation` is narrowed from `presentationState.data`
-
-The `screenError` state variable is not used for presentation fetch errors. It remains in use on the `FREE_TEXT` success render for `initForm` submission errors only.
 
 ---
 

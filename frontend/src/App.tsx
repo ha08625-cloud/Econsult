@@ -30,6 +30,7 @@ import {
 import DoneScreen from "./screens/DoneScreen";
 import SafetyWarningScreen from "./screens/SafetyWarningScreen";
 import type { SafetyWarningFetchState } from "./screens/SafetyWarningScreen";
+import SelectConditionScreen from "./screens/SelectConditionScreen";
 
 // ---------------------------------
 // App
@@ -321,74 +322,35 @@ if (screen === "SAFETY_WARNING") {
   );
 }
 
-  // ---------------------------------
-  // Screen 1: SELECT_CONDITION
-  // ---------------------------------
-
-  if (screen === "SELECT_CONDITION") {
-    const selectableConditions: ConditionSummary[] = conditions
-      ? conditions.filter((c) => c.id !== GENERAL_CONSULTATION_ID)
-      : [];
-
-    function handleBlankForm() {
-      setSelectedConditionId(GENERAL_CONSULTATION_ID);
-      setPresentationState({ status: "loading" });
-      setPresentationFetchTrigger(k => k + 1);
-      setScreen("FREE_TEXT");
-    }
-
-    return (
-      <PageShell>
-        <h1>Start your consultation</h1>
-
-        {conditions === null ? (
-          <p className="status-text">Loading...</p>
-        ) : (
-          <>
-            <div className="field">
-              <label htmlFor="condition-combobox-input">
-                What is your consultation about?
-              </label>
-              <ConditionCombobox
-                conditions={selectableConditions}
-                selectedId={selectedConditionId}
-                onChange={(newId) => {
-                  if (newId !== selectedConditionId) {
-                    setFreeText("");
-                  }
-                  setSelectedConditionId(newId);
-                }}
-              />
-            </div>
-
-            <div className="btn-row">
-              <button
-                className="btn btn-primary"
-                disabled={selectedConditionId === null}
-                onClick={() => {
-                  setPresentationState({ status: "loading" });
-                  setPresentationFetchTrigger(k => k + 1);
-                  setScreen("FREE_TEXT");
-                }}
-              >
-                Continue
-              </button>
-            </div>
-
-            <hr className="divider" />
-
-            <p style={{ color: "var(--text-muted)", fontSize: "14px", marginBottom: "12px" }}>
-              If you cannot find a condition that matches your problem, you can
-              use a blank form instead.
-            </p>
-            <button className="btn btn-secondary" onClick={handleBlankForm}>
-              Use blank form
-            </button>
-          </>
-        )}
-      </PageShell>
-    );
-  }
+if (screen === "SELECT_CONDITION") {
+  return (
+    <SelectConditionScreen
+      conditions={
+        conditions
+          ? conditions.filter((c) => c.id !== GENERAL_CONSULTATION_ID)
+          : null
+      }
+      selectedConditionId={selectedConditionId}
+      onConditionChange={(newId) => {
+        if (newId !== selectedConditionId) {
+          setFreeText("");
+        }
+        setSelectedConditionId(newId);
+      }}
+      onContinue={() => {
+        setPresentationState({ status: "loading" });
+        setPresentationFetchTrigger((k) => k + 1);
+        setScreen("FREE_TEXT");
+      }}
+      onBlankForm={() => {
+        setSelectedConditionId(GENERAL_CONSULTATION_ID);
+        setPresentationState({ status: "loading" });
+        setPresentationFetchTrigger((k) => k + 1);
+        setScreen("FREE_TEXT");
+      }}
+    />
+  );
+}
 
   // ---------------------------------
   // Screen 2: FREE_TEXT
