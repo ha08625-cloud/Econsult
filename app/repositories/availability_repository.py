@@ -76,8 +76,8 @@ class AvailabilityRepository:
         practice_id: str,
         is_active: bool,
         weekly_open_days: list[str],
-        open_time,
-        close_time,
+        open_time: datetime.time,
+        close_time: datetime.time,
         closed_message: str | None,
     ) -> None:
         """
@@ -115,7 +115,7 @@ class AvailabilityRepository:
         self,
         practice_id: str,
         override_status: str,
-        override_expires_at,
+        override_expires_at: datetime.datetime,
         override_message: str | None,
     ) -> None:
         """
@@ -156,7 +156,7 @@ class AvailabilityRepository:
                 )
 
     # ------------------------------------------------------------------
-    # Per-date exceptions (Stage 4)
+    # Per-date exceptions
     # ------------------------------------------------------------------
 
     def get_exceptions(
