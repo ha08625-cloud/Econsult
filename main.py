@@ -65,6 +65,8 @@ def _require_env(name: str) -> str:
     return value
 
 
+# Intentionally duplicated in admin_context.py. That module must never
+# import any project module (see arch_admin.md), so this cannot be shared.
 def _is_dev_mode() -> bool:
     return os.environ.get("DEV_MODE", "").lower() in ("1", "true")
 
