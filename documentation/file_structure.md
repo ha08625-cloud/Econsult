@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout and import mapping
-# Last updated: 2026-03-17
+# Last updated: 2026-03-19
 
 ---
 
@@ -111,7 +111,7 @@ Files:
 Patient-facing React app built with Vite.
 
 Source files (frontend/src/):
-- frontend/src/App.tsx — root component. Owns all screen state, useEffect data fetches, and screen transitions. Renders the active screen component. No JSX for individual screens after Phase 2 refactor.
+- frontend/src/App.tsx — root component. Owns all screen state, useEffect data fetches, and screen transitions. Renders the active screen component. No inline JSX for individual screens that have been extracted to frontend/src/screens/.
 - frontend/src/ConditionCombobox.tsx — condition search and selection component.
 - frontend/src/api.ts — typed HTTP client functions. No business logic.
 - frontend/src/constants.ts — shared frontend constants.
@@ -123,8 +123,13 @@ Source files (frontend/src/):
 - frontend/src/types.ts — frontend-visible contracts only. No logic.
 - frontend/src/test-setup.ts — Vitest setup file. Configures jsdom environment before test runs.
 
-Test files (frontend/src/screens/):
-- frontend/src/screens/smoke.test.ts — trivial smoke test to verify Vitest setup is working. Delete once Phase 2 component tests are in place.
+Screen components (frontend/src/screens/):
+Screen components are extracted from App.tsx during Phase 2. Each screen component
+owns only its own UI state. Session state (runtimeId, version, clientState, etc.)
+remains in App.tsx and is passed down as props.
+
+- frontend/src/screens/DoneScreen.tsx — DONE screen. Props: { submittedAfterHours: boolean }. No state, no API calls.
+- frontend/src/screens/DoneScreen.test.tsx — component tests for DoneScreen.
 
 Config files (frontend/):
 - frontend/index.html — patient form entry point.
