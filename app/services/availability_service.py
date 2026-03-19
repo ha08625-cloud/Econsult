@@ -42,9 +42,8 @@ def validate_availability_config(
     Raises ValueError with a clear message if:
     - weekly_open_days contains any value not in the valid set
     - open_time == close_time
+    - open_time >= close_time (overnight hours not supported)
 
-    Does not validate open_time < close_time (domain constraint against
-    overnight hours makes reversed times a self-evident data entry error).
     Does not validate weekly_open_days being empty (UI concern only).
     """
     invalid = set(weekly_open_days) - VALID_DAYS
@@ -57,6 +56,12 @@ def validate_availability_config(
     if open_time == close_time:
         raise ValueError(
             f"open_time and close_time must not be equal (both are {open_time})"
+        )
+
+    if open_time >= close_time:
+        raise ValueError(
+            f"open_time ({open_time}) must be before close_time ({close_time}). "
+            "Overnight hours are not supported."
         )
 
 
