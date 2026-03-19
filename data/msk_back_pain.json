@@ -61,25 +61,10 @@
   "safety": {
     "rules": {
       "leg_weakness_safety": {
-        "all": [
+        "any": [
           { "is_true": "leg_weakness_present" }
-        ],
-        "message": "One or more of your answers could indicate a more serious form of back pain and you should speak to the duty doctor urgently. Do not use this form which is for routine queries and may not be answered urgently enough."
-      },
-      "leg_numbness_safety": {
-        "all": [
           { "is_true": "leg_numbness_present" }
-        ],
-        "message": "One or more of your answers could indicate a more serious form of back pain and you should speak to the duty doctor urgently. Do not use this form which is for routine queries and may not be answered urgently enough."
-      },
-      "incontinence_safety": {
-        "all": [
           { "is_true": "incontinence_present" }
-        ],
-        "message": "One or more of your answers could indicate a more serious form of back pain and you should speak to the duty doctor urgently. Do not use this form which is for routine queries and may not be answered urgently enough."
-      },
-      "cancer_safety": {
-        "all": [
           { "is_true": "cancer_diagnosis" }
         ],
         "message": "One or more of your answers could indicate a more serious form of back pain and you should speak to the duty doctor urgently. Do not use this form which is for routine queries and may not be answered urgently enough."
