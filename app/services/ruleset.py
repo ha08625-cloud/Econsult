@@ -1,3 +1,5 @@
+# ruleset IO and validation
+
 import json
 import hashlib
 from typing import Dict, Any, List
@@ -16,30 +18,46 @@ def ruleset_hash(ruleset: Dict[str, Any]) -> str:
 
 
 def validate_ruleset(ruleset: Dict[str, Any]) -> None:
-    assert "condition_id" in ruleset
-    assert "questions" in ruleset and ruleset["questions"]
+    if "condition_id" not in ruleset:
+        raise ValueError("Ruleset missing required field: condition_id")
+
+    if "questions" not in ruleset or not ruleset["questions"]:
+        raise ValueError("Ruleset missing or empty: questions")
 
     seen_answer_keys = set()
 
     for q in ruleset["questions"]:
-        assert "answer_key" in q
-        assert q["answer_key"] not in seen_answer_keys
+        if "answer_key" not in q:
+            raise ValueError("Question missing required field: answer_key")
+
+        if q["answer_key"] in seen_answer_keys:
+            raise ValueError(f"Duplicate answer_key: {q['answer_key']}")
         seen_answer_keys.add(q["answer_key"])
 
         if q.get("send_to_encoder"):
-            assert q.get("encoder_prompt") is not None
-            assert q.get("answer_type") == "Boolean", (
-                f"Encoder questions must be Boolean, got {q.get('answer_type')} "
-                f"for {q['answer_key']}"
-            )
+            if q.get("encoder_prompt") is None:
+                raise ValueError(
+                    f"Encoder question missing encoder_prompt: {q['answer_key']}"
+                )
+            if q.get("answer_type") != "Boolean":
+                raise ValueError(
+                    f"Encoder questions must be Boolean, got {q.get('answer_type')} "
+                    f"for {q['answer_key']}"
+                )
         else:
-            assert q.get("encoder_prompt") is None
+            if q.get("encoder_prompt") is not None:
+                raise ValueError(
+                    f"Non-encoder question must not have encoder_prompt: {q['answer_key']}"
+                )
 
     if "safety" in ruleset:
-        for rule in ruleset["safety"]["rules"].values():
-            for clause in rule.get("any", []):
-                key = clause.get("is_true")
-                assert key in seen_answer_keys
+        for rule_id, rule in ruleset["safety"]["rules"].items():
+            for clause in rule.get("all", []):
+                key = clause.get("is_true") or clause.get("is_false")
+                if key not in seen_answer_keys:
+                    raise ValueError(
+                        f"Safety rule '{rule_id}' references unknown answer_key: {key}"
+                    )
 
 
 def extract_encoder_definitions(ruleset: Dict[str, Any]) -> List[Dict[str, str]]:
