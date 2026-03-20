@@ -38,6 +38,8 @@ Screen components live in `frontend/src/screens/`. Session state and screen tran
 
 `onContinue` callbacks on screens that make API calls receive the full API result as a typed parameter — the component does not call any `App.tsx` state setters directly. `App.tsx` updates session state and navigates.
 
+**Exception — `ContactScreen`:** Its `onSubmit` is `() => void` with no result parameter. `POST /form/finish` returns only a `submission_id` which `App.tsx` does not need, so nothing is passed up. This is the only screen where the callback carries no data.
+
 The reset function in `App.tsx` manually clears every `useState` in the file. A checklist comment directly above the reset block names every variable. If a new `useState` is added to `App.tsx`, it must appear in the checklist.
 
 **Dedicated error variable:** `App.tsx` uses `safetyFetchError` for safety warning fetch failures. This is the only fetch that lives in `App.tsx` rather than inside a screen component, so it needs its own error variable. All other fetch errors are owned locally by the screen component that makes the call.
