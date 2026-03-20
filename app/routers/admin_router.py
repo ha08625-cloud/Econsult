@@ -38,24 +38,11 @@ from app.core.errors import (
     INVALID_DATE_FORMAT,
     INVALID_FIELD_TYPE,
 )
+from app.core.dependencies import get_registry, get_practice_repo, get_availability_repo
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# Dependency providers
-# ---------------------------------------------------------------------------
-
-def get_registry(request: Request):
-    return request.app.state.registry
-
-def get_practice_repo(request: Request):
-    return request.app.state.practice_repo
-
-def get_availability_repo(request: Request):
-    return request.app.state.availability_repo
 
 
 # ---------------------------------------------------------------------------

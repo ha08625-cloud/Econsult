@@ -163,6 +163,7 @@ app.state.practice_id = _validate_startup(practice_repo)
 app.state.registry = registry
 app.state.practice_repo = practice_repo
 app.state.availability_repo = availability_repo
+app.state.presentation_service = presentation_service
 
 # Insert default availability row if absent.
 # Must run after _validate_startup ensures the practice row exists.
