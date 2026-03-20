@@ -1,10 +1,10 @@
 import { PageShell } from "../layout";
 
 interface DoneScreenProps {
-  submittedAfterHours: boolean;
+  practiceWasClosed: boolean;
 }
 
-export default function DoneScreen({ submittedAfterHours }: DoneScreenProps) {
+export default function DoneScreen({ practiceWasClosed }: DoneScreenProps) {
   return (
     <PageShell>
       <div className="done-icon">
@@ -22,7 +22,7 @@ export default function DoneScreen({ submittedAfterHours }: DoneScreenProps) {
       </div>
       <h1>Consultation submitted</h1>
       <p>Your consultation has been submitted successfully.</p>
-      {submittedAfterHours ? (
+      {practiceWasClosed ? (
         <p style={{ color: "var(--text-muted)" }}>
           The practice is now closed — your submission will be reviewed on the
           next working day.
