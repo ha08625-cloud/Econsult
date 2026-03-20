@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout and import mapping
-# Last updated: 2026-03-19
+# Last updated: 2026-03-20
 
 ---
 
@@ -46,6 +46,7 @@ Business logic and orchestration. May import models; must not import each other'
 internal state except via defined interfaces.
 
 Files:
+- app/services/availability_orchestration.py — orchestration layer; wires AvailabilityRepository and availability_service together. No HTTP logic. Called by public_router.py and main.py.
 - app/services/email_service.py
 - app/services/encoder_mapping.py — containment layer; applies encoder output to RuntimeState.
 - app/services/encoder_stub.py — placeholder encoder, expected to be replaced; returns plain dict.
@@ -74,6 +75,7 @@ Files:
 - app/core/admin_context.py — admin authentication context and FastAPI dependency.
 - app/core/condition_registry.py — loads and indexes condition rulesets at startup; immutable after init.
 - app/core/db.py — app/core/db.py — shared Postgres connection module. Only file that imports psycopg2. Provides get_conn() context manager and alembic_upgrade() for running migrations at startup
+- app/core/dependencies.py — shared FastAPI dependency provider functions. All routers import from here to access app.state values via Depends rather than direct request.app.state access.
 - app/core/errors.py — APIError and named error constants.
 - app/core/persistence.py — RuntimeStateRepository; database read/write for session state.
 - app/core/request_validation.py — validates incoming HTTP payloads.
@@ -83,7 +85,8 @@ Files:
 HTTP routing only. No business logic.
 
 Files:
-- app/routers/admin_router.py
+- app/routers/admin_router.py — authenticated admin endpoints. Prefix /admin applied in main.py.
+- app/routers/public_router.py — unauthenticated read-only endpoints (conditions, presentation, availability, safety-warning). Registered with no prefix in main.py.
 
 ---
 

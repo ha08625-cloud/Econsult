@@ -8,7 +8,7 @@
 
 The FastAPI application entry point, startup validation, resource initialisation, HTTP-to-engine orchestration, and static file serving.
 
-**Key files:** `main.py`, `request_validation.py`, `errors.py`
+**Key files:** `main.py`, `request_validation.py`, `app/routers/public_router.py`, `app/routers/admin_router.py`, `app/core/dependencies.py`
 
 ---
 
@@ -16,23 +16,9 @@ The FastAPI application entry point, startup validation, resource initialisation
 
 - `main.py` is the **imperative shell only**. It MUST NOT contain clinical logic, safety rule evaluation, or encoder invocation. It translates HTTP requests into engine entry point calls.
 - Clinical presentation metadata (e.g. `condition_label`) is resolved from the registry in `main.py` and passed explicitly to engine adapters. It never enters the core engine.
-- Repositories and registries are initialised **once at startup** and stored in `app.state`. Routers access them via FastAPI `Depends` dependency provider functions, never via direct imports from `main.py`. This prevents circular imports.
+- Repositories and registries are initialised **once at startup** and stored in `app.state`. Routers access them exclusively via dependency provider functions in `app/core/dependencies.py` — never via direct `request.app.state` access inside handler bodies, and never via direct imports from `main.py`. This prevents circular imports and keeps handler signatures self-documenting.
 - The `/admin` prefix and `"admin"` tag are applied when the admin router is registered in `main.py`, not inside `admin_router.py`. This keeps the router decoupled from its mount point.
 - **All API routes must be registered before the static file mount block.** The catch-all static mount must come last or it will intercept API requests.
-
----
-
-## Error Handling
-
-The `api_error_handler` is registered on `app` in `main.py`. It catches `APIError` exceptions raised anywhere in the application (including routers) and returns:
-
-```json
-{"error": {"code": "...", "message": "..."}}
-```
-
-with HTTP 422. All named error constructors live in `errors.py`. The admin frontend reads both `body.detail` (legacy) and `body.error.message` (current) — see `arch_admin.md`.
-
-`HTTPException` is used only for the 401 auth failure in `admin_context.py`. All other error paths use `APIError`.
 
 ---
 
@@ -58,7 +44,7 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 
 ## Availability Orchestration
 
-`check_availability()` in `main.py` wires `AvailabilityRepository` and `availability_service` together. It does not belong in `availability_service.py` because the service layer has no database access. This follows the same pattern as `engine_adapters.py`: services contain pure logic; orchestration lives in the calling layer.
+`check_availability()` lives in `app/services/availability_orchestration.py`. It wires `AvailabilityRepository` and `availability_service` together. It does not belong in `availability_service.py` because the service layer has no database access. This follows the same pattern as `engine_adapters.py`: services contain pure logic; orchestration lives in a dedicated calling layer.
 
 **Fail-open rule:** Any exception during an availability check (database, network, logic) must be caught and execution must continue as if the practice is open. Patients must never be locked out due to system errors.
 
@@ -75,6 +61,23 @@ The submission record is created in the database with `delivery_status = "pendin
 ## Request Validation (`request_validation.py`)
 
 Validates HTTP input for the three form endpoints before any engine call. Raises `INVALID_PAYLOAD` on failure. Extra/unexpected fields in the payload are rejected — the validator uses an allowlist, not a blocklist. See the source file for exact field rules.
+
+---
+
+## Routing Structure
+
+Routes are split across three modules registered in `main.py`:
+
+- `app/routers/public_router.py` — unauthenticated read-only endpoints (`GET /conditions`, `GET /conditions/{id}/presentation`, `GET /availability`, `GET /safety-warning`). Registered with no prefix.
+- `app/routers/admin_router.py` — authenticated admin endpoints. Registered with prefix `/admin`.
+- `main.py` — form session endpoints (`POST /form/init`, `POST /form/update`, `POST /form/finish`) and utility endpoints (`GET /healthz`). These will move to `form_router.py` in a future phase.
+
+## Error Handling
+
+Two exception handlers are registered in `main.py`:
+
+- `APIError` → HTTP 422. Used for validation errors and known application errors throughout all routers.
+- `ConditionNotFound` → HTTP 404. Raised by `presentation_service` when a condition ID is unknown. Returns a consistent `{"error": {"code": "CONDITION_NOT_FOUND", ...}}` body. This handler ensures 404 is used for a missing resource rather than 422.
 
 ---
 

@@ -46,6 +46,7 @@ from app.services.engine_adapters import (
 )
 from app.services.email_service import send_clinical_output, EmailDeliveryError
 from app.routers.admin_router import router as admin_router
+from app.routers.public_router import router as public_router
 from starlette.staticfiles import StaticFiles
 
 logger = logging.getLogger(__name__)
@@ -172,6 +173,9 @@ availability_repo.init_availability(app.state.practice_id)
 # Admin router -- prefix and tag applied here so admin_router.py stays decoupled
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
+# Public router -- no prefix, routes sit at root level
+app.include_router(public_router)
+
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
@@ -184,63 +188,12 @@ async def api_error_handler(_, exc: APIError):
     )
 
 
-# ---------------------------------------------------------------------------
-# Condition discovery (pre-session, no state)
-# ---------------------------------------------------------------------------
-
-@app.get("/safety-warning")
-async def get_safety_warning():
-    return {"universal_safety_warning": presentation_service.get_universal_safety_warning()}
-
-
-@app.get("/conditions")
-async def list_conditions():
-    return {"conditions": registry.list_conditions()}
-
-
-@app.get("/conditions/{condition_id}/presentation")
-async def get_presentation(condition_id: str):
-    try:
-        return presentation_service.get_patient_presentation(
-            condition_id,
-            app.state.practice_id,
-        )
-    except ConditionNotFound:
-        return JSONResponse(
-            status_code=404,
-            content={
-                "error": {
-                    "code": "CONDITION_NOT_FOUND",
-                    "message": f"Unknown condition: {condition_id}",
-                }
-            },
-        )
-
-
-# ---------------------------------------------------------------------------
-# Availability (public, no auth)
-# ---------------------------------------------------------------------------
-
-@app.get("/availability")
-async def get_availability():
-    """
-    Evaluate and return current availability for patients.
-
-    Returns {"is_open": bool, "closed_message": str|null, "after_hours_notice": str|null}.
-
-    If the database raises an exception, the exception propagates and FastAPI
-    returns HTTP 500. The frontend treats any non-200 as fail-open.
-    """
-    practice_id = app.state.practice_id
-    result = check_availability(
-        availability_repo, practice_id, datetime.now(timezone.utc)
+@app.exception_handler(ConditionNotFound)
+async def condition_not_found_handler(_, exc: ConditionNotFound):
+    return JSONResponse(
+        status_code=404,
+        content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}},
     )
-
-    return {
-        "is_open": result.is_open,
-        "closed_message": result.closed_message,
-        "after_hours_notice": result.after_hours_notice,
-    }
 
 
 # ---------------------------------------------------------------------------

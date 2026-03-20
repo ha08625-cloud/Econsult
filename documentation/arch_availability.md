@@ -8,7 +8,7 @@
 
 Controls when the patient-facing form is open or closed. Evaluates the current time against a configured schedule and returns a result consumed by both `GET /availability` and `POST /form/init`.
 
-**Key files:** `availability_service.py`, `availability_repository.py`, `availability_models.py`
+**Key files:** `availability_service.py`, `availability_repository.py`, `availability_models.py`, `availability_orchestration.py`
 
 ---
 
@@ -65,7 +65,7 @@ Setting `is_active = false` auto-clears any existing override (all three overrid
 When the practice is open and `is_active` is true, an after-hours notice is constructed from `close_time`. During a `custom_hours` exception, the notice uses the exception's `close_time`, not the config's — it reflects the actual closing time for that day. During a `closed` exception or when `is_active` is false, `after_hours_notice` is null.
 
 ### `check_availability` Orchestration
-`check_availability(availability_repo, practice_id, now_utc)` is defined in `main.py`. It owns the full pipeline: fetch config → compute today's London date → fetch exceptions → call `evaluate_availability`. It does not belong in `availability_service` because the service has no database access. Both `GET /availability` and `POST /form/init` call this function. The fail-open try/except wrapping lives in `main.py` around the call.
+`check_availability(availability_repo, practice_id, now_utc)` is defined in `app/services/availability_orchestration.py`. It owns the full pipeline: fetch config → compute today's London date → fetch exceptions → call `evaluate_availability`. It does not belong in `availability_service` because the service has no database access. `GET /availability` (via `public_router.py`) and `POST /form/init` and `POST /form/finish` (via `main.py`) all call this function. The fail-open try/except wrapping lives in the callers, not in `check_availability` itself — exceptions propagate so callers can log them with appropriate context.
 
 ### Exception Note Field
 The `note` field on exceptions is for admin reference only (e.g. "Bank holiday"). It is not shown to patients and plays no role in evaluation.
@@ -87,3 +87,13 @@ See migration files `0002_availability_table.py`, `0003_availability_override.py
 - `availability_repository` must NOT import `availability_service`
 - `availability_models` must NOT import any service or repository module
 - Clinical engine modules (`form_logic`, `safety_engine`, `encoder_mapping`, `projection`, `serialisation`) must NOT import any availability module — the clinical engine has no awareness of practice scheduling
+
+---
+
+## Tests
+
+Unit tests for `availability_service.py`: `tests/test_availability_service.py`
+
+Tests cover: schedule evaluation, config validation, fail-open pattern, force-open/closed overrides, override message fallback, expired override fallthrough, timezone-naive rejection, `is_active=false` ignoring overrides, auto-clear on deactivation, BST offset effects, exact time boundaries, per-date exceptions (closed and custom_hours), evaluation priority order.
+
+Run with: `python -m tests.test_availability_service`
