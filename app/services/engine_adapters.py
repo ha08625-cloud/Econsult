@@ -114,12 +114,13 @@ def apply_update_and_evaluate(
 def finish_runtime_state(
     runtime_state: RuntimeState,
     ruleset_path: str,
+    contact_preferences: Optional[dict] = None,
 ) -> Tuple[ClinicalOutput, AuditOutput]:
     """Entry point for /form/finish."""
 
     ruleset = load_ruleset(ruleset_path)
 
-    clinical = clinical_output(runtime_state, ruleset)
+    clinical = clinical_output(runtime_state, ruleset, contact_preferences)
     audit = audit_output(runtime_state)
 
     return clinical, audit
