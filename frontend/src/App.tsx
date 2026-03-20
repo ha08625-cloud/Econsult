@@ -71,9 +71,6 @@ export default function App() {
   const [presentationFetchTrigger, setPresentationFetchTrigger] = useState(0);
   const [freeText, setFreeText] = useState<string>("");
 
-  // DONE screen state (populated from /form/finish response)
-  const [submittedAfterHours, setSubmittedAfterHours] = useState(false);
-
   // ---------------------------------
   // Safety warning fetch (Screen 0)
   // ---------------------------------
@@ -226,7 +223,6 @@ export default function App() {
   // conditions
   // selectedConditionId
   // freeText
-  // submittedAfterHours
 
   if (fatalError) {
     return (
@@ -261,7 +257,6 @@ export default function App() {
               setPracticeIsOpen(null);
               setAvailabilityClosedMessage(null);
               setAfterHoursNotice(null);
-              setSubmittedAfterHours(false);
             }}
           >
             Try again
@@ -412,8 +407,7 @@ export default function App() {
       <ContactScreen
         runtimeId={runtimeId}
         version={version}
-        onSubmit={(result) => {
-          setSubmittedAfterHours(result.submittedAfterHours);
+        onSubmit={() => {
           setScreen("DONE");
         }}
         onBack={() => setScreen("REVIEW")}
@@ -422,7 +416,7 @@ export default function App() {
   }
 
   if (screen === "DONE") {
-    return <DoneScreen submittedAfterHours={submittedAfterHours} />;
+    return <DoneScreen practiceWasClosed={practiceIsOpen === false} />;
   }
 
   return null;
