@@ -12,10 +12,9 @@ import type {
   ConditionSummary,
   PresentationState,
 } from "./types";
-import {
-  initialiseEditableAnswers,
-  initialiseContactPreferences,
-} from "./helpers";
+import { GENERAL_CONSULTATION_ID } from './constants';
+import { PageShell } from "./layout";
+import { initialiseEditableAnswers } from "./helpers";
 import DoneScreen from "./screens/DoneScreen";
 import SafetyWarningScreen from "./screens/SafetyWarningScreen";
 import type { SafetyWarningFetchState } from "./screens/SafetyWarningScreen";
@@ -205,8 +204,8 @@ export default function App() {
 
   // RESET CHECKLIST — every useState in App.tsx must appear below.
   // If you add a new useState to App.tsx, add it to this list.
-  // When extracting screens in Phase 3: if a state variable moves into
-  // a child component, remove it from this list AND from the reset block.
+  // When a state variable moves into a child component, remove it from
+  // this list AND from the reset block.
   //
   // screen
   // runtimeId
@@ -216,13 +215,14 @@ export default function App() {
   // additionalText
   // safetyMessages
   // fatalError
+  // safetyFetchError
   // safetyWarningText
   // safetyConfirmed
   // availabilityClosedMessage
   // afterHoursNotice
   // practiceIsOpen
-  // presentationState         <-- replaces: presentation
-  // presentationFetchTrigger  <-- counter, resets to 0 (not null)
+  // presentationState
+  // presentationFetchTrigger
   // conditions
   // selectedConditionId
   // freeText
@@ -245,6 +245,7 @@ export default function App() {
               setFatalError(null);
               setScreen("SAFETY_WARNING");
               setSafetyWarningText(null);
+              setSafetyFetchError(null);
               setSafetyConfirmed(false);
               setRuntimeId(null);
               setVersion(null);
@@ -270,144 +271,138 @@ export default function App() {
     );
   }
 
-if (screen === "SAFETY_WARNING") {
-  const safetyWarningFetchState: SafetyWarningFetchState =
-    safetyFetchError !== null
-      ? { status: "error", message: safetyFetchError }
-      : safetyWarningText !== null
-      ? { status: "success", text: safetyWarningText }
-      : { status: "loading" };
+  if (screen === "SAFETY_WARNING") {
+    const safetyWarningFetchState: SafetyWarningFetchState =
+      safetyFetchError !== null
+        ? { status: "error", message: safetyFetchError }
+        : safetyWarningText !== null
+        ? { status: "success", text: safetyWarningText }
+        : { status: "loading" };
 
-  return (
-    <SafetyWarningScreen
-      safetyWarningFetchState={safetyWarningFetchState}
-      safetyConfirmed={safetyConfirmed}
-      practiceIsOpen={practiceIsOpen}
-      availabilityClosedMessage={availabilityClosedMessage}
-      afterHoursNotice={afterHoursNotice}
-      onConfirmChange={(confirmed) => setSafetyConfirmed(confirmed)}
-      onRetry={() => {
-        setSafetyFetchError(null);
-        setSafetyWarningText(null);
-      }}
-      onContinue={() => setScreen("SELECT_CONDITION")}
-    />
-  );
-}
+    return (
+      <SafetyWarningScreen
+        safetyWarningFetchState={safetyWarningFetchState}
+        safetyConfirmed={safetyConfirmed}
+        practiceIsOpen={practiceIsOpen}
+        availabilityClosedMessage={availabilityClosedMessage}
+        afterHoursNotice={afterHoursNotice}
+        onConfirmChange={(confirmed) => setSafetyConfirmed(confirmed)}
+        onRetry={() => {
+          setSafetyFetchError(null);
+          setSafetyWarningText(null);
+        }}
+        onContinue={() => setScreen("SELECT_CONDITION")}
+      />
+    );
+  }
 
-if (screen === "SELECT_CONDITION") {
-  return (
-    <SelectConditionScreen
-      conditions={
-        conditions
-          ? conditions.filter((c) => c.id !== GENERAL_CONSULTATION_ID)
-          : null
-      }
-      selectedConditionId={selectedConditionId}
-      onConditionChange={(newId) => {
-        if (newId !== selectedConditionId) {
-          setFreeText("");
+  if (screen === "SELECT_CONDITION") {
+    return (
+      <SelectConditionScreen
+        conditions={
+          conditions
+            ? conditions.filter((c) => c.id !== GENERAL_CONSULTATION_ID)
+            : null
         }
-        setSelectedConditionId(newId);
-      }}
-      onContinue={() => {
-        setPresentationState({ status: "loading" });
-        setPresentationFetchTrigger((k) => k + 1);
-        setScreen("FREE_TEXT");
-      }}
-      onBlankForm={() => {
-        setSelectedConditionId(GENERAL_CONSULTATION_ID);
-        setPresentationState({ status: "loading" });
-        setPresentationFetchTrigger((k) => k + 1);
-        setScreen("FREE_TEXT");
-      }}
-    />
-  );
-}
-
-if (screen === "FREE_TEXT") {
-  if (selectedConditionId === null) {
-    setFatalError("No condition selected");
-    return null;
+        selectedConditionId={selectedConditionId}
+        onConditionChange={(newId) => {
+          if (newId !== selectedConditionId) {
+            setFreeText("");
+          }
+          setSelectedConditionId(newId);
+        }}
+        onContinue={() => {
+          setPresentationState({ status: "loading" });
+          setPresentationFetchTrigger((k) => k + 1);
+          setScreen("FREE_TEXT");
+        }}
+        onBlankForm={() => {
+          setSelectedConditionId(GENERAL_CONSULTATION_ID);
+          setPresentationState({ status: "loading" });
+          setPresentationFetchTrigger((k) => k + 1);
+          setScreen("FREE_TEXT");
+        }}
+      />
+    );
   }
 
-  return (
-    <FreeTextScreen
-      presentationState={presentationState}
-      freeText={freeText}
-      selectedConditionId={selectedConditionId}
-      onFreeTextChange={(text) => setFreeText(text)}
-      onContinue={(result) => {
-        setRuntimeId(result.runtimeId);
-        setVersion(result.version);
-        setClientState(result.clientState);
-        setEditableAnswers(result.editableAnswers);
-        setAdditionalText(result.additionalText);
-        setScreen("EDIT");
-      }}
-      onBack={() => setScreen("SELECT_CONDITION")}
-      onRetry={() => setPresentationFetchTrigger((k) => k + 1)}
-    />
-  );
-}
+  if (screen === "FREE_TEXT") {
+    if (selectedConditionId === null) {
+      setFatalError("No condition selected");
+      return null;
+    }
 
-if (screen === "REVIEW") {
-  if (!clientState || runtimeId === null || version === null) {
-    setFatalError("Invalid REVIEW state");
-    return null;
+    return (
+      <FreeTextScreen
+        presentationState={presentationState}
+        freeText={freeText}
+        selectedConditionId={selectedConditionId}
+        onFreeTextChange={(text) => setFreeText(text)}
+        onContinue={(result) => {
+          setRuntimeId(result.runtimeId);
+          setVersion(result.version);
+          setClientState(result.clientState);
+          setEditableAnswers(result.editableAnswers);
+          setAdditionalText(result.additionalText);
+          setScreen("EDIT");
+        }}
+        onBack={() => setScreen("SELECT_CONDITION")}
+        onRetry={() => setPresentationFetchTrigger((k) => k + 1)}
+      />
+    );
   }
-
-  return (
-    <ReviewScreen
-      clientState={clientState}
-      safetyMessages={safetyMessages}
-      onBack={() => {
-        setEditableAnswers(initialiseEditableAnswers(clientState));
-        setScreen("EDIT");
-      }}
-      onContinue={() => {
-        setScreenError(null);
-        // TODO Step 7: remove these two lines when contactPreferences moves into ContactScreen
-        setContactPreferences(initialiseContactPreferences());
-        setContactErrors({});
-        setScreen("CONTACT");
-      }}
-    />
-  );
-}
 
   if (screen === "EDIT") {
-  if (!clientState || !editableAnswers || runtimeId === null || version === null) {
-    setFatalError("Invalid EDIT state");
-    return null;
+    if (!clientState || !editableAnswers || runtimeId === null || version === null) {
+      setFatalError("Invalid EDIT state");
+      return null;
+    }
+
+    return (
+      <EditScreen
+        clientState={clientState}
+        editableAnswers={editableAnswers}
+        additionalText={additionalText}
+        onAnswersChange={(answers) => setEditableAnswers(answers)}
+        onAdditionalTextChange={(text) => setAdditionalText(text)}
+        onContinue={(result) => {
+          setVersion(result.version);
+          setClientState(result.clientState);
+          setSafetyMessages(result.safetyMessages);
+          setEditableAnswers(null);
+          setScreen("REVIEW");
+        }}
+        onBack={() => {
+          setPresentationState({ status: "loading" });
+          setPresentationFetchTrigger((k) => k + 1);
+          setScreen("FREE_TEXT");
+        }}
+        runtimeId={runtimeId}
+        version={version}
+      />
+    );
   }
 
-  return (
-    <EditScreen
-      clientState={clientState}
-      editableAnswers={editableAnswers}
-      additionalText={additionalText}
-      onAnswersChange={(answers) => setEditableAnswers(answers)}
-      onAdditionalTextChange={(text) => setAdditionalText(text)}
-      onContinue={(result) => {
-        setVersion(result.version);
-        setClientState(result.clientState);
-        setSafetyMessages(result.safetyMessages);
-        setEditableAnswers(null);
-        setScreen("REVIEW");
-      }}
-      onBack={() => {
-        setPresentationState({ status: "loading" });
-        setPresentationFetchTrigger((k) => k + 1);
-        setScreen("FREE_TEXT");
-      }}
-      runtimeId={runtimeId}
-      version={version}
-    />
-  );
-}
+  if (screen === "REVIEW") {
+    if (!clientState || runtimeId === null || version === null) {
+      setFatalError("Invalid REVIEW state");
+      return null;
+    }
 
-if (screen === "CONTACT") {
+    return (
+      <ReviewScreen
+        clientState={clientState}
+        safetyMessages={safetyMessages}
+        onBack={() => {
+          setEditableAnswers(initialiseEditableAnswers(clientState));
+          setScreen("EDIT");
+        }}
+        onContinue={() => setScreen("CONTACT")}
+      />
+    );
+  }
+
+  if (screen === "CONTACT") {
     if (runtimeId === null || version === null) {
       setFatalError("Invalid CONTACT state");
       return null;
@@ -427,8 +422,8 @@ if (screen === "CONTACT") {
   }
 
   if (screen === "DONE") {
-  return <DoneScreen submittedAfterHours={submittedAfterHours} />;
-}
+    return <DoneScreen submittedAfterHours={submittedAfterHours} />;
+  }
 
   return null;
 }
