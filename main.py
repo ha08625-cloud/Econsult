@@ -45,6 +45,11 @@ from app.services.engine_adapters import (
     finish_runtime_state,
 )
 from app.services.email_service import send_clinical_output, EmailDeliveryError
+from app.services.delivery_service import (
+    ConsoleDeliveryService,
+    EmailDeliveryService,
+    DeliveryService,
+)
 from app.routers.admin_router import router as admin_router
 from app.routers.public_router import router as public_router
 from starlette.staticfiles import StaticFiles
@@ -165,6 +170,13 @@ app.state.registry = registry
 app.state.practice_repo = practice_repo
 app.state.availability_repo = availability_repo
 app.state.presentation_service = presentation_service
+app.state.runtime_repo = repo
+app.state.submission_repo = submission_repo
+
+if _is_dev_mode():
+    app.state.delivery_service = ConsoleDeliveryService()
+else:
+    app.state.delivery_service = EmailDeliveryService()
 
 # Insert default availability row if absent.
 # Must run after _validate_startup ensures the practice row exists.
