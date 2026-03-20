@@ -47,7 +47,7 @@ internal state except via defined interfaces.
 
 Files:
 - app/services/availability_orchestration.py — orchestration layer; wires AvailabilityRepository and availability_service together. No HTTP logic. Called by public_router.py and main.py.
-- app/services/email_service.py
+- app/services/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP); ConsoleDeliveryService (dev only, raises if DEV_MODE not set). Replaces email_service.py.
 - app/services/encoder_mapping.py — containment layer; applies encoder output to RuntimeState.
 - app/services/encoder_stub.py — placeholder encoder, expected to be replaced; returns plain dict.
 - app/services/engine_adapters.py — orchestration layer; wires all services together.
@@ -63,9 +63,10 @@ Files:
 Database access for persistent records. No business logic.
 
 Files:
+- app/repositories/availability_repository.py — weekly hours, overrides, and per-date exceptions.
 - app/repositories/practice_repository.py — practice record CRUD.
-- app/repositories/submission_repository.py — submission record creation and delivery status tracking
-- app/repositories/availability_repository.py
+- app/repositories/runtime_state_repository.py — session state read/write. Registered in app.state as runtime_repo.
+- app/repositories/submission_repository.py — submission record creation and delivery status tracking.
 
 ### 2.4 app/core/
 
@@ -77,7 +78,6 @@ Files:
 - app/core/db.py — app/core/db.py — shared Postgres connection module. Only file that imports psycopg2. Provides get_conn() context manager and alembic_upgrade() for running migrations at startup
 - app/core/dependencies.py — shared FastAPI dependency provider functions. All routers import from here to access app.state values via Depends rather than direct request.app.state access.
 - app/core/errors.py — APIError and named error constants.
-- app/core/persistence.py — RuntimeStateRepository; database read/write for session state.
 - app/core/request_validation.py — validates incoming HTTP payloads.
 
 ### 2.5 app/routers/
@@ -86,6 +86,7 @@ HTTP routing only. No business logic.
 
 Files:
 - app/routers/admin_router.py — authenticated admin endpoints. Prefix /admin applied in main.py.
+- app/routers/form_router.py — form session endpoints (POST /form/init, /form/update, /form/finish). All dependencies injected via Depends; no app.state access in handler bodies.
 - app/routers/public_router.py — unauthenticated read-only endpoints (conditions, presentation, availability, safety-warning). Registered with no prefix in main.py.
 
 ---
@@ -131,7 +132,7 @@ Screen components are extracted from App.tsx during Phase 2. Each screen compone
 owns only its own UI state. Session state (runtimeId, version, clientState, etc.)
 remains in App.tsx and is passed down as props.
 
-- frontend/src/screens/DoneScreen.tsx — DONE screen. Props: { submittedAfterHours: boolean }. No state, no API calls.
+- frontend/src/screens/DoneScreen.tsx — DONE screen. Props: { practiceWasClosed: boolean }. No state, no API calls.
 - frontend/src/screens/DoneScreen.test.tsx — component tests for DoneScreen.
 - frontend/src/screens/SafetyWarningScreen.tsx - Safety warning screen
 - frontend/src/screens/SafetyWarningScreen.test.tsx
@@ -194,7 +195,7 @@ Examples:
   from app.models.explicit_answers import ExplicitAnswers
   from app.services.form_logic import initialise_runtime_state
   from app.services.engine_adapters import init_runtime_state
-  from app.core.persistence import RuntimeStateRepository
+  from app.repositories.runtime_state_repository import RuntimeStateRepository
   from app.core.db import alembic_upgrade
   from app.core.errors import APIError
   from app.repositories.practice_repository import PracticeRepository
@@ -212,6 +213,7 @@ Each service module lists which other modules it is permitted to import.
 - app/services/projection.py: imports RuntimeState, ExplicitAnswers.
 - app/services/safety_engine.py: imports ExplicitAnswers, SafetyEvaluation.
 - app/services/serialisation.py: imports RuntimeState, ClinicalOutput, AuditOutput.
+- app/services/delivery_service.py: imports ClinicalOutput only. Must not import any engine, repository, or clinical module.
 - app/services/engine_adapters.py: orchestration layer; may import all services above.
 - app/services/presentation_service.py: imports condition_registry, practice_repository.
 
@@ -230,3 +232,4 @@ The following imports must never appear in the codebase:
   or presentation_service (the clinical engine has no awareness of practice identity).
 - admin_router must NOT import clinical engine modules, presentation_service, serialisation,
   projection, or runtime_state.
+- delivery_service must NOT import clinical engine modules, repositories, or condition_registry.
