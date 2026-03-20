@@ -17,6 +17,9 @@ from fastapi import Request
 from app.core.condition_registry import ConditionRegistry
 from app.repositories.practice_repository import PracticeRepository
 from app.repositories.availability_repository import AvailabilityRepository
+from app.repositories.runtime_state_repository import RuntimeStateRepository
+from app.repositories.submission_repository import SubmissionRepository
+from app.services.delivery_service import DeliveryService
 from app.services.presentation_service import PresentationService
 
 
@@ -38,3 +41,15 @@ def get_practice_id(request: Request) -> str:
 
 def get_presentation_service(request: Request) -> PresentationService:
     return request.app.state.presentation_service
+
+
+def get_runtime_repo(request: Request) -> RuntimeStateRepository:
+    return request.app.state.runtime_repo
+
+
+def get_submission_repo(request: Request) -> SubmissionRepository:
+    return request.app.state.submission_repo
+
+
+def get_delivery_service(request: Request) -> DeliveryService:
+    return request.app.state.delivery_service
