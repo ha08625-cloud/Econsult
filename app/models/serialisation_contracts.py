@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 
 
@@ -10,6 +10,7 @@ class ClinicalOutput:
     answers: Dict[str, Any]
     safety_messages: List[dict]
     question_labels: Dict[str, str]  # answer_key -> question text at submission time
+    contact_preferences: Optional[Dict[str, Any]] = field(default=None)
 
 
 @dataclass(frozen=True)
