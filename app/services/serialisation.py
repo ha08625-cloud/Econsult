@@ -15,6 +15,8 @@ Architectural guarantee:
     data (questions, safety rules, encoder definitions).
 """
 
+from typing import Optional
+
 from app.models.runtime_state import RuntimeState
 from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
 
@@ -51,7 +53,7 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
     }
 
 
-def clinical_output(runtime: RuntimeState, ruleset: dict) -> ClinicalOutput:
+def clinical_output(runtime: RuntimeState, ruleset: dict, contact_preferences: Optional[dict] = None) -> ClinicalOutput:
     """
     Lossy output safe for clinical and patient use.
     """
@@ -67,6 +69,7 @@ def clinical_output(runtime: RuntimeState, ruleset: dict) -> ClinicalOutput:
         answers={k: v.value for k, v in runtime.answers.items()},
         safety_messages=runtime.safety_evaluation.messages,
         question_labels=question_labels,
+        contact_preferences=contact_preferences,
     )
 
 
