@@ -7,7 +7,7 @@ import type { ContactPreferences, ContactMethod } from "../types";
 interface ContactScreenProps {
   runtimeId: string;
   version: number;
-  onSubmit: (result: { submittedAfterHours: boolean }) => void;
+  onSubmit: () => void;
   onBack: () => void;
 }
 
@@ -93,8 +93,8 @@ export default function ContactScreen({
     setScreenError(null);
 
     finishForm(runtimeId, version, cleanPreferences)
-      .then((res) => {
-        onSubmit({ submittedAfterHours: res.submitted_after_hours ?? false });
+      .then(() => {
+        onSubmit();
       })
       .catch((e) => {
         setScreenError(friendlyErrorMessage(e));
