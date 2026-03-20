@@ -6,17 +6,17 @@
 
 ## Scope
 
-Finalizing forms, persisting submission records, auditing, and sending clinical output by email.
+Finalizing forms, persisting submission records, auditing, and sending clinical output to the practice.
 
-**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `email_service.py`
+**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `delivery_service.py`
 
 ---
 
 ## Submission Lifecycle — Critical Invariants
 
-- A `submission_record` MUST be created in the database with `delivery_status = "pending"` **before** any email send is attempted. This ensures the record exists even if the process crashes during delivery.
-- Email delivery failures are **operational, not clinical**. They are never surfaced to the patient. The patient always receives a submission ID regardless of delivery outcome.
-- No automatic retry is implemented. Retry decisions belong to the calling layer, not the repository or email service.
+- A `submission_record` MUST be created in the database with `delivery_status = "pending"` **before** any delivery is attempted. This ensures the record exists even if the process crashes during delivery.
+- Delivery failures are **operational, not clinical**. They are never surfaced to the patient. The patient always receives a submission ID regardless of delivery outcome.
+- No automatic retry is implemented. Retry decisions belong to the calling layer, not the repository or delivery service.
 - `delivery_email` is captured from the practice record **at submission time** and stored in the submission record. Historical audits reflect the actual address used even if the practice email is later changed.
 
 ---
@@ -27,35 +27,35 @@ Finalizing forms, persisting submission records, auditing, and sending clinical 
 
 There are two output types, each with a distinct purpose:
 
-- **`ClinicalOutput`** — lossy by design. Strips provenance and encoder internals. Safe for clinical and patient use. Contains `question_labels` (answer_key → question text at submission time) so the record is self-contained and interpretable without reloading the ruleset.
+- **`ClinicalOutput`** — lossy by design. Strips provenance and encoder internals. Safe for clinical and patient use. Contains `question_labels` (answer_key → question text at submission time) so the record is self-contained and interpretable without reloading the ruleset. Also carries `contact_preferences` — these are stored here so the clinical record is self-contained and the delivery service receives everything it needs in a single argument.
 - **`AuditOutput`** — lossless. Contains full `runtime_state` snapshot, safety evaluation, and ruleset version. Intended for debugging, safety review, and regulatory inspection.
 
 Neither contract may be used as an input back into the engine. This module contains no logic.
-
-**Note on `additional_text`:** `ClinicalOutput` includes an `additional_text` field (separate from `free_text`). Check `serialisation_contracts.py` for the current field list — the doc should not be the source of truth for field names.
 
 ### Serialisation (`serialisation.py`)
 
 - Produces `ClientStateView` (for frontend rendering), `ClinicalOutput`, and `AuditOutput`.
 - Serialisation **never mutates state**.
 - `condition_label` is passed in explicitly by the calling layer. This module never accesses presentation metadata from the ruleset directly.
-- The ruleset parameter is used only for question text and `answer_type`, never for presentation data.
 
 ### Submission Repository (`submission_repository.py`)
 
 - Owns the `submission_records` table.
 - `delivery_status` values: `"pending"`, `"sent"`, `"failed"`.
-- `list_by_status` raises `InvalidDeliveryStatus` on unrecognised values. A typo must not silently return an empty list when the caller expected failures.
 - Must never: send emails, import engine modules, or make retry decisions.
 
-### Email Service (`email_service.py`)
+### Delivery Service (`delivery_service.py`)
 
-- Formats `ClinicalOutput` as a plain text email and sends via SMTP.
-- In `DEV_MODE`, skips sending and logs the full email to stdout instead.
-- `contact_preferences` is an optional dict passed through from the finish payload. When present, a contact preferences section is appended to the email body. Fields within it are omitted if null or empty — they are never printed as `"None"`. Validation of this dict happens upstream in `request_validation.py`, not here.
-- `contact_preferences` is a plain dict, not a typed dataclass. It is presentation-only data with no clinical significance. Read `email_service.py` directly for the current expected fields.
-- Raises `EmailDeliveryError` on any SMTP failure. The error message is suitable for storage in `submission_records.delivery_error`.
-- Must never: access the database, update delivery status, import engine modules, or retry on failure.
+The delivery service is an abstract base class (`DeliveryService`) with two concrete implementations selected at startup by `main.py` based on `DEV_MODE`:
+
+- **`EmailDeliveryService`** — production implementation. Reads SMTP configuration from environment variables **at instantiation time** (`__init__`), not at send time. This means a misconfigured deployment fails immediately at startup rather than silently at the moment of the first submission.
+- **`ConsoleDeliveryService`** — development only. Logs the full email payload to stdout. Raises `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental use in production.
+
+`contact_preferences` are read from inside `ClinicalOutput` — the delivery interface takes only `to_email`, `condition_label`, `clinical_output`, and `submission_id`. The service never receives a separate preferences argument.
+
+`EmailDeliveryError` is raised on any SMTP failure. The calling layer (the router) catches it, logs it, and records `delivery_status = "failed"` against the submission — it must never propagate as an HTTP error.
+
+The delivery service must never: access the database, update delivery status, import engine modules, or retry on failure.
 
 ---
 
