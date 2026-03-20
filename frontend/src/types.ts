@@ -72,7 +72,6 @@ export type PresentationState =
 
 export interface FinishFormResult {
   submission_id: string;
-  submitted_after_hours: boolean;
 }
 
 // --- Contact preferences (Screen 4) ---
