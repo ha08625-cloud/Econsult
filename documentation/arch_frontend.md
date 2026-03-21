@@ -22,7 +22,7 @@ Screen components live in `frontend/src/screens/`. Session state and screen tran
 
 ## Screen Flow
 
-`SAFETY_WARNING` → `SELECT_CONDITION` → `FREE_TEXT` → `EDIT` → `REVIEW` → `CONTACT` → `DONE`
+`SAFETY_WARNING` → `PATIENT DETAILS` → `SELECT_CONDITION` → `FREE_TEXT` → `EDIT` → `REVIEW` → `CONTACT` → `DONE`
 
 - `SAFETY_WARNING` (Screen 0) is a hard block — Continue is disabled until the patient acknowledges the warning. Availability is fetched in parallel on this screen.
 - `REVIEW` (Screen 4) transitions to `CONTACT` without an API call.
