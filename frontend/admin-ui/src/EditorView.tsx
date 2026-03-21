@@ -6,8 +6,11 @@
  * - AvailabilityEditor card (opening hours configuration)
  * - Signposting editor card (per-condition patient information)
  *
- * Tracks unsaved signposting state via a ref so the confirm dialog
- * can read it without needing to lift state into App.
+ * Unsaved change tracking:
+ * - signpostingUnsavedRef: set by SignpostingEditor via onUnsavedChange callback
+ * - availabilityUnsavedRef: set by AvailabilityEditor via onUnsavedChange callback
+ * Both are refs (not state) so the confirm dialog can read them synchronously
+ * without triggering re-renders.
  */
 
 import { useRef, useState } from "react";
@@ -25,27 +28,33 @@ export default function EditorView({ token, conditions }: Props) {
     conditions.length > 0 ? conditions[0].id : null
   );
 
-  // Track unsaved state via a ref so the confirm dialog can read it
-  // without needing to lift state out of SignpostingEditor.
-  const unsavedRef = useRef(false);
+  // Track unsaved state via refs so the confirm dialog can read them
+  // synchronously without needing to lift state out of child components.
+  const signpostingUnsavedRef = useRef(false);
+  const availabilityUnsavedRef = useRef(false);
 
   function handleConditionChange(newId: string) {
     if (newId === selectedId) return;
 
-    if (unsavedRef.current) {
+    if (signpostingUnsavedRef.current) {
       const ok = window.confirm(
         "You have unsaved changes. Switch condition and discard them?"
       );
       if (!ok) return;
     }
     setSelectedId(newId);
-    unsavedRef.current = false;
+    signpostingUnsavedRef.current = false;
   }
 
   return (
     <>
       {/* Availability configuration card */}
-      <AvailabilityEditor token={token} />
+      <AvailabilityEditor
+        token={token}
+        onUnsavedChange={(hasChanges) => {
+          availabilityUnsavedRef.current = hasChanges;
+        }}
+      />
 
       <div style={{ height: "24px" }} />
 
@@ -86,7 +95,7 @@ export default function EditorView({ token, conditions }: Props) {
             conditionId={selectedId}
             token={token}
             onUnsavedChange={(hasChanges) => {
-              unsavedRef.current = hasChanges;
+              signpostingUnsavedRef.current = hasChanges;
             }}
           />
         ) : (
