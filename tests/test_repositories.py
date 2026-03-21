@@ -64,8 +64,8 @@ if not DATABASE_URL:
 # Ensure tables exist
 # ---------------------------------------------------------------------------
 
-from app.core.db import init_database, get_conn
-init_database(DATABASE_URL)
+from app.core.db import alembic_upgrade, get_conn
+alembic_upgrade()
 
 # ---------------------------------------------------------------------------
 # Repository imports
@@ -88,7 +88,7 @@ from app.repositories.submission_repository import (
     SubmissionNotFound,
     InvalidDeliveryStatus,
 )
-from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
+from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +311,17 @@ def _make_submission_repo() -> SubmissionRepository:
     return SubmissionRepository(DATABASE_URL)
 
 
+def _make_dummy_patient_details() -> PatientDetails:
+    """Minimal PatientDetails fixture for repository tests."""
+    return PatientDetails(
+        patient_for="me",
+        first_name="Test",
+        last_name="Patient",
+        date_of_birth="1990-01-15",
+        postcode="SW1A 1AA",
+    )
+
+
 def _make_dummy_outputs():
     clinical = ClinicalOutput(
         condition_id="uti",
@@ -318,7 +329,11 @@ def _make_dummy_outputs():
         additional_text=None,
         answers={"fever": True, "dysuria": True},
         safety_messages=[],
-        question_labels={"fever": "Do you have a fever?", "dysuria": "Do you have pain when urinating?"},
+        question_labels={
+            "fever": "Do you have a fever?",
+            "dysuria": "Do you have pain when urinating?",
+        },
+        patient_details=_make_dummy_patient_details(),
     )
     audit = AuditOutput(
         runtime_state={"session_id": "test_session", "version": 1},
@@ -356,6 +371,8 @@ def test_submission_create_and_get():
         # JSONB columns come back as dicts, not strings
         assert isinstance(row["clinical_output_json"], dict)
         assert isinstance(row["audit_output_json"], dict)
+        # patient_details should be persisted inside clinical_output_json
+        assert row["clinical_output_json"]["patient_details"]["first_name"] == "Test"
     finally:
         _cleanup_submission(sid)
 

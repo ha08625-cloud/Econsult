@@ -16,11 +16,11 @@ Architectural guarantee:
 from typing import Dict, Any, List, Optional, Tuple
 
 from app.models.runtime_state import RuntimeState
+from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails
 from app.services.encoder_contracts import EncoderOutput, EncoderSignalDefinition
 from app.services.projection import project_explicit_answers
 from app.services.safety_engine import evaluate_safety
 from app.services.serialisation import serialize_client_state, clinical_output, audit_output
-from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
 from app.services.ruleset import load_ruleset, ruleset_hash, extract_encoder_definitions
 from app.services.encoder_stub import extract_signals
 from app.services.encoder_mapping import apply_encoder_output
@@ -114,13 +114,16 @@ def apply_update_and_evaluate(
 def finish_runtime_state(
     runtime_state: RuntimeState,
     ruleset_path: str,
+    patient_details: PatientDetails,
     contact_preferences: Optional[dict] = None,
 ) -> Tuple[ClinicalOutput, AuditOutput]:
     """Entry point for /form/finish."""
 
     ruleset = load_ruleset(ruleset_path)
 
-    clinical = clinical_output(runtime_state, ruleset, contact_preferences)
+    clinical = clinical_output(
+        runtime_state, ruleset, patient_details, contact_preferences
+    )
     audit = audit_output(runtime_state)
 
     return clinical, audit

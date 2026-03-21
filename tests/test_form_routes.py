@@ -92,6 +92,22 @@ def _valid_contact_preferences() -> dict:
     }
 
 
+def _valid_patient_details() -> dict:
+    """
+    Minimal valid patient_details payload for use in finish requests.
+    Uses patient_for="me" — no submitter fields required.
+    """
+    return {
+        "patient_for": "me",
+        "first_name": "Jane",
+        "last_name": "Smith",
+        "date_of_birth": {"day": "15", "month": "3", "year": "1990"},
+        "postcode": "SW1A 1AA",
+        "submitter_name": None,
+        "submitter_relationship": None,
+    }
+
+
 def _build_answers(client_state: dict) -> dict:
     """
     Build a minimal valid answers dict from a client_state.
@@ -120,6 +136,7 @@ def test_happy_path_end_to_end():
     - finish response does NOT contain submitted_after_hours
     - MockDeliveryService captured one send call with correct submission_id
     - contact_preferences are present inside the captured ClinicalOutput
+    - patient_details are present inside the captured ClinicalOutput
     """
     mock_delivery = MockDeliveryService()
     app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
@@ -156,11 +173,11 @@ def test_happy_path_end_to_end():
             assert version == 2
 
             # --- finish ---
-            contact_prefs = _valid_contact_preferences()
             finish_res = client.post("/form/finish", json={
                 "runtime_id": runtime_id,
                 "version": version,
-                "contact_preferences": contact_prefs,
+                "contact_preferences": _valid_contact_preferences(),
+                "patient_details": _valid_patient_details(),
             })
             assert finish_res.status_code == 200, finish_res.text
             finish_body = finish_res.json()
@@ -184,6 +201,13 @@ def test_happy_path_end_to_end():
             assert captured_clinical.contact_preferences is not None
             assert captured_clinical.contact_preferences["contact_methods"] == ["email"]
             assert captured_clinical.contact_preferences["email_address"] == "patient@example.com"
+
+            # patient_details are inside ClinicalOutput
+            assert captured_clinical.patient_details is not None
+            assert captured_clinical.patient_details.first_name == "Jane"
+            assert captured_clinical.patient_details.last_name == "Smith"
+            assert captured_clinical.patient_details.date_of_birth == "1990-03-15"
+            assert captured_clinical.patient_details.postcode == "SW1A 1AA"
 
     finally:
         app.dependency_overrides.pop(get_delivery_service, None)
@@ -261,6 +285,7 @@ def test_form_finish_delivery_failure_does_not_prevent_submission_id():
                 "runtime_id": runtime_id,
                 "version": version,
                 "contact_preferences": _valid_contact_preferences(),
+                "patient_details": _valid_patient_details(),
             })
             assert finish_res.status_code == 200, (
                 f"form_finish must return 200 even when delivery fails, got {finish_res.status_code}: {finish_res.text}"
@@ -306,6 +331,7 @@ def test_form_finish_submitted_after_hours_absent():
                 "runtime_id": runtime_id,
                 "version": version,
                 "contact_preferences": _valid_contact_preferences(),
+                "patient_details": _valid_patient_details(),
             })
             assert finish_res.status_code == 200
             assert "submitted_after_hours" not in finish_res.json()

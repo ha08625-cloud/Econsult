@@ -32,8 +32,8 @@ from app.services.availability_service import (
     deactivation_clears_override,
 )
 from app.models.availability_models import AvailabilityException, LONDON_TZ
+from app.core.condition_registry import ConditionNotFound
 from app.core.errors import (
-    CONDITION_NOT_FOUND,
     INVALID_PAYLOAD,
     INVALID_DATE_FORMAT,
     INVALID_FIELD_TYPE,
@@ -128,7 +128,7 @@ async def get_signposting(
     Returns {"condition_id": ..., "signposting": <html string or null>}.
     """
     if not registry.has_condition(condition_id):
-        raise CONDITION_NOT_FOUND(condition_id)
+        raise ConditionNotFound(condition_id)
 
     html = practice_repo.get_signposting(admin.practice_id, condition_id)
 
@@ -170,7 +170,7 @@ async def put_signposting(
     row was written.
     """
     if not registry.has_condition(condition_id):
-        raise CONDITION_NOT_FOUND(condition_id)
+        raise ConditionNotFound(condition_id)
 
     try:
         body = await request.json()
@@ -214,7 +214,7 @@ async def delete_signposting(
     Returns 204 No Content.
     """
     if not registry.has_condition(condition_id):
-        raise CONDITION_NOT_FOUND(condition_id)
+        raise ConditionNotFound(condition_id)
 
     practice_repo.delete_signposting(admin.practice_id, condition_id)
 

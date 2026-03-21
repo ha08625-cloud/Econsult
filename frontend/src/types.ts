@@ -74,7 +74,7 @@ export interface FinishFormResult {
   submission_id: string;
 }
 
-// --- Contact preferences (Screen 4) ---
+// --- Contact preferences (Screen 5) ---
 
 export type ContactMethod = "email" | "text" | "phone";
 
@@ -87,4 +87,25 @@ export interface ContactPreferences {
   best_time_to_call: string | null;         // required if "phone" in contact_methods
   doctor_preference: DoctorPreference;
   usual_doctor_name: string | null;         // required if doctor_preference === "usual"
+}
+
+// --- Patient details (Screen 1, immediately after safety warning) ---
+
+// Wire format sent from frontend to backend.
+// Each field is a string containing only digits — validated client-side before
+// submission. The backend validates numeric content and assembles into a date.
+export interface DateOfBirth {
+  day: string;
+  month: string;
+  year: string;
+}
+
+export interface PatientDetails {
+  patient_for: "me" | "someone_else";
+  first_name: string;
+  last_name: string;
+  date_of_birth: DateOfBirth;
+  postcode: string;
+  submitter_name?: string;       // required when patient_for === "someone_else"
+  submitter_relationship?: string; // required when patient_for === "someone_else"
 }

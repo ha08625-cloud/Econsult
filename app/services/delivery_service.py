@@ -13,8 +13,8 @@ Architecture rules:
   - This module must never import clinical engine modules.
   - This module must never retry on failure.
   - This module must never update delivery status (that is the router's responsibility).
-  - contact_preferences are carried inside ClinicalOutput; the interface does not
-    need a separate parameter.
+  - contact_preferences and patient_details are carried inside ClinicalOutput;
+    the interface does not need separate parameters.
 
 Configuration (EmailDeliveryService):
     SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASSWORD,
@@ -27,11 +27,10 @@ import logging
 import os
 import smtplib
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 from email.message import EmailMessage
-from typing import Optional
 
-from app.models.serialisation_contracts import ClinicalOutput
+from app.models.serialisation_contracts import ClinicalOutput, PatientDetails
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +66,32 @@ def _format_answer(value) -> str:
     if value is None:
         return "(not answered)"
     return str(value)
+
+
+def _format_patient_details(pd: PatientDetails) -> list[str]:
+    """
+    Return lines for the patient details section.
+
+    date_of_birth is stored as ISO 8601 ("1990-03-15") and formatted here
+    as "15 March 1990" for human readability in the email body.
+
+    Note: strftime("%-d %B %Y") uses a Linux-specific directive (%-d) to
+    suppress the leading zero on the day. This is intentional — the system
+    deploys on Linux (Railway). It will raise ValueError on Windows.
+    """
+    dob_formatted = date.fromisoformat(pd.date_of_birth).strftime("%-d %B %Y")
+    patient_line = (
+        f"Patient: {pd.first_name} {pd.last_name}, "
+        f"DOB {dob_formatted}, "
+        f"Postcode {pd.postcode.upper()}"
+    )
+    lines = [patient_line]
+
+    if pd.patient_for == "someone_else" and pd.submitter_name:
+        relationship = f" ({pd.submitter_relationship})" if pd.submitter_relationship else ""
+        lines.append(f"Submitted by: {pd.submitter_name}{relationship}")
+
+    return lines
 
 
 def _format_contact_preferences(cp: dict) -> list[str]:
@@ -122,6 +147,13 @@ def _format_body(
         f"Condition:     {condition_label}",
         f"Submission ID: {submission_id}",
         f"Submitted at:  {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC",
+        "",
+    ]
+
+    # Patient details block — inserted before clinical content
+    lines += _format_patient_details(clinical_output.patient_details)
+
+    lines += [
         "",
         "PATIENT DESCRIPTION",
         "-" * 40,

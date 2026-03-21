@@ -3,12 +3,12 @@ import DoneScreen from "./DoneScreen";
 
 describe("DoneScreen", () => {
   it("renders the checkmark SVG icon", () => {
-    render(<DoneScreen submittedAfterHours={false} />);
+    render(<DoneScreen practiceWasClosed={false} />);
     expect(document.querySelector(".done-icon svg")).not.toBeNull();
   });
 
-  it("renders the after-hours message when submittedAfterHours is true", () => {
-    render(<DoneScreen submittedAfterHours={true} />);
+  it("renders the after-hours message when practiceWasClosed is true", () => {
+    render(<DoneScreen practiceWasClosed={true} />);
     expect(
       screen.getByText(/your submission will be reviewed on the next working day/i)
     ).toBeTruthy();
@@ -17,8 +17,8 @@ describe("DoneScreen", () => {
     ).toBeNull();
   });
 
-  it("renders the standard follow-up message when submittedAfterHours is false", () => {
-    render(<DoneScreen submittedAfterHours={false} />);
+  it("renders the standard follow-up message when practiceWasClosed is false", () => {
+    render(<DoneScreen practiceWasClosed={false} />);
     expect(
       screen.getByText(/if you do not hear back from the practice/i)
     ).toBeTruthy();

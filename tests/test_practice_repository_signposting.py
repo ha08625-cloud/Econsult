@@ -23,7 +23,7 @@ Requires nh3 to be installed:
 """
 
 import pytest
-from practice_repository import (
+from app.repositories.practice_repository import (
     PracticeRepository,
     PracticeNotFound,
     QUILL_EMPTY_OUTPUT,

@@ -11,6 +11,7 @@ import type {
   SafetyMessage,
   ConditionSummary,
   PresentationState,
+  PatientDetails,
 } from "./types";
 import { GENERAL_CONSULTATION_ID } from './constants';
 import { PageShell } from "./layout";
@@ -18,6 +19,7 @@ import { initialiseEditableAnswers } from "./helpers";
 import DoneScreen from "./screens/DoneScreen";
 import SafetyWarningScreen from "./screens/SafetyWarningScreen";
 import type { SafetyWarningFetchState } from "./screens/SafetyWarningScreen";
+import PatientDetailsScreen from "./screens/PatientDetailsScreen";
 import SelectConditionScreen from "./screens/SelectConditionScreen";
 import ReviewScreen from "./screens/ReviewScreen";
 import EditScreen from "./screens/EditScreen";
@@ -30,7 +32,14 @@ import ContactScreen from "./screens/ContactScreen";
 
 export default function App() {
   const [screen, setScreen] = useState<
-    "SAFETY_WARNING" | "SELECT_CONDITION" | "FREE_TEXT" | "EDIT" | "REVIEW" | "CONTACT" | "DONE"
+    | "SAFETY_WARNING"
+    | "PATIENT_DETAILS"
+    | "SELECT_CONDITION"
+    | "FREE_TEXT"
+    | "EDIT"
+    | "REVIEW"
+    | "CONTACT"
+    | "DONE"
   >("SAFETY_WARNING");
 
   // Session state (populated after /form/init)
@@ -40,6 +49,9 @@ export default function App() {
   const [editableAnswers, setEditableAnswers] = useState<Record<string, boolean | string | null> | null>(null);
   const [additionalText, setAdditionalText] = useState<string>("");
   const [safetyMessages, setSafetyMessages] = useState<SafetyMessage[]>([]);
+
+  // Patient details (captured before condition selection — NHS contractual obligation)
+  const [patientDetails, setPatientDetails] = useState<PatientDetails | null>(null);
 
   // Shared UI state
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -56,11 +68,11 @@ export default function App() {
   const [afterHoursNotice, setAfterHoursNotice] = useState<string | null>(null);
   const [practiceIsOpen, setPracticeIsOpen] = useState<boolean | null>(null);
 
-  // Screen 1 state (condition discovery)
+  // Screen 2 state (condition discovery)
   const [conditions, setConditions] = useState<ConditionSummary[] | null>(null);
   const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
 
-  // Screen 2 state (presentation framing)
+  // Screen 3 state (presentation framing)
   // No idle state — this value is only rendered inside the FREE_TEXT screen block.
   // Both transitions into FREE_TEXT reset this to "loading" before navigating.
   // If a future developer adds a third path to FREE_TEXT, they must do the same.
@@ -132,7 +144,7 @@ export default function App() {
   }, [screen, practiceIsOpen]);
 
   // ---------------------------------
-  // Condition list fetch (Screen 1)
+  // Condition list fetch (Screen 2)
   // ---------------------------------
 
   useEffect(() => {
@@ -163,7 +175,7 @@ export default function App() {
   }, [screen, conditions]);
 
   // ---------------------------------
-  // Presentation fetch (Screen 2)
+  // Presentation fetch (Screen 3)
   // ---------------------------------
   // Fires when selectedConditionId changes or when presentationFetchTrigger
   // is incremented (navigation into FREE_TEXT, or retry).
@@ -211,6 +223,7 @@ export default function App() {
   // editableAnswers
   // additionalText
   // safetyMessages
+  // patientDetails
   // fatalError
   // safetyFetchError
   // safetyWarningText
@@ -249,6 +262,7 @@ export default function App() {
               setEditableAnswers(null);
               setAdditionalText("");
               setSafetyMessages([]);
+              setPatientDetails(null);
               setConditions(null);
               setSelectedConditionId(null);
               setPresentationState({ status: "loading" });
@@ -286,7 +300,19 @@ export default function App() {
           setSafetyFetchError(null);
           setSafetyWarningText(null);
         }}
-        onContinue={() => setScreen("SELECT_CONDITION")}
+        onContinue={() => setScreen("PATIENT_DETAILS")}
+      />
+    );
+  }
+
+  if (screen === "PATIENT_DETAILS") {
+    return (
+      <PatientDetailsScreen
+        onContinue={(details) => {
+          setPatientDetails(details);
+          setScreen("SELECT_CONDITION");
+        }}
+        onBack={() => setScreen("SAFETY_WARNING")}
       />
     );
   }
@@ -402,11 +428,16 @@ export default function App() {
       setFatalError("Invalid CONTACT state");
       return null;
     }
+    if (patientDetails === null) {
+      setFatalError("Patient details missing at submission");
+      return null;
+    }
 
     return (
       <ContactScreen
         runtimeId={runtimeId}
         version={version}
+        patientDetails={patientDetails}
         onSubmit={() => {
           setScreen("DONE");
         }}

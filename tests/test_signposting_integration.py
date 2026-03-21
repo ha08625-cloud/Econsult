@@ -26,11 +26,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from admin_router import router as admin_router
-from admin_context import AdminContext, require_admin
-from practice_repository import PracticeRepository, MAX_SIGNPOSTING_LENGTH
-from presentation_service import PresentationService
-from condition_registry import ConditionNotFound
+from app.routers.admin_router import router as admin_router
+from app.core.admin_context import AdminContext, require_admin
+from app.repositories.practice_repository import PracticeRepository, MAX_SIGNPOSTING_LENGTH
+from app.services.presentation_service import PresentationService
+from app.core.condition_registry import ConditionNotFound
 
 
 PRACTICE_ID = "test-practice"

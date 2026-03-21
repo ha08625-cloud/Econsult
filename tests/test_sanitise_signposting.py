@@ -9,7 +9,7 @@ Requires nh3 to be installed:
 """
 
 import pytest
-from practice_repository import (
+from app.repositories.practice_repository import (
     sanitise_signposting_html,
     InvalidSignpostingData,
     MAX_SIGNPOSTING_LENGTH,

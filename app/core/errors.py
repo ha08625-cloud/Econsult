@@ -15,7 +15,6 @@ RULESET_VALIDATION_FAILURE = lambda msg: APIError("RULESET_VALIDATION_FAILURE", 
 SESSION_CLOSED = lambda: APIError("SESSION_CLOSED", "Session already closed")
 
 # Admin-specific errors
-CONDITION_NOT_FOUND = lambda cid: APIError("CONDITION_NOT_FOUND", f"Unknown condition: {cid}")
 INVALID_DATE_FORMAT = lambda field, value: APIError(
     "INVALID_DATE_FORMAT",
     f"Invalid format for '{field}': '{value}'. Expected ISO format.",

@@ -7,6 +7,7 @@ import type {
   SafetyWarning,
   AvailabilityResult,
   ContactPreferences,
+  PatientDetails,
   FinishFormResult,
 } from "./types";
 
@@ -120,7 +121,7 @@ export async function getAvailability(): Promise<AvailabilityResult> {
 }
 
 // ---------------------------------
-// Condition discovery (Screens 1-2)
+// Condition discovery (Screens 2-3)
 // ---------------------------------
 
 export async function getConditions(): Promise<{
@@ -163,10 +164,12 @@ export async function finishForm(
   runtimeId: string,
   version: number,
   contactPreferences: ContactPreferences,
+  patientDetails: PatientDetails,
 ): Promise<FinishFormResult> {
   return postJson("/form/finish", {
     runtime_id: runtimeId,
     version: version,
     contact_preferences: contactPreferences,
+    patient_details: patientDetails,
   });
 }

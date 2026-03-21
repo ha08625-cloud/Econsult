@@ -29,6 +29,49 @@ You do not need to solve auth in Phase 6, but you should:
 state that runtime_id must be unguessable
 state that rate-limiting and access control are deferred but required
 
+Test suite
+Good question to ask now before real patient data exists. There is no single universal standard, but there is a well-established approach that most professional teams converge on. Let me describe it honestly, including where the theory meets pragmatic reality for a project of your size.
+
+The conceptual model: test pyramid
+The idea is that you have three layers of tests, and the ratio matters:
+Unit tests — test a single function in isolation, no database, no network, run in milliseconds. You should have many of these. Your existing EditScreen.test.tsx is an example.
+Integration tests — test that two or more real components work together, usually involving a real database. Slower, fewer of them. Your test_form_routes.py is an example.
+End-to-end tests — test the full system through a browser. Very slow, expensive to maintain, very few of them. You do not have any yet and do not need them soon.
+The mistake teams make is inverting the pyramid — writing mostly integration and E2E tests because they feel more "real", and ending up with a slow, brittle test suite.
+
+The database problem specifically
+The gold standard for integration tests that need a database is to use a dedicated, ephemeral test database that is:
+
+Completely separate from production
+Reset to a known state before each test run (or each test)
+Automatically provisioned, not manually maintained
+
+The most common way to achieve this in Python projects is pytest with a local Postgres instance via Docker. The pattern looks like this:
+
+A conftest.py file at the top of your tests/ directory starts a Postgres container, runs your Alembic migrations against it, and tears it down when the session ends
+Each test that writes data either runs in a transaction that is rolled back after the test, or the database is wiped between tests
+No .env file needed — the test infrastructure creates its own database URL
+
+The library that handles the Docker side is pytest-docker or testcontainers-python. The transaction rollback pattern uses pytest fixtures to wrap each test in a transaction that never commits.
+
+Honest assessment for your situation
+The full Docker-based setup is the right long-term answer, but it has real setup cost and is probably premature for a single-developer project at your stage. Here is what I would actually recommend doing now vs later:
+Now:
+
+Provision a second Railway database (or a free local Postgres) specifically for testing, and put its URL in .env as TEST_DATABASE_URL. You have already done the hard part — your test guardrail already enforces that TEST_DATABASE_URL must be explicitly set, so production data is protected.
+Add a conftest.py that runs Alembic migrations against the test database at the start of each test session and truncates the relevant tables between tests. This is much simpler than the Docker approach and sufficient for now.
+
+Later, before you have real patient data or a second developer:
+
+Move to testcontainers-python so the test database is fully ephemeral and requires no manual provisioning
+Add proper pytest fixtures with transaction rollback so tests are fully isolated from each other
+
+What to prioritise for test coverage:
+Right now your most important gaps are unit tests for the engine — form_logic.py, safety_engine.py, projection.py. These are pure functions with no database dependency, so they are the easiest and highest-value tests to write. A bug in the safety engine is a clinical risk. A unit test that runs in 10 milliseconds and catches that bug is worth more than any integration test.
+
+Practical next step
+If you want to pursue this, I would suggest starting with a conftest.py for test isolation and writing unit tests for the safety engine. That is a well-scoped piece of work and directly addresses the highest clinical risk. Want to plan that out?
+
 production readiness updates
 - Encryption and cybersecurity
 - Data protection
