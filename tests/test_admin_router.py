@@ -1,21 +1,25 @@
 """
 Tests for admin_context.py and admin_router.py.
 
-Three sections:
+Four sections:
 1. Auth behaviour — tested against GET /admin/conditions
 2. Endpoint behaviour — assumes valid auth throughout
 3. Signposting sanitisation — unit tests for sanitise_signposting_html
+4. Presentation endpoint — verifies patient-facing /conditions/{id}/presentation
+   reflects signposting state set via the admin router
 
 Test setup uses a bare FastAPI app with app.state populated manually,
 bypassing the normal startup sequence in main.py.
 
 Section 2 uses a StubPracticeRepo that calls the real sanitise_signposting_html
-function so that sanitisation side-effects (javascript: stripping, <p></p>
-treated as empty, overlength rejection) are exercised through the router.
+so that sanitisation side-effects (javascript: stripping, <p></p> treated as
+empty, overlength rejection) are exercised through the router.
+
+Section 4 includes the real public_router so the presentation endpoint is
+tested end-to-end without requiring a database connection.
 
 Run from project root:
     python -m pytest tests/test_admin_router.py
-
 """
 
 import os
@@ -26,6 +30,7 @@ from app.repositories.practice_repository import (
     sanitise_signposting_html,
     InvalidSignpostingData,
 )
+from app.core.condition_registry import ConditionNotFound
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +49,14 @@ class StubRegistry:
 
     def has_condition(self, condition_id):
         return condition_id in self._conditions
+
+    def get_presentation(self, condition_id):
+        if condition_id not in self._conditions:
+            raise ConditionNotFound(condition_id)
+        return {
+            "label": self._conditions[condition_id]["label"],
+            "free_text_prompt": "Describe your symptoms",
+        }
 
 
 class StubPracticeRepo:
@@ -77,26 +90,35 @@ class StubPracticeRepo:
 
 def make_test_app(condition_ids=None):
     """
-    Build a bare FastAPI app with the admin router registered and
-    app.state populated. Does not run the normal startup validation.
+    Build a bare FastAPI app with the admin and public routers registered
+    and app.state populated. Does not run the normal startup validation.
 
     Registers the same two exception handlers as main.py:
       - ConditionNotFound  → 404
       - APIError           → 422
     Both are required so that error-path tests reflect production behaviour.
+
+    app.state.presentation_service is populated so the public router's
+    /conditions/{id}/presentation endpoint works without a database.
     """
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
     from app.routers.admin_router import router as admin_router
+    from app.routers.public_router import router as public_router
     from app.core.errors import APIError
-    from app.core.condition_registry import ConditionNotFound
+    from app.services.presentation_service import PresentationService
+
+    registry = StubRegistry(condition_ids or ["urinary_symptoms"])
+    practice_repo = StubPracticeRepo()
 
     app = FastAPI()
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
+    app.include_router(public_router)
 
     app.state.practice_id = "test_practice"
-    app.state.registry = StubRegistry(condition_ids or ["urinary_symptoms"])
-    app.state.practice_repo = StubPracticeRepo()
+    app.state.registry = registry
+    app.state.practice_repo = practice_repo
+    app.state.presentation_service = PresentationService(registry, practice_repo)
 
     @app.exception_handler(ConditionNotFound)
     async def condition_not_found_handler(_, exc: ConditionNotFound):
@@ -233,13 +255,11 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIn("Call physio", data["signposting"])
 
     def test_put_empty_string_clears_signposting_and_returns_null(self):
-        # Step 1: store something first
         self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>something</p>"},
             headers=VALID_AUTH,
         )
-        # Step 2: PUT with empty string — this is a clear, not an error
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": ""},
@@ -247,7 +267,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["signposting"])
-        # Step 3: subsequent GET also returns null
         get_res = self.client.get(
             f"/admin/conditions/{self.condition_id}/signposting",
             headers=VALID_AUTH,
@@ -255,7 +274,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIsNone(get_res.json()["signposting"])
 
     def test_put_whitespace_only_string_is_treated_as_clear_and_returns_null(self):
-        # Whitespace-only content is never stored — treated as a clear instruction
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "   "},
@@ -265,8 +283,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIsNone(res.json()["signposting"])
 
     def test_put_quill_empty_output_clears_signposting(self):
-        # <p></p> is what the Quill editor emits when the user clears the field.
-        # It must be treated as empty and return null, not stored as a blank paragraph.
         self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>existing content</p>"},
@@ -281,8 +297,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIsNone(res.json()["signposting"])
 
     def test_put_response_reflects_sanitised_content_not_raw_input(self):
-        # A javascript: href must be stripped by nh3 before storage.
-        # The PUT response must reflect what was stored, not the raw input.
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": '<p><a href="javascript:alert(1)">click me</a></p>'},
@@ -290,13 +304,10 @@ class TestEndpointBehaviour(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
         saved = res.json()["signposting"]
-        # After nh3 strips the unsafe href, the link text survives but the
-        # javascript: attribute is gone. The result is non-null (text remains).
         if saved is not None:
             self.assertNotIn("javascript:", saved)
 
     def test_put_overlength_returns_422(self):
-        # Content exceeding MAX_SIGNPOSTING_LENGTH is rejected before sanitisation.
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "a" * (MAX_SIGNPOSTING_LENGTH + 1)},
@@ -306,9 +317,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIn(str(MAX_SIGNPOSTING_LENGTH), res.json()["error"]["message"])
 
     def test_put_exactly_max_length_returns_200(self):
-        # Exactly MAX_SIGNPOSTING_LENGTH characters must be accepted.
-        # Build a string that contains real content so nh3 does not strip
-        # it to empty. Wrap in a <p> tag and pad to the limit.
         inner = "a" * (MAX_SIGNPOSTING_LENGTH - len("<p></p>"))
         raw = f"<p>{inner}</p>"
         raw = raw[:MAX_SIGNPOSTING_LENGTH]
@@ -320,7 +328,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
 
     def test_put_rejects_non_string_value_with_422(self):
-        # signposting must be a string; a list is the wrong type
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": ["item"]},
@@ -355,19 +362,16 @@ class TestEndpointBehaviour(unittest.TestCase):
     # --- DELETE signposting ---
 
     def test_delete_removes_signposting_and_subsequent_get_returns_null(self):
-        # Set up signposting first
         self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>item</p>"},
             headers=VALID_AUTH,
         )
-        # Delete
         res = self.client.delete(
             f"/admin/conditions/{self.condition_id}/signposting",
             headers=VALID_AUTH,
         )
         self.assertEqual(res.status_code, 204)
-        # Subsequent GET returns null
         get_res = self.client.get(
             f"/admin/conditions/{self.condition_id}/signposting",
             headers=VALID_AUTH,
@@ -393,8 +397,7 @@ class TestEndpointBehaviour(unittest.TestCase):
 # Section 3: Signposting sanitisation — unit tests for sanitise_signposting_html
 #
 # These tests call the sanitiser directly because the behaviour being tested
-# is in the repository layer, not the HTTP layer. Testing via the router
-# would require inspecting side effects rather than return values.
+# is in the repository layer, not the HTTP layer.
 # ---------------------------------------------------------------------------
 
 class TestSignpostingSanitisation(unittest.TestCase):
@@ -428,8 +431,6 @@ class TestSignpostingSanitisation(unittest.TestCase):
             sanitise_signposting_html("a" * (MAX_SIGNPOSTING_LENGTH + 1))
 
     def test_exactly_max_length_does_not_raise(self):
-        # The length check fires before nh3 runs, so a string at exactly the
-        # limit must not raise even if nh3 strips most of it.
         inner = "a" * (MAX_SIGNPOSTING_LENGTH - len("<p></p>"))
         raw = f"<p>{inner}</p>"
         raw = raw[:MAX_SIGNPOSTING_LENGTH]
@@ -440,6 +441,65 @@ class TestSignpostingSanitisation(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertNotIn("<script>", result)
         self.assertIn("text", result)
+
+
+# ---------------------------------------------------------------------------
+# Section 4: Presentation endpoint
+#
+# Verifies that the patient-facing GET /conditions/{id}/presentation response
+# reflects signposting state set and cleared via the admin router.
+# Tests the full round-trip: admin PUT -> patient GET.
+# ---------------------------------------------------------------------------
+
+class TestPresentationSignposting(unittest.TestCase):
+
+    def setUp(self):
+        os.environ["DEV_MODE"] = "1"
+        os.environ.pop("ADMIN_TOKEN", None)
+        from fastapi.testclient import TestClient
+        self.app = make_test_app(condition_ids=["urinary_symptoms"])
+        self.client = TestClient(self.app, raise_server_exceptions=True)
+        self.condition_id = "urinary_symptoms"
+
+    def tearDown(self):
+        os.environ.pop("DEV_MODE", None)
+
+    def test_presentation_returns_null_signposting_when_none_configured(self):
+        res = self.client.get(f"/conditions/{self.condition_id}/presentation")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIn("practice_signposting", data)
+        self.assertIsNone(data["practice_signposting"])
+
+    def test_presentation_returns_html_string_after_admin_put(self):
+        self.client.put(
+            f"/admin/conditions/{self.condition_id}/signposting",
+            json={"signposting": "<p>Information from your practice.</p>"},
+            headers=VALID_AUTH,
+        )
+        res = self.client.get(f"/conditions/{self.condition_id}/presentation")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        signposting = data["practice_signposting"]
+        self.assertIsNotNone(signposting)
+        self.assertIsInstance(signposting, str)
+        self.assertNotIsInstance(signposting, list)
+        self.assertIn("Information from your practice", signposting)
+
+    def test_presentation_returns_null_after_content_cleared(self):
+        self.client.put(
+            f"/admin/conditions/{self.condition_id}/signposting",
+            json={"signposting": "<p>content</p>"},
+            headers=VALID_AUTH,
+        )
+        self.client.put(
+            f"/admin/conditions/{self.condition_id}/signposting",
+            json={"signposting": ""},
+            headers=VALID_AUTH,
+        )
+        res = self.client.get(f"/conditions/{self.condition_id}/presentation")
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(res.json()["practice_signposting"])
 
 
 # ---------------------------------------------------------------------------

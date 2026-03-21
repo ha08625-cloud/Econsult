@@ -18,7 +18,7 @@ Architecture rules:
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -45,6 +45,7 @@ from app.core.request_validation import (
     validate_update_payload,
 )
 from app.models.runtime_state import RuntimeState
+from app.models.serialisation_contracts import PatientDetails
 from app.repositories.runtime_state_repository import (
     RuntimeStateNotFound,
     SessionClosed,
@@ -209,6 +210,29 @@ async def form_finish(
     runtime_id = payload["runtime_id"]
     version = payload["version"]
     contact_preferences = payload["contact_preferences"]
+    pd_raw = payload["patient_details"]
+
+    # Assemble PatientDetails dataclass.
+    # Validation has already confirmed that day/month/year are digit-only strings
+    # and form a valid calendar date, so the date() call here will not raise.
+    # The router's responsibility is assembly into the domain type; date formatting
+    # for human display happens later in delivery_service.py.
+    dob = pd_raw["date_of_birth"]
+    dob_iso = date(
+        int(dob["year"].strip()),
+        int(dob["month"].strip()),
+        int(dob["day"].strip()),
+    ).isoformat()  # produces "YYYY-MM-DD"
+
+    patient_details = PatientDetails(
+        patient_for=pd_raw["patient_for"],
+        first_name=pd_raw["first_name"].strip(),
+        last_name=pd_raw["last_name"].strip(),
+        date_of_birth=dob_iso,
+        postcode=pd_raw["postcode"].strip(),
+        submitter_name=pd_raw.get("submitter_name") or None,
+        submitter_relationship=pd_raw.get("submitter_relationship") or None,
+    )
 
     try:
         row = runtime_repo.get_latest(runtime_id)
@@ -232,6 +256,7 @@ async def form_finish(
         runtime_state,
         ruleset_path,
         contact_preferences=contact_preferences,
+        patient_details=patient_details,
     )
 
     delivery_email = practice_repo.get_email(practice_id)

@@ -80,3 +80,8 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Scope:** Railway deployment configurations, the Dockerfile multi-stage build (Vite + Python), static file serving logic, Alembic database migrations, required environment variables, and Postgres/JSONB data quirks.
 * **Domain Doc:** `docs/arch_infrastructure.md`
 * **Key Files:** `Dockerfile`, `app/core/db.py` (Alembic initialization), `alembic/env.py`, `main.py` (for static serving mounts).
+
+### 3.12 Testing Strategy
+* **Scope:** Test categories (unit vs integration), two-database rule, migration obligations, Makefile targets.
+* **Domain Doc:** `docs/arch_testing.md`
+* **Key Files:** `tests/test_form_routes.py`, `tests/test_admin_router.py`, `Makefile`
