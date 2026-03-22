@@ -24,7 +24,7 @@ from datetime import timezone
 from fastapi import APIRouter, Request, Depends
 
 from app.core.admin_context import AdminContext, require_admin
-from app.repositories.practice_repository import InvalidSignpostingData, MAX_SIGNPOSTING_LENGTH
+from app.repositories.practice_repository import InvalidSignpostingData, InvalidEmailError, MAX_SIGNPOSTING_LENGTH
 from app.services.availability_service import (
     validate_availability_config,
     validate_override,
@@ -110,6 +110,78 @@ async def admin_list_conditions(
     This is a raw administrative view, separate from the patient-facing endpoint.
     """
     return {"conditions": registry.list_conditions()}
+
+
+# ---------------------------------------------------------------------------
+# Practice
+# ---------------------------------------------------------------------------
+
+@router.get("/practice")
+async def get_practice(
+    admin: AdminContext = Depends(require_admin),
+    practice_repo=Depends(get_practice_repo),
+):
+    """
+    Return current practice details.
+
+    Returns {"practice_id": ..., "name": ..., "email": ...}.
+    created_at is intentionally omitted — it is an internal field
+    with no use in the admin UI.
+    """
+    practice = practice_repo.get_practice(admin.practice_id)
+    return {
+        "practice_id": practice["practice_id"],
+        "name": practice["name"],
+        "email": practice["email"],
+    }
+
+
+@router.put("/practice/email")
+async def put_practice_email(
+    request: Request,
+    admin: AdminContext = Depends(require_admin),
+    practice_repo=Depends(get_practice_repo),
+):
+    """
+    Update the practice email address.
+
+    Accepts: {"email": "new@address.com"}
+
+    Validation:
+    - email must be present and must be a string
+    - email must pass repository format validation
+
+    Catches InvalidEmailError and converts to INVALID_PAYLOAD.
+    Does not catch PracticeNotFound — the practice is guaranteed to exist
+    at startup. If it does not exist here, the deployment is broken and
+    the unhandled exception traceback is the correct diagnostic signal.
+
+    Returns {"practice_id": ..., "name": ..., "email": ...} on success.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise INVALID_PAYLOAD("Invalid JSON body")
+
+    if not isinstance(body, dict) or "email" not in body:
+        raise INVALID_PAYLOAD('Body must be {"email": "..."}')
+
+    email = body["email"]
+
+    if not isinstance(email, str):
+        raise INVALID_FIELD_TYPE("email", "a string")
+
+    try:
+        practice_repo.update_email(admin.practice_id, email)
+    except InvalidEmailError as e:
+        raise INVALID_PAYLOAD(str(e))
+
+    practice = practice_repo.get_practice(admin.practice_id)
+    return {
+        "practice_id": practice["practice_id"],
+        "name": practice["name"],
+        "email": practice["email"],
+    }
 
 
 # ---------------------------------------------------------------------------

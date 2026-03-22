@@ -6,7 +6,7 @@
  * Layout: three-tab interface
  * - "Signposting"       — condition selector + SignpostingEditor
  * - "Availability"      — AvailabilityEditor
- * - "Practice settings" — placeholder for email/contact configuration
+ * - "Practice settings" — email/contact configuration via PracticeSettingsTab
  *
  * Mounting strategy:
  * - AvailabilityEditor is always mounted, shown/hidden via display:none.
@@ -16,11 +16,16 @@
  *   SignpostingEditor (and its Quill instance) is destroyed when leaving
  *   the signposting tab and recreated on return. On recreation, Quill
  *   performs a fresh server fetch. This is intentional.
+ * - PracticeSettingsTab is conditionally rendered and performs a fresh
+ *   fetch on each mount. This is intentional — practice details are not
+ *   expected to change frequently.
  *
  * Unsaved change tracking:
  * - signpostingUnsavedRef: set by SignpostingEditor via onUnsavedChange
  * - availabilityUnsavedRef: set by AvailabilityEditor via onUnsavedChange
  * Both are refs (not state) so confirm dialogs can read them synchronously.
+ * PracticeSettingsTab has no unsaved-change guard — single text field,
+ * low stakes to lose on tab switch.
  *
  * Guard behaviour:
  * - Switching away from "signposting": confirms if signpostingUnsavedRef,
@@ -36,6 +41,7 @@
 import { useRef, useState } from "react";
 import SignpostingEditor from "./SignpostingEditor";
 import AvailabilityEditor from "./AvailabilityEditor";
+import PracticeSettingsTab from "./PracticeSettingsTab";
 import type { ConditionSummary } from "./types";
 
 type Tab = "signposting" | "availability" | "practice_settings";
@@ -168,14 +174,9 @@ export default function EditorView({ token, conditions }: Props) {
         </>
       )}
 
-      {/* Practice settings tab — placeholder */}
+      {/* Practice settings tab — conditionally rendered, fetches on mount */}
       {activeTab === "practice_settings" && (
-        <div className="card">
-          <p className="card-title">Practice settings</p>
-          <p className="card-subtitle">
-            Practice contact details and email configuration.
-          </p>
-        </div>
+        <PracticeSettingsTab token={token} />
       )}
     </>
   );

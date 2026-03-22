@@ -159,6 +159,31 @@ class PracticeRepository:
             raise PracticeNotFound(f"Practice not found: {practice_id}")
         return practice["email"]
 
+    def update_email(self, practice_id: str, email: str) -> None:
+        """
+        Update the email address for a practice.
+
+        Raises InvalidEmailError if email is invalid.
+        Raises PracticeNotFound if practice does not exist.
+        Returns nothing on success.
+        """
+        self._validate_email(email)
+
+        practice = self.get_practice(practice_id)
+        if practice is None:
+            raise PracticeNotFound(f"Practice not found: {practice_id}")
+
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE practices
+                    SET email = %s
+                    WHERE practice_id = %s
+                    """,
+                    (email, practice_id),
+                )
+
     def practice_exists(self, practice_id: str) -> bool:
         return self.get_practice(practice_id) is not None
 

@@ -100,6 +100,44 @@ export async function putSignposting(
 }
 
 // ---------------------------------------------------------------------------
+// Practice
+// ---------------------------------------------------------------------------
+
+export interface PracticeDetails {
+  practice_id: string;
+  name: string;
+  email: string;
+}
+
+/**
+ * Fetches current practice details (practice_id, name, email).
+ */
+export async function getPractice(token: string): Promise<PracticeDetails> {
+  const res = await apiFetch("/admin/practice", token);
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
+  return (await res.json()) as PracticeDetails;
+}
+
+/**
+ * Updates the practice email address.
+ * Throws a descriptive error string on validation failure (422) or other
+ * server errors. Returns the updated practice details on success.
+ */
+export async function updatePracticeEmail(
+  token: string,
+  email: string
+): Promise<PracticeDetails> {
+  const res = await apiFetch("/admin/practice/email", token, {
+    method: "PUT",
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res));
+  }
+  return (await res.json()) as PracticeDetails;
+}
+
+// ---------------------------------------------------------------------------
 // Availability
 // ---------------------------------------------------------------------------
 

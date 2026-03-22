@@ -260,7 +260,36 @@ def test_practice_not_found():
     assert raised, "Expected PracticeNotFound was not raised"
 
 
-def test_signposting_set_and_get():
+def test_practice_update_email():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "original@example.com")
+        repo.update_email(pid, "updated@example.com")
+        email = repo.get_email(pid)
+        assert email == "updated@example.com", f"Expected updated@example.com, got {email}"
+    finally:
+        _cleanup_practice(pid)
+
+
+def test_practice_update_email_invalid_format():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "valid@example.com")
+        raised = False
+        try:
+            repo.update_email(pid, "not-an-email")
+        except InvalidEmailError:
+            raised = True
+        assert raised, "Expected InvalidEmailError was not raised"
+    finally:
+        _cleanup_practice(pid)
+
+
+
     repo = _make_practice_repo()
     pid = _uid()
 
@@ -481,6 +510,8 @@ if __name__ == "__main__":
     run_test("invalid_email raises InvalidEmailError", test_practice_invalid_email)
     run_test("get_email returns correct address", test_practice_get_email)
     run_test("get_email raises PracticeNotFound for missing practice", test_practice_not_found)
+    run_test("update_email changes the stored address", test_practice_update_email)
+    run_test("update_email raises InvalidEmailError for bad format", test_practice_update_email_invalid_format)
     run_test("set_signposting and get_signposting", test_signposting_set_and_get)
     run_test("delete_signposting removes row", test_signposting_delete)
     run_test("set_signposting with empty html deletes row", test_signposting_empty_html_deletes_row)

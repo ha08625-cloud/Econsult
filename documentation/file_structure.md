@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout and import mapping
-# Last updated: 2026-03-20
+# Last updated: 2026-03-22
 
 ---
 
@@ -64,7 +64,7 @@ Database access for persistent records. No business logic.
 
 Files:
 - app/repositories/availability_repository.py — weekly hours, overrides, and per-date exceptions.
-- app/repositories/practice_repository.py — practice record CRUD.
+- app/repositories/practice_repository.py — practice record CRUD including update_email.
 - app/repositories/runtime_state_repository.py — session state read/write. Registered in app.state as runtime_repo.
 - app/repositories/submission_repository.py — submission record creation and delivery status tracking.
 
@@ -75,7 +75,7 @@ Infrastructure concerns only. No clinical logic.
 Files:
 - app/core/admin_context.py — admin authentication context and FastAPI dependency.
 - app/core/condition_registry.py — loads and indexes condition rulesets at startup; immutable after init.
-- app/core/db.py — app/core/db.py — shared Postgres connection module. Only file that imports psycopg2. Provides get_conn() context manager and alembic_upgrade() for running migrations at startup
+- app/core/db.py — shared Postgres connection module. Only file that imports psycopg2. Provides get_conn() context manager and alembic_upgrade() for running migrations at startup.
 - app/core/dependencies.py — shared FastAPI dependency provider functions. All routers import from here to access app.state values via Depends rather than direct request.app.state access.
 - app/core/errors.py — APIError and named error constants.
 - app/core/request_validation.py — validates incoming HTTP payloads.
@@ -85,7 +85,7 @@ Files:
 HTTP routing only. No business logic.
 
 Files:
-- app/routers/admin_router.py — authenticated admin endpoints. Prefix /admin applied in main.py.
+- app/routers/admin_router.py — authenticated admin endpoints. Prefix /admin applied in main.py. Endpoints: conditions list, signposting CRUD, practice details (GET /admin/practice, PUT /admin/practice/email), availability config, override, and per-date exceptions.
 - app/routers/form_router.py — form session endpoints (POST /form/init, /form/update, /form/finish). All dependencies injected via Depends; no app.state access in handler bodies.
 - app/routers/public_router.py — unauthenticated read-only endpoints (conditions, presentation, availability, safety-warning). Registered with no prefix in main.py.
 
@@ -140,12 +140,14 @@ remains in App.tsx and is passed down as props.
 - frontend/src/screens/SelectConditionScreen.test.tsx
 - frontend/src/screens/ReviewScreen.tsx - Review Screen
 - frontend/src/screens/ReviewScreen.test.tsx
-- frontend/src/screens/EditScreen.tsx - Done Screen
+- frontend/src/screens/EditScreen.tsx - Edit Screen
 - frontend/src/screens/EditScreen.test.tsx
 - frontend/src/screens/FreeTextScreen.tsx - Free Text Screen
 - frontend/src/screens/FreeTextScreen.test.tsx
 - frontend/src/screens/ContactScreen.tsx - Contact Screen
 - frontend/src/screens/ContactScreen.test.tsx
+- frontend/src/screens/PatientDetailsScreen.tsx - Patient Details Screen
+
 
 Config files (frontend/):
 - frontend/index.html — patient form entry point.
@@ -157,14 +159,15 @@ Config files (frontend/):
 
 Admin UI source files (frontend/admin-ui/src/):
 - frontend/admin-ui/src/App.tsx
-- frontend/admin-ui/src/EditorView.tsx
+- frontend/admin-ui/src/EditorView.tsx — three-tab layout; conditionally renders SignpostingEditor and PracticeSettingsTab; always mounts AvailabilityEditor
 - frontend/admin-ui/src/SignpostingEditor.tsx
+- frontend/admin-ui/src/AvailabilityEditor.tsx
+- frontend/admin-ui/src/PracticeSettingsTab.tsx — practice email editor; fetches on mount
 - frontend/admin-ui/src/TokenView.tsx
-- frontend/admin-ui/src/api.ts
+- frontend/admin-ui/src/api.ts — includes PracticeDetails interface, getPractice, updatePracticeEmail
 - frontend/admin-ui/src/main.tsx
 - frontend/admin-ui/src/types.ts
 - frontend/admin-ui/src/index.css
-- frontend/admin-ui/src/AvailabilityEditor.tsx
 - frontend/admin-ui/index.html — admin UI entry point.
 
 Vite builds two entry points:
