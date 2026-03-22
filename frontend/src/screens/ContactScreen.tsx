@@ -2,12 +2,13 @@ import { useState } from "react";
 import { PageShell, InlineError } from "../layout";
 import { finishForm, friendlyErrorMessage } from "../api";
 import { initialiseContactPreferences, isValidUkPhone } from "../helpers";
-import type { ContactPreferences, ContactMethod } from "../types";
+import type { ContactPreferences, ContactMethod, PatientDetails } from "../types";
 
 interface ContactScreenProps {
   practiceName: string | null;
   runtimeId: string;
   version: number;
+  patientDetails: PatientDetails;
   onSubmit: () => void;
   onBack: () => void;
 }
@@ -16,6 +17,7 @@ export default function ContactScreen({
   practiceName,
   runtimeId,
   version,
+  patientDetails,
   onSubmit,
   onBack,
 }: ContactScreenProps) {
@@ -94,7 +96,7 @@ export default function ContactScreen({
     setIsSubmitting(true);
     setScreenError(null);
 
-    finishForm(runtimeId, version, cleanPreferences)
+    finishForm(runtimeId, version, cleanPreferences, patientDetails)
       .then(() => {
         onSubmit();
       })
