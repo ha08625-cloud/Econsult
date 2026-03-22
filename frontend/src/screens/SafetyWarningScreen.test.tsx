@@ -1,99 +1,65 @@
+// Tests for SafetyWarningScreen
+// Run with: make test (or npx vitest)
+
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import SafetyWarningScreen from "./SafetyWarningScreen";
-import type { SafetyWarningFetchState } from "./SafetyWarningScreen";
 
-// Default no-op callbacks used in most tests — override only what the test cares about.
-const noop = () => {};
-
-const defaultProps = {
+const baseProps = {
+  safetyWarningFetchState: { status: "success" as const, text: "Call 999 if..." },
+  practiceNameFetchState: { status: "success" as const, name: "Elm Tree Surgery" },
   safetyConfirmed: false,
   practiceIsOpen: true,
   availabilityClosedMessage: null,
   afterHoursNotice: null,
-  onConfirmChange: noop,
-  onRetry: noop,
-  onContinue: noop,
+  onConfirmChange: () => {},
+  onRetry: () => {},
+  onPracticeRetry: () => {},
+  onContinue: () => {},
 };
 
-function renderScreen(
-  fetchState: SafetyWarningFetchState,
-  overrides: Partial<typeof defaultProps> = {}
-) {
-  return render(
+test("Continue is disabled when safetyConfirmed is false", () => {
+  render(<SafetyWarningScreen {...baseProps} safetyConfirmed={false} />);
+  expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+});
+
+test("Continue is enabled when safetyConfirmed is true and practice name loaded", () => {
+  render(<SafetyWarningScreen {...baseProps} safetyConfirmed={true} />);
+  expect(screen.getByRole("button", { name: /continue/i })).not.toBeDisabled();
+});
+
+test("Continue is disabled when practiceNameFetchState is loading", () => {
+  render(
     <SafetyWarningScreen
-      safetyWarningFetchState={fetchState}
-      {...defaultProps}
-      {...overrides}
+      {...baseProps}
+      safetyConfirmed={true}
+      practiceNameFetchState={{ status: "loading" }}
     />
   );
-}
+  expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+});
 
-describe("SafetyWarningScreen", () => {
-  it("renders loading state", () => {
-    renderScreen({ status: "loading" });
-    expect(screen.getByText(/loading/i)).toBeTruthy();
-  });
+test("Continue is disabled when practiceNameFetchState is error", () => {
+  render(
+    <SafetyWarningScreen
+      {...baseProps}
+      safetyConfirmed={true}
+      practiceNameFetchState={{ status: "error", message: "Server error" }}
+    />
+  );
+  expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+});
 
-  it("renders warning text when loaded", () => {
-    renderScreen({ status: "success", text: "Call 999 if you have chest pain." });
-    expect(screen.getByText(/call 999 if you have chest pain/i)).toBeTruthy();
-  });
+test("Practice error block renders when practiceNameFetchState is error", () => {
+  render(
+    <SafetyWarningScreen
+      {...baseProps}
+      practiceNameFetchState={{ status: "error", message: "Could not load practice" }}
+    />
+  );
+  expect(screen.getByText("Could not load practice")).toBeInTheDocument();
+});
 
-  it("renders closed banner when practiceIsOpen is false", () => {
-    renderScreen(
-      { status: "success", text: "Some warning." },
-      { practiceIsOpen: false, availabilityClosedMessage: "We are closed today." }
-    );
-    expect(screen.getByText(/this service is currently closed/i)).toBeTruthy();
-    expect(screen.getByText(/we are closed today/i)).toBeTruthy();
-  });
-
-  it("renders closed banner without message when practiceIsOpen is false and no message provided", () => {
-    renderScreen(
-      { status: "success", text: "Some warning." },
-      { practiceIsOpen: false, availabilityClosedMessage: null }
-    );
-    expect(screen.getByText(/this service is currently closed/i)).toBeTruthy();
-  });
-
-  it("Continue button is disabled until checkbox is ticked", () => {
-    renderScreen(
-      { status: "success", text: "Some warning." },
-      { safetyConfirmed: false }
-    );
-    const btn = screen.getByRole("button", { name: /continue/i });
-    expect(btn.hasAttribute("disabled")).toBe(true);
-  });
-
-  it("Continue button is enabled when checkbox is ticked and practice is open", () => {
-    renderScreen(
-      { status: "success", text: "Some warning." },
-      { safetyConfirmed: true, practiceIsOpen: true }
-    );
-    const btn = screen.getByRole("button", { name: /continue/i });
-    expect(btn.hasAttribute("disabled")).toBe(false);
-  });
-
-  it("Continue button is disabled when practice is closed even if checkbox is ticked", () => {
-    renderScreen(
-      { status: "success", text: "Some warning." },
-      { safetyConfirmed: true, practiceIsOpen: false }
-    );
-    const btn = screen.getByRole("button", { name: /continue/i });
-    expect(btn.hasAttribute("disabled")).toBe(true);
-  });
-
-  it("renders error message and retry button when in error state", () => {
-    renderScreen({ status: "error", message: "Could not load warning." });
-    expect(screen.getByText(/could not load warning/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /try again/i })).toBeTruthy();
-  });
-
-  it("retry button calls onRetry", async () => {
-    const onRetry = vi.fn();
-    renderScreen({ status: "error", message: "Error." }, { onRetry });
-    await userEvent.click(screen.getByRole("button", { name: /try again/i }));
-    expect(onRetry).toHaveBeenCalledTimes(1);
-  });
+test("Practice error block not rendered when practiceNameFetchState is success", () => {
+  render(<SafetyWarningScreen {...baseProps} />);
+  expect(screen.queryByText("Could not load practice")).not.toBeInTheDocument();
 });

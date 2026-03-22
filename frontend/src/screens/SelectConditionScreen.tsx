@@ -3,6 +3,7 @@ import ConditionCombobox from "../ConditionCombobox";
 import type { ConditionSummary } from "../types";
 
 interface SelectConditionScreenProps {
+  practiceName: string | null;
   // null means the condition list has not yet loaded
   conditions: ConditionSummary[] | null;
   selectedConditionId: string | null;
@@ -12,6 +13,7 @@ interface SelectConditionScreenProps {
 }
 
 export default function SelectConditionScreen({
+  practiceName,
   conditions,
   selectedConditionId,
   onConditionChange,
@@ -19,7 +21,7 @@ export default function SelectConditionScreen({
   onBlankForm,
 }: SelectConditionScreenProps) {
   return (
-    <PageShell>
+    <PageShell practiceName={practiceName}>
       <h1>Start your consultation</h1>
 
       {conditions === null ? (

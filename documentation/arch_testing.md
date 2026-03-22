@@ -33,30 +33,38 @@ Both URLs live in `.env`. `.env` is never committed to version control.
 ## Test Categories
 
 ### Unit tests
-Tests that do not require a database connection. Use stubs and in-memory state. Cover routers, validation, serialisation, sanitisation, and engine logic.
+Tests that do not require a database connection. Covers two suites that run together under `make test`:
 
-**Files:** everything in `tests/` except `test_form_routes.py`
+**Python unit tests** — routers, validation, serialisation, sanitisation, and engine logic. Use stubs and in-memory state.
+- Files: everything in `tests/` except `test_form_routes.py`, `test_public_routes.py`, and `test_repositories.py`
+- Runner: pytest
 
-**Run with:**
+**Frontend component tests** — screen component rendering and interaction behaviour.
+- Files: `*.test.tsx` in `frontend/src/screens/`
+- Runner: Vitest (jsdom environment, configured in `frontend/vitest.config.ts`)
+
+**Run both together with:**
 ```
 make test
 ```
 
-No environment variables required beyond what is already in `.env`.
+No database environment variables required. Vitest is invoked via `npx vitest run` from the `frontend/` directory.
 
 ---
 
 ### Integration tests
-Tests that exercise the full request pipeline against a live Postgres database. Require `TEST_DATABASE_URL` to be set. Write real rows to `runtime_state_versions` and `submission_records` in the test database.
+Tests that exercise the full request pipeline or repository layer against a live Postgres database.
 
-**Files:** `tests/test_form_routes.py`
+**`tests/test_form_routes.py`** — full request pipeline via FastAPI TestClient. Requires `TEST_DATABASE_URL`. Writes real rows to the test database. The delivery service is overridden with `MockDeliveryService` so no SMTP configuration is needed.
 
-**Run with:**
+**`tests/test_public_routes.py`** — public endpoint tests via FastAPI TestClient. Imports `main.py` directly, which triggers `alembic_upgrade()` at import time. Requires `DATABASE_URL` to be reachable. Must not be collected by `make test` or it will fail offline.
+
+**`tests/test_repositories.py`** — repository layer tests for `RuntimeStateRepository`, `PracticeRepository`, and `SubmissionRepository`. Uses pytest fixtures for setup and teardown. Requires `TEST_DATABASE_URL`. Each test generates a unique ID and cleans up its own rows in a `finally` block.
+
+**Run `test_form_routes`, `test_public_routes`, and `test_repositories` together with:**
 ```
 make test-integration
 ```
-
-The delivery service is overridden with `MockDeliveryService` so no SMTP configuration is needed.
 
 ---
 
@@ -64,6 +72,8 @@ The delivery service is overridden with `MockDeliveryService` so no SMTP configu
 ```
 make test-all
 ```
+
+Runs Python unit tests, then frontend Vitest, then Python integration tests, in that order. Stops on first failure.
 
 ---
 
@@ -112,3 +122,9 @@ Integration tests must not require SMTP configuration. `MockDeliveryService` cap
 
 ### Why are unit and integration tests separated by file rather than by marker?
 Explicit file separation makes the distinction obvious and avoids the need for pytest marker configuration. The `--ignore` flag in `make test` is unambiguous. If the number of integration test files grows, introduce pytest markers at that point.
+
+### Why does make test-integration not include Vitest?
+Frontend tests have no database dependency and belong in the unit suite. Running Vitest again alongside integration tests would be redundant and slow. The convention is: run `make test` before every commit, run `make test-integration` only when touching the form submission pipeline.
+
+### Why cd frontend instead of a vitest script in package.json?
+Vitest requires the working directory to be `frontend/` so it resolves `vitest.config.ts` correctly. The Makefile uses `cd frontend && npx vitest run` rather than adding a `test` script to `package.json` to keep the entry point for tests in one place (the Makefile) rather than split across two files.

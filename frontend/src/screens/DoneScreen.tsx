@@ -1,12 +1,13 @@
 import { PageShell } from "../layout";
 
 interface DoneScreenProps {
+  practiceName: string | null;
   practiceWasClosed: boolean;
 }
 
-export default function DoneScreen({ practiceWasClosed }: DoneScreenProps) {
+export default function DoneScreen({ practiceName, practiceWasClosed }: DoneScreenProps) {
   return (
-    <PageShell>
+    <PageShell practiceName={practiceName}>
       <div className="done-icon">
         <svg
           width="24"

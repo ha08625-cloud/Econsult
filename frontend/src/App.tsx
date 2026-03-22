@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   getSafetyWarning,
+  getPractice,
   getAvailability,
   getConditions,
   getConditionPresentation,
@@ -12,13 +13,14 @@ import type {
   ConditionSummary,
   PresentationState,
   PatientDetails,
+  SafetyWarningFetchState,
+  PracticeNameFetchState,
 } from "./types";
 import { GENERAL_CONSULTATION_ID } from './constants';
 import { PageShell } from "./layout";
 import { initialiseEditableAnswers } from "./helpers";
 import DoneScreen from "./screens/DoneScreen";
 import SafetyWarningScreen from "./screens/SafetyWarningScreen";
-import type { SafetyWarningFetchState } from "./screens/SafetyWarningScreen";
 import PatientDetailsScreen from "./screens/PatientDetailsScreen";
 import SelectConditionScreen from "./screens/SelectConditionScreen";
 import ReviewScreen from "./screens/ReviewScreen";
@@ -55,10 +57,24 @@ export default function App() {
 
   // Shared UI state
   const [fatalError, setFatalError] = useState<string | null>(null);
-  const [safetyFetchError, setSafetyFetchError] = useState<string | null>(null);
+
+  // Screen 0 state (safety warning fetch)
+  // Single discriminated union — replaces the previous safetyWarningText + safetyFetchError pair.
+  // Guard: if status === "success", do not re-fetch.
+  // Retry: reset to { status: "loading" } to trigger a new fetch.
+  const [safetyWarningFetchState, setSafetyWarningFetchState] = useState<SafetyWarningFetchState>(
+    { status: "loading" }
+  );
+
+  // Screen 0 state (practice name fetch)
+  // Fail-closed: the Continue button is disabled until this reaches "success".
+  // Guard: if status === "success", do not re-fetch.
+  // Retry: reset to { status: "loading" } to trigger a new fetch.
+  const [practiceNameFetchState, setPracticeNameFetchState] = useState<PracticeNameFetchState>(
+    { status: "loading" }
+  );
 
   // Screen 0 state (safety gate)
-  const [safetyWarningText, setSafetyWarningText] = useState<string | null>(null);
   const [safetyConfirmed, setSafetyConfirmed] = useState(false);
 
   // Screen 0 state (availability)
@@ -89,23 +105,49 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== "SAFETY_WARNING") return;
-    if (safetyWarningText !== null) return;
+    if (safetyWarningFetchState.status === "success") return;
 
     let cancelled = false;
 
     async function fetchWarning() {
       try {
         const res = await getSafetyWarning();
-        if (!cancelled) setSafetyWarningText(res.universal_safety_warning);
+        if (!cancelled) setSafetyWarningFetchState({ status: "success", text: res.universal_safety_warning });
       } catch (e) {
-        if (!cancelled) setSafetyFetchError(friendlyErrorMessage(e));
+        if (!cancelled) setSafetyWarningFetchState({ status: "error", message: friendlyErrorMessage(e) });
       }
     }
 
     fetchWarning();
 
     return () => { cancelled = true; };
-  }, [screen, safetyWarningText]);
+  }, [screen, safetyWarningFetchState]);
+
+  // ---------------------------------
+  // Practice name fetch (Screen 0)
+  // ---------------------------------
+  // Fail-closed: the patient cannot proceed past SafetyWarningScreen until
+  // this fetch succeeds. A failure shows an inline error with a retry button.
+
+  useEffect(() => {
+    if (screen !== "SAFETY_WARNING") return;
+    if (practiceNameFetchState.status === "success") return;
+
+    let cancelled = false;
+
+    async function fetchPractice() {
+      try {
+        const res = await getPractice();
+        if (!cancelled) setPracticeNameFetchState({ status: "success", name: res.practice_name });
+      } catch (e) {
+        if (!cancelled) setPracticeNameFetchState({ status: "error", message: friendlyErrorMessage(e) });
+      }
+    }
+
+    fetchPractice();
+
+    return () => { cancelled = true; };
+  }, [screen, practiceNameFetchState]);
 
   // ---------------------------------
   // Availability fetch (Screen 0)
@@ -208,6 +250,13 @@ export default function App() {
   }, [selectedConditionId, presentationFetchTrigger]);
 
   // ---------------------------------
+  // Derived values
+  // ---------------------------------
+
+  const practiceName =
+    practiceNameFetchState.status === "success" ? practiceNameFetchState.name : null;
+
+  // ---------------------------------
   // Fatal error handling
   // ---------------------------------
 
@@ -225,8 +274,8 @@ export default function App() {
   // safetyMessages
   // patientDetails
   // fatalError
-  // safetyFetchError
-  // safetyWarningText
+  // safetyWarningFetchState
+  // practiceNameFetchState
   // safetyConfirmed
   // availabilityClosedMessage
   // afterHoursNotice
@@ -253,8 +302,8 @@ export default function App() {
             onClick={() => {
               setFatalError(null);
               setScreen("SAFETY_WARNING");
-              setSafetyWarningText(null);
-              setSafetyFetchError(null);
+              setSafetyWarningFetchState({ status: "loading" });
+              setPracticeNameFetchState({ status: "loading" });
               setSafetyConfirmed(false);
               setRuntimeId(null);
               setVersion(null);
@@ -281,25 +330,17 @@ export default function App() {
   }
 
   if (screen === "SAFETY_WARNING") {
-    const safetyWarningFetchState: SafetyWarningFetchState =
-      safetyFetchError !== null
-        ? { status: "error", message: safetyFetchError }
-        : safetyWarningText !== null
-        ? { status: "success", text: safetyWarningText }
-        : { status: "loading" };
-
     return (
       <SafetyWarningScreen
         safetyWarningFetchState={safetyWarningFetchState}
+        practiceNameFetchState={practiceNameFetchState}
         safetyConfirmed={safetyConfirmed}
         practiceIsOpen={practiceIsOpen}
         availabilityClosedMessage={availabilityClosedMessage}
         afterHoursNotice={afterHoursNotice}
         onConfirmChange={(confirmed) => setSafetyConfirmed(confirmed)}
-        onRetry={() => {
-          setSafetyFetchError(null);
-          setSafetyWarningText(null);
-        }}
+        onRetry={() => setSafetyWarningFetchState({ status: "loading" })}
+        onPracticeRetry={() => setPracticeNameFetchState({ status: "loading" })}
         onContinue={() => setScreen("PATIENT_DETAILS")}
       />
     );
@@ -308,6 +349,7 @@ export default function App() {
   if (screen === "PATIENT_DETAILS") {
     return (
       <PatientDetailsScreen
+        practiceName={practiceName}
         onContinue={(details) => {
           setPatientDetails(details);
           setScreen("SELECT_CONDITION");
@@ -320,6 +362,7 @@ export default function App() {
   if (screen === "SELECT_CONDITION") {
     return (
       <SelectConditionScreen
+        practiceName={practiceName}
         conditions={
           conditions
             ? conditions.filter((c) => c.id !== GENERAL_CONSULTATION_ID)
@@ -355,6 +398,7 @@ export default function App() {
 
     return (
       <FreeTextScreen
+        practiceName={practiceName}
         presentationState={presentationState}
         freeText={freeText}
         selectedConditionId={selectedConditionId}
@@ -381,6 +425,7 @@ export default function App() {
 
     return (
       <EditScreen
+        practiceName={practiceName}
         clientState={clientState}
         editableAnswers={editableAnswers}
         additionalText={additionalText}
@@ -412,6 +457,7 @@ export default function App() {
 
     return (
       <ReviewScreen
+        practiceName={practiceName}
         clientState={clientState}
         safetyMessages={safetyMessages}
         onBack={() => {
@@ -435,6 +481,7 @@ export default function App() {
 
     return (
       <ContactScreen
+        practiceName={practiceName}
         runtimeId={runtimeId}
         version={version}
         patientDetails={patientDetails}
@@ -447,7 +494,12 @@ export default function App() {
   }
 
   if (screen === "DONE") {
-    return <DoneScreen practiceWasClosed={practiceIsOpen === false} />;
+    return (
+      <DoneScreen
+        practiceName={practiceName}
+        practiceWasClosed={practiceIsOpen === false}
+      />
+    );
   }
 
   return null;

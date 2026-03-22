@@ -113,6 +113,14 @@ export async function getSafetyWarning(): Promise<SafetyWarning> {
 }
 
 // ---------------------------------
+// Practice identity (Screen 0)
+// ---------------------------------
+
+export async function getPractice(): Promise<{ practice_name: string }> {
+  return getJson("/practice");
+}
+
+// ---------------------------------
 // Availability (Screen 0)
 // ---------------------------------
 

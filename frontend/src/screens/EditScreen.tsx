@@ -5,6 +5,7 @@ import { friendlyErrorMessage } from "../api";
 import type { ClientStateView, SafetyMessage, ClientAnswerReturn } from "../types";
 
 interface EditScreenProps {
+  practiceName: string | null;
   clientState: ClientStateView;
   editableAnswers: Record<string, boolean | string | null>;
   additionalText: string;
@@ -21,6 +22,7 @@ interface EditScreenProps {
 }
 
 export default function EditScreen({
+  practiceName,
   clientState,
   editableAnswers,
   additionalText,
@@ -64,7 +66,7 @@ export default function EditScreen({
   }
 
   return (
-    <PageShell>
+    <PageShell practiceName={practiceName}>
       <h1>{clientState.condition_label}</h1>
 
       {clientState.free_text && (

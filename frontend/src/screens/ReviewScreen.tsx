@@ -2,6 +2,7 @@ import { PageShell } from "../layout";
 import type { ClientStateView, SafetyMessage } from "../types";
 
 interface ReviewScreenProps {
+  practiceName: string | null;
   clientState: ClientStateView;
   safetyMessages: SafetyMessage[];
   onBack: () => void;
@@ -9,6 +10,7 @@ interface ReviewScreenProps {
 }
 
 export default function ReviewScreen({
+  practiceName,
   clientState,
   safetyMessages,
   onBack,
@@ -17,7 +19,7 @@ export default function ReviewScreen({
   const hasSafetyBlock = safetyMessages.length > 0;
 
   return (
-    <PageShell>
+    <PageShell practiceName={practiceName}>
       <h1>Review your answers</h1>
 
       <h3>{clientState.condition_label}</h3>

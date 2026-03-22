@@ -9,6 +9,7 @@ Endpoints:
 - GET /conditions/{condition_id}/presentation
 - GET /availability
 - GET /safety-warning
+- GET /practice
 
 All dependencies are injected via Depends from app.core.dependencies.
 No handler body accesses request.app.state directly.
@@ -19,6 +20,9 @@ Error handling:
   main.py has been removed.
 - Any availability repository exception propagates and FastAPI returns HTTP 500.
   The frontend treats any non-200 availability response as fail-open.
+- GET /practice returns HTTP 500 if the practice record is not found. This should
+  never happen in a correctly configured deployment — startup validation seeds and
+  validates the practice record before any request is served.
 
 This router is registered with no prefix in main.py so all routes sit at root.
 """
@@ -26,12 +30,13 @@ This router is registered with no prefix in main.py so all routes sit at root.
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.condition_registry import ConditionNotFound
 from app.core.dependencies import (
     get_availability_repo,
     get_practice_id,
+    get_practice_repo,
     get_presentation_service,
     get_registry,
 )
@@ -85,3 +90,25 @@ async def get_availability(
         "closed_message": result.closed_message,
         "after_hours_notice": result.after_hours_notice,
     }
+
+
+@router.get("/practice")
+async def get_practice(
+    practice_repo=Depends(get_practice_repo),
+    practice_id: str = Depends(get_practice_id),
+):
+    """
+    Return the practice name for the current deployment.
+
+    Used by the frontend to display the practice name in the page header.
+    Returns {"practice_name": str}.
+
+    Returns HTTP 500 if the practice record is not found. A missing practice at
+    request time is a server misconfiguration — startup validation guarantees the
+    record exists before the server accepts traffic.
+    """
+    practice = practice_repo.get_practice(practice_id)
+    if practice is None:
+        logger.error("Practice not found at request time: %s", practice_id)
+        raise HTTPException(status_code=500, detail="Practice record not found")
+    return {"practice_name": practice["name"]}

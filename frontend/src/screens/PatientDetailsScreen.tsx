@@ -3,6 +3,7 @@ import { PageShell } from "../layout";
 import type { PatientDetails, DateOfBirth } from "../types";
 
 interface PatientDetailsScreenProps {
+  practiceName: string | null;
   onContinue: (details: PatientDetails) => void;
   onBack: () => void;
 }
@@ -29,6 +30,7 @@ function initialiseDetails(): PatientDetails {
 }
 
 export default function PatientDetailsScreen({
+  practiceName,
   onContinue,
   onBack,
 }: PatientDetailsScreenProps) {
@@ -157,7 +159,7 @@ export default function PatientDetailsScreen({
   }
 
   return (
-    <PageShell>
+    <PageShell practiceName={practiceName}>
       <h1>About the patient</h1>
       <p style={{ marginBottom: "24px", color: "var(--text-muted)", fontSize: "15px" }}>
         We need a few details before you continue.

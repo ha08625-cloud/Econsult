@@ -7,6 +7,7 @@ import { SIGNPOSTING_PURIFY_CONFIG } from "../constants";
 import type { PresentationState, ClientStateView } from "../types";
 
 interface FreeTextScreenProps {
+  practiceName: string | null;
   presentationState: PresentationState;
   freeText: string;
   selectedConditionId: string;
@@ -23,6 +24,7 @@ interface FreeTextScreenProps {
 }
 
 export default function FreeTextScreen({
+  practiceName,
   presentationState,
   freeText,
   selectedConditionId,
@@ -36,7 +38,7 @@ export default function FreeTextScreen({
 
   if (presentationState.status === "loading") {
     return (
-      <PageShell>
+      <PageShell practiceName={practiceName}>
         <p className="status-text">Loading...</p>
       </PageShell>
     );
@@ -44,7 +46,7 @@ export default function FreeTextScreen({
 
   if (presentationState.status === "error") {
     return (
-      <PageShell>
+      <PageShell practiceName={practiceName}>
         <h1>Something went wrong</h1>
         <InlineError message={presentationState.message} />
         <div className="btn-row">
@@ -82,7 +84,7 @@ export default function FreeTextScreen({
   }
 
   return (
-    <PageShell>
+    <PageShell practiceName={practiceName}>
       <h1>{presentation.label}</h1>
 
       {presentation.practice_signposting && (

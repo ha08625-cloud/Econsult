@@ -1,38 +1,46 @@
 import { PageShell, InlineError } from "../layout";
+import type { SafetyWarningFetchState, PracticeNameFetchState } from "../types";
 
-// Discriminated union for the safety warning fetch state.
-// Follows the same pattern as PresentationState on Screen 2.
-export type SafetyWarningFetchState =
-  | { status: "loading" }
-  | { status: "success"; text: string }
-  | { status: "error"; message: string };
+// SafetyWarningFetchState and PracticeNameFetchState are defined in types.ts.
+// They are re-exported here for backwards compatibility in case any other
+// file imports them from this location — but new imports should use types.ts.
+export type { SafetyWarningFetchState, PracticeNameFetchState };
 
 interface SafetyWarningScreenProps {
   safetyWarningFetchState: SafetyWarningFetchState;
+  practiceNameFetchState: PracticeNameFetchState;
   safetyConfirmed: boolean;
   practiceIsOpen: boolean | null;
   availabilityClosedMessage: string | null;
   afterHoursNotice: string | null;
   onConfirmChange: (confirmed: boolean) => void;
   onRetry: () => void;
+  onPracticeRetry: () => void;
   onContinue: () => void;
 }
 
 export default function SafetyWarningScreen({
   safetyWarningFetchState,
+  practiceNameFetchState,
   safetyConfirmed,
   practiceIsOpen,
   availabilityClosedMessage,
   afterHoursNotice,
   onConfirmChange,
   onRetry,
+  onPracticeRetry,
   onContinue,
 }: SafetyWarningScreenProps) {
   // Practice is closed: is_open is explicitly false (not null, not true).
   const isClosed = practiceIsOpen === false;
 
+  const practiceName =
+    practiceNameFetchState.status === "success"
+      ? practiceNameFetchState.name
+      : null;
+
   return (
-    <PageShell>
+    <PageShell practiceName={practiceName}>
       <h1>Before you continue</h1>
 
       {/* Closed message banner — above safety warning */}
@@ -78,6 +86,18 @@ export default function SafetyWarningScreen({
             </div>
           )}
 
+          {/* Practice name fetch error — independent of safety warning error */}
+          {practiceNameFetchState.status === "error" && (
+            <>
+              <InlineError message={practiceNameFetchState.message} />
+              <div className="btn-row">
+                <button className="btn btn-secondary" onClick={onPracticeRetry}>
+                  Try again
+                </button>
+              </div>
+            </>
+          )}
+
           <div className="safety-confirm-row">
             <label className="safety-confirm-label">
               <input
@@ -99,7 +119,11 @@ export default function SafetyWarningScreen({
           <div className="btn-row">
             <button
               className="btn btn-primary"
-              disabled={!safetyConfirmed || isClosed}
+              disabled={
+                !safetyConfirmed ||
+                isClosed ||
+                practiceNameFetchState.status !== "success"
+              }
               onClick={onContinue}
             >
               Continue
