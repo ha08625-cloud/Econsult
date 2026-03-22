@@ -60,9 +60,9 @@ The admin UI is a Vite + React app (TypeScript). It is **not** the no-build CDN/
 **Component structure:**
 - `App.tsx` — root; owns `token` and `conditions` state; gates on `TokenView` vs `EditorView`
 - `TokenView.tsx` — token entry; calls `GET /admin/conditions` as auth check; valid token stored in React state only
-- `EditorView.tsx` — condition selector + editor container; owns unsaved-change tracking via a `ref` (not state, so it's readable synchronously inside `confirm()` without re-renders)
+- EditorView.tsx — three-tab layout (Signposting, Availability, Practice settings); owns unsaved-change tracking via two refs. AvailabilityEditor is always mounted and shown/hidden via display:none to preserve state. Signposting content and Practice settings are conditionally rendered.
 - `SignpostingEditor.tsx` — full list editor for one condition (load, add, delete, reorder, save)
-- `AvailabilityEditor.tsx` — schedule, override, and exceptions card
+- AvailabilityEditor.tsx — schedule, override, and exceptions card; accepts optional onUnsavedChange prop to report dirty state to EditorView
 
 **Key boundaries:**
 - The admin token is **never written to `localStorage` or `sessionStorage`** — only React component state for the duration of the browser session.
@@ -70,7 +70,7 @@ The admin UI is a Vite + React app (TypeScript). It is **not** the no-build CDN/
 - The frontend makes requests to `/admin/*` endpoints only.
 - The frontend contains no clinical logic or safety rule evaluation.
 
-**Unsaved change tracking:** `SignpostingEditor` reports unsaved state to `EditorView` via an `onUnsavedChange` callback. `EditorView` stores this in a `ref` so the condition-switch `confirm()` dialog can read it synchronously.
+**Unsaved change tracking:** Both SignpostingEditor and AvailabilityEditor report unsaved state to EditorView via onUnsavedChange callbacks. EditorView stores these in signpostingUnsavedRef and availabilityUnsavedRef. Both refs are reset explicitly on confirm — availabilityUnsavedRef in particular must be reset manually because AvailabilityEditor stays mounted and will not re-fetch after a discarded tab switch.
 
 ---
 
