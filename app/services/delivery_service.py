@@ -29,8 +29,10 @@ import smtplib
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 from email.message import EmailMessage
+from typing import Optional
 
 from app.models.serialisation_contracts import ClinicalOutput, PatientDetails
+from app.utils.pdf_formatter import generate_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +53,7 @@ class DeliveryService(ABC):
         condition_label: str,
         clinical_output: ClinicalOutput,
         submission_id: str,
+        submitted_at: datetime,
     ) -> None: ...
 
 
@@ -79,17 +82,27 @@ def _format_patient_details(pd: PatientDetails) -> list[str]:
     suppress the leading zero on the day. This is intentional — the system
     deploys on Linux (Railway). It will raise ValueError on Windows.
     """
-    dob_formatted = date.fromisoformat(pd.date_of_birth).strftime("%-d %B %Y")
-    patient_line = (
-        f"Patient: {pd.first_name} {pd.last_name}, "
-        f"DOB {dob_formatted}, "
-        f"Postcode {pd.postcode.upper()}"
-    )
-    lines = [patient_line]
+    dob_display = ""
+    if pd.date_of_birth:
+        try:
+            dob_display = datetime.strptime(pd.date_of_birth, "%Y-%m-%d").strftime("%-d %B %Y")
+        except ValueError:
+            dob_display = pd.date_of_birth
 
-    if pd.patient_for == "someone_else" and pd.submitter_name:
-        relationship = f" ({pd.submitter_relationship})" if pd.submitter_relationship else ""
-        lines.append(f"Submitted by: {pd.submitter_name}{relationship}")
+    lines = [
+        "",
+        "PATIENT DETAILS",
+        "-" * 40,
+        f"  Patient for:  {pd.patient_for}",
+        f"  Name:         {pd.first_name} {pd.last_name}",
+        f"  Date of birth:{dob_display}",
+        f"  Postcode:     {pd.postcode}",
+    ]
+
+    if pd.submitter_name:
+        lines.append(f"  Submitted by: {pd.submitter_name}")
+    if pd.submitter_relationship:
+        lines.append(f"  Relationship: {pd.submitter_relationship}")
 
     return lines
 
@@ -139,6 +152,7 @@ def _format_body(
     condition_label: str,
     clinical_output: ClinicalOutput,
     submission_id: str,
+    submitted_at: datetime,
 ) -> str:
     lines = [
         "E-CONSULTATION SUBMISSION",
@@ -146,18 +160,17 @@ def _format_body(
         "",
         f"Condition:     {condition_label}",
         f"Submission ID: {submission_id}",
-        f"Submitted at:  {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC",
-        "",
-    ]
-
-    # Patient details block — inserted before clinical content
-    lines += _format_patient_details(clinical_output.patient_details)
-
-    lines += [
+        f"Submitted at:  {submitted_at.strftime('%Y-%m-%d %H:%M:%S')} UTC",
         "",
         "PATIENT DESCRIPTION",
         "-" * 40,
         clinical_output.free_text or "(none provided)",
+    ]
+
+    if clinical_output.patient_details:
+        lines += _format_patient_details(clinical_output.patient_details)
+
+    lines += [
         "",
         "ANSWERS",
         "-" * 40,
@@ -203,19 +216,25 @@ def _format_body(
 
 class EmailDeliveryService(DeliveryService):
     """
-    Sends clinical output via SMTP.
+    Sends clinical output via SMTP with a PDF attachment.
 
     SMTP configuration is read from environment variables at instantiation time.
     A missing variable will raise RuntimeError at startup, not silently at send time.
+
+    practice_name is captured at startup and used as a header in generated PDFs.
+    It is not refreshed while the server is running. If the practice name is
+    changed via the admin interface, PDFs will continue to show the old name
+    until the next server restart.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, practice_name: Optional[str] = None) -> None:
         self._smtp_host = self._require_env("SMTP_HOST")
         self._smtp_port = int(os.environ.get("SMTP_PORT", "587"))
         self._smtp_user = self._require_env("SMTP_USER")
         self._smtp_password = self._require_env("SMTP_PASSWORD")
         self._email_from = self._require_env("EMAIL_FROM")
         self._smtp_timeout = int(os.environ.get("SMTP_TIMEOUT", "30"))
+        self._practice_name = practice_name
 
     @staticmethod
     def _require_env(name: str) -> str:
@@ -232,15 +251,33 @@ class EmailDeliveryService(DeliveryService):
         condition_label: str,
         clinical_output: ClinicalOutput,
         submission_id: str,
+        submitted_at: datetime,
     ) -> None:
         subject = f"E-consultation: {condition_label} [{submission_id}]"
-        body = _format_body(condition_label, clinical_output, submission_id)
+        body = _format_body(condition_label, clinical_output, submission_id, submitted_at)
+
+        pdf_bytes = generate_pdf(
+            condition_label=condition_label,
+            clinical_output=clinical_output,
+            submission_id=submission_id,
+            submitted_at=submitted_at,
+            practice_name=self._practice_name,
+        )
+        pdf_filename = (
+            f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
+        )
 
         msg = EmailMessage()
         msg["Subject"] = subject
         msg["From"] = self._email_from
         msg["To"] = to_email
         msg.set_content(body)
+        msg.add_attachment(
+            pdf_bytes,
+            maintype="application",
+            subtype="pdf",
+            filename=pdf_filename,
+        )
 
         try:
             with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._smtp_timeout) as server:
@@ -264,14 +301,20 @@ class ConsoleDeliveryService(DeliveryService):
 
     For local development only. Raises RuntimeError if DEV_MODE is not set,
     to prevent accidental use in production.
+
+    practice_name is captured at startup and used as a header in generated PDFs.
+    It is not refreshed while the server is running. If the practice name is
+    changed via the admin interface, PDFs will continue to show the old name
+    until the next server restart.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, practice_name: Optional[str] = None) -> None:
         if os.environ.get("DEV_MODE", "").lower() not in ("1", "true"):
             raise RuntimeError(
                 "ConsoleDeliveryService may only be instantiated when DEV_MODE=1. "
                 "Use EmailDeliveryService in production."
             )
+        self._practice_name = practice_name
 
     def send_clinical_output(
         self,
@@ -279,15 +322,27 @@ class ConsoleDeliveryService(DeliveryService):
         condition_label: str,
         clinical_output: ClinicalOutput,
         submission_id: str,
+        submitted_at: datetime,
     ) -> None:
-        body = _format_body(condition_label, clinical_output, submission_id)
+        body = _format_body(condition_label, clinical_output, submission_id, submitted_at)
+
+        pdf_bytes = generate_pdf(
+            condition_label=condition_label,
+            clinical_output=clinical_output,
+            submission_id=submission_id,
+            submitted_at=submitted_at,
+            practice_name=self._practice_name,
+        )
+
         logger.info(
             "[DEV_MODE] Email send skipped. Would have sent:\n"
             "  To:      %s\n"
             "  Subject: E-consultation: %s [%s]\n"
+            "  PDF:     %d bytes\n"
             "  Body:\n%s",
             to_email,
             condition_label,
             submission_id,
+            len(pdf_bytes),
             "\n".join(f"    {line}" for line in body.splitlines()),
         )
