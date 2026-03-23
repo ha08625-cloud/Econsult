@@ -204,6 +204,30 @@ async def form_finish(
     practice_id: str = Depends(get_practice_id),
     delivery_service=Depends(get_delivery_service),
 ):
+    try:
+        return await _form_finish_inner(
+            request=request,
+            registry=registry,
+            runtime_repo=runtime_repo,
+            submission_repo=submission_repo,
+            practice_repo=practice_repo,
+            practice_id=practice_id,
+            delivery_service=delivery_service,
+        )
+    except Exception:
+        logger.error("Unhandled exception in form_finish", exc_info=True)
+        raise
+
+
+async def _form_finish_inner(
+    request,
+    registry,
+    runtime_repo,
+    submission_repo,
+    practice_repo,
+    practice_id,
+    delivery_service,
+):
     payload = await request.json()
     validate_finish_payload(payload)
 
