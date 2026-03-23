@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout and import mapping
-# Last updated: 2026-03-22
+# Last updated: 2026-03-23
 
 ---
 
@@ -25,7 +25,7 @@ The project root contains the following items:
 
 ## 2. Python application code (app/)
 
-The app/ directory is a Python package. It contains four sub-packages.
+The app/ directory is a Python package. It contains five sub-packages.
 
 ### 2.1 app/models/
 
@@ -37,7 +37,7 @@ Files:
 - app/models/encoder_contracts.py — EncoderSignalDefinition, EncoderOutput.
 - app/models/explicit_answers.py — ExplicitAnswers (frozen, immutable projected answers for safety engine).
 - app/models/runtime_state.py — RuntimeState, AnswerState, SafetyEvaluation.
-- app/models/serialisation_contracts.py — ClinicalOutput, AuditOutput.
+- app/models/serialisation_contracts.py — PatientDetails, ClinicalOutput, AuditOutput.
 - app/models/availability_models.py
 
 ### 2.2 app/services/
@@ -47,7 +47,7 @@ internal state except via defined interfaces.
 
 Files:
 - app/services/availability_orchestration.py — orchestration layer; wires AvailabilityRepository and availability_service together. No HTTP logic. Called by public_router.py and main.py.
-- app/services/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP); ConsoleDeliveryService (dev only, raises if DEV_MODE not set). Replaces email_service.py.
+- app/services/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP with PDF attachment); ConsoleDeliveryService (dev only, raises if DEV_MODE not set). Replaces email_service.py.
 - app/services/encoder_mapping.py — containment layer; applies encoder output to RuntimeState.
 - app/services/encoder_stub.py — placeholder encoder, expected to be replaced; returns plain dict.
 - app/services/engine_adapters.py — orchestration layer; wires all services together.
@@ -80,14 +80,12 @@ Files:
 - app/core/errors.py — APIError and named error constants.
 - app/core/request_validation.py — validates incoming HTTP payloads.
 
-### 2.5 app/routers/
+### 2.5 app/utils/
 
-HTTP routing only. No business logic.
+Pure utility functions. No IO, no database access, no imports from routers or repositories.
 
 Files:
-- app/routers/admin_router.py — authenticated admin endpoints. Prefix /admin applied in main.py. Endpoints: conditions list, signposting CRUD, practice details (GET /admin/practice, PUT /admin/practice/email), availability config, override, and per-date exceptions.
-- app/routers/form_router.py — form session endpoints (POST /form/init, /form/update, /form/finish). All dependencies injected via Depends; no app.state access in handler bodies.
-- app/routers/public_router.py — unauthenticated read-only endpoints (conditions, presentation, availability, safety-warning). Registered with no prefix in main.py.
+- app/utils/pdf_formatter.py — generate_pdf() pure function. Takes ClinicalOutput, submission metadata, and optional practice_name; returns raw PDF bytes via fpdf2. Sections mirror the plain-text email body.
 
 ---
 
@@ -107,6 +105,7 @@ Files:
 - alembic/versions/0002_availability_table.py
 - alembic/versions/0003_availability_override.py
 - alembic/versions/0004_availability_exceptions.py
+- alembic/versions/0005_submitted_at_explicit.py — removes DEFAULT NOW() from submission_records.submitted_at. Application must supply the value explicitly.
 
 ---
 
@@ -147,7 +146,6 @@ remains in App.tsx and is passed down as props.
 - frontend/src/screens/ContactScreen.tsx - Contact Screen
 - frontend/src/screens/ContactScreen.test.tsx
 - frontend/src/screens/PatientDetailsScreen.tsx - Patient Details Screen
-
 
 Config files (frontend/):
 - frontend/index.html — patient form entry point.
@@ -202,6 +200,7 @@ Examples:
   from app.core.db import alembic_upgrade
   from app.core.errors import APIError
   from app.repositories.practice_repository import PracticeRepository
+  from app.utils.pdf_formatter import generate_pdf
 
 ---
 
@@ -216,9 +215,10 @@ Each service module lists which other modules it is permitted to import.
 - app/services/projection.py: imports RuntimeState, ExplicitAnswers.
 - app/services/safety_engine.py: imports ExplicitAnswers, SafetyEvaluation.
 - app/services/serialisation.py: imports RuntimeState, ClinicalOutput, AuditOutput.
-- app/services/delivery_service.py: imports ClinicalOutput only. Must not import any engine, repository, or clinical module.
+- app/services/delivery_service.py: imports ClinicalOutput and pdf_formatter. Must not import any engine, repository, or clinical module.
 - app/services/engine_adapters.py: orchestration layer; may import all services above.
 - app/services/presentation_service.py: imports condition_registry, practice_repository.
+- app/utils/pdf_formatter.py: imports ClinicalOutput only. Must not import any service, repository, router, or engine module.
 
 ---
 
@@ -236,3 +236,4 @@ The following imports must never appear in the codebase:
 - admin_router must NOT import clinical engine modules, presentation_service, serialisation,
   projection, or runtime_state.
 - delivery_service must NOT import clinical engine modules, repositories, or condition_registry.
+- pdf_formatter must NOT import delivery_service, repositories, routers, or any engine module.
