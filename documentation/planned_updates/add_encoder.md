@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The current MVP uses a stub for the encoder module.  This next version will replace the stub with a real encoder module.  This is a provisional plan with details that need to be added, not a final impementation plan
+The current system uses a stub for the encoder module.  This next version will replace the stub with a real encoder module.  This is a provisional plan with details that need to be added, not a final impementation plan
 
 ## 1. Problem definition
 
