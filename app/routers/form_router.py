@@ -262,6 +262,12 @@ async def form_finish(
     delivery_email = practice_repo.get_email(practice_id)
     submission_id = str(uuid.uuid4())
 
+    # Capture the authoritative submission timestamp here, immediately before
+    # persisting. This same value is passed to both create_submission and
+    # send_clinical_output so the DB record and the delivered output are
+    # guaranteed to carry identical timestamps.
+    submitted_at = datetime.now(timezone.utc)
+
     submission_repo.create_submission(
         submission_id=submission_id,
         practice_id=practice_id,
@@ -269,6 +275,7 @@ async def form_finish(
         clinical_output=clinical,
         audit_output=audit,
         delivery_email=delivery_email,
+        submitted_at=submitted_at,
     )
 
     # Delivery failures must not prevent the patient receiving their submission_id.
@@ -279,6 +286,7 @@ async def form_finish(
             condition_label=condition_label,
             clinical_output=clinical,
             submission_id=submission_id,
+            submitted_at=submitted_at,
         )
         submission_repo.update_delivery_status(
             submission_id=submission_id,
