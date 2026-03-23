@@ -14,7 +14,7 @@ Table creation is handled by Alembic migrations at startup.
 
 This module must never:
 - Access clinical engine modules (form_logic, safety_engine, etc.)
-- Send emails (that belongs in email_service)
+- Send emails (that belongs in delivery_service)
 - Make decisions about retry logic (that belongs in the calling layer)
 """
 
@@ -60,9 +60,14 @@ class SubmissionRepository:
         clinical_output: ClinicalOutput,
         audit_output: AuditOutput,
         delivery_email: str,
+        submitted_at: datetime,
     ) -> None:
         """
         Create a new submission record with delivery_status = 'pending'.
+
+        submitted_at must be supplied by the caller (form_router.py captures it
+        immediately before calling this function). The database column has no
+        DEFAULT — this is enforced by migration 0005.
 
         clinical_output and audit_output are stored as JSONB. psycopg2 does not
         automatically serialise dataclasses, so we convert to dict with asdict()
@@ -87,9 +92,10 @@ class SubmissionRepository:
                         clinical_output_json,
                         audit_output_json,
                         delivery_status,
-                        delivery_email
+                        delivery_email,
+                        submitted_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, 'pending', %s)
+                    VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
                     """,
                     (
                         submission_id,
@@ -98,6 +104,7 @@ class SubmissionRepository:
                         psycopg2.extras.Json(clinical_dict),
                         psycopg2.extras.Json(audit_dict),
                         delivery_email,
+                        submitted_at,
                     ),
                 )
 
