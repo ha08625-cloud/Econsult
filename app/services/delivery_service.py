@@ -96,13 +96,13 @@ def _format_patient_details(pd: PatientDetails) -> list[str]:
         f"  Patient for:  {pd.patient_for}",
         f"  Name:         {pd.first_name} {pd.last_name}",
         f"  Date of birth:{dob_display}",
-        f"  Postcode:     {pd.postcode.upper()}",
+        f"  Postcode:     {pd.postcode}",
     ]
 
     if pd.submitter_name:
         lines.append(f"  Submitted by: {pd.submitter_name}")
-        if pd.submitter_relationship:
-            lines.append(f"  Relationship: {pd.submitter_relationship}")
+    if pd.submitter_relationship:
+        lines.append(f"  Relationship: {pd.submitter_relationship}")
 
     return lines
 
