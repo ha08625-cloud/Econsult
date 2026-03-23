@@ -12,7 +12,7 @@ Single-tenant deployment:
 - ADMIN_TOKEN is required unless DEV_MODE is set
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 import os
 import logging
@@ -21,7 +21,6 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
-print(">>> main.py loaded, logging configured")
 
 from app.core.db import alembic_upgrade
 from app.core.condition_registry import ConditionRegistry, ConditionNotFound
@@ -202,6 +201,15 @@ async def condition_not_found_handler(_, exc: ConditionNotFound):
     return JSONResponse(
         status_code=404,
         content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error"},
     )
 
 
