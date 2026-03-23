@@ -146,6 +146,7 @@ remains in App.tsx and is passed down as props.
 - frontend/src/screens/ContactScreen.tsx - Contact Screen
 - frontend/src/screens/ContactScreen.test.tsx
 - frontend/src/screens/PatientDetailsScreen.tsx - Patient Details Screen
+- frontend/src/screens/PatientDetailsScreen.test.tsx - Patient Details Screen
 
 Config files (frontend/):
 - frontend/index.html — patient form entry point.
@@ -176,7 +177,34 @@ Both are served by the StaticFiles mount at / in main.py.
 
 ---
 
-## 5. Data files (data/)
+## 5. Tests (tests/)
+
+Python test suite. For test categories, run commands, and the two-database rule,
+see arch_testing.md. This section covers file locations only.
+
+Unit tests (no database required):
+- tests/test_admin_router.py — router and auth behaviour for admin endpoints; signposting sanitisation.
+- tests/test_practice_endpoint.py — GET /practice endpoint with stub practice repo.
+- tests/test_request_validation.py — validate_patient_details and _format_patient_details.
+- tests/test_sanitise_signposting.py — sanitise_signposting_html unit tests.
+
+Integration tests (require DATABASE_URL):
+- tests/test_form_routes.py — full form pipeline via TestClient against live database.
+- tests/test_public_routes.py — public endpoint tests via TestClient; imports main.py directly.
+- tests/test_repositories.py — repository layer tests; must be run directly, not via pytest.
+
+---
+
+## 6. CI workflow (.github/)
+
+- .github/workflows/tests.yml — GitHub Actions workflow. Runs unit tests (Python + Vitest)
+  and integration tests (Python + ephemeral Postgres) in parallel on every push.
+  Does not use the Makefile or .env. See arch_testing.md for design decisions.
+
+---
+
+
+## 7. Data files (data/)
 
 Condition ruleset JSON files. Clinical content only; no code.
 
@@ -186,7 +214,7 @@ Condition ruleset JSON files. Clinical content only; no code.
 
 ---
 
-## 6. Import conventions
+## 8. Import conventions
 
 All imports use the full package path from the project root.
 
@@ -204,7 +232,7 @@ Examples:
 
 ---
 
-## 7. Service module dependency rules
+## 9. Service module dependency rules
 
 Each service module lists which other modules it is permitted to import.
 
@@ -222,7 +250,7 @@ Each service module lists which other modules it is permitted to import.
 
 ---
 
-## 8. Banned imports (design failures if violated)
+## 10. Banned imports (design failures if violated)
 
 The following imports must never appear in the codebase:
 
