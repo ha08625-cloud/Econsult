@@ -21,6 +21,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
+print(">>> main.py loaded, logging configured")
 
 from app.core.db import alembic_upgrade
 from app.core.condition_registry import ConditionRegistry, ConditionNotFound
