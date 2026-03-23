@@ -1,17 +1,15 @@
 Architecture updates:
-- split frontend/src/App.tsx
-- split main.py
 - Pydantic request model migration: Replace all hand-written isinstance/type-check validation in both admin_router.py and request_validation.py with Pydantic BaseModel definitions, letting FastAPI handle JSON parsing, type coercion, and missing-field errors automatically. This also requires adding a RequestValidationError exception handler in main.py to convert Pydantic's error format into the existing {"error": {"code": ..., "message": ...}} shape, updating the frontend extractErrorDetail functions to handle any new edge cases, and retiring the unused api_models.py dataclasses.
 
 Features
-- Form for someone else, e.g. a child
 - PDF generation
-- add personal information e.g. name, DOB
+- Attach photos
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
 - database-backed email delivery queue with retries
 - non blocking advisory messages
-- Attach photos
+- Admin portal audit trails
+- Patient facing audit trails
 - Add a public_slug column - More flexibility, but adds complexity
 - HTTPS for web traffic
 - TLS for SMTP
