@@ -47,7 +47,7 @@ internal state except via defined interfaces.
 
 Files:
 - app/services/availability_orchestration.py — orchestration layer; wires AvailabilityRepository and availability_service together. No HTTP logic. Called by public_router.py and main.py.
-- app/services/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP with PDF attachment); ConsoleDeliveryService (dev only, raises if DEV_MODE not set). Replaces email_service.py.
+- app/services/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP with PDF attachment); ConsoleDeliveryService (dev only, raises if DEV_MODE not set).
 - app/services/encoder_mapping.py — containment layer; applies encoder output to RuntimeState.
 - app/services/encoder_stub.py — placeholder encoder, expected to be replaced; returns plain dict.
 - app/services/engine_adapters.py — orchestration layer; wires all services together.
@@ -75,7 +75,7 @@ Infrastructure concerns only. No clinical logic.
 Files:
 - app/core/admin_context.py — admin authentication context and FastAPI dependency.
 - app/core/condition_registry.py — loads and indexes condition rulesets at startup; immutable after init.
-- app/core/db.py — shared Postgres connection module. Only file that imports psycopg2. Provides get_conn() context manager and alembic_upgrade() for running migrations at startup.
+- app/core/db.py — shared Postgres connection module. Provides get_conn() context manager and alembic_upgrade() for running migrations at startup.
 - app/core/dependencies.py — shared FastAPI dependency provider functions. All routers import from here to access app.state values via Depends rather than direct request.app.state access.
 - app/core/errors.py — APIError and named error constants.
 - app/core/request_validation.py — validates incoming HTTP payloads.
@@ -95,13 +95,10 @@ Schema migration scripts managed by Alembic. alembic/env.py reads DATABASE_URL
 from the environment and runs migrations. alembic_upgrade() in app/core/db.py
 calls `alembic upgrade head` at application startup.
 
-Advisory lock is enabled by default and must not be disabled. See architecture.md
-for the concurrent startup limitation.
-
 Files:
 - alembic/env.py — Alembic environment configuration. Reads DATABASE_URL; no ORM metadata.
 - alembic/versions/ — migration scripts, ordered by revision chain.
-- alembic/versions/0001_initial_schema.py — four existing tables (practices, runtime_state_versions, practice_signposting, submission_records). Uses IF NOT EXISTS as a one-time concession. Future migrations must not use IF NOT EXISTS.
+- alembic/versions/0001_initial_schema.py — four existing tables (practices, runtime_state_versions, practice_signposting, submission_records).
 - alembic/versions/0002_availability_table.py
 - alembic/versions/0003_availability_override.py
 - alembic/versions/0004_availability_exceptions.py
@@ -118,7 +115,7 @@ Source files (frontend/src/):
 - frontend/src/ConditionCombobox.tsx — condition search and selection component.
 - frontend/src/api.ts — typed HTTP client functions. No business logic.
 - frontend/src/constants.ts — shared frontend constants.
-- frontend/src/helpers.ts — pure functions with no React dependency: state initialisers (initialiseEditableAnswers, initialiseContactPreferences) and client-side validation (isValidUkPhone). No side effects, no API calls. Only imports from types.ts.
+- frontend/src/helpers.ts — pure functions with no React dependency: state initialisers (initialiseEditableAnswers, initialiseContactPreferences) and client-side validation (isValidUkPhone).
 - frontend/src/index.css — global styles.
 - frontend/src/layout.tsx — structural React wrappers (PageShell, InlineError). No application state knowledge. Must not import from api.ts, helpers.ts, or any screen component.
 - frontend/src/main.tsx — React entry point.
@@ -203,36 +200,7 @@ Integration tests (require DATABASE_URL):
 
 ---
 
-
-## 7. Data files (data/)
-
-Condition ruleset JSON files. Clinical content only; no code.
-
-- data/uti1.json — urinary symptoms ruleset (MVP condition).
-- data/general.json — general condition ruleset.
-- Future condition rulesets go in this directory.
-
----
-
-## 8. Import conventions
-
-All imports use the full package path from the project root.
-
-Examples:
-  from app.models.runtime_state import RuntimeState
-  from app.models.encoder_contracts import EncoderOutput
-  from app.models.explicit_answers import ExplicitAnswers
-  from app.services.form_logic import initialise_runtime_state
-  from app.services.engine_adapters import init_runtime_state
-  from app.repositories.runtime_state_repository import RuntimeStateRepository
-  from app.core.db import alembic_upgrade
-  from app.core.errors import APIError
-  from app.repositories.practice_repository import PracticeRepository
-  from app.utils.pdf_formatter import generate_pdf
-
----
-
-## 9. Service module dependency rules
+## 7. Service module dependency rules
 
 Each service module lists which other modules it is permitted to import.
 
@@ -250,7 +218,7 @@ Each service module lists which other modules it is permitted to import.
 
 ---
 
-## 10. Banned imports (design failures if violated)
+## 8. Banned imports (design failures if violated)
 
 The following imports must never appear in the codebase:
 
