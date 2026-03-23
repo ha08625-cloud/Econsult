@@ -150,10 +150,16 @@ app.state.presentation_service = presentation_service
 app.state.runtime_repo = repo
 app.state.submission_repo = submission_repo
 
+# Look up practice name for use in generated PDFs.
+# Captured once at startup. If the practice name is changed via the admin
+# interface, the running server will use the old name until the next restart.
+_practice_record = practice_repo.get_practice(app.state.practice_id)
+_practice_name = _practice_record.get("name") if _practice_record else None
+
 if _is_dev_mode():
-    app.state.delivery_service = ConsoleDeliveryService()
+    app.state.delivery_service = ConsoleDeliveryService(practice_name=_practice_name)
 else:
-    app.state.delivery_service = EmailDeliveryService()
+    app.state.delivery_service = EmailDeliveryService(practice_name=_practice_name)
 
 # Insert default availability row if absent.
 # Must run after _validate_startup ensures the practice row exists.
