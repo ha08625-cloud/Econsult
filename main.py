@@ -17,6 +17,11 @@ from fastapi.responses import JSONResponse
 import os
 import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
+
 from app.core.db import alembic_upgrade
 from app.core.condition_registry import ConditionRegistry, ConditionNotFound
 from app.repositories.practice_repository import PracticeRepository
