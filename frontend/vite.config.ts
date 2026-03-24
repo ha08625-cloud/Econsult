@@ -17,6 +17,9 @@ export default defineConfig({
       '/conditions': 'http://localhost:8000',
       '/form': 'http://localhost:8000',
       '/safety-warning': 'http://localhost:8000',
+      '/practice': 'http://localhost:8000',
+      '/availability': 'http://localhost:8000',
+      '/healthz': 'http://localhost:8000',
       '/admin': 'http://localhost:8000',
     }
   },

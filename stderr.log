@@ -1,0 +1,10 @@
+[32mINFO[0m:     Will watch for changes in these directories: ['/home/cxclaw/projects/Econsult']
+[32mINFO[0m:     Uvicorn running on [1mhttp://127.0.0.1:8000[0m (Press CTRL+C to quit)
+[32mINFO[0m:     Started reloader process [[36m[1m10163[0m] using [36m[1mStatReload[0m
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+DIAG uvicorn: level=INFO, handlers=[<StreamHandler <stderr> (NOTSET)>], propagate=False
+DIAG uvicorn.access: level=INFO, handlers=[<StreamHandler <stdout> (NOTSET)>], propagate=False
+DIAG uvicorn.error: level=INFO, handlers=[], propagate=True
+DIAG root: level=WARNING, handlers=[<StreamHandler <stderr> (NOTSET)>], propagate=True
+[32mINFO[0m:     Stopping reloader process [[36m[1m10163[0m]
