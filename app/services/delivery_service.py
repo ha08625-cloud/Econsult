@@ -25,6 +25,7 @@ ConsoleDeliveryService is for local development only. Never instantiate in produ
 
 import logging
 import os
+import pathlib
 import smtplib
 from abc import ABC, abstractmethod
 from datetime import date, datetime
@@ -82,17 +83,27 @@ def _format_patient_details(pd: PatientDetails) -> list[str]:
     suppress the leading zero on the day. This is intentional — the system
     deploys on Linux (Railway). It will raise ValueError on Windows.
     """
-    dob_formatted = date.fromisoformat(pd.date_of_birth).strftime("%-d %B %Y")
-    patient_line = (
-        f"Patient: {pd.first_name} {pd.last_name}, "
-        f"DOB {dob_formatted}, "
-        f"Postcode {pd.postcode.upper()}"
-    )
-    lines = [patient_line]
+    dob_display = ""
+    if pd.date_of_birth:
+        try:
+            dob_display = datetime.strptime(pd.date_of_birth, "%Y-%m-%d").strftime("%-d %B %Y")
+        except ValueError:
+            dob_display = pd.date_of_birth
 
-    if pd.patient_for == "someone_else" and pd.submitter_name:
-        relationship = f" ({pd.submitter_relationship})" if pd.submitter_relationship else ""
-        lines.append(f"Submitted by: {pd.submitter_name}{relationship}")
+    lines = [
+        "",
+        "PATIENT DETAILS",
+        "-" * 40,
+        f"  Patient for:  {pd.patient_for}",
+        f"  Name:         {pd.first_name} {pd.last_name}",
+        f"  Date of birth:{dob_display}",
+        f"  Postcode:     {pd.postcode}",
+    ]
+
+    if pd.submitter_name:
+        lines.append(f"  Submitted by: {pd.submitter_name}")
+    if pd.submitter_relationship:
+        lines.append(f"  Relationship: {pd.submitter_relationship}")
 
     return lines
 
@@ -152,16 +163,15 @@ def _format_body(
         f"Submission ID: {submission_id}",
         f"Submitted at:  {submitted_at.strftime('%Y-%m-%d %H:%M:%S')} UTC",
         "",
-    ]
-
-    # Patient details block — inserted before clinical content
-    lines += _format_patient_details(clinical_output.patient_details)
-
-    lines += [
-        "",
         "PATIENT DESCRIPTION",
         "-" * 40,
         clinical_output.free_text or "(none provided)",
+    ]
+
+    if clinical_output.patient_details:
+        lines += _format_patient_details(clinical_output.patient_details)
+
+    lines += [
         "",
         "ANSWERS",
         "-" * 40,
@@ -207,10 +217,15 @@ def _format_body(
 
 class EmailDeliveryService(DeliveryService):
     """
-    Sends clinical output via SMTP.
+    Sends clinical output via SMTP with a PDF attachment.
 
     SMTP configuration is read from environment variables at instantiation time.
     A missing variable will raise RuntimeError at startup, not silently at send time.
+
+    practice_name is captured at startup and used as a header in generated PDFs.
+    It is not refreshed while the server is running. If the practice name is
+    changed via the admin interface, PDFs will continue to show the old name
+    until the next server restart.
     """
 
     def __init__(self, practice_name: Optional[str] = None) -> None:
@@ -242,13 +257,6 @@ class EmailDeliveryService(DeliveryService):
         subject = f"E-consultation: {condition_label} [{submission_id}]"
         body = _format_body(condition_label, clinical_output, submission_id, submitted_at)
 
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = self._email_from
-        msg["To"] = to_email
-        msg.set_content(body)
-
-        # Attach PDF
         pdf_bytes = generate_pdf(
             condition_label=condition_label,
             clinical_output=clinical_output,
@@ -256,13 +264,20 @@ class EmailDeliveryService(DeliveryService):
             submitted_at=submitted_at,
             practice_name=self._practice_name,
         )
-        date_str = submitted_at.strftime("%Y%m%d")
-        filename = f"econsultation_{date_str}_{submission_id[:8]}.pdf"
+        pdf_filename = (
+            f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
+        )
+
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = self._email_from
+        msg["To"] = to_email
+        msg.set_content(body)
         msg.add_attachment(
             pdf_bytes,
             maintype="application",
             subtype="pdf",
-            filename=filename,
+            filename=pdf_filename,
         )
 
         try:
@@ -287,6 +302,11 @@ class ConsoleDeliveryService(DeliveryService):
 
     For local development only. Raises RuntimeError if DEV_MODE is not set,
     to prevent accidental use in production.
+
+    practice_name is captured at startup and used as a header in generated PDFs.
+    It is not refreshed while the server is running. If the practice name is
+    changed via the admin interface, PDFs will continue to show the old name
+    until the next server restart.
     """
 
     def __init__(self, practice_name: Optional[str] = None) -> None:
@@ -314,15 +334,23 @@ class ConsoleDeliveryService(DeliveryService):
             submitted_at=submitted_at,
             practice_name=self._practice_name,
         )
-        logger.info(
-            "[DEV_MODE] PDF generated: %d bytes", len(pdf_bytes)
+
+        # Write PDF to dev_output/ so it can be inspected without email.
+        # This directory must be in .gitignore.
+        pdf_filename = (
+            f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
         )
+        output_dir = pathlib.Path("dev_output")
+        output_dir.mkdir(exist_ok=True)
+        pdf_path = output_dir / pdf_filename
+        pdf_path.write_bytes(pdf_bytes)
 
         logger.info(
-            "[DEV_MODE] Email send skipped. Would have sent:\n"
+            "[DEV_MODE] Email send skipped. PDF saved to: %s\n"
             "  To:      %s\n"
             "  Subject: E-consultation: %s [%s]\n"
             "  Body:\n%s",
+            pdf_path.resolve(),
             to_email,
             condition_label,
             submission_id,
