@@ -48,6 +48,10 @@ def _dob_display(dob_iso: str) -> str:
 _MARGIN = 15        # mm left/right margin
 _LINE_H = 6         # mm standard line height
 _SECTION_GAP = 4    # mm gap before a new section heading
+_PAGE_W = 210       # A4 width in mm
+_USABLE_W = _PAGE_W - 2 * _MARGIN   # 180mm
+_LABEL_W = 55       # mm — label column width in two-column rows
+_VALUE_W = _USABLE_W - _LABEL_W     # 125mm — value column width
 
 
 class _EConsultPDF(FPDF):
@@ -62,19 +66,26 @@ class _EConsultPDF(FPDF):
         self.set_font("Helvetica", style="B", size=10)
         self.cell(0, _LINE_H, title, ln=True)
         self.set_draw_color(180, 180, 180)
-        self.line(self.get_x(), self.get_y(), self.get_x() + 180, self.get_y())
+        self.line(self.get_x(), self.get_y(), self.get_x() + _USABLE_W, self.get_y())
         self.ln(1)
         self.set_font("Helvetica", size=9)
 
     def row(self, label: str, value: str) -> None:
+        """
+        Render a two-column label/value row.
+
+        Both widths are explicit so fpdf2 wraps the value within the remaining
+        column rather than overflowing. multi_cell advances the cursor to the
+        next line after rendering.
+        """
         self.set_font("Helvetica", style="B", size=9)
-        self.cell(60, _LINE_H, label, ln=False)
+        self.cell(_LABEL_W, _LINE_H, label, ln=False)
         self.set_font("Helvetica", size=9)
-        self.multi_cell(0, _LINE_H, value)
+        self.multi_cell(_VALUE_W, _LINE_H, value)
 
     def body_text(self, text: str) -> None:
         self.set_font("Helvetica", size=9)
-        self.multi_cell(0, _LINE_H, text)
+        self.multi_cell(_USABLE_W, _LINE_H, text)
 
 
 # ---------------------------------------------------------------------------
