@@ -49,6 +49,8 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 - `DEV_MODE=1`: `ConsoleDeliveryService` — logs the email body to stdout, never sends. Raises `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental production use.
 - Production: `EmailDeliveryService` — reads SMTP config from environment variables at instantiation time. A missing variable raises `RuntimeError` at startup, not silently at send time.
 
+Neither constructor takes `practice_name`. PDF generation has moved to `form_router.py`, where `practice_name` is injected via `get_practice_name` dependency. `app.state.practice_name` is captured once at startup from the practice record.
+
 Form handlers access the delivery service via `get_delivery_service` from `dependencies.py`. The abstract base class `DeliveryService` is defined in `app/services/delivery_service.py`. `email_service.py` no longer exists — it was replaced by `delivery_service.py` in Phase 3.
 
 ---
@@ -65,7 +67,11 @@ This applies in `POST /form/init`, which blocks entry if the practice is closed.
 
 ## Submission Ordering (form/finish)
 
-The submission record is created in the database with `delivery_status = "pending"` **before** the email send is attempted. This ensures the record is not lost if the SMTP connection fails. The status is updated to `"sent"` or `"failed"` after the attempt. The session is closed last, after both the DB write and the email attempt.
+The submission record is created in the database with `delivery_status = "pending"` **before** any delivery is attempted. This ensures the record is not lost if the SMTP connection fails.
+
+After `create_submission`, `form_finish` generates the PDF via `generate_pdf()` and stores the bytes via `attachment_repo.save_attachment()`. Both the submission record and the attachment are persisted before the delivery attempt begins. The PDF bytes are then passed to `delivery_service.send_clinical_output()` — the delivery service does not generate the PDF.
+
+The status is updated to `"sent"` or `"failed"` after the delivery attempt. The session is closed last, after both the DB write and the email attempt.
 
 `EmailDeliveryError` is caught in `form_finish` and must never propagate as an HTTP error. The patient must always receive their `submission_id` regardless of delivery outcome.
 
