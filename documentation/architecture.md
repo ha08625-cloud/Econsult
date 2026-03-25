@@ -47,9 +47,9 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Key Files:** `availability_service.py`, `availability_repository.py`, `availability_models.py`
 
 ### 3.5 Submission, Serialization & Delivery
-* **Scope:** Finalizing forms, auditing, persisting submission records, sending emails.
+* **Scope:** Finalizing forms, auditing, persisting submission records, PDF generation, attachment storage, sending emails.
 * **Domain Doc:** `docs/arch_submission.md`
-* **Key Files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `delivery_service.py`
+* **Key Files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `delivery_service.py`, `pdf_formatter.py`
 
 ### 3.6 Frontend (Patient UI & Search)
 * **Scope:** Stateless React rendering, condition search, combobox, fetching APIs.
