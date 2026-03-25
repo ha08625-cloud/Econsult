@@ -270,16 +270,13 @@ class TestFormatPatientDetails(unittest.TestCase):
     """
     Tests for _format_patient_details in delivery_service.py.
 
-    The function returns a list of strings forming a labelled block:
-      [0] ""                          (blank separator line)
-      [1] "PATIENT DETAILS"
-      [2] "-" * 40
-      [3] "  Patient for:  <value>"
-      [4] "  Name:         <first> <last>"
-      [5] "  Date of birth:<formatted date>"
-      [6] "  Postcode:     <UPPERCASED>"
-      [7] "  Submitted by: <name>"    (only if submitter_name is set)
-      [8] "  Relationship: <value>"   (only if submitter_relationship is set)
+    The function returns a compact list of strings:
+      [0] "Patient: <first> <last>, DOB <formatted date>, Postcode <UPPERCASED>"
+      [1] "Submitted by: <n> (<relationship>)"  (only if submitter_name is set;
+                                                     relationship omitted when None)
+
+    Length is 1 for patient_for="me", and 1 or 2 for patient_for="someone_else"
+    depending on whether submitter_name is present.
     """
 
     def _make_pd(self, **kwargs) -> PatientDetails:
@@ -293,61 +290,61 @@ class TestFormatPatientDetails(unittest.TestCase):
         defaults.update(kwargs)
         return PatientDetails(**defaults)
 
-    def test_me_produces_seven_lines(self):
-        # blank + header + separator + 4 fields = 7 lines, no submitter lines
+    def test_me_produces_one_line(self):
         lines = _format_patient_details(self._make_pd())
-        self.assertEqual(len(lines), 7)
+        self.assertEqual(len(lines), 1)
 
-    def test_name_line_format(self):
+    def test_name_in_patient_line(self):
         lines = _format_patient_details(self._make_pd())
-        self.assertIn("Jane Smith", lines[4])
+        self.assertIn("Jane Smith", lines[0])
 
     def test_postcode_is_uppercased(self):
         lines = _format_patient_details(self._make_pd(postcode="sw1a 1aa"))
-        self.assertIn("SW1A 1AA", lines[6])
+        self.assertIn("SW1A 1AA", lines[0])
 
     def test_iso_date_formatted_as_human_readable(self):
         lines = _format_patient_details(self._make_pd(date_of_birth="1990-03-15"))
-        self.assertIn("15 March 1990", lines[5])
+        self.assertIn("15 March 1990", lines[0])
 
     def test_single_digit_day_has_no_leading_zero(self):
         # "%-d" strips the leading zero: 5 March, not 05 March
         lines = _format_patient_details(self._make_pd(date_of_birth="1990-03-05"))
-        self.assertIn("5 March 1990", lines[5])
-        self.assertNotIn("05 March", lines[5])
+        self.assertIn("5 March 1990", lines[0])
+        self.assertNotIn("05 March", lines[0])
 
-    def test_someone_else_with_relationship_produces_nine_lines(self):
-        # 7 base lines + submitted by + relationship = 9
+    def test_someone_else_with_relationship_produces_two_lines(self):
+        # patient line + "Submitted by: John Doe (father)"
         pd = self._make_pd(
             patient_for="someone_else",
             submitter_name="John Doe",
             submitter_relationship="father",
         )
         lines = _format_patient_details(pd)
-        self.assertEqual(len(lines), 9)
-        self.assertIn("John Doe", lines[7])
-        self.assertIn("father", lines[8])
+        self.assertEqual(len(lines), 2)
+        self.assertIn("John Doe", lines[1])
+        self.assertIn("father", lines[1])
 
-    def test_someone_else_without_relationship_produces_eight_lines(self):
-        # 7 base lines + submitted by = 8, no relationship line
+    def test_someone_else_without_relationship_produces_two_lines(self):
+        # patient line + "Submitted by: John Doe" (no relationship parenthetical)
         pd = self._make_pd(
             patient_for="someone_else",
             submitter_name="John Doe",
             submitter_relationship=None,
         )
         lines = _format_patient_details(pd)
-        self.assertEqual(len(lines), 8)
-        self.assertIn("John Doe", lines[7])
+        self.assertEqual(len(lines), 2)
+        self.assertIn("John Doe", lines[1])
+        self.assertNotIn("(", lines[1])
 
-    def test_someone_else_without_submitter_name_produces_seven_lines(self):
-        # submitter_name absent — neither submitted by nor relationship line added
+    def test_someone_else_without_submitter_name_produces_one_line(self):
+        # submitter_name absent — submitted-by line is suppressed entirely
         pd = self._make_pd(
             patient_for="someone_else",
             submitter_name=None,
             submitter_relationship="mother",
         )
         lines = _format_patient_details(pd)
-        self.assertEqual(len(lines), 7)
+        self.assertEqual(len(lines), 1)
 
     def test_different_months_format_correctly(self):
         cases = [
@@ -358,8 +355,7 @@ class TestFormatPatientDetails(unittest.TestCase):
         for iso, expected in cases:
             with self.subTest(iso=iso):
                 lines = _format_patient_details(self._make_pd(date_of_birth=iso))
-                self.assertIn(expected, lines[5])
-
+                self.assertIn(expected, lines[0])
 
 # ---------------------------------------------------------------------------
 # Runner
