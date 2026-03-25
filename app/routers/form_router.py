@@ -26,8 +26,10 @@ from fastapi.responses import JSONResponse
 from app.core.condition_registry import ConditionNotFound
 from app.core.dependencies import (
     get_availability_repo,
+    get_attachment_repo,
     get_delivery_service,
     get_practice_id,
+    get_practice_name,
     get_practice_repo,
     get_registry,
     get_runtime_repo,
@@ -58,6 +60,7 @@ from app.services.engine_adapters import (
     finish_runtime_state,
     init_runtime_state,
 )
+from app.utils.pdf_formatter import generate_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -200,33 +203,11 @@ async def form_finish(
     registry=Depends(get_registry),
     runtime_repo=Depends(get_runtime_repo),
     submission_repo=Depends(get_submission_repo),
+    attachment_repo=Depends(get_attachment_repo),
     practice_repo=Depends(get_practice_repo),
     practice_id: str = Depends(get_practice_id),
+    practice_name: str = Depends(get_practice_name),
     delivery_service=Depends(get_delivery_service),
-):
-    try:
-        return await _form_finish_inner(
-            request=request,
-            registry=registry,
-            runtime_repo=runtime_repo,
-            submission_repo=submission_repo,
-            practice_repo=practice_repo,
-            practice_id=practice_id,
-            delivery_service=delivery_service,
-        )
-    except Exception:
-        logger.error("Unhandled exception in form_finish", exc_info=True)
-        raise
-
-
-async def _form_finish_inner(
-    request,
-    registry,
-    runtime_repo,
-    submission_repo,
-    practice_repo,
-    practice_id,
-    delivery_service,
 ):
     payload = await request.json()
     validate_finish_payload(payload)
@@ -296,14 +277,27 @@ async def _form_finish_inner(
         submission_id=submission_id,
         practice_id=practice_id,
         condition_id=runtime_state.condition_id,
+        condition_label=condition_label,
         clinical_output=clinical,
         audit_output=audit,
         delivery_email=delivery_email,
         submitted_at=submitted_at,
     )
 
+    # Generate PDF once at submission time. This is the canonical delivery
+    # artifact — it is stored in submission_attachments and sent as-is on
+    # every delivery attempt (including retries). It must never be regenerated.
+    pdf_bytes = generate_pdf(
+        condition_label=condition_label,
+        clinical_output=clinical,
+        submission_id=submission_id,
+        submitted_at=submitted_at,
+        practice_name=practice_name,
+    )
+    attachment_repo.save_attachment(submission_id, pdf_bytes)
+
     # Delivery failures must not prevent the patient receiving their submission_id.
-    # The submission is already persisted at this point.
+    # The submission and attachment are already persisted at this point.
     try:
         delivery_service.send_clinical_output(
             to_email=delivery_email,
@@ -311,6 +305,7 @@ async def _form_finish_inner(
             clinical_output=clinical,
             submission_id=submission_id,
             submitted_at=submitted_at,
+            pdf_bytes=pdf_bytes,
         )
         submission_repo.update_delivery_status(
             submission_id=submission_id,

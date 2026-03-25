@@ -12,15 +12,10 @@ Single-tenant deployment:
 - ADMIN_TOKEN is required unless DEV_MODE is set
 """
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 import os
 import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
 
 from app.core.db import alembic_upgrade
 from app.core.condition_registry import ConditionRegistry, ConditionNotFound
@@ -28,6 +23,7 @@ from app.repositories.practice_repository import PracticeRepository
 from app.repositories.availability_repository import AvailabilityRepository
 from app.repositories.runtime_state_repository import RuntimeStateRepository
 from app.repositories.submission_repository import SubmissionRepository
+from app.repositories.attachment_repository import AttachmentRepository
 from app.services.presentation_service import PresentationService
 from app.core.errors import APIError
 from app.services.delivery_service import ConsoleDeliveryService, EmailDeliveryService
@@ -141,6 +137,7 @@ repo = RuntimeStateRepository(DATABASE_URL)
 registry = ConditionRegistry(DATA_DIR)
 practice_repo = PracticeRepository(DATABASE_URL)
 submission_repo = SubmissionRepository(DATABASE_URL)
+attachment_repo = AttachmentRepository(DATABASE_URL)
 availability_repo = AvailabilityRepository(DATABASE_URL)
 presentation_service = PresentationService(registry, practice_repo)
 
@@ -154,17 +151,19 @@ app.state.availability_repo = availability_repo
 app.state.presentation_service = presentation_service
 app.state.runtime_repo = repo
 app.state.submission_repo = submission_repo
+app.state.attachment_repo = attachment_repo
 
 # Look up practice name for use in generated PDFs.
 # Captured once at startup. If the practice name is changed via the admin
 # interface, the running server will use the old name until the next restart.
 _practice_record = practice_repo.get_practice(app.state.practice_id)
 _practice_name = _practice_record.get("name") if _practice_record else None
+app.state.practice_name = _practice_name
 
 if _is_dev_mode():
-    app.state.delivery_service = ConsoleDeliveryService(practice_name=_practice_name)
+    app.state.delivery_service = ConsoleDeliveryService()
 else:
-    app.state.delivery_service = EmailDeliveryService(practice_name=_practice_name)
+    app.state.delivery_service = EmailDeliveryService()
 
 # Insert default availability row if absent.
 # Must run after _validate_startup ensures the practice row exists.
@@ -201,15 +200,6 @@ async def condition_not_found_handler(_, exc: ConditionNotFound):
     return JSONResponse(
         status_code=404,
         content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}},
-    )
-
-
-@app.exception_handler(Exception)
-async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
-    return JSONResponse(
-        status_code=500,
-        content={"error": "Internal server error"},
     )
 
 

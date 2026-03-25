@@ -57,6 +57,7 @@ class SubmissionRepository:
         submission_id: str,
         practice_id: str,
         condition_id: str,
+        condition_label: str,
         clinical_output: ClinicalOutput,
         audit_output: AuditOutput,
         delivery_email: str,
@@ -64,6 +65,12 @@ class SubmissionRepository:
     ) -> None:
         """
         Create a new submission record with delivery_status = 'pending'.
+
+        condition_label is the human-readable condition name at submission time.
+        It is stored denormalised for lightweight access during delivery retry
+        without loading clinical_output_json. If the condition label is later
+        changed in the ruleset, historical records retain the label that was
+        active when the patient submitted.
 
         submitted_at must be supplied by the caller (form_router.py captures it
         immediately before calling this function). The database column has no
@@ -89,18 +96,20 @@ class SubmissionRepository:
                         submission_id,
                         practice_id,
                         condition_id,
+                        condition_label,
                         clinical_output_json,
                         audit_output_json,
                         delivery_status,
                         delivery_email,
                         submitted_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s)
                     """,
                     (
                         submission_id,
                         practice_id,
                         condition_id,
+                        condition_label,
                         psycopg2.extras.Json(clinical_dict),
                         psycopg2.extras.Json(audit_dict),
                         delivery_email,

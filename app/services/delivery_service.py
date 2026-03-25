@@ -13,8 +13,14 @@ Architecture rules:
   - This module must never import clinical engine modules.
   - This module must never retry on failure.
   - This module must never update delivery status (that is the router's responsibility).
+  - This module must never generate PDFs (that is the caller's responsibility).
   - contact_preferences and patient_details are carried inside ClinicalOutput;
     the interface does not need separate parameters.
+
+PDF generation is a submission-time concern, not a delivery concern. The caller
+(form_router.py) generates the PDF once at submission time and passes the
+pre-rendered bytes to send_clinical_output. This separation makes retry viable:
+the same bytes are sent on every attempt without regeneration.
 
 Configuration (EmailDeliveryService):
     SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASSWORD,
@@ -25,15 +31,12 @@ ConsoleDeliveryService is for local development only. Never instantiate in produ
 
 import logging
 import os
-import pathlib
 import smtplib
 from abc import ABC, abstractmethod
-from datetime import date, datetime
+from datetime import datetime
 from email.message import EmailMessage
-from typing import Optional
 
 from app.models.serialisation_contracts import ClinicalOutput, PatientDetails
-from app.utils.pdf_formatter import generate_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,7 @@ class DeliveryService(ABC):
         clinical_output: ClinicalOutput,
         submission_id: str,
         submitted_at: datetime,
+        pdf_bytes: bytes,
     ) -> None: ...
 
 
@@ -74,21 +78,14 @@ def _format_answer(value) -> str:
 
 def _format_patient_details(pd: PatientDetails) -> list[str]:
     """
-    Return a compact list of 1 or 2 strings for use in the email body.
+    Return lines for the patient details section.
 
-    Line 0 (always present):
-        "Patient: <first> <last>, DOB <day Month year>, Postcode <UPPERCASED>"
+    date_of_birth is stored as ISO 8601 ("1990-03-15") and formatted here
+    as "15 March 1990" for human readability in the email body.
 
-    Line 1 (only when submitter_name is set):
-        "Submitted by: <name> (<relationship>)"  — relationship omitted if None
-
-    date_of_birth is stored as ISO 8601 ("1990-03-15") and formatted as
-    "15 March 1990". strftime("%-d") is Linux-specific (suppresses leading
-    zero on day). This is intentional — the system deploys on Linux (Railway).
-    It will raise ValueError on Windows.
-
-    postcode is uppercased here for consistent display regardless of how it
-    was submitted.
+    Note: strftime("%-d %B %Y") uses a Linux-specific directive (%-d) to
+    suppress the leading zero on the day. This is intentional — the system
+    deploys on Linux (Railway). It will raise ValueError on Windows.
     """
     dob_display = ""
     if pd.date_of_birth:
@@ -97,18 +94,20 @@ def _format_patient_details(pd: PatientDetails) -> list[str]:
         except ValueError:
             dob_display = pd.date_of_birth
 
-    patient_line = (
-        f"Patient: {pd.first_name} {pd.last_name}, "
-        f"DOB {dob_display}, "
-        f"Postcode {pd.postcode.upper()}"
-    )
-    lines = [patient_line]
+    lines = [
+        "",
+        "PATIENT DETAILS",
+        "-" * 40,
+        f"  Patient for:  {pd.patient_for}",
+        f"  Name:         {pd.first_name} {pd.last_name}",
+        f"  Date of birth:{dob_display}",
+        f"  Postcode:     {pd.postcode.upper()}",
+    ]
 
     if pd.submitter_name:
+        lines.append(f"  Submitted by: {pd.submitter_name}")
         if pd.submitter_relationship:
-            lines.append(f"Submitted by: {pd.submitter_name} ({pd.submitter_relationship})")
-        else:
-            lines.append(f"Submitted by: {pd.submitter_name}")
+            lines.append(f"  Relationship: {pd.submitter_relationship}")
 
     return lines
 
@@ -167,21 +166,16 @@ def _format_body(
         f"Condition:     {condition_label}",
         f"Submission ID: {submission_id}",
         f"Submitted at:  {submitted_at.strftime('%Y-%m-%d %H:%M:%S')} UTC",
-    ]
-
-    if clinical_output.patient_details:
-        lines += [
-            "",
-            "PATIENT DETAILS",
-            "-" * 40,
-        ]
-        lines += _format_patient_details(clinical_output.patient_details)
-
-    lines += [
         "",
         "PATIENT DESCRIPTION",
         "-" * 40,
         clinical_output.free_text or "(none provided)",
+    ]
+
+    if clinical_output.patient_details:
+        lines += _format_patient_details(clinical_output.patient_details)
+
+    lines += [
         "",
         "ANSWERS",
         "-" * 40,
@@ -232,20 +226,17 @@ class EmailDeliveryService(DeliveryService):
     SMTP configuration is read from environment variables at instantiation time.
     A missing variable will raise RuntimeError at startup, not silently at send time.
 
-    practice_name is captured at startup and used as a header in generated PDFs.
-    It is not refreshed while the server is running. If the practice name is
-    changed via the admin interface, PDFs will continue to show the old name
-    until the next server restart.
+    PDF bytes are generated by the caller (form_router.py) at submission time
+    and passed in pre-rendered. This service no longer generates PDFs.
     """
 
-    def __init__(self, practice_name: Optional[str] = None) -> None:
+    def __init__(self) -> None:
         self._smtp_host = self._require_env("SMTP_HOST")
         self._smtp_port = int(os.environ.get("SMTP_PORT", "587"))
         self._smtp_user = self._require_env("SMTP_USER")
         self._smtp_password = self._require_env("SMTP_PASSWORD")
         self._email_from = self._require_env("EMAIL_FROM")
         self._smtp_timeout = int(os.environ.get("SMTP_TIMEOUT", "30"))
-        self._practice_name = practice_name
 
     @staticmethod
     def _require_env(name: str) -> str:
@@ -263,17 +254,11 @@ class EmailDeliveryService(DeliveryService):
         clinical_output: ClinicalOutput,
         submission_id: str,
         submitted_at: datetime,
+        pdf_bytes: bytes,
     ) -> None:
         subject = f"E-consultation: {condition_label} [{submission_id}]"
         body = _format_body(condition_label, clinical_output, submission_id, submitted_at)
 
-        pdf_bytes = generate_pdf(
-            condition_label=condition_label,
-            clinical_output=clinical_output,
-            submission_id=submission_id,
-            submitted_at=submitted_at,
-            practice_name=self._practice_name,
-        )
         pdf_filename = (
             f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
         )
@@ -313,19 +298,17 @@ class ConsoleDeliveryService(DeliveryService):
     For local development only. Raises RuntimeError if DEV_MODE is not set,
     to prevent accidental use in production.
 
-    practice_name is captured at startup and used as a header in generated PDFs.
-    It is not refreshed while the server is running. If the practice name is
-    changed via the admin interface, PDFs will continue to show the old name
-    until the next server restart.
+    PDF bytes are generated by the caller (form_router.py) at submission time
+    and passed in pre-rendered. This service logs the byte count but does not
+    generate or modify the PDF.
     """
 
-    def __init__(self, practice_name: Optional[str] = None) -> None:
+    def __init__(self) -> None:
         if os.environ.get("DEV_MODE", "").lower() not in ("1", "true"):
             raise RuntimeError(
                 "ConsoleDeliveryService may only be instantiated when DEV_MODE=1. "
                 "Use EmailDeliveryService in production."
             )
-        self._practice_name = practice_name
 
     def send_clinical_output(
         self,
@@ -334,35 +317,19 @@ class ConsoleDeliveryService(DeliveryService):
         clinical_output: ClinicalOutput,
         submission_id: str,
         submitted_at: datetime,
+        pdf_bytes: bytes,
     ) -> None:
         body = _format_body(condition_label, clinical_output, submission_id, submitted_at)
 
-        pdf_bytes = generate_pdf(
-            condition_label=condition_label,
-            clinical_output=clinical_output,
-            submission_id=submission_id,
-            submitted_at=submitted_at,
-            practice_name=self._practice_name,
-        )
-
-        # Write PDF to dev_output/ so it can be inspected without email.
-        # This directory must be in .gitignore.
-        pdf_filename = (
-            f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
-        )
-        output_dir = pathlib.Path("dev_output")
-        output_dir.mkdir(exist_ok=True)
-        pdf_path = output_dir / pdf_filename
-        pdf_path.write_bytes(pdf_bytes)
-
         logger.info(
-            "[DEV_MODE] Email send skipped. PDF saved to: %s\n"
+            "[DEV_MODE] Email send skipped. Would have sent:\n"
             "  To:      %s\n"
             "  Subject: E-consultation: %s [%s]\n"
+            "  PDF:     %d bytes\n"
             "  Body:\n%s",
-            pdf_path.resolve(),
             to_email,
             condition_label,
             submission_id,
+            len(pdf_bytes),
             "\n".join(f"    {line}" for line in body.splitlines()),
         )

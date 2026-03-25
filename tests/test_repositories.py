@@ -1,7 +1,7 @@
 """
 tests/test_repositories.py
 
-Integration tests for all three Postgres repositories.
+Integration tests for all four Postgres repositories.
 
 Requires TEST_DATABASE_URL in the environment (pointing to the Railway
 Postgres instance via DATABASE_PUBLIC_URL).
@@ -87,6 +87,10 @@ from app.repositories.submission_repository import (
     SubmissionRepository,
     SubmissionNotFound,
     InvalidDeliveryStatus,
+)
+from app.repositories.attachment_repository import (
+    AttachmentRepository,
+    AttachmentNotFound,
 )
 from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails
 
@@ -373,11 +377,30 @@ def _make_dummy_outputs():
 
 
 def _cleanup_submission(sid: str):
+    """Delete submission and its attachment (child row first for FK constraint)."""
     with get_conn(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute(
+                "DELETE FROM submission_attachments WHERE submission_id = %s", (sid,)
+            )
+            cur.execute(
                 "DELETE FROM submission_records WHERE submission_id = %s", (sid,)
             )
+
+
+def _create_test_submission(repo: SubmissionRepository, sid: str) -> None:
+    """Helper: create a submission with all required fields for reuse across tests."""
+    clinical, audit = _make_dummy_outputs()
+    repo.create_submission(
+        submission_id=sid,
+        practice_id="test_practice",
+        condition_id="uti",
+        condition_label="Urinary Tract Infection",
+        clinical_output=clinical,
+        audit_output=audit,
+        delivery_email="test@example.com",
+        submitted_at=datetime.now(timezone.utc),
+    )
 
 
 def test_submission_create_and_get():
@@ -385,19 +408,11 @@ def test_submission_create_and_get():
     sid = _uid()
 
     try:
-        clinical, audit = _make_dummy_outputs()
-        repo.create_submission(
-            submission_id=sid,
-            practice_id="test_practice",
-            condition_id="uti",
-            clinical_output=clinical,
-            audit_output=audit,
-            delivery_email="test@example.com",
-            submitted_at=datetime.now(timezone.utc),
-        )
+        _create_test_submission(repo, sid)
         row = repo.get_submission(sid)
         assert row["submission_id"] == sid
         assert row["delivery_status"] == "pending"
+        assert row["condition_label"] == "Urinary Tract Infection"
         # JSONB columns come back as dicts, not strings
         assert isinstance(row["clinical_output_json"], dict)
         assert isinstance(row["audit_output_json"], dict)
@@ -412,16 +427,7 @@ def test_submission_update_to_sent():
     sid = _uid()
 
     try:
-        clinical, audit = _make_dummy_outputs()
-        repo.create_submission(
-            submission_id=sid,
-            practice_id="test_practice",
-            condition_id="uti",
-            clinical_output=clinical,
-            audit_output=audit,
-            delivery_email="test@example.com",
-            submitted_at=datetime.now(timezone.utc),
-        )
+        _create_test_submission(repo, sid)
         now = datetime.now(timezone.utc)
         repo.update_delivery_status(sid, "sent", delivered_at=now)
         row = repo.get_submission(sid)
@@ -436,16 +442,7 @@ def test_submission_update_to_failed():
     sid = _uid()
 
     try:
-        clinical, audit = _make_dummy_outputs()
-        repo.create_submission(
-            submission_id=sid,
-            practice_id="test_practice",
-            condition_id="uti",
-            clinical_output=clinical,
-            audit_output=audit,
-            delivery_email="test@example.com",
-            submitted_at=datetime.now(timezone.utc),
-        )
+        _create_test_submission(repo, sid)
         repo.update_delivery_status(sid, "failed", delivery_error="SMTP timeout")
         row = repo.get_submission(sid)
         assert row["delivery_status"] == "failed"
@@ -479,19 +476,99 @@ def test_submission_list_by_status():
     sid = _uid()
 
     try:
-        clinical, audit = _make_dummy_outputs()
-        repo.create_submission(
-            submission_id=sid,
-            practice_id="test_practice",
-            condition_id="uti",
-            clinical_output=clinical,
-            audit_output=audit,
-            delivery_email="test@example.com",
-            submitted_at=datetime.now(timezone.utc),
-        )
+        _create_test_submission(repo, sid)
         pending = repo.list_by_status("pending")
         ids = [r["submission_id"] for r in pending]
         assert sid in ids
+    finally:
+        _cleanup_submission(sid)
+
+
+# ---------------------------------------------------------------------------
+# AttachmentRepository tests
+# ---------------------------------------------------------------------------
+
+def _make_attachment_repo() -> AttachmentRepository:
+    return AttachmentRepository(DATABASE_URL)
+
+
+_DUMMY_PDF_BYTES = b"%PDF-1.4 fake pdf content for testing"
+
+
+def test_attachment_save_and_get():
+    sub_repo = _make_submission_repo()
+    att_repo = _make_attachment_repo()
+    sid = _uid()
+
+    try:
+        _create_test_submission(sub_repo, sid)
+        att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
+        retrieved = att_repo.get_attachment(sid)
+        assert retrieved == _DUMMY_PDF_BYTES
+    finally:
+        _cleanup_submission(sid)
+
+
+def test_attachment_duplicate_save_raises():
+    sub_repo = _make_submission_repo()
+    att_repo = _make_attachment_repo()
+    sid = _uid()
+
+    try:
+        _create_test_submission(sub_repo, sid)
+        att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
+        raised = False
+        try:
+            att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
+        except Exception:
+            # psycopg2.errors.UniqueViolation
+            raised = True
+        assert raised, "Expected UniqueViolation on duplicate save_attachment"
+    finally:
+        _cleanup_submission(sid)
+
+
+def test_attachment_get_missing_raises():
+    att_repo = _make_attachment_repo()
+    raised = False
+    try:
+        att_repo.get_attachment("nonexistent_submission_that_will_never_exist_xyz")
+    except AttachmentNotFound:
+        raised = True
+    assert raised, "Expected AttachmentNotFound was not raised"
+
+
+def test_attachment_delete():
+    sub_repo = _make_submission_repo()
+    att_repo = _make_attachment_repo()
+    sid = _uid()
+
+    try:
+        _create_test_submission(sub_repo, sid)
+        att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
+        att_repo.delete_attachment(sid)
+        # After deletion, get should raise AttachmentNotFound
+        raised = False
+        try:
+            att_repo.get_attachment(sid)
+        except AttachmentNotFound:
+            raised = True
+        assert raised, "Expected AttachmentNotFound after delete"
+    finally:
+        _cleanup_submission(sid)
+
+
+def test_attachment_delete_idempotent():
+    sub_repo = _make_submission_repo()
+    att_repo = _make_attachment_repo()
+    sid = _uid()
+
+    try:
+        _create_test_submission(sub_repo, sid)
+        att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
+        att_repo.delete_attachment(sid)
+        # Second delete should not raise
+        att_repo.delete_attachment(sid)
     finally:
         _cleanup_submission(sid)
 
@@ -527,6 +604,13 @@ if __name__ == "__main__":
     run_test("get_submission raises SubmissionNotFound for missing id", test_submission_not_found)
     run_test("update_delivery_status raises InvalidDeliveryStatus for bad status", test_submission_invalid_status)
     run_test("list_by_status returns pending submissions", test_submission_list_by_status)
+
+    print("\n--- AttachmentRepository ---")
+    run_test("save_attachment and get_attachment round-trip", test_attachment_save_and_get)
+    run_test("duplicate save_attachment raises", test_attachment_duplicate_save_raises)
+    run_test("get_attachment raises AttachmentNotFound for missing id", test_attachment_get_missing_raises)
+    run_test("delete_attachment removes the row", test_attachment_delete)
+    run_test("delete_attachment is idempotent", test_attachment_delete_idempotent)
 
     print(f"\n{'='*40}")
     print(f"Results: {_passed} passed, {_failed} failed")
