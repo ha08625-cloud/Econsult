@@ -78,36 +78,38 @@ def _format_answer(value) -> str:
 
 def _format_patient_details(pd: PatientDetails) -> list[str]:
     """
-    Return lines for the patient details section.
+    Return a compact list of 1 or 2 strings for use in the email body.
 
-    date_of_birth is stored as ISO 8601 ("1990-03-15") and formatted here
-    as "15 March 1990" for human readability in the email body.
+    Line 0 (always present):
+        "Patient: <first> <last>, DOB <day Month year>, Postcode <UPPERCASED>"
 
-    Note: strftime("%-d %B %Y") uses a Linux-specific directive (%-d) to
-    suppress the leading zero on the day. This is intentional — the system
-    deploys on Linux (Railway). It will raise ValueError on Windows.
+    Line 1 (only when submitter_name is set):
+        "Submitted by: <name> (<relationship>)"  — relationship omitted if None
+
+    date_of_birth is stored as ISO 8601 ("1990-03-15") and formatted as
+    "15 March 1990". strftime("%-d") is Linux-specific (suppresses leading
+    zero on day). This is intentional — the system deploys on Linux (Railway).
+    It will raise ValueError on Windows.
+
+    postcode is uppercased here for consistent display regardless of how it
+    was submitted.
     """
-    dob_display = ""
-    if pd.date_of_birth:
+    dob_display = pd.date_of_birth or ""
+    if dob_display:
         try:
-            dob_display = datetime.strptime(pd.date_of_birth, "%Y-%m-%d").strftime("%-d %B %Y")
+            dob_display = datetime.strptime(dob_display, "%Y-%m-%d").strftime("%-d %B %Y")
         except ValueError:
-            dob_display = pd.date_of_birth
+            pass
 
     lines = [
-        "",
-        "PATIENT DETAILS",
-        "-" * 40,
-        f"  Patient for:  {pd.patient_for}",
-        f"  Name:         {pd.first_name} {pd.last_name}",
-        f"  Date of birth:{dob_display}",
-        f"  Postcode:     {pd.postcode.upper()}",
+        f"Patient: {pd.first_name} {pd.last_name}, DOB {dob_display}, Postcode {pd.postcode.upper()}"
     ]
 
     if pd.submitter_name:
-        lines.append(f"  Submitted by: {pd.submitter_name}")
+        submitted_by = f"Submitted by: {pd.submitter_name}"
         if pd.submitter_relationship:
-            lines.append(f"  Relationship: {pd.submitter_relationship}")
+            submitted_by += f" ({pd.submitter_relationship})"
+        lines.append(submitted_by)
 
     return lines
 
@@ -173,6 +175,11 @@ def _format_body(
     ]
 
     if clinical_output.patient_details:
+        lines += [
+            "",
+            "PATIENT DETAILS",
+            "-" * 40,
+        ]
         lines += _format_patient_details(clinical_output.patient_details)
 
     lines += [
