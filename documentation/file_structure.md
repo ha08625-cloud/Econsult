@@ -47,7 +47,7 @@ internal state except via defined interfaces.
 
 Files:
 - app/services/availability_orchestration.py — orchestration layer; wires AvailabilityRepository and availability_service together. No HTTP logic. Called by public_router.py and main.py.
-- app/services/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP with PDF attachment); ConsoleDeliveryService (dev only, raises if DEV_MODE not set).
+- app/services/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP with PDF attachment); ConsoleDeliveryService (dev only, raises if DEV_MODE not set). Receives pre-rendered PDF bytes from caller; does not generate PDFs.
 - app/services/encoder_mapping.py — containment layer; applies encoder output to RuntimeState.
 - app/services/encoder_stub.py — placeholder encoder, expected to be replaced; returns plain dict.
 - app/services/engine_adapters.py — orchestration layer; wires all services together.
@@ -63,6 +63,7 @@ Files:
 Database access for persistent records. No business logic.
 
 Files:
+- app/repositories/attachment_repository.py — PDF attachment storage for delivery retry. Owns the submission_attachments table.
 - app/repositories/availability_repository.py — weekly hours, overrides, and per-date exceptions.
 - app/repositories/practice_repository.py — practice record CRUD including update_email.
 - app/repositories/runtime_state_repository.py — session state read/write. Registered in app.state as runtime_repo.
@@ -103,6 +104,7 @@ Files:
 - alembic/versions/0003_availability_override.py
 - alembic/versions/0004_availability_exceptions.py
 - alembic/versions/0005_submitted_at_explicit.py — removes DEFAULT NOW() from submission_records.submitted_at. Application must supply the value explicitly.
+- alembic/versions/0006_attachment_storage.py — adds condition_label to submission_records; creates submission_attachments table for PDF blob storage.
 
 ---
 
@@ -211,7 +213,7 @@ Each service module lists which other modules it is permitted to import.
 - app/services/projection.py: imports RuntimeState, ExplicitAnswers.
 - app/services/safety_engine.py: imports ExplicitAnswers, SafetyEvaluation.
 - app/services/serialisation.py: imports RuntimeState, ClinicalOutput, AuditOutput.
-- app/services/delivery_service.py: imports ClinicalOutput and pdf_formatter. Must not import any engine, repository, or clinical module.
+- app/services/delivery_service.py: imports ClinicalOutput only. Receives pre-rendered PDF bytes from caller. Must not import any engine, repository, clinical module, or pdf_formatter.
 - app/services/engine_adapters.py: orchestration layer; may import all services above.
 - app/services/presentation_service.py: imports condition_registry, practice_repository.
 - app/utils/pdf_formatter.py: imports ClinicalOutput only. Must not import any service, repository, router, or engine module.
@@ -231,5 +233,5 @@ The following imports must never appear in the codebase:
   or presentation_service (the clinical engine has no awareness of practice identity).
 - admin_router must NOT import clinical engine modules, presentation_service, serialisation,
   projection, or runtime_state.
-- delivery_service must NOT import clinical engine modules, repositories, or condition_registry.
+- delivery_service must NOT import clinical engine modules, repositories, condition_registry, or pdf_formatter.
 - pdf_formatter must NOT import delivery_service, repositories, routers, or any engine module.
