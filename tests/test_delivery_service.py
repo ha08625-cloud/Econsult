@@ -12,9 +12,6 @@ from unittest.mock import patch
 
 import pytest
 
-# Ensure DEV_MODE is set before importing, so ConsoleDeliveryService can be instantiated.
-os.environ["DEV_MODE"] = "1"
-
 from app.services.delivery_service import (
     ConsoleDeliveryService,
     _format_body,
@@ -89,19 +86,8 @@ class TestFormatBody:
 
 class TestConsoleDeliveryService:
     def test_send_does_not_raise(self):
-        svc = ConsoleDeliveryService()
-        # Should complete without error.
-        svc.send_clinical_output(
-            to_email="gp@example.com",
-            condition_label="Earache",
-            pdf_bytes=b"%PDF-fake-content",
-            submission_id="abc12345-0000-0000-0000-000000000000",
-            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
-        )
-
-    def test_send_logs_expected_fields(self, caplog):
-        svc = ConsoleDeliveryService()
-        with caplog.at_level(logging.INFO):
+        with patch.dict(os.environ, {"DEV_MODE": "1"}):
+            svc = ConsoleDeliveryService()
             svc.send_clinical_output(
                 to_email="gp@example.com",
                 condition_label="Earache",
@@ -109,6 +95,18 @@ class TestConsoleDeliveryService:
                 submission_id="abc12345-0000-0000-0000-000000000000",
                 submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
             )
+
+    def test_send_logs_expected_fields(self, caplog):
+        with patch.dict(os.environ, {"DEV_MODE": "1"}):
+            svc = ConsoleDeliveryService()
+            with caplog.at_level(logging.INFO):
+                svc.send_clinical_output(
+                    to_email="gp@example.com",
+                    condition_label="Earache",
+                    pdf_bytes=b"%PDF-fake-content",
+                    submission_id="abc12345-0000-0000-0000-000000000000",
+                    submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+                )
         log_text = caplog.text
         assert "gp@example.com" in log_text
         assert "Earache" in log_text
