@@ -40,8 +40,13 @@ from app.services.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
 _NOW = datetime(2025, 6, 15, 10, 0, 0, tzinfo=timezone.utc)
 _SUBMISSION_ID = "test-sub-001"
 _DUMMY_PDF = b"%PDF-1.4 test content"
-_FUTURE = _NOW + timedelta(minutes=10)
-_PAST = _NOW - timedelta(minutes=2)
+
+# _FUTURE and _PAST must be relative to real wall-clock time, not the frozen
+# _NOW constant. The too-early guard compares against datetime.now(timezone.utc)
+# at call time, so a "future" value derived from a fixed 2025 date would already
+# be in the past when the test runs.
+_FUTURE = datetime.now(timezone.utc) + timedelta(minutes=10)
+_PAST = datetime.now(timezone.utc) - timedelta(minutes=2)
 
 
 def _make_pending(
