@@ -302,10 +302,9 @@ async def form_finish(
         delivery_service.send_clinical_output(
             to_email=delivery_email,
             condition_label=condition_label,
-            clinical_output=clinical,
+            pdf_bytes=pdf_bytes,
             submission_id=submission_id,
             submitted_at=submitted_at,
-            pdf_bytes=pdf_bytes,
         )
         submission_repo.update_delivery_status(
             submission_id=submission_id,

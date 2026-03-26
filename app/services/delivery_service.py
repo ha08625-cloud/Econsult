@@ -10,12 +10,14 @@ This module defines:
 
 Architecture rules:
   - This module must never access the database.
-  - This module must never import clinical engine modules.
+  - This module must never import clinical engine modules or clinical contracts.
   - This module must never retry on failure.
   - This module must never update delivery status (that is the router's responsibility).
   - This module must never generate PDFs (that is the caller's responsibility).
-  - contact_preferences and patient_details are carried inside ClinicalOutput;
-    the interface does not need separate parameters.
+
+The PDF attachment is the sole carrier of clinical detail. The email body is a
+short static message directing the recipient to open the attachment. This module
+has no knowledge of patient details, answers, or clinical content.
 
 PDF generation is a submission-time concern, not a delivery concern. The caller
 (form_router.py) generates the PDF once at submission time and passes the
@@ -36,8 +38,6 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from email.message import EmailMessage
 
-from app.models.serialisation_contracts import ClinicalOutput, PatientDetails
-
 logger = logging.getLogger(__name__)
 
 
@@ -55,171 +55,33 @@ class DeliveryService(ABC):
         self,
         to_email: str,
         condition_label: str,
-        clinical_output: ClinicalOutput,
+        pdf_bytes: bytes,
         submission_id: str,
         submitted_at: datetime,
-        pdf_bytes: bytes,
     ) -> None: ...
 
 
 # ---------------------------------------------------------------------------
-# Formatting helpers (internal to this module — email format details)
+# Email body (static — no clinical content)
 # ---------------------------------------------------------------------------
-
-def _format_answer(value) -> str:
-    if value is True:
-        return "Yes"
-    if value is False:
-        return "No"
-    if value is None:
-        return "(not answered)"
-    return str(value)
-
-
-def _format_patient_details(pd: PatientDetails) -> list[str]:
-    """
-    Return a compact list of 1 or 2 strings for use in the email body.
-
-    Line 0 (always present):
-        "Patient: <first> <last>, DOB <day Month year>, Postcode <UPPERCASED>"
-
-    Line 1 (only when submitter_name is set):
-        "Submitted by: <name> (<relationship>)"  — relationship omitted if None
-
-    date_of_birth is stored as ISO 8601 ("1990-03-15") and formatted as
-    "15 March 1990". strftime("%-d") is Linux-specific (suppresses leading
-    zero on day). This is intentional — the system deploys on Linux (Railway).
-    It will raise ValueError on Windows.
-
-    postcode is uppercased here for consistent display regardless of how it
-    was submitted.
-    """
-    dob_display = pd.date_of_birth or ""
-    if dob_display:
-        try:
-            dob_display = datetime.strptime(dob_display, "%Y-%m-%d").strftime("%-d %B %Y")
-        except ValueError:
-            pass
-
-    lines = [
-        f"Patient: {pd.first_name} {pd.last_name}, DOB {dob_display}, Postcode {pd.postcode.upper()}"
-    ]
-
-    if pd.submitter_name:
-        submitted_by = f"Submitted by: {pd.submitter_name}"
-        if pd.submitter_relationship:
-            submitted_by += f" ({pd.submitter_relationship})"
-        lines.append(submitted_by)
-
-    return lines
-
-
-def _format_contact_preferences(cp: dict) -> list[str]:
-    """
-    Return lines for the contact preferences section.
-    Omits any field that is null or empty rather than printing 'None'.
-    """
-    lines = [
-        "",
-        "CONTACT PREFERENCES",
-        "-" * 40,
-    ]
-
-    methods = cp.get("contact_methods") or []
-    method_labels = {"email": "Email", "text": "Text message", "phone": "Phone call"}
-    readable_methods = ", ".join(method_labels.get(m, m) for m in methods)
-    if readable_methods:
-        lines.append(f"  Contact methods: {readable_methods}")
-
-    email_address = cp.get("email_address")
-    if email_address:
-        lines.append(f"  Email address: {email_address}")
-
-    phone_number = cp.get("phone_number")
-    if phone_number:
-        lines.append(f"  Phone number: {phone_number}")
-
-    best_time = cp.get("best_time_to_call")
-    if best_time:
-        lines.append(f"  Best time to call: {best_time}")
-
-    doctor_pref = cp.get("doctor_preference")
-    if doctor_pref == "usual":
-        lines.append("  Doctor preference: Usual doctor")
-        usual_name = cp.get("usual_doctor_name")
-        if usual_name:
-            lines.append(f"  Usual doctor name: {usual_name}")
-    elif doctor_pref == "any":
-        lines.append("  Doctor preference: Soonest available doctor")
-
-    return lines
-
 
 def _format_body(
     condition_label: str,
-    clinical_output: ClinicalOutput,
     submission_id: str,
     submitted_at: datetime,
 ) -> str:
-    lines = [
+    return "\n".join([
         "E-CONSULTATION SUBMISSION",
-        "=" * 40,
         "",
-        f"Condition:     {condition_label}",
         f"Submission ID: {submission_id}",
-        f"Submitted at:  {submitted_at.strftime('%Y-%m-%d %H:%M:%S')} UTC",
+        f"Condition: {condition_label}",
+        f"Submitted at: {submitted_at.strftime('%Y-%m-%d %H:%M:%S')} UTC",
         "",
-        "PATIENT DESCRIPTION",
-        "-" * 40,
-        clinical_output.free_text or "(none provided)",
-    ]
-
-    if clinical_output.patient_details:
-        lines += [
-            "",
-            "PATIENT DETAILS",
-            "-" * 40,
-        ]
-        lines += _format_patient_details(clinical_output.patient_details)
-
-    lines += [
+        "Please open the attached PDF for the full submission.",
         "",
-        "ANSWERS",
-        "-" * 40,
-    ]
-
-    for key, value in clinical_output.answers.items():
-        label = clinical_output.question_labels.get(key, key)
-        lines.append(f"  {label}: {_format_answer(value)}")
-
-    if clinical_output.additional_text:
-        lines += [
-            "",
-            "ADDITIONAL INFORMATION",
-            "-" * 40,
-            clinical_output.additional_text,
-        ]
-
-    if clinical_output.safety_messages:
-        lines += [
-            "",
-            "SAFETY FLAGS",
-            "-" * 40,
-        ]
-        for msg in clinical_output.safety_messages:
-            lines.append(f"  [{msg.get('id', '')}] {msg.get('text', '')}")
-
-    if clinical_output.contact_preferences:
-        lines += _format_contact_preferences(clinical_output.contact_preferences)
-
-    lines += [
-        "",
-        "=" * 40,
         "This message was generated automatically by the e-consultation system.",
         "Do not reply to this email.",
-    ]
-
-    return "\n".join(lines)
+    ])
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +96,10 @@ class EmailDeliveryService(DeliveryService):
     A missing variable will raise RuntimeError at startup, not silently at send time.
 
     PDF bytes are generated by the caller (form_router.py) at submission time
-    and passed in pre-rendered. This service no longer generates PDFs.
+    and passed in pre-rendered. This service does not generate PDFs.
+
+    The email body is a static message with submission metadata only. All clinical
+    detail is in the PDF attachment.
     """
 
     def __init__(self) -> None:
@@ -258,13 +123,12 @@ class EmailDeliveryService(DeliveryService):
         self,
         to_email: str,
         condition_label: str,
-        clinical_output: ClinicalOutput,
+        pdf_bytes: bytes,
         submission_id: str,
         submitted_at: datetime,
-        pdf_bytes: bytes,
     ) -> None:
         subject = f"E-consultation: {condition_label} [{submission_id}]"
-        body = _format_body(condition_label, clinical_output, submission_id, submitted_at)
+        body = _format_body(condition_label, submission_id, submitted_at)
 
         pdf_filename = (
             f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
@@ -308,6 +172,9 @@ class ConsoleDeliveryService(DeliveryService):
     PDF bytes are generated by the caller (form_router.py) at submission time
     and passed in pre-rendered. This service logs the byte count but does not
     generate or modify the PDF.
+
+    The email body is a static message with submission metadata only, matching
+    the production implementation.
     """
 
     def __init__(self) -> None:
@@ -321,12 +188,11 @@ class ConsoleDeliveryService(DeliveryService):
         self,
         to_email: str,
         condition_label: str,
-        clinical_output: ClinicalOutput,
+        pdf_bytes: bytes,
         submission_id: str,
         submitted_at: datetime,
-        pdf_bytes: bytes,
     ) -> None:
-        body = _format_body(condition_label, clinical_output, submission_id, submitted_at)
+        body = _format_body(condition_label, submission_id, submitted_at)
 
         logger.info(
             "[DEV_MODE] Email send skipped. Would have sent:\n"
