@@ -43,18 +43,20 @@ Defined in `delivery_constants.py`. The backoff schedule is `[1, 10, 60]` minute
 
 `attempt_delivery` is the single entry point for all delivery attempts — both the first attempt from the router and retries from the (deferred) background worker. It enforces all delivery policy:
 
-Guards (checked in order before any send):
+Guards (checked in order before any send or increment):
 1. Already sent — returns immediately if `delivery_status == "sent"`.
 2. Exhaustion — returns immediately if `delivery_attempts >= MAX_ATTEMPTS`. Logs at CRITICAL.
-3. Too early — returns immediately if `next_retry_after > now_utc`.
+3. Too early — returns immediately if `next_retry_after is not None and next_retry_after > now_utc`.
 
-The guards mean the worker can call `attempt_delivery` on any submission without re-implementing policy checks.
+The guards mean the worker can call `attempt_delivery` on any submission without re-implementing policy checks. No increment occurs for any guard return.
 
 `DeliveryOutcomeStatus` is an enum with five values: `SENT`, `FAILED`, `ALREADY_SENT`, `EXHAUSTED`, `TOO_EARLY`. `DeliveryOutcome` is a dataclass carrying `status`, `attempts`, `next_retry_after`, and `error`.
 
 `PendingDelivery` is a dataclass in `submission_repository.py` carrying only the fields the orchestration layer needs. `get_pending_delivery` returns this instead of a raw dict.
 
-`record_attempt_outcome` uses `RETURNING delivery_attempts` to return the actual new count from the database. The orchestration layer uses this returned value for backoff index calculation, avoiding a TOCTOU race between the read in `get_pending_delivery` and the atomic increment in the UPDATE.
+**Backoff index calculation:** On `EmailDeliveryError`, `next_retry_after` is computed before calling `record_attempt_outcome`, using `pending.delivery_attempts + 1` as the expected post-increment count (`backoff_index = post_increment_count - 1`). This allows exactly one call to `record_attempt_outcome` per attempt. The `RETURNING delivery_attempts` value is used as `actual_count` in the `DeliveryOutcome` to confirm the database count matches expectations, and guards against a potential future TOCTOU race where `pending.delivery_attempts` could be stale.
+
+**Concurrency (TOCTOU):** Two races exist in `attempt_delivery`. First, the already-sent guard reads `delivery_status` from `get_pending_delivery`; concurrent calls could both pass this guard before either completes. Second, `pending.delivery_attempts` used for backoff index calculation is a pre-read value — the `RETURNING` clause on `record_attempt_outcome` provides the authoritative post-increment count but does not prevent both concurrent calls from reading the same pre-increment value. In single-process operation neither race is exploitable. Once a background worker is added, row-level locking (`SELECT ... FOR UPDATE`) or an atomic compare-and-swap is required. This is a documented requirement for the worker ticket.
 
 ### Exhaustion Policy
 
@@ -62,9 +64,9 @@ The guards mean the worker can call `attempt_delivery` on any submission without
 
 ### Retryable Query (`list_retryable`)
 
-Returns submissions where `next_retry_after IS NOT NULL AND next_retry_after <= NOW() AND delivery_status = 'failed'`, ordered by `submitted_at ASC`, limited by a `limit` parameter (default 50).
+`SubmissionRepository.list_retryable(limit=50)` returns `PendingDelivery` objects for submissions where `delivery_status = 'failed' AND next_retry_after IS NOT NULL AND next_retry_after <= NOW()`, ordered by `submitted_at ASC`.
 
-Uses `delivery_status = 'failed'` (not `NOT IN ('sent')`) so that pending submissions with anomalous `next_retry_after` values are left for operator investigation rather than silently retried.
+Uses `delivery_status = 'failed'` (not `NOT IN ('sent')`) so that pending submissions with anomalous `next_retry_after` values are left for operator investigation rather than silently retried. The `limit` parameter prevents a single sweep from attempting an unbounded number of failed submissions. The background worker is expected to call `list_retryable` in a loop until it returns empty or hits its own time budget.
 
 ### Manual Recovery SQL
 
@@ -109,6 +111,7 @@ Neither contract may be used as an input back into the engine. This module conta
 - `delivery_status` values: `"pending"`, `"sent"`, `"failed"`.
 - `condition_label` is stored alongside the submission record at creation time.
 - `record_attempt_outcome` is the sole post-attempt write path. It performs a single atomic UPDATE with `RETURNING delivery_attempts`.
+- `list_retryable(limit=50)` returns `PendingDelivery` objects. It does not return `submission_id` — the orchestration layer does not need it, and excluding it keeps the projection minimal.
 - Must never: send emails, import engine modules, or make retry decisions.
 
 ### Attachment Repository (`attachment_repository.py`)
@@ -155,7 +158,7 @@ Four string constants for structured logging of the delivery lifecycle: `DELIVER
 5. Orphan detection (pending submissions with `delivery_attempts = 0` older than 5 minutes) currently runs only at startup. An orphan created after startup is invisible until the next deploy. Periodic orphan checking is desired and should be implemented when the background worker arrives.
 6. Manual recovery from an exhausted submission requires direct database access.
 7. Systemic failures (e.g. expired SMTP credentials) cause submissions to accumulate. `list_retryable` processes them in batches. Each timed-out submission incurs the full SMTP timeout (~30s). The worker ticket must address timeout and concurrency strategy.
-8. The already-sent guard in `attempt_delivery` has a TOCTOU window. The `RETURNING` clause on `record_attempt_outcome` closes the data race on the count, but concurrent calls could still both pass the already-sent guard. The worker ticket must implement row-level locking or atomic compare-and-swap to close this gap.
+8. `attempt_delivery` has two TOCTOU races: the already-sent guard (concurrent calls could both pass before either completes) and the backoff index calculation (both calls could read the same pre-increment `delivery_attempts` value). Neither is exploitable in single-process operation. The worker ticket must implement row-level locking or atomic compare-and-swap to close both gaps.
 9. CRITICAL-level logging is the sole alerting mechanism. Structured error reporting should be revisited when the background worker is added.
 10. Alternative delivery backup and admin portal notification for delivery failures are planned as a separate ticket, before collecting real patient data.
 
