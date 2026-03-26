@@ -11,6 +11,7 @@ This module is responsible for:
 - Listing submissions by delivery status
 - Providing lightweight delivery projections (PendingDelivery)
 - Atomically recording delivery attempt outcomes
+- Querying submissions eligible for delivery retry
 
 Table creation is handled by Alembic migrations at startup.
 
@@ -265,6 +266,63 @@ class SubmissionRepository:
             delivery_attempts=row["delivery_attempts"],
             next_retry_after=row["next_retry_after"],
         )
+
+    def list_retryable(self, limit: int = 50) -> list[PendingDelivery]:
+        """
+        Return submissions that are due for a delivery retry.
+
+        A submission is eligible when all three conditions hold:
+        - delivery_status = 'failed'  (sent and pending submissions are excluded)
+        - next_retry_after IS NOT NULL  (new submissions mid-first-attempt are excluded)
+        - next_retry_after <= NOW()  (the backoff window has elapsed)
+
+        Results are ordered by submitted_at ASC so older submissions are
+        retried first. The limit parameter caps the number of rows returned
+        per call; the background worker is expected to loop until the result
+        is empty or it hits its own time budget.
+
+        Design note — delivery_status = 'failed' is the tighter filter:
+        NOT IN ('sent') would also match pending submissions. A pending
+        submission with next_retry_after set should not exist under normal
+        operation. If it does, it indicates a bug or manual data corruption.
+        The = 'failed' filter ensures the worker only processes submissions
+        that have been through at least one attempted delivery. Anomalous
+        states are left for operator investigation rather than silently retried.
+
+        Returns an empty list if no submissions are eligible.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT delivery_status,
+                           delivery_email,
+                           condition_label,
+                           submitted_at,
+                           delivery_attempts,
+                           next_retry_after
+                    FROM submission_records
+                    WHERE delivery_status = 'failed'
+                      AND next_retry_after IS NOT NULL
+                      AND next_retry_after <= NOW()
+                    ORDER BY submitted_at ASC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                rows = cur.fetchall()
+
+        return [
+            PendingDelivery(
+                delivery_status=row["delivery_status"],
+                delivery_email=row["delivery_email"],
+                condition_label=row["condition_label"],
+                submitted_at=row["submitted_at"],
+                delivery_attempts=row["delivery_attempts"],
+                next_retry_after=row["next_retry_after"],
+            )
+            for row in rows
+        ]
 
     def record_attempt_outcome(
         self,
