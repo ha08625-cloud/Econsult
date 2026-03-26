@@ -7,7 +7,7 @@ attempts, failures, and retry state transitions.
 This module has no imports from any other application module.
 """
 
-DELIVERY_SENT = "delivery.sent"
-DELIVERY_FAILED = "delivery.failed"
-DELIVERY_EXHAUSTED = "delivery.exhausted"
-DELIVERY_RETRY_TOO_EARLY = "delivery.retry_too_early"
+DELIVERY_SENT = "delivery_sent"
+DELIVERY_FAILED = "delivery_failed"
+DELIVERY_EXHAUSTED = "delivery_exhausted"
+DELIVERY_RETRY_TOO_EARLY = "delivery_retry_too_early"
