@@ -9,16 +9,18 @@ This module is responsible for:
 - Updating delivery status after email send attempt
 - Retrieving submissions by ID
 - Listing submissions by delivery status
+- Providing lightweight delivery projections (PendingDelivery)
+- Atomically recording delivery attempt outcomes
 
 Table creation is handled by Alembic migrations at startup.
 
 This module must never:
 - Access clinical engine modules (form_logic, safety_engine, etc.)
 - Send emails (that belongs in delivery_service)
-- Make decisions about retry logic (that belongs in the calling layer)
+- Make decisions about retry logic (that belongs in the orchestration layer)
 """
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Optional
 
@@ -39,6 +41,23 @@ class SubmissionNotFound(Exception):
 class InvalidDeliveryStatus(Exception):
     """Raised when an unrecognised delivery status is used."""
     pass
+
+
+@dataclass(frozen=True)
+class PendingDelivery:
+    """
+    Lightweight read-only projection of a submission for delivery.
+
+    Contains only the fields the orchestration layer needs to decide
+    whether and how to deliver. Does not include clinical_output_json
+    or audit_output_json.
+    """
+    delivery_status: str
+    delivery_email: str
+    condition_label: str
+    submitted_at: datetime
+    delivery_attempts: int
+    next_retry_after: Optional[datetime]
 
 
 class SubmissionRepository:
@@ -133,6 +152,10 @@ class SubmissionRepository:
 
         Raises InvalidDeliveryStatus if status is not valid.
         Raises SubmissionNotFound if submission_id does not exist.
+
+        NOTE: This method is retained for backward compatibility. The
+        orchestration layer uses record_attempt_outcome instead, which
+        atomically increments delivery_attempts in the same UPDATE.
         """
         self._validate_status(status)
 
@@ -203,3 +226,100 @@ class SubmissionRepository:
                 rows = cur.fetchall()
 
         return [dict(row) for row in rows]
+
+    def get_pending_delivery(self, submission_id: str) -> PendingDelivery:
+        """
+        Get lightweight delivery projection for a submission.
+
+        Returns a PendingDelivery dataclass with only the fields needed
+        by the orchestration layer. Does not return clinical_output_json
+        or audit_output_json.
+
+        Raises SubmissionNotFound if submission_id does not exist.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT delivery_status,
+                           delivery_email,
+                           condition_label,
+                           submitted_at,
+                           delivery_attempts,
+                           next_retry_after
+                    FROM submission_records
+                    WHERE submission_id = %s
+                    """,
+                    (submission_id,),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            raise SubmissionNotFound(submission_id)
+
+        return PendingDelivery(
+            delivery_status=row["delivery_status"],
+            delivery_email=row["delivery_email"],
+            condition_label=row["condition_label"],
+            submitted_at=row["submitted_at"],
+            delivery_attempts=row["delivery_attempts"],
+            next_retry_after=row["next_retry_after"],
+        )
+
+    def record_attempt_outcome(
+        self,
+        submission_id: str,
+        delivery_status: str,
+        delivered_at: Optional[datetime] = None,
+        delivery_error: Optional[str] = None,
+        next_retry_after: Optional[datetime] = None,
+    ) -> int:
+        """
+        Atomically record the outcome of a delivery attempt.
+
+        Performs a single UPDATE that:
+        - Increments delivery_attempts by 1
+        - Sets last_attempt_at to NOW()
+        - Sets delivery_status
+        - Sets delivered_at (on success)
+        - Sets delivery_error (on failure)
+        - Sets next_retry_after (on failure, if retries remain)
+
+        Returns the new delivery_attempts count from the database via
+        RETURNING. The caller should use this returned value rather than
+        computing it independently — this avoids a TOCTOU race between
+        the read in get_pending_delivery and the atomic increment here.
+
+        Raises InvalidDeliveryStatus if delivery_status is not valid.
+        Raises SubmissionNotFound if submission_id does not exist.
+        """
+        self._validate_status(delivery_status)
+
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE submission_records
+                    SET delivery_attempts = delivery_attempts + 1,
+                        last_attempt_at   = NOW(),
+                        delivery_status   = %s,
+                        delivered_at      = %s,
+                        delivery_error    = %s,
+                        next_retry_after  = %s
+                    WHERE submission_id = %s
+                    RETURNING delivery_attempts
+                    """,
+                    (
+                        delivery_status,
+                        delivered_at,
+                        delivery_error,
+                        next_retry_after,
+                        submission_id,
+                    ),
+                )
+
+                result = cur.fetchone()
+                if result is None:
+                    raise SubmissionNotFound(submission_id)
+
+                return result[0]

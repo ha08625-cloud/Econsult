@@ -1,14 +1,13 @@
 """
-Structured delivery event constants.
+Delivery lifecycle event constants.
 
-Used by the delivery orchestration layer for consistent logging of delivery
-lifecycle events. Each constant is a plain string used as the `event` field
-in structured log entries.
+Used by delivery_orchestration.py for structured logging of delivery
+attempts, failures, and retry state transitions.
 
-This module has no dependencies on any other application module.
+This module has no imports from any other application module.
 """
 
-DELIVERY_SENT = "delivery_sent"
-DELIVERY_FAILED = "delivery_failed"
-DELIVERY_EXHAUSTED = "delivery_exhausted"
-DELIVERY_RETRY_TOO_EARLY = "delivery_retry_too_early"
+DELIVERY_SENT = "delivery.sent"
+DELIVERY_FAILED = "delivery.failed"
+DELIVERY_EXHAUSTED = "delivery.exhausted"
+DELIVERY_RETRY_TOO_EARLY = "delivery.retry_too_early"

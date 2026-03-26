@@ -57,6 +57,7 @@ Files:
 - app/services/ruleset.py — loads and validates condition ruleset JSON.
 - app/services/safety_engine.py — evaluates safety rules; consumes ExplicitAnswers only.
 - app/services/serialisation.py — produces ClientStateView, ClinicalOutput, AuditOutput.
+- app/services/delivery_events.py — structured delivery event constants (delivery_sent, delivery_failed, delivery_exhausted, delivery_retry_too_early). No application-module dependencies.
 
 ### 2.3 app/repositories/
 
@@ -188,6 +189,7 @@ Unit tests (no database required):
 - tests/test_sanitise_signposting.py — sanitise_signposting_html unit tests.
 - tests/test_delivery_service.py
 - tests/test_pdf_generation.py
+- tests/test_delivery_events.py
 
 Integration tests (require DATABASE_URL):
 - tests/test_form_routes.py — full form pipeline via TestClient against live database.
@@ -219,6 +221,7 @@ Each service module lists which other modules it is permitted to import.
 - app/services/engine_adapters.py: orchestration layer; may import all services above.
 - app/services/presentation_service.py: imports condition_registry, practice_repository.
 - app/utils/pdf_formatter.py: imports ClinicalOutput only. Must not import any service, repository, router, or engine module.
+- app/services/delivery_events.py: standalone; no service imports.
 
 ---
 

@@ -11,9 +11,9 @@ Architecture rules:
   - All dependencies injected via Depends from app/core/dependencies.py.
   - No clinical logic. No encoder invocation.
   - Validation calls are the first statement in each handler body.
-  - EmailDeliveryError must NOT propagate as an HTTP error — it is caught,
-    logged, and recorded against the submission. The patient receives their
-    submission_id regardless of delivery outcome.
+  - Delivery is delegated to delivery_orchestration.attempt_delivery.
+    Any exception from attempt_delivery is caught, logged at CRITICAL,
+    and swallowed — the patient always receives their submission_id.
 """
 
 import logging
@@ -54,7 +54,7 @@ from app.repositories.runtime_state_repository import (
     VersionConflict,
 )
 from app.services.availability_orchestration import check_availability
-from app.services.delivery_service import EmailDeliveryError
+from app.services.delivery_orchestration import attempt_delivery
 from app.services.engine_adapters import (
     apply_update_and_evaluate,
     finish_runtime_state,
@@ -296,31 +296,24 @@ async def form_finish(
     )
     attachment_repo.save_attachment(submission_id, pdf_bytes)
 
-    # Delivery failures must not prevent the patient receiving their submission_id.
-    # The submission and attachment are already persisted at this point.
+    # Delivery is delegated to the orchestration layer. Any exception —
+    # whether from SMTP failure, attachment retrieval, or a repository bug —
+    # is caught and logged at CRITICAL. The patient always receives their
+    # submission_id. The submission and attachment are already persisted.
     try:
-        delivery_service.send_clinical_output(
-            to_email=delivery_email,
-            condition_label=condition_label,
-            pdf_bytes=pdf_bytes,
+        attempt_delivery(
             submission_id=submission_id,
-            submitted_at=submitted_at,
+            submission_repo=submission_repo,
+            attachment_repo=attachment_repo,
+            delivery_service=delivery_service,
         )
-        submission_repo.update_delivery_status(
-            submission_id=submission_id,
-            status="sent",
-            delivered_at=datetime.now(timezone.utc),
-        )
-    except EmailDeliveryError as e:
-        logger.error(
-            "Email delivery failed for submission %s: %s",
+    except Exception:
+        logger.critical(
+            "Delivery orchestration failed for submission %s. "
+            "The submission is persisted but delivery status may be inconsistent. "
+            "Investigate immediately.",
             submission_id,
-            str(e),
-        )
-        submission_repo.update_delivery_status(
-            submission_id=submission_id,
-            status="failed",
-            delivery_error=str(e),
+            exc_info=True,
         )
 
     runtime_repo.close_session(runtime_id, version)

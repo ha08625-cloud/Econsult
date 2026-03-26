@@ -15,6 +15,10 @@ Architecture notes:
   for the happy-path test, and to raise for the fail-open test.
 - Each test that writes to the database uses a unique condition_id drawn
   from the real registry so that the engine can load its ruleset.
+- form_finish delegates to delivery_orchestration.attempt_delivery, which
+  calls get_pending_delivery and get_attachment on the real database before
+  calling delivery_service.send_clinical_output on the mock. The mock must
+  match the current DeliveryService ABC signature.
 """
 
 import os
@@ -35,12 +39,12 @@ os.environ.setdefault("DEV_MODE", "1")
 os.environ.setdefault("PRACTICE_ID", "test-practice")
 os.environ.setdefault("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data"))
 
+from datetime import datetime  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from main import app  # noqa: E402
 from app.core.dependencies import get_delivery_service, get_availability_repo  # noqa: E402
 from app.services.delivery_service import DeliveryService  # noqa: E402
-from app.models.serialisation_contracts import ClinicalOutput  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +52,12 @@ from app.models.serialisation_contracts import ClinicalOutput  # noqa: E402
 # ---------------------------------------------------------------------------
 
 class MockDeliveryService(DeliveryService):
-    """Captures send calls for assertion without touching SMTP."""
+    """
+    Captures send calls for assertion without touching SMTP.
+
+    Matches the current DeliveryService ABC signature: to_email,
+    condition_label, pdf_bytes, submission_id, submitted_at.
+    """
 
     def __init__(self):
         self.calls: list[dict] = []
@@ -57,14 +66,16 @@ class MockDeliveryService(DeliveryService):
         self,
         to_email: str,
         condition_label: str,
-        clinical_output: ClinicalOutput,
+        pdf_bytes: bytes,
         submission_id: str,
+        submitted_at: datetime,
     ) -> None:
         self.calls.append({
             "to_email": to_email,
             "condition_label": condition_label,
-            "clinical_output": clinical_output,
+            "pdf_bytes": pdf_bytes,
             "submission_id": submission_id,
+            "submitted_at": submitted_at,
         })
 
 
@@ -135,8 +146,14 @@ def test_happy_path_end_to_end():
     - finish response contains submission_id
     - finish response does NOT contain submitted_after_hours
     - MockDeliveryService captured one send call with correct submission_id
-    - contact_preferences are present inside the captured ClinicalOutput
-    - patient_details are present inside the captured ClinicalOutput
+    - The send call received a non-empty pdf_bytes and valid submitted_at
+    - The send call received the correct condition_label
+
+    Note: ClinicalOutput assertions (contact_preferences, patient_details)
+    are no longer possible via the delivery mock because the delivery service
+    no longer receives ClinicalOutput. Those fields are verified by the
+    repository integration tests (test_repositories.py) which read back
+    the persisted clinical_output_json.
     """
     mock_delivery = MockDeliveryService()
     app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
@@ -196,18 +213,16 @@ def test_happy_path_end_to_end():
             call = mock_delivery.calls[0]
             assert call["submission_id"] == finish_body["submission_id"]
 
-            # contact_preferences are inside ClinicalOutput
-            captured_clinical: ClinicalOutput = call["clinical_output"]
-            assert captured_clinical.contact_preferences is not None
-            assert captured_clinical.contact_preferences["contact_methods"] == ["email"]
-            assert captured_clinical.contact_preferences["email_address"] == "patient@example.com"
+            # The delivery service received the correct condition label
+            assert call["condition_label"] == condition["label"]
 
-            # patient_details are inside ClinicalOutput
-            assert captured_clinical.patient_details is not None
-            assert captured_clinical.patient_details.first_name == "Jane"
-            assert captured_clinical.patient_details.last_name == "Smith"
-            assert captured_clinical.patient_details.date_of_birth == "1990-03-15"
-            assert captured_clinical.patient_details.postcode == "SW1A 1AA"
+            # PDF bytes were generated and passed to the delivery service
+            assert isinstance(call["pdf_bytes"], bytes)
+            assert len(call["pdf_bytes"]) > 0
+
+            # submitted_at is a timezone-aware datetime
+            assert isinstance(call["submitted_at"], datetime)
+            assert call["submitted_at"].tzinfo is not None
 
     finally:
         app.dependency_overrides.pop(get_delivery_service, None)
@@ -246,12 +261,23 @@ def test_form_finish_delivery_failure_does_not_prevent_submission_id():
     """
     If the delivery service raises EmailDeliveryError, form_finish must
     still return HTTP 200 with a submission_id.
-    The patient must always receive confirmation that their submission was saved.
+
+    The patient must always receive confirmation that their submission was
+    saved. The delivery failure is caught by attempt_delivery, which records
+    the failure and returns a DeliveryOutcome. The router's except Exception
+    block catches any unexpected errors from the orchestration layer.
     """
     from app.services.delivery_service import EmailDeliveryError
 
     class FailingDeliveryService(DeliveryService):
-        def send_clinical_output(self, to_email, condition_label, clinical_output, submission_id):
+        def send_clinical_output(
+            self,
+            to_email: str,
+            condition_label: str,
+            pdf_bytes: bytes,
+            submission_id: str,
+            submitted_at: datetime,
+        ) -> None:
             raise EmailDeliveryError("Simulated SMTP failure")
 
     app.dependency_overrides[get_delivery_service] = lambda: FailingDeliveryService()
