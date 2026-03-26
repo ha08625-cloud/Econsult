@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout and import mapping
-# Last updated: 2026-03-23
+# Last updated: 2026-03-26
 
 ---
 
@@ -47,6 +47,9 @@ internal state except via defined interfaces.
 
 Files:
 - app/services/availability_orchestration.py — orchestration layer; wires AvailabilityRepository and availability_service together. No HTTP logic. Called by public_router.py and main.py.
+- app/services/delivery_constants.py — retry backoff schedule (RETRY_BACKOFF_MINUTES) and MAX_ATTEMPTS. No application-module imports. Single canonical source for the exhaustion threshold.
+- app/services/delivery_events.py — four string constants for structured logging of delivery lifecycle (DELIVERY_SENT, DELIVERY_FAILED, DELIVERY_EXHAUSTED, DELIVERY_RETRY_TOO_EARLY). No application-module imports.
+- app/services/delivery_orchestration.py — single entry point for all delivery attempts (first attempt and retries). Contains DeliveryOutcomeStatus enum, DeliveryOutcome dataclass, and attempt_delivery function. Imports from submission_repository, attachment_repository, delivery_service, delivery_constants, delivery_events.
 - app/services/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP with PDF attachment); ConsoleDeliveryService (dev only, raises if DEV_MODE not set). Receives pre-rendered PDF bytes from caller; does not generate PDFs.
 - app/services/encoder_mapping.py — containment layer; applies encoder output to RuntimeState.
 - app/services/encoder_stub.py — placeholder encoder, expected to be replaced; returns plain dict.
@@ -57,7 +60,6 @@ Files:
 - app/services/ruleset.py — loads and validates condition ruleset JSON.
 - app/services/safety_engine.py — evaluates safety rules; consumes ExplicitAnswers only.
 - app/services/serialisation.py — produces ClientStateView, ClinicalOutput, AuditOutput.
-- app/services/delivery_events.py — structured delivery event constants (delivery_sent, delivery_failed, delivery_exhausted, delivery_retry_too_early). No application-module dependencies.
 
 ### 2.3 app/repositories/
 
@@ -68,7 +70,7 @@ Files:
 - app/repositories/availability_repository.py — weekly hours, overrides, and per-date exceptions.
 - app/repositories/practice_repository.py — practice record CRUD including update_email.
 - app/repositories/runtime_state_repository.py — session state read/write. Registered in app.state as runtime_repo.
-- app/repositories/submission_repository.py — submission record creation and delivery status tracking.
+- app/repositories/submission_repository.py — submission record creation, delivery status tracking, and delivery retry support. Contains PendingDelivery dataclass (lightweight read-only projection for the orchestration layer), get_pending_delivery, and record_attempt_outcome (atomic UPDATE with RETURNING).
 
 ### 2.4 app/core/
 
@@ -106,6 +108,7 @@ Files:
 - alembic/versions/0004_availability_exceptions.py
 - alembic/versions/0005_submitted_at_explicit.py — removes DEFAULT NOW() from submission_records.submitted_at. Application must supply the value explicitly.
 - alembic/versions/0006_attachment_storage.py — adds condition_label to submission_records; creates submission_attachments table for PDF blob storage.
+- alembic/versions/0007_delivery_retry_columns.py — adds delivery_attempts (INTEGER NOT NULL DEFAULT 0), last_attempt_at (TIMESTAMPTZ), and next_retry_after (TIMESTAMPTZ) to submission_records. Supports delivery retry orchestration.
 
 ---
 
@@ -184,15 +187,15 @@ see arch_testing.md. This section covers file locations only.
 
 Unit tests (no database required):
 - tests/test_admin_router.py — router and auth behaviour for admin endpoints; signposting sanitisation.
+- tests/test_delivery_orchestration.py — unit tests for attempt_delivery with mocked dependencies. Covers success path, failure path, error propagation, DeliveryOutcomeStatus enum, and PendingDelivery immutability.
+- tests/test_delivery_service.py
+- tests/test_pdf_generation.py
 - tests/test_practice_endpoint.py — GET /practice endpoint with stub practice repo.
 - tests/test_request_validation.py — validate_patient_details and _format_patient_details.
 - tests/test_sanitise_signposting.py — sanitise_signposting_html unit tests.
-- tests/test_delivery_service.py
-- tests/test_pdf_generation.py
-- tests/test_delivery_events.py
 
 Integration tests (require DATABASE_URL):
-- tests/test_form_routes.py — full form pipeline via TestClient against live database.
+- tests/test_form_routes.py — full form pipeline via TestClient against live database. MockDeliveryService and FailingDeliveryService match the current DeliveryService ABC signature (pdf_bytes, submitted_at; no ClinicalOutput).
 - tests/test_public_routes.py — public endpoint tests via TestClient; imports main.py directly.
 - tests/test_repositories.py — repository layer tests; must be run directly, not via pytest.
 
@@ -217,11 +220,13 @@ Each service module lists which other modules it is permitted to import.
 - app/services/projection.py: imports RuntimeState, ExplicitAnswers.
 - app/services/safety_engine.py: imports ExplicitAnswers, SafetyEvaluation.
 - app/services/serialisation.py: imports RuntimeState, ClinicalOutput, AuditOutput.
-- app/services/delivery_service.py: No clinical contract imports. Receives pre-rendered PDF bytes from caller.. Receives pre-rendered PDF bytes from caller. Must not import any engine, repository, clinical module, or pdf_formatter.
+- app/services/delivery_service.py: No clinical contract imports. Receives pre-rendered PDF bytes from caller. Must not import any engine, repository, clinical module, or pdf_formatter.
+- app/services/delivery_constants.py: standalone; no application-module imports.
+- app/services/delivery_events.py: standalone; no application-module imports.
+- app/services/delivery_orchestration.py: imports submission_repository, attachment_repository, delivery_service, delivery_constants, delivery_events. Must not import clinical engine modules, routers, or access the database directly.
 - app/services/engine_adapters.py: orchestration layer; may import all services above.
 - app/services/presentation_service.py: imports condition_registry, practice_repository.
 - app/utils/pdf_formatter.py: imports ClinicalOutput only. Must not import any service, repository, router, or engine module.
-- app/services/delivery_events.py: standalone; no service imports.
 
 ---
 
@@ -239,4 +244,6 @@ The following imports must never appear in the codebase:
 - admin_router must NOT import clinical engine modules, presentation_service, serialisation,
   projection, or runtime_state.
 - delivery_service must NOT import clinical engine modules, repositories, condition_registry, or pdf_formatter.
+- delivery_orchestration must NOT import clinical engine modules, routers, condition_registry, pdf_formatter, or serialisation. It interacts with clinical data only through repository projections (PendingDelivery) and pre-rendered PDF bytes.
+- delivery_constants and delivery_events must NOT import any application module.
 - pdf_formatter must NOT import delivery_service, repositories, routers, or any engine module.
