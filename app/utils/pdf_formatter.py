@@ -3,9 +3,6 @@ PDF formatter.
 
 Pure utility: takes clinical submission data and returns raw PDF bytes.
 No database access. No imports from routers or delivery service.
-
-generate_pdf() mirrors the sections in the plain-text email body so both
-outputs carry the same information in the same order.
 """
 
 from datetime import datetime

@@ -186,6 +186,8 @@ Unit tests (no database required):
 - tests/test_practice_endpoint.py — GET /practice endpoint with stub practice repo.
 - tests/test_request_validation.py — validate_patient_details and _format_patient_details.
 - tests/test_sanitise_signposting.py — sanitise_signposting_html unit tests.
+- tests/test_delivery_service.py
+- tests/test_pdf_generation.py
 
 Integration tests (require DATABASE_URL):
 - tests/test_form_routes.py — full form pipeline via TestClient against live database.
@@ -213,7 +215,7 @@ Each service module lists which other modules it is permitted to import.
 - app/services/projection.py: imports RuntimeState, ExplicitAnswers.
 - app/services/safety_engine.py: imports ExplicitAnswers, SafetyEvaluation.
 - app/services/serialisation.py: imports RuntimeState, ClinicalOutput, AuditOutput.
-- app/services/delivery_service.py: imports ClinicalOutput only. Receives pre-rendered PDF bytes from caller. Must not import any engine, repository, clinical module, or pdf_formatter.
+- app/services/delivery_service.py: No clinical contract imports. Receives pre-rendered PDF bytes from caller.. Receives pre-rendered PDF bytes from caller. Must not import any engine, repository, clinical module, or pdf_formatter.
 - app/services/engine_adapters.py: orchestration layer; may import all services above.
 - app/services/presentation_service.py: imports condition_registry, practice_repository.
 - app/utils/pdf_formatter.py: imports ClinicalOutput only. Must not import any service, repository, router, or engine module.

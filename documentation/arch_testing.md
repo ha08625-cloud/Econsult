@@ -59,7 +59,7 @@ Tests that exercise the full request pipeline or repository layer against a live
 
 **`tests/test_public_routes.py`** — public endpoint tests via FastAPI TestClient. Imports `main.py` directly, which triggers `alembic_upgrade()` at import time. Requires `DATABASE_URL` to be reachable. Must not be collected by `make test` or it will fail offline.
 
-**`tests/test_repositories.py`** — repository layer tests for `RuntimeStateRepository`, `PracticeRepository`, and `SubmissionRepository`. Uses pytest fixtures for setup and teardown. Requires `TEST_DATABASE_URL`. Each test generates a unique ID and cleans up its own rows in a `finally` block.
+**`tests/test_repositories.py`** — repository layer tests for `RuntimeStateRepository`, `PracticeRepository`, `AttachmentRepository` and `SubmissionRepository`. Uses pytest fixtures for setup and teardown. Requires `TEST_DATABASE_URL`. Each test generates a unique ID and cleans up its own rows in a `finally` block.
 
 **Run `test_form_routes`, `test_public_routes`, and `test_repositories` together with:**
 ```

@@ -63,7 +63,7 @@ The delivery service is an abstract base class (`DeliveryService`) with two conc
 - **`EmailDeliveryService`** — production implementation. Reads SMTP configuration from environment variables **at instantiation time** (`__init__`), not at send time. This means a misconfigured deployment fails immediately at startup rather than silently at the moment of the first submission.
 - **`ConsoleDeliveryService`** — development only. Logs the full email payload to stdout. Raises `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental use in production.
 
-`send_clinical_output` accepts `to_email`, `condition_label`, `clinical_output`, `submission_id`, `submitted_at`, and `pdf_bytes`. PDF generation is a submission-time concern, not a delivery concern — the caller generates the PDF once and passes pre-rendered bytes. The delivery service attaches these bytes to the email without modification. `ClinicalOutput` is still used to build the plain-text email body.
+`send_clinical_output` accepts `to_email`, `condition_label`, `clinical_output`, `submission_id`, `submitted_at`, and `pdf_bytes`. PDF generation is a submission-time concern, not a delivery concern — the caller generates the PDF once and passes pre-rendered bytes. The delivery service attaches these bytes to the email without modification. The email body is a static message containing only submission metadata (submission ID, condition label, timestamp). All clinical detail is carried exclusively in the PDF attachment.
 
 `contact_preferences` are read from inside `ClinicalOutput` — the delivery interface does not receive a separate preferences argument.
 
@@ -75,7 +75,6 @@ The delivery service must never: access the database, update delivery status, im
 
 - Pure function `generate_pdf()` — takes `ClinicalOutput`, metadata, and optional `practice_name`; returns raw PDF bytes.
 - No database access, no imports from routers or delivery service.
-- Sections mirror the plain-text email body exactly, so both outputs carry the same information in the same order.
 - Called by `form_router.py` at submission time. The returned bytes are stored in `submission_attachments` and passed to the delivery service. The PDF is never regenerated.
 - `practice_name` is injected into the router via `get_practice_name` dependency and passed directly to `generate_pdf`. The name is captured once at startup. If the practice name is changed via the admin interface, PDFs will show the old name until the next server restart — this is a known and accepted limitation.
 
