@@ -14,9 +14,11 @@
 #     make migrate-test
 #
 # Notes on ignored files in make test:
-#   test_form_routes.py   — integration, requires TEST_DATABASE_URL
-#   test_public_routes.py — integration, imports main.py (triggers alembic_upgrade)
-#   test_repositories.py  — integration, requires TEST_DATABASE_URL
+#   test_form_routes.py     — integration, requires TEST_DATABASE_URL
+#   test_public_routes.py   — integration, imports main.py (triggers alembic_upgrade)
+#   test_repositories.py    — integration, calls alembic_upgrade() at module level;
+#                             run directly as: python -m tests.test_repositories
+#   test_delivery_retry.py  — integration, requires TEST_DATABASE_URL
 # ---------------------------------------------------------------------------
 
 include .env
@@ -29,20 +31,22 @@ test:
 		--ignore=tests/test_form_routes.py \
 		--ignore=tests/test_public_routes.py \
 		--ignore=tests/test_repositories.py \
+		--ignore=tests/test_delivery_retry.py \
 		-v
 	cd frontend && npx vitest run
 
 test-integration:
-	python -m pytest tests/test_form_routes.py tests/test_public_routes.py tests/test_repositories.py -v
+	python -m pytest tests/test_form_routes.py tests/test_public_routes.py tests/test_delivery_retry.py -v
 
 test-all:
 	python -m pytest tests/ \
 		--ignore=tests/test_form_routes.py \
 		--ignore=tests/test_public_routes.py \
 		--ignore=tests/test_repositories.py \
+		--ignore=tests/test_delivery_retry.py \
 		-v
 	cd frontend && npx vitest run
-	python -m pytest tests/test_form_routes.py tests/test_public_routes.py tests/test_repositories.py -v
+	python -m pytest tests/test_form_routes.py tests/test_public_routes.py tests/test_delivery_retry.py -v
 
 migrate-test:
 	DATABASE_URL=$(TEST_DATABASE_URL) python -m alembic upgrade head
