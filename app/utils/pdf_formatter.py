@@ -3,12 +3,16 @@ PDF formatter.
 
 Pure utility: takes clinical submission data and returns raw PDF bytes.
 No database access. No imports from routers or delivery service.
+
+generate_pdf() mirrors the sections in the plain-text email body so both
+outputs carry the same information in the same order.
 """
 
 from datetime import datetime
 from typing import Optional
 
 from fpdf import FPDF
+from fpdf.enums import XPos, YPos
 
 from app.models.serialisation_contracts import ClinicalOutput
 
@@ -61,7 +65,7 @@ class _EConsultPDF(FPDF):
     def section_heading(self, title: str) -> None:
         self.ln(_SECTION_GAP)
         self.set_font("Helvetica", style="B", size=10)
-        self.cell(0, _LINE_H, title, ln=True)
+        self.cell(0, _LINE_H, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_draw_color(180, 180, 180)
         self.line(self.get_x(), self.get_y(), self.get_x() + _USABLE_W, self.get_y())
         self.ln(1)
@@ -76,7 +80,7 @@ class _EConsultPDF(FPDF):
         next line after rendering.
         """
         self.set_font("Helvetica", style="B", size=9)
-        self.cell(_LABEL_W, _LINE_H, label, ln=False)
+        self.cell(_LABEL_W, _LINE_H, label, new_x=XPos.RIGHT, new_y=YPos.TOP)
         self.set_font("Helvetica", size=9)
         self.multi_cell(_VALUE_W, _LINE_H, value)
 
@@ -112,11 +116,11 @@ def generate_pdf(
 
     # --- Document title ---
     pdf.set_font("Helvetica", style="B", size=14)
-    pdf.cell(0, 10, "E-Consultation Submission", ln=True, align="C")
+    pdf.cell(0, 10, "E-Consultation Submission", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     if practice_name:
         pdf.set_font("Helvetica", size=10)
-        pdf.cell(0, 6, practice_name, ln=True, align="C")
+        pdf.cell(0, 6, practice_name, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     pdf.ln(2)
 
@@ -195,7 +199,8 @@ def generate_pdf(
     pdf.cell(
         0, 5,
         "Generated automatically by the e-consultation system. Do not reply to this document.",
-        ln=True,
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
         align="C",
     )
 

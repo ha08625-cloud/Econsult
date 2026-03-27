@@ -36,7 +36,7 @@ Both URLs live in `.env`. `.env` is never committed to version control.
 Tests that do not require a database connection. Covers two suites that run together under `make test`:
 
 **Python unit tests** — routers, validation, serialisation, sanitisation, and engine logic. Use stubs and in-memory state.
-- Files: everything in `tests/` except `test_form_routes.py`, `test_public_routes.py`, and `test_repositories.py`
+- Files: everything in `tests/` except `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, and `test_delivery_retry.py`
 - Runner: pytest
 
 **Frontend component tests** — screen component rendering and interaction behaviour.
@@ -61,7 +61,9 @@ Tests that exercise the full request pipeline or repository layer against a live
 
 **`tests/test_repositories.py`** — repository layer tests for `RuntimeStateRepository`, `PracticeRepository`, `AttachmentRepository` and `SubmissionRepository`. Uses pytest fixtures for setup and teardown. Requires `TEST_DATABASE_URL`. Each test generates a unique ID and cleans up its own rows in a `finally` block.
 
-**Run `test_form_routes`, `test_public_routes`, and `test_repositories` together with:**
+**`tests/test_delivery_retry.py`** — integration tests for the delivery retry pipeline. Exercises `attempt_delivery`, `list_retryable`, and `record_attempt_outcome` directly against the database without going through the HTTP layer. Uses `FailingDeliveryService` and `SucceedingDeliveryService` stubs defined in the file. Requires `TEST_DATABASE_URL`. Each test generates unique IDs and cleans up in a `finally` block.
+
+**Run `test_form_routes`, `test_public_routes`, `test_repositories`, and `test_delivery_retry` together with:**
 ```
 make test-integration
 ```
