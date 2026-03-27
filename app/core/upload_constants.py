@@ -1,0 +1,6 @@
+{
+  "ALLOWED_MIME_TYPES": ["image/jpeg", "image/png"],
+  "MAX_FILE_SIZE_BYTES": 5242880,
+  "MAX_TOTAL_SIZE_BYTES": 10485760,
+  "MAX_FILE_COUNT": 5
+}
