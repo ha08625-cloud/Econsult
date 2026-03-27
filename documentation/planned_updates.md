@@ -3,6 +3,8 @@ Architecture updates:
 
 Features
 - Attach photos
+- Add usual GPs
+- Add front page with admin/f2f/phone call/advice choice
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
 - database-backed email delivery queue with retries
