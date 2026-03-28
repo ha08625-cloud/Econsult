@@ -110,6 +110,9 @@ Neither contract may be used as an input back into the engine. This module conta
 - Owns the `submission_records` table.
 - `delivery_status` values: `"pending"`, `"sent"`, `"failed"`.
 - `condition_label` is stored alongside the submission record at creation time.
+- `attachment_count` is stored as an audit field recording how many photos were submitted. It is not used by the delivery or retry layers. The parameter is required (no default) on `create_submission` so a future call site cannot accidentally omit it and silently write 0.
+- `create_submission` uses named `%(name)s` parameters rather than positional `%s` placeholders. This makes the column-to-value mapping explicit in the source and prevents silent data corruption if columns are reordered.
+- `get_submission` and `list_by_status` use an explicit `_SUBMISSION_COLUMNS` constant rather than `SELECT *`. This constant must be updated when migrations add or remove columns.
 - `record_attempt_outcome` is the sole post-attempt write path. It performs a single atomic UPDATE with `RETURNING delivery_attempts`.
 - `list_retryable(limit=50)` returns `PendingDelivery` objects. It does not return `submission_id` — the orchestration layer does not need it, and excluding it keeps the projection minimal.
 - Must never: send emails, import engine modules, or make retry decisions.
@@ -117,7 +120,7 @@ Neither contract may be used as an input back into the engine. This module conta
 ### Attachment Repository (`attachment_repository.py`)
 
 - Owns the `submission_attachments` table.
-- Stores pre-rendered PDF bytes in a separate table from `submission_records` so that queries against submission records never load blob data. This separation is important once photo attachments are added, where a single submission could be 25MB+.
+- Stores pre-rendered PDF bytes in a separate table from `submission_records` so that queries against submission records never load blob data. This separation matters now that photo bytes are embedded in the PDF — a single submission can be 20 MB or more (5 photos at 5 MB each produces a combined PDF in that range). This blob is loaded fully into memory on every delivery attempt, including retries. Acceptable at current traffic scale.
 - `save_attachment(submission_id, pdf_bytes)` — inserts. Raises on duplicate (exactly-once invariant).
 - `get_attachment(submission_id)` — returns raw bytes. Raises `AttachmentNotFound` if absent. A missing attachment at retry time is always an error — the submission was created in a broken state.
 - `delete_attachment(submission_id)` — deletes. Idempotent.
@@ -146,6 +149,11 @@ Four string constants for structured logging of the delivery lifecycle: `DELIVER
 - No database access, no imports from routers or delivery service.
 - Called by `form_router.py` at submission time. The returned bytes are stored in `submission_attachments` and sent as-is on every delivery attempt (including retries). The PDF is never regenerated.
 - `practice_name` is injected into the router via `get_practice_name` dependency and passed directly to `generate_pdf`. The name is captured once at startup. If the practice name is changed via the admin interface, PDFs will show the old name until the next server restart — this is a known and accepted limitation.
+- Step 3 will add `photo_bytes: list[bytes] | None = None` as a parameter. Until then, the PDF contains no photos even if photos were submitted.
+
+### Known Limitations on MIME Validation
+
+Server-side MIME validation for photo uploads relies on the HTTP `Content-Type` header supplied by the browser. This header is not cryptographically verified and can be spoofed. Magic bytes validation (checking the actual file header bytes) is performed client-side only in the frontend. This is a known limitation accepted for this version — server-side magic bytes checking is deferred.
 
 ---
 
@@ -161,6 +169,7 @@ Four string constants for structured logging of the delivery lifecycle: `DELIVER
 8. `attempt_delivery` has two TOCTOU races: the already-sent guard (concurrent calls could both pass before either completes) and the backoff index calculation (both calls could read the same pre-increment `delivery_attempts` value). Neither is exploitable in single-process operation. The worker ticket must implement row-level locking or atomic compare-and-swap to close both gaps.
 9. CRITICAL-level logging is the sole alerting mechanism. Structured error reporting should be revisited when the background worker is added.
 10. Alternative delivery backup and admin portal notification for delivery failures are planned as a separate ticket, before collecting real patient data.
+11. The stored PDF may be 20 MB or more for photo-heavy submissions (5 photos at 5 MB each). This is loaded fully into memory on each delivery attempt, including retries. Acceptable at current traffic scale but should be reviewed before significant volume.
 
 ---
 

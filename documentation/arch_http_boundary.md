@@ -67,19 +67,31 @@ This applies in `POST /form/init`, which blocks entry if the practice is closed.
 
 ## Submission Ordering (form/finish)
 
-The submission record is created in the database with `delivery_status = "pending"` **before** any delivery is attempted. This ensures the record is not lost if the SMTP connection fails.
+`POST /form/finish` accepts `multipart/form-data`. The JSON payload is sent as a string in the `payload` form field. Photos are sent as optional `photos` file fields. Do not set `Content-Type` manually when calling this endpoint — the browser (or httpx in tests) sets it automatically with the correct boundary when a `FormData` object is used.
 
-After `create_submission`, `form_finish` generates the PDF via `generate_pdf()` and stores the bytes via `attachment_repo.save_attachment()`. Both the submission record and the attachment are persisted before the delivery attempt begins. The PDF bytes are then passed to `delivery_service.send_clinical_output()` — the delivery service does not generate the PDF.
+The handler body executes in this order:
 
-The status is updated to `"sent"` or `"failed"` after the delivery attempt. The session is closed last, after both the DB write and the email attempt.
+1. `json.loads(payload)` then `validate_finish_payload(data)` — parse and validate the JSON payload string.
+2. Read all photo bytes and enforce size limits — this happens before any database access. FastAPI does not enforce count limits on `list[UploadFile]`, so the count check in the handler is the primary enforcement point.
+3. Assemble `PatientDetails` from the validated payload.
+4. Load runtime state from the database and validate version.
+5. Run engine: `finish_runtime_state()` produces `ClinicalOutput` and `AuditOutput`.
+6. `create_submission()` — persists the submission record with `attachment_count=len(photo_bytes)`.
+7. `generate_pdf()` — generates the PDF (photo embedding added in Step 3).
+8. `save_attachment()` — stores PDF bytes.
+9. `attempt_delivery()` — delegates to the orchestration layer. Any exception is caught and logged at CRITICAL; it never propagates to the patient.
+10. `close_session()` — closes the runtime session.
+11. Return `{"submission_id": submission_id}`.
 
-`EmailDeliveryError` is caught in `form_finish` and must never propagate as an HTTP error. The patient must always receive their `submission_id` regardless of delivery outcome.
+The submission record and attachment are both persisted before any delivery attempt. `EmailDeliveryError` must never propagate as an HTTP error. The patient always receives their `submission_id`.
 
 ---
 
 ## Request Validation (`request_validation.py`)
 
 Validates HTTP input for the three form endpoints before any engine call. Raises `INVALID_PAYLOAD` on failure. Extra/unexpected fields in the payload are rejected — the validator uses an allowlist, not a blocklist. See the source file for exact field rules.
+
+`POST /form/finish` photo size checks (per-file size, combined size, count) are performed in the router handler body, not in `request_validation.py`. This is because the checks require the file bytes to have been read, which only happens after FastAPI parses the multipart body. `request_validation.py` validates the JSON payload field only.
 
 `contact_preferences` is validated by `validate_finish_payload` and then extracted by the `form_finish` handler, which passes it to `finish_runtime_state()`. It is stored inside `ClinicalOutput` and included in the delivery payload.
 
