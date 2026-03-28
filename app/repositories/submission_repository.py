@@ -25,6 +25,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Optional
 
+import psycopg2.extras
 from psycopg2.extras import RealDictCursor
 
 from app.core.db import get_conn
@@ -32,6 +33,28 @@ from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
 
 
 VALID_STATUSES = {"pending", "sent", "failed"}
+
+# Explicit column list for SELECT queries against submission_records.
+# Must be updated whenever a migration adds or removes a column.
+# Do not use SELECT * — new columns would appear silently in returned dicts
+# and make schema changes harder to track.
+_SUBMISSION_COLUMNS = """
+    submission_id,
+    practice_id,
+    condition_id,
+    condition_label,
+    clinical_output_json,
+    audit_output_json,
+    delivery_status,
+    delivery_email,
+    delivered_at,
+    delivery_error,
+    submitted_at,
+    delivery_attempts,
+    last_attempt_at,
+    next_retry_after,
+    attachment_count
+"""
 
 
 class SubmissionNotFound(Exception):
@@ -82,6 +105,7 @@ class SubmissionRepository:
         audit_output: AuditOutput,
         delivery_email: str,
         submitted_at: datetime,
+        attachment_count: int,
     ) -> None:
         """
         Create a new submission record with delivery_status = 'pending'.
@@ -96,15 +120,23 @@ class SubmissionRepository:
         immediately before calling this function). The database column has no
         DEFAULT — this is enforced by migration 0005.
 
+        attachment_count records how many photos were submitted. It is an audit
+        field only and is not used by the delivery or retry layers. No default
+        is provided here — the caller must always supply the value explicitly.
+        This ensures a missing argument raises TypeError immediately rather than
+        silently writing 0.
+
         clinical_output and audit_output are stored as JSONB. psycopg2 does not
         automatically serialise dataclasses, so we convert to dict with asdict()
-        first and pass the dict directly — psycopg2 handles JSON serialisation
-        transparently for JSONB columns via Json adapter.
+        first and wrap in psycopg2.extras.Json so psycopg2 serialises correctly
+        for JSONB columns.
+
+        Named parameters (%(name)s) are used throughout the INSERT rather than
+        positional %s placeholders. This makes the column-to-value mapping
+        explicit and prevents silent data corruption if columns are reordered.
 
         Raises psycopg2.errors.UniqueViolation if submission_id already exists.
         """
-        import psycopg2.extras
-
         clinical_dict = asdict(clinical_output)
         audit_dict = asdict(audit_output)
 
@@ -121,20 +153,32 @@ class SubmissionRepository:
                         audit_output_json,
                         delivery_status,
                         delivery_email,
-                        submitted_at
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s)
-                    """,
-                    (
-                        submission_id,
-                        practice_id,
-                        condition_id,
-                        condition_label,
-                        psycopg2.extras.Json(clinical_dict),
-                        psycopg2.extras.Json(audit_dict),
-                        delivery_email,
                         submitted_at,
-                    ),
+                        attachment_count
+                    ) VALUES (
+                        %(submission_id)s,
+                        %(practice_id)s,
+                        %(condition_id)s,
+                        %(condition_label)s,
+                        %(clinical_output_json)s,
+                        %(audit_output_json)s,
+                        'pending',
+                        %(delivery_email)s,
+                        %(submitted_at)s,
+                        %(attachment_count)s
+                    )
+                    """,
+                    {
+                        "submission_id": submission_id,
+                        "practice_id": practice_id,
+                        "condition_id": condition_id,
+                        "condition_label": condition_label,
+                        "clinical_output_json": psycopg2.extras.Json(clinical_dict),
+                        "audit_output_json": psycopg2.extras.Json(audit_dict),
+                        "delivery_email": delivery_email,
+                        "submitted_at": submitted_at,
+                        "attachment_count": attachment_count,
+                    },
                 )
 
     def update_delivery_status(
@@ -190,8 +234,8 @@ class SubmissionRepository:
         with get_conn(self.database_url) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    """
-                    SELECT *
+                    f"""
+                    SELECT {_SUBMISSION_COLUMNS}
                     FROM submission_records
                     WHERE submission_id = %s
                     """,
@@ -216,8 +260,8 @@ class SubmissionRepository:
         with get_conn(self.database_url) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    """
-                    SELECT *
+                    f"""
+                    SELECT {_SUBMISSION_COLUMNS}
                     FROM submission_records
                     WHERE delivery_status = %s
                     ORDER BY submitted_at ASC
@@ -278,8 +322,8 @@ class SubmissionRepository:
 
         Results are ordered by submitted_at ASC so older submissions are
         retried first. The limit parameter caps the number of rows returned
-        per call; the background worker is expected to loop until the result
-        is empty or it hits its own time budget.
+        per call; the background worker is expected to loop until it hits its
+        own time budget.
 
         Design note — delivery_status = 'failed' is the tighter filter:
         NOT IN ('sent') would also match pending submissions. A pending

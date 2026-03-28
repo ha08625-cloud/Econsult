@@ -16,11 +16,12 @@ Architecture rules:
     and swallowed — the patient always receives their submission_id.
 """
 
+import json
 import logging
 import uuid
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.condition_registry import ConditionNotFound
@@ -45,6 +46,11 @@ from app.core.request_validation import (
     validate_finish_payload,
     validate_init_payload,
     validate_update_payload,
+)
+from app.core.upload_constants import (
+    MAX_FILE_COUNT,
+    MAX_FILE_SIZE_BYTES,
+    MAX_TOTAL_SIZE_BYTES,
 )
 from app.models.runtime_state import RuntimeState
 from app.models.serialisation_contracts import PatientDetails
@@ -104,28 +110,28 @@ async def form_init(
 
     try:
         ruleset_path = registry.get_ruleset_path(condition_id)
-        condition_label = registry.get_presentation(condition_id)["label"]
     except ConditionNotFound:
         raise INVALID_PAYLOAD(f"Unknown condition_id: {condition_id}")
 
     runtime_id = str(uuid.uuid4())
 
-    runtime_state, rh, client_state = init_runtime_state(
+    initial_state, client_state = init_runtime_state(
         condition_id=condition_id,
         free_text=free_text,
         ruleset_path=ruleset_path,
-        condition_label=condition_label,
     )
 
-    runtime_repo.create_initial(
+    ruleset_hash = registry.get_ruleset_hash(condition_id)
+
+    version = runtime_repo.create_session(
         runtime_id=runtime_id,
-        ruleset_hash=rh,
-        state_dict=runtime_state.to_dict(),
+        ruleset_hash=ruleset_hash,
+        state_dict=initial_state.to_dict(),
     )
 
     return {
         "runtime_id": runtime_id,
-        "version": 1,
+        "version": version,
         "client_state": client_state,
     }
 
@@ -199,7 +205,8 @@ async def form_update(
 
 @router.post("/form/finish")
 async def form_finish(
-    request: Request,
+    payload: str = Form(...),
+    photos: list[UploadFile] = File(default=[]),
     registry=Depends(get_registry),
     runtime_repo=Depends(get_runtime_repo),
     submission_repo=Depends(get_submission_repo),
@@ -209,13 +216,32 @@ async def form_finish(
     practice_name: str = Depends(get_practice_name),
     delivery_service=Depends(get_delivery_service),
 ):
-    payload = await request.json()
-    validate_finish_payload(payload)
+    data = json.loads(payload)
+    validate_finish_payload(data)
 
-    runtime_id = payload["runtime_id"]
-    version = payload["version"]
-    contact_preferences = payload["contact_preferences"]
-    pd_raw = payload["patient_details"]
+    # Read all photo bytes and enforce size limits before any database access.
+    # FastAPI does not enforce count limits on list[UploadFile], so the count
+    # check here is the primary enforcement point, not a redundant safety net.
+    photo_bytes = [await f.read() for f in photos] if photos else []
+
+    for i, b in enumerate(photo_bytes):
+        if len(b) > MAX_FILE_SIZE_BYTES:
+            raise INVALID_PAYLOAD(
+                f"Photo {i + 1} exceeds the {MAX_FILE_SIZE_BYTES} byte limit"
+            )
+    if sum(len(b) for b in photo_bytes) > MAX_TOTAL_SIZE_BYTES:
+        raise INVALID_PAYLOAD(
+            f"Combined photo size exceeds the {MAX_TOTAL_SIZE_BYTES} byte limit"
+        )
+    if len(photo_bytes) > MAX_FILE_COUNT:
+        raise INVALID_PAYLOAD(
+            f"Too many photos: maximum is {MAX_FILE_COUNT}"
+        )
+
+    runtime_id = data["runtime_id"]
+    version = data["version"]
+    contact_preferences = data["contact_preferences"]
+    pd_raw = data["patient_details"]
 
     # Assemble PatientDetails dataclass.
     # Validation has already confirmed that day/month/year are digit-only strings
@@ -282,11 +308,13 @@ async def form_finish(
         audit_output=audit,
         delivery_email=delivery_email,
         submitted_at=submitted_at,
+        attachment_count=len(photo_bytes),
     )
 
     # Generate PDF once at submission time. This is the canonical delivery
     # artifact — it is stored in submission_attachments and sent as-is on
     # every delivery attempt (including retries). It must never be regenerated.
+    # photo_bytes will be passed here in Step 3 when pdf_formatter is updated.
     pdf_bytes = generate_pdf(
         condition_label=condition_label,
         clinical_output=clinical,

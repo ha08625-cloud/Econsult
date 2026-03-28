@@ -83,6 +83,8 @@ Files:
 - app/core/dependencies.py — shared FastAPI dependency provider functions. All routers import from here to access app.state values via Depends rather than direct request.app.state access.
 - app/core/errors.py — APIError and named error constants.
 - app/core/request_validation.py — validates incoming HTTP payloads.
+- app/core/upload_constants.json — canonical source of truth for photo upload limits (allowed MIME types, per-file size, total size, file count). Read by upload_constants.py at import time.
+- app/core/upload_constants.py — exposes named constants loaded from upload_constants.json. Used by validate_photo_guards in request_validation.py (step 5). Must not be changed without also updating frontend/src/upload_constants.ts.
 
 ### 2.5 app/utils/
 
@@ -128,6 +130,7 @@ Source files (frontend/src/):
 - frontend/src/search.ts — condition filtering logic (substring, tag, and Levenshtein fuzzy match).
 - frontend/src/types.ts — frontend-visible contracts only. No logic.
 - frontend/src/test-setup.ts — Vitest setup file. Configures jsdom environment before test runs.
+- frontend/src/upload_constants.ts — hand-written mirror of app/core/upload_constants.json. resolveJsonModule is not enabled in this project's tsconfig, so values are written explicitly. Must be kept in sync with the JSON file manually.
 
 Screen components (frontend/src/screens/):
 Screen components are extracted from App.tsx during Phase 2. Each screen component
@@ -193,6 +196,7 @@ Unit tests (no database required):
 - tests/test_practice_endpoint.py — GET /practice endpoint with stub practice repo.
 - tests/test_request_validation.py — validate_patient_details and _format_patient_details.
 - tests/test_sanitise_signposting.py — sanitise_signposting_html unit tests.
+- tests/test_upload_constants.py — verifies upload_constants.py loads the JSON correctly and exposes the expected types and values.
 
 Integration tests (require DATABASE_URL):
 - tests/test_form_routes.py — full form pipeline via TestClient against live database. MockDeliveryService and FailingDeliveryService match the current DeliveryService ABC signature (pdf_bytes, submitted_at; no ClinicalOutput).

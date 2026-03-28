@@ -19,8 +19,13 @@ Architecture notes:
   calls get_pending_delivery and get_attachment on the real database before
   calling delivery_service.send_clinical_output on the mock. The mock must
   match the current DeliveryService ABC signature.
+- form_finish accepts multipart/form-data. The JSON payload is sent as the
+  'payload' form field (a string). Photos are optional and sent as 'photos'
+  file fields. Use _finish_multipart() to build the data= and files= args
+  for all finish calls.
 """
 
+import json
 import os
 import pytest
 
@@ -133,6 +138,32 @@ def _build_answers(client_state: dict) -> dict:
     return answers
 
 
+def _finish_multipart(runtime_id: str, version: int) -> dict:
+    """
+    Build the data= and files= kwargs for a multipart form_finish request.
+
+    form_finish accepts multipart/form-data with:
+      - 'payload': the JSON-stringified finish payload (string form field)
+      - 'photos':  optional list of file tuples (omitted here — no photos)
+
+    Usage:
+        finish_res = client.post("/form/finish", **_finish_multipart(runtime_id, version))
+
+    To include photos in a test, build the request manually instead of using
+    this helper.
+    """
+    payload = {
+        "runtime_id": runtime_id,
+        "version": version,
+        "contact_preferences": _valid_contact_preferences(),
+        "patient_details": _valid_patient_details(),
+    }
+    return {
+        "data": {"payload": json.dumps(payload)},
+        "files": [],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -190,12 +221,10 @@ def test_happy_path_end_to_end():
             assert version == 2
 
             # --- finish ---
-            finish_res = client.post("/form/finish", json={
-                "runtime_id": runtime_id,
-                "version": version,
-                "contact_preferences": _valid_contact_preferences(),
-                "patient_details": _valid_patient_details(),
-            })
+            finish_res = client.post(
+                "/form/finish",
+                **_finish_multipart(runtime_id, version),
+            )
             assert finish_res.status_code == 200, finish_res.text
             finish_body = finish_res.json()
 
@@ -307,12 +336,10 @@ def test_form_finish_delivery_failure_does_not_prevent_submission_id():
             assert update_res.status_code == 200, update_res.text
             version = update_res.json()["version"]
 
-            finish_res = client.post("/form/finish", json={
-                "runtime_id": runtime_id,
-                "version": version,
-                "contact_preferences": _valid_contact_preferences(),
-                "patient_details": _valid_patient_details(),
-            })
+            finish_res = client.post(
+                "/form/finish",
+                **_finish_multipart(runtime_id, version),
+            )
             assert finish_res.status_code == 200, (
                 f"form_finish must return 200 even when delivery fails, got {finish_res.status_code}: {finish_res.text}"
             )
@@ -353,12 +380,10 @@ def test_form_finish_submitted_after_hours_absent():
             assert update_res.status_code == 200
             version = update_res.json()["version"]
 
-            finish_res = client.post("/form/finish", json={
-                "runtime_id": runtime_id,
-                "version": version,
-                "contact_preferences": _valid_contact_preferences(),
-                "patient_details": _valid_patient_details(),
-            })
+            finish_res = client.post(
+                "/form/finish",
+                **_finish_multipart(runtime_id, version),
+            )
             assert finish_res.status_code == 200
             assert "submitted_after_hours" not in finish_res.json()
 

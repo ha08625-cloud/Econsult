@@ -401,6 +401,7 @@ def _create_test_submission(repo: SubmissionRepository, sid: str) -> None:
         audit_output=audit,
         delivery_email="test@example.com",
         submitted_at=datetime.now(timezone.utc),
+        attachment_count=0,
     )
 
 
