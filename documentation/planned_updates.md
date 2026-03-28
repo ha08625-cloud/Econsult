@@ -3,6 +3,7 @@ Architecture updates:
 
 Features
 - Attach photos
+- Background worker for asynchronous photo processing to prevent OOM errors
 - Add usual GPs
 - Add front page with admin/f2f/phone call/advice choice
 - retry loop
