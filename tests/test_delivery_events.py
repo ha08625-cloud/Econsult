@@ -27,7 +27,7 @@ def test_event_constants_exist_and_have_correct_values():
 
 
 def test_all_constants_are_unique():
-    from app.service.delivery import delivery_events
+    from app.services.delivery import delivery_events
 
     values = [
         delivery_events.DELIVERY_SENT,

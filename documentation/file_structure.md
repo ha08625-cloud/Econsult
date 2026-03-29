@@ -147,6 +147,7 @@ Source files (frontend/src/):
 - frontend/src/types.ts — frontend-visible contracts only. No logic.
 - frontend/src/test-setup.ts — Vitest setup file. Configures jsdom environment before test runs.
 - frontend/src/upload_constants.ts — hand-written mirror of app/core/upload_constants.json. resolveJsonModule is not enabled in this project's tsconfig, so values are written explicitly. Must be kept in sync with the JSON file manually.
+- frontend/src/uitypes - UI-only types that are never serialised. Kept separate from types.ts, which contains wire-format contracts only.
 
 Screen components (frontend/src/screens/):
 Screen components are extracted from App.tsx during Phase 2. Each screen component
