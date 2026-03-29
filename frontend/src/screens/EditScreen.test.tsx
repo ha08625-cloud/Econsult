@@ -375,8 +375,4 @@ describe("EditScreen", () => {
     expect(onPhotosChange).not.toHaveBeenCalled();
     expect(screen.getByText(/total size/i)).toBeTruthy();
   });
-
-    expect(onPhotosChange).not.toHaveBeenCalled();
-    expect(screen.getByText(/total size/i)).toBeTruthy();
-  });
 });
