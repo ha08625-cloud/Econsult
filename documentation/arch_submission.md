@@ -153,7 +153,7 @@ Four string constants for structured logging of the delivery lifecycle: `DELIVER
 
 ### Known Limitations on MIME Validation
 
-Server-side MIME validation for photo uploads relies on the HTTP `Content-Type` header supplied by the browser. This header is not cryptographically verified and can be spoofed. Magic bytes validation (checking the actual file header bytes) is performed client-side only in the frontend. This is a known limitation accepted for this version — server-side magic bytes checking is deferred.
+Server-side MIME validation for photo uploads relies on the HTTP `Content-Type` header supplied by the browser. This header is not cryptographically verified and can be spoofed. No magic bytes validation (checking actual file header bytes) is performed anywhere in the system — client-side MIME type checking in `EditScreen` is a usability guard against accidental misuse, not a security control. Server-side magic bytes checking is deferred.
 
 ---
 
