@@ -22,7 +22,7 @@ Screen components live in `frontend/src/screens/`. Session state and screen tran
 
 ## Screen Flow
 
-`SAFETY_WARNING` → `PATIENT DETAILS` → `SELECT_CONDITION` → `FREE_TEXT` → `EDIT` → `REVIEW` → `CONTACT` → `DONE`
+`SAFETY_WARNING` → `SELECT_CONDITION` → `FREE_TEXT` → `EDIT` → `REVIEW` → `CONTACT` → `DONE`
 
 - `SAFETY_WARNING` (Screen 0) is a hard block — Continue is disabled until the patient acknowledges the warning. Availability is fetched in parallel on this screen.
 - `REVIEW` (Screen 4) transitions to `CONTACT` without an API call.
@@ -55,6 +55,8 @@ Two error classifications — the decision is made at the API boundary:
 
 Component logic must never hardcode error messages — delegate to `friendlyErrorMessage(e)`. A 409 from the API indicates a session version conflict (multiple tabs).
 
+**422 photo error translation:** `POST /form/finish` can return a 422 with a technical server detail string describing a photo validation failure. `friendlyErrorMessage` has a 422 branch that calls `friendlyPhotoErrorMessage` (in `helpers.ts`) to convert these strings into patient-facing instructions (e.g. "One of your photos is too large to send. Please go back and remove it, then try again."). Unrecognised 422 detail strings fall back to the generic error message rather than exposing raw server text. The server strings being matched are defined in `app/routers/form_router.py` — if those strings change, update `friendlyPhotoErrorMessage` to match.
+
 ---
 
 ## Fetch State Pattern
@@ -66,6 +68,20 @@ Screen 0: `App.tsx` derives the union inline from raw state variables before pas
 Screen 2: `PresentationState` is defined in `types.ts`. There is no `idle` status — both transitions into `FREE_TEXT` reset it to `loading` before navigating. Any future third entry path must do the same.
 
 The `presentationFetchTrigger` counter in `App.tsx` exists solely to force a re-fetch when `selectedConditionId` has not changed (retry, or same-condition re-entry). Incrementing the counter is the only correct retry mechanism. **The retry callback must only call `setPresentationFetchTrigger(k => k + 1)` — not `setPresentationState({ status: "loading" })`.** The fetch effect sets loading state itself at the top of its body.
+
+---
+
+## Types
+
+Wire-format types (server contracts) live in `frontend/src/types.ts`. UI-only types that are never serialised or sent to the server live in `frontend/src/uiTypes.ts`. Keep these files separate — do not add UI concerns to `types.ts`.
+
+`PhotoAttachment` (in `uiTypes.ts`) holds a `File` object and a `previewUrl` object URL. The `previewUrl` must be revoked with `URL.revokeObjectURL` when the photo is removed or the session ends — failure to do so leaks browser memory.
+
+---
+
+## API Layer (`api.ts`)
+
+`finishForm` uses `fetch` directly with a `FormData` body rather than the `postJson` helper. This is intentional — `postJson` sets `Content-Type: application/json`, which prevents the browser from setting the multipart boundary the server requires to parse the body. Do not refactor `finishForm` to use `postJson`. Do not set `Content-Type` manually on this call.
 
 ---
 
