@@ -49,7 +49,14 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from main import app  # noqa: E402
 from app.core.dependencies import get_delivery_service, get_availability_repo  # noqa: E402
+from app.core.upload_constants import (  # noqa: E402
+    MAX_FILE_COUNT,
+    MAX_FILE_SIZE_BYTES,
+    MAX_TOTAL_SIZE_BYTES,
+)
+from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
 from app.services.delivery_service import DeliveryService  # noqa: E402
+from tests.test_pdf_generation import MINIMAL_JPEG  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +169,43 @@ def _finish_multipart(runtime_id: str, version: int) -> dict:
         "data": {"payload": json.dumps(payload)},
         "files": [],
     }
+
+
+def _run_full_flow(client: TestClient) -> tuple[str, int]:
+    """
+    Run init -> update through to a ready-to-finish state.
+
+    Returns (runtime_id, version) ready to pass to a finish call.
+    The caller is responsible for making the finish request so it can
+    vary the photos argument.
+    """
+    condition = _get_first_condition(client)
+    condition_id = condition["id"]
+
+    init_res = client.post("/form/init", json={
+        "condition_id": condition_id,
+        "free_text": "Test symptom description",
+    })
+    assert init_res.status_code == 200, init_res.text
+    init_body = init_res.json()
+    runtime_id = init_body["runtime_id"]
+    version = init_body["version"]
+    client_state = init_body["client_state"]
+
+    update_res = client.post("/form/update", json={
+        "runtime_id": runtime_id,
+        "base_version": version,
+        "answers": _build_answers(client_state),
+        "additional_text": None,
+    })
+    assert update_res.status_code == 200, update_res.text
+    version = update_res.json()["version"]
+
+    return runtime_id, version
+
+
+def _make_submission_repo() -> SubmissionRepository:
+    return SubmissionRepository(os.environ["TEST_DATABASE_URL"])
 
 
 # ---------------------------------------------------------------------------
@@ -386,6 +430,192 @@ def test_form_finish_submitted_after_hours_absent():
             )
             assert finish_res.status_code == 200
             assert "submitted_after_hours" not in finish_res.json()
+
+    finally:
+        app.dependency_overrides.pop(get_delivery_service, None)
+
+
+# ---------------------------------------------------------------------------
+# Photo upload tests
+# ---------------------------------------------------------------------------
+
+def test_finish_with_no_photos_records_attachment_count_zero():
+    """
+    A valid finish with no photos must return 200 and persist
+    attachment_count = 0 on the submission record.
+    """
+    mock_delivery = MockDeliveryService()
+    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+
+    try:
+        with TestClient(app) as client:
+            runtime_id, version = _run_full_flow(client)
+
+            finish_res = client.post(
+                "/form/finish",
+                **_finish_multipart(runtime_id, version),
+            )
+            assert finish_res.status_code == 200, finish_res.text
+            submission_id = finish_res.json()["submission_id"]
+
+        repo = _make_submission_repo()
+        row = repo.get_submission(submission_id)
+        assert row["attachment_count"] == 0
+
+    finally:
+        app.dependency_overrides.pop(get_delivery_service, None)
+
+
+def test_finish_with_one_photo_records_attachment_count_one():
+    """
+    A valid finish with one real JPEG must return 200 and persist
+    attachment_count = 1 on the submission record.
+
+    MINIMAL_JPEG is the shared fixture from test_pdf_generation.py —
+    a valid 631-byte JPEG that the PDF renderer can process without error.
+    """
+    mock_delivery = MockDeliveryService()
+    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+
+    try:
+        with TestClient(app) as client:
+            runtime_id, version = _run_full_flow(client)
+
+            payload = {
+                "runtime_id": runtime_id,
+                "version": version,
+                "contact_preferences": _valid_contact_preferences(),
+                "patient_details": _valid_patient_details(),
+            }
+            finish_res = client.post(
+                "/form/finish",
+                data={"payload": json.dumps(payload)},
+                files=[("photos", ("photo.jpg", MINIMAL_JPEG, "image/jpeg"))],
+            )
+            assert finish_res.status_code == 200, finish_res.text
+            submission_id = finish_res.json()["submission_id"]
+
+        repo = _make_submission_repo()
+        row = repo.get_submission(submission_id)
+        assert row["attachment_count"] == 1
+
+    finally:
+        app.dependency_overrides.pop(get_delivery_service, None)
+
+
+def test_finish_rejects_too_many_photos():
+    """
+    Submitting more than MAX_FILE_COUNT photos must return 422.
+    No submission record is created.
+    """
+    mock_delivery = MockDeliveryService()
+    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+
+    try:
+        with TestClient(app) as client:
+            runtime_id, version = _run_full_flow(client)
+
+            payload = {
+                "runtime_id": runtime_id,
+                "version": version,
+                "contact_preferences": _valid_contact_preferences(),
+                "patient_details": _valid_patient_details(),
+            }
+            # MAX_FILE_COUNT + 1 files, each a valid minimal JPEG
+            files = [
+                ("photos", (f"photo{i}.jpg", MINIMAL_JPEG, "image/jpeg"))
+                for i in range(MAX_FILE_COUNT + 1)
+            ]
+            finish_res = client.post(
+                "/form/finish",
+                data={"payload": json.dumps(payload)},
+                files=files,
+            )
+            assert finish_res.status_code == 422, (
+                f"Expected 422 for {MAX_FILE_COUNT + 1} photos, got {finish_res.status_code}: {finish_res.text}"
+            )
+
+    finally:
+        app.dependency_overrides.pop(get_delivery_service, None)
+
+
+def test_finish_rejects_single_file_exceeding_size_limit():
+    """
+    A single file whose byte length exceeds MAX_FILE_SIZE_BYTES must
+    return 422. No submission record is created.
+
+    The oversized bytes are sent with a valid JPEG content-type so the
+    rejection is triggered by the size check, not the MIME check.
+    """
+    mock_delivery = MockDeliveryService()
+    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+
+    try:
+        with TestClient(app) as client:
+            runtime_id, version = _run_full_flow(client)
+
+            payload = {
+                "runtime_id": runtime_id,
+                "version": version,
+                "contact_preferences": _valid_contact_preferences(),
+                "patient_details": _valid_patient_details(),
+            }
+            oversized_bytes = b"\xff\xd8\xff" + b"\x00" * MAX_FILE_SIZE_BYTES  # one byte over
+            finish_res = client.post(
+                "/form/finish",
+                data={"payload": json.dumps(payload)},
+                files=[("photos", ("big.jpg", oversized_bytes, "image/jpeg"))],
+            )
+            assert finish_res.status_code == 422, (
+                f"Expected 422 for oversized file, got {finish_res.status_code}: {finish_res.text}"
+            )
+
+    finally:
+        app.dependency_overrides.pop(get_delivery_service, None)
+
+
+def test_finish_rejects_combined_size_exceeding_total_limit():
+    """
+    Multiple files whose combined size exceeds MAX_TOTAL_SIZE_BYTES must
+    return 422 even if each individual file is within MAX_FILE_SIZE_BYTES.
+    No submission record is created.
+
+    Strategy: send two files each just over half of MAX_TOTAL_SIZE_BYTES
+    but under MAX_FILE_SIZE_BYTES, so only the combined check fires.
+    """
+    mock_delivery = MockDeliveryService()
+    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+
+    try:
+        with TestClient(app) as client:
+            runtime_id, version = _run_full_flow(client)
+
+            payload = {
+                "runtime_id": runtime_id,
+                "version": version,
+                "contact_preferences": _valid_contact_preferences(),
+                "patient_details": _valid_patient_details(),
+            }
+            # Each file is (MAX_TOTAL_SIZE_BYTES // 2) + 1 bytes — individually
+            # within MAX_FILE_SIZE_BYTES (5 MB) but combined over MAX_TOTAL_SIZE_BYTES (10 MB).
+            chunk_size = (MAX_TOTAL_SIZE_BYTES // 2) + 1
+            assert chunk_size <= MAX_FILE_SIZE_BYTES, (
+                "Test assumption violated: chunk_size must be <= MAX_FILE_SIZE_BYTES. "
+                "If the constants change, review this test."
+            )
+            chunk = b"\xff\xd8\xff" + b"\x00" * (chunk_size - 3)
+            files = [
+                ("photos", ("a.jpg", chunk, "image/jpeg")),
+                ("photos", ("b.jpg", chunk, "image/jpeg")),
+            ]
+            finish_res = client.post(
+                "/form/finish",
+                data={"payload": json.dumps(payload)},
+                files=files,
+            )
+            assert finish_res.status_code == 422, (
+                f"Expected 422 for combined size over limit, got {finish_res.status_code}: {finish_res.text}"
+            )
 
     finally:
         app.dependency_overrides.pop(get_delivery_service, None)

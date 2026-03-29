@@ -55,7 +55,7 @@ No database environment variables required. Vitest is invoked via `npx vitest ru
 ### Integration tests
 Tests that exercise the full request pipeline or repository layer against a live Postgres database.
 
-**`tests/test_form_routes.py`** — full request pipeline via FastAPI TestClient. Requires `TEST_DATABASE_URL`. Writes real rows to the test database. The delivery service is overridden with `MockDeliveryService` so no SMTP configuration is needed.
+**`tests/test_form_routes.py`** — full request pipeline via FastAPI TestClient. Requires `TEST_DATABASE_URL`. Writes real rows to the test database. The delivery service is overridden with `MockDeliveryService` so no SMTP configuration is needed. Covers: happy-path end-to-end flow, delivery failure behaviour, availability fail-open, photo upload validation (no photos, one photo with `attachment_count` assertion, file count limit, single file size limit, combined size limit).
 
 **`tests/test_public_routes.py`** — public endpoint tests via FastAPI TestClient. Imports `main.py` directly, which triggers `alembic_upgrade()` at import time. Requires `DATABASE_URL` to be reachable. Must not be collected by `make test` or it will fail offline.
 
@@ -63,7 +63,7 @@ Tests that exercise the full request pipeline or repository layer against a live
 
 **`tests/test_delivery_retry.py`** — integration tests for the delivery retry pipeline. Exercises `attempt_delivery`, `list_retryable`, and `record_attempt_outcome` directly against the database without going through the HTTP layer. Uses `FailingDeliveryService` and `SucceedingDeliveryService` stubs defined in the file. Requires `TEST_DATABASE_URL`. Each test generates unique IDs and cleans up in a `finally` block.
 
-**Run `test_form_routes`, `test_public_routes`, `test_repositories`, and `test_delivery_retry` together with:**
+**Run all four together with:**
 ```
 make test-integration
 ```
@@ -130,3 +130,6 @@ Frontend tests have no database dependency and belong in the unit suite. Running
 
 ### Why cd frontend instead of a vitest script in package.json?
 Vitest requires the working directory to be `frontend/` so it resolves `vitest.config.ts` correctly. The Makefile uses `cd frontend && npx vitest run` rather than adding a `test` script to `package.json` to keep the entry point for tests in one place (the Makefile) rather than split across two files.
+
+### MINIMAL_JPEG shared fixture
+`MINIMAL_JPEG` is a module-level constant in `tests/test_pdf_generation.py`. Any test that needs a valid JPEG — for PDF generation tests or for multipart upload tests — should import it from there rather than duplicating the bytes. Do not define it in more than one place.

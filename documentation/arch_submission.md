@@ -149,6 +149,7 @@ Four string constants for structured logging of the delivery lifecycle: `DELIVER
 - No database access, no imports from routers or delivery service.
 - Called by `form_router.py` at submission time. The returned bytes are stored in `submission_attachments` and sent as-is on every delivery attempt (including retries). The PDF is never regenerated.
 - `practice_name` is injected into the router via `get_practice_name` dependency and passed directly to `generate_pdf`. The name is captured once at startup. If the practice name is changed via the admin interface, PDFs will show the old name until the next server restart — this is a known and accepted limitation.
+- `photo_bytes` is passed from `form_router.py` as the list of raw bytes read from the uploaded photo files. The router reads all photo bytes into memory before any database access, then passes the list to `generate_pdf`. This means photo bytes are in memory for the duration of the submission request.
 - `photo_bytes=None` and `photo_bytes=[]` both produce a PDF with no photos section. A non-empty list appends a PHOTOS section after the footer.
 
 ### Known Limitations on MIME Validation
