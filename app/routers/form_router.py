@@ -60,8 +60,8 @@ from app.repositories.runtime_state_repository import (
     VersionConflict,
 )
 from app.services.availability_orchestration import check_availability
-from app.services.delivery_orchestration import attempt_delivery
-from app.services.engine_adapters import (
+from app.services.delivery.delivery_orchestration import attempt_delivery
+from app.services.engine.pipeline import (
     apply_update_and_evaluate,
     finish_runtime_state,
     init_runtime_state,

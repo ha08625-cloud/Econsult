@@ -8,7 +8,7 @@ Can be fully unit tested without the pipeline or encoder.
 from datetime import datetime
 from typing import Any, Dict, Optional
 from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
-from app.services.ruleset import ruleset_hash
+from app.services.engine.ruleset import ruleset_hash
 
 VALID_ANSWER_SOURCES = {
     "unanswered",

@@ -59,9 +59,9 @@ from app.models.serialisation_contracts import (  # noqa: E402
     AuditOutput,
     PatientDetails,
 )
-from app.services.delivery_service import DeliveryService, EmailDeliveryError  # noqa: E402
-from app.services.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES  # noqa: E402
-from app.services.delivery_orchestration import (  # noqa: E402
+from app.services.delivery.delivery_service import DeliveryService, EmailDeliveryError  # noqa: E402
+from app.services.delivery.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES  # noqa: E402
+from app.services.delivery.delivery_orchestration import (  # noqa: E402
     attempt_delivery,
     DeliveryOutcome,
     DeliveryOutcomeStatus,

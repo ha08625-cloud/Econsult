@@ -10,7 +10,7 @@ Encoder influence is fully contained in this module.
 """
 
 from app.models.runtime_state import RuntimeState
-from app.services.encoder_contracts import EncoderOutput, EncoderSignalDefinition
+from app.models.encoder_contracts import EncoderOutput, EncoderSignalDefinition
 from typing import Iterable
 
 

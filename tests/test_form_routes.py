@@ -55,7 +55,7 @@ from app.core.upload_constants import (  # noqa: E402
     MAX_TOTAL_SIZE_BYTES,
 )
 from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
-from app.services.delivery_service import DeliveryService  # noqa: E402
+from app.services.delivery.delivery_service import DeliveryService  # noqa: E402
 from tests.test_pdf_generation import MINIMAL_JPEG  # noqa: E402
 
 

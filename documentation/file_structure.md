@@ -42,24 +42,40 @@ Files:
 
 ### 2.2 app/services/
 
-Business logic and orchestration. May import models; must not import each other's
-internal state except via defined interfaces.
+Business logic and orchestration. Divided into two sub-packages by concern, plus two
+flat files that do not belong exclusively to either.
+
+#### app/services/engine/
+
+Pure clinical logic. No IO, no database access, no delivery concerns. All modules are
+deterministic and side-effect free except pipeline.py which wires them together.
 
 Files:
+- app/services/engine/form_logic.py — deterministic functional core; no IO.
+- app/services/engine/ruleset.py — loads and validates condition ruleset JSON.
+- app/services/engine/projection.py — projects RuntimeState to ExplicitAnswers.
+- app/services/engine/safety_engine.py — evaluates safety rules; consumes ExplicitAnswers only.
+- app/services/engine/serialisation.py — produces ClientStateView, ClinicalOutput, AuditOutput.
+- app/services/engine/encoder_mapping.py — containment layer; applies encoder output to RuntimeState.
+- app/services/engine/encoder_stub.py — placeholder encoder, expected to be replaced; returns plain dict.
+- app/services/engine/pipeline.py — orchestration layer; wires all engine services together. Formerly engine_adapters.py.
+
+#### app/services/delivery/
+
+IO-touching delivery concerns. Handles SMTP, retry scheduling, and structured logging
+of delivery lifecycle events.
+
+Files:
+- app/services/delivery/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP with PDF attachment); ConsoleDeliveryService (dev only, raises if DEV_MODE not set). Receives pre-rendered PDF bytes from caller; does not generate PDFs.
+- app/services/delivery/delivery_orchestration.py — single entry point for all delivery attempts (first attempt and retries). Contains DeliveryOutcomeStatus enum, DeliveryOutcome dataclass, and attempt_delivery function. Imports from submission_repository, attachment_repository, delivery_service, delivery_constants, delivery_events.
+- app/services/delivery/delivery_constants.py — retry backoff schedule (RETRY_BACKOFF_MINUTES) and MAX_ATTEMPTS. No application-module imports. Single canonical source for the exhaustion threshold.
+- app/services/delivery/delivery_events.py — four string constants for structured logging of delivery lifecycle (DELIVERY_SENT, DELIVERY_FAILED, DELIVERY_EXHAUSTED, DELIVERY_RETRY_TOO_EARLY). No application-module imports.
+
+#### app/services/ (flat)
+
 - app/services/availability_orchestration.py — orchestration layer; wires AvailabilityRepository and availability_service together. No HTTP logic. Called by public_router.py and main.py.
-- app/services/delivery_constants.py — retry backoff schedule (RETRY_BACKOFF_MINUTES) and MAX_ATTEMPTS. No application-module imports. Single canonical source for the exhaustion threshold.
-- app/services/delivery_events.py — four string constants for structured logging of delivery lifecycle (DELIVERY_SENT, DELIVERY_FAILED, DELIVERY_EXHAUSTED, DELIVERY_RETRY_TOO_EARLY). No application-module imports.
-- app/services/delivery_orchestration.py — single entry point for all delivery attempts (first attempt and retries). Contains DeliveryOutcomeStatus enum, DeliveryOutcome dataclass, and attempt_delivery function. Imports from submission_repository, attachment_repository, delivery_service, delivery_constants, delivery_events.
-- app/services/delivery_service.py — DeliveryService abstract base class; EmailDeliveryService (production SMTP with PDF attachment); ConsoleDeliveryService (dev only, raises if DEV_MODE not set). Receives pre-rendered PDF bytes from caller; does not generate PDFs.
-- app/services/encoder_mapping.py — containment layer; applies encoder output to RuntimeState.
-- app/services/encoder_stub.py — placeholder encoder, expected to be replaced; returns plain dict.
-- app/services/engine_adapters.py — orchestration layer; wires all services together.
-- app/services/form_logic.py — deterministic functional core; no IO.
+- app/services/availability_service.py
 - app/services/presentation_service.py — assembles patient-facing presentation data.
-- app/services/projection.py — projects RuntimeState to ExplicitAnswers.
-- app/services/ruleset.py — loads and validates condition ruleset JSON.
-- app/services/safety_engine.py — evaluates safety rules; consumes ExplicitAnswers only.
-- app/services/serialisation.py — produces ClientStateView, ClinicalOutput, AuditOutput.
 
 ### 2.3 app/repositories/
 
@@ -217,18 +233,18 @@ Integration tests (require DATABASE_URL):
 
 Each service module lists which other modules it is permitted to import.
 
-- app/services/ruleset.py: standalone; no service imports.
-- app/services/encoder_stub.py: standalone; no service imports; returns plain dict.
-- app/services/encoder_mapping.py: imports RuntimeState, EncoderOutput, EncoderSignalDefinition.
-- app/services/form_logic.py: imports RuntimeState, AnswerState, SafetyEvaluation.
-- app/services/projection.py: imports RuntimeState, ExplicitAnswers.
-- app/services/safety_engine.py: imports ExplicitAnswers, SafetyEvaluation.
-- app/services/serialisation.py: imports RuntimeState, ClinicalOutput, AuditOutput.
-- app/services/delivery_service.py: No clinical contract imports. Receives pre-rendered PDF bytes from caller. Must not import any engine, repository, clinical module, or pdf_formatter.
-- app/services/delivery_constants.py: standalone; no application-module imports.
-- app/services/delivery_events.py: standalone; no application-module imports.
-- app/services/delivery_orchestration.py: imports submission_repository, attachment_repository, delivery_service, delivery_constants, delivery_events. Must not import clinical engine modules, routers, or access the database directly.
-- app/services/engine_adapters.py: orchestration layer; may import all services above.
+- app/services/engine/ruleset.py: standalone; no service imports.
+- app/services/engine/encoder_stub.py: standalone; no service imports; returns plain dict.
+- app/services/engine/encoder_mapping.py: imports RuntimeState, EncoderOutput, EncoderSignalDefinition.
+- app/services/engine/form_logic.py: imports RuntimeState, AnswerState, SafetyEvaluation.
+- app/services/engine/projection.py: imports RuntimeState, ExplicitAnswers.
+- app/services/engine/safety_engine.py: imports ExplicitAnswers, SafetyEvaluation.
+- app/services/engine/serialisation.py: imports RuntimeState, ClinicalOutput, AuditOutput.
+- app/services/delivery/delivery_service.py: No clinical contract imports. Receives pre-rendered PDF bytes from caller. Must not import any engine, repository, clinical module, or pdf_formatter.
+- app/services/delivery/delivery_constants.py: standalone; no application-module imports.
+- app/services/delivery/delivery_events.py: standalone; no application-module imports.
+- app/services/delivery/delivery_orchestration.py: imports submission_repository, attachment_repository, delivery_service, delivery_constants, delivery_events. Must not import clinical engine modules, routers, or access the database directly.
+- app/services/engine/pipeline.py: orchestration layer; may import all services above.
 - app/services/presentation_service.py: imports condition_registry, practice_repository.
 - app/utils/pdf_formatter.py: imports ClinicalOutput only. Must not import any service, repository, router, or engine module.
 
@@ -238,16 +254,14 @@ Each service module lists which other modules it is permitted to import.
 
 The following imports must never appear in the codebase:
 
-- form_logic, encoder_mapping, encoder_stub, safety_engine must NOT import condition_registry.
-- safety_engine must NOT import RuntimeState, AnswerState, or encoder_contracts.
-- serialisation must NOT mutate RuntimeState.
+- engine/form_logic, engine/encoder_mapping, engine/encoder_stub, engine/safety_engine must NOT import condition_registry.
+- engine/safety_engine must NOT import RuntimeState, AnswerState, or encoder_contracts.
+- engine/serialisation must NOT mutate RuntimeState.
 - practice_repository must NOT import any service module.
 - presentation_service must NOT import RuntimeState, safety_engine, encoder_*, or form_logic.
-- form_logic, encoder_mapping, encoder_stub, safety_engine must NOT import practice_repository
-  or presentation_service (the clinical engine has no awareness of practice identity).
-- admin_router must NOT import clinical engine modules, presentation_service, serialisation,
-  projection, or runtime_state.
-- delivery_service must NOT import clinical engine modules, repositories, condition_registry, or pdf_formatter.
-- delivery_orchestration must NOT import clinical engine modules, routers, condition_registry, pdf_formatter, or serialisation. It interacts with clinical data only through repository projections (PendingDelivery) and pre-rendered PDF bytes.
-- delivery_constants and delivery_events must NOT import any application module.
-- pdf_formatter must NOT import delivery_service, repositories, routers, or any engine module.
+- engine/form_logic, engine/encoder_mapping, engine/encoder_stub, engine/safety_engine must NOT import practice_repository or presentation_service (the clinical engine has no awareness of practice identity).
+- admin_router must NOT import engine modules, presentation_service, serialisation, projection, or runtime_state.
+- delivery/delivery_service must NOT import engine modules, repositories, condition_registry, or pdf_formatter.
+- delivery/delivery_orchestration must NOT import engine modules, routers, condition_registry, pdf_formatter, or serialisation. It interacts with clinical data only through repository projections (PendingDelivery) and pre-rendered PDF bytes.
+- delivery/delivery_constants and delivery/delivery_events must NOT import any application module.
+- pdf_formatter must NOT import delivery modules, repositories, routers, or any engine module.

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.delivery_service import (
+from app.services.delivery.delivery_service import (
     ConsoleDeliveryService,
     _format_body,
 )

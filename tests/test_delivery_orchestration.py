@@ -19,7 +19,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, call
 
-from app.services.delivery_orchestration import (
+from app.services.delivery.delivery_orchestration import (
     attempt_delivery,
     DeliveryOutcome,
     DeliveryOutcomeStatus,
@@ -29,8 +29,8 @@ from app.repositories.submission_repository import (
     SubmissionNotFound,
 )
 from app.repositories.attachment_repository import AttachmentNotFound
-from app.services.delivery_service import EmailDeliveryError
-from app.services.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
+from app.services.delivery.delivery_service import EmailDeliveryError
+from app.services.delivery.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
 
 
 # ---------------------------------------------------------------------------

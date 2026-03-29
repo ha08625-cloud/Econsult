@@ -17,14 +17,14 @@ from typing import Dict, Any, List, Optional, Tuple
 
 from app.models.runtime_state import RuntimeState
 from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails
-from app.services.encoder_contracts import EncoderOutput, EncoderSignalDefinition
-from app.services.projection import project_explicit_answers
-from app.services.safety_engine import evaluate_safety
-from app.services.serialisation import serialize_client_state, clinical_output, audit_output
-from app.services.ruleset import load_ruleset, ruleset_hash, extract_encoder_definitions
-from app.services.encoder_stub import extract_signals
-from app.services.encoder_mapping import apply_encoder_output
-from app.services.form_logic import (
+from app.models.encoder_contracts import EncoderOutput, EncoderSignalDefinition
+from app.services.engine.projection import project_explicit_answers
+from app.services.engine.safety_engine import evaluate_safety
+from app.services.engine.serialisation import serialize_client_state, clinical_output, audit_output
+from app.services.engine.ruleset import load_ruleset, ruleset_hash, extract_encoder_definitions
+from app.services.engine.encoder_stub import extract_signals
+from app.services.engine.encoder_mapping import apply_encoder_output
+from app.services.engine.form_logic import (
     initialise_runtime_state,
     apply_additional_text,
     apply_patient_answers,

@@ -20,7 +20,7 @@ from app.repositories.availability_repository import AvailabilityRepository
 from app.repositories.runtime_state_repository import RuntimeStateRepository
 from app.repositories.submission_repository import SubmissionRepository
 from app.repositories.attachment_repository import AttachmentRepository
-from app.services.delivery_service import DeliveryService
+from app.services.delivery.delivery_service import DeliveryService
 from app.services.presentation_service import PresentationService
 
 

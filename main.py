@@ -26,7 +26,7 @@ from app.repositories.submission_repository import SubmissionRepository
 from app.repositories.attachment_repository import AttachmentRepository
 from app.services.presentation_service import PresentationService
 from app.core.errors import APIError
-from app.services.delivery_service import ConsoleDeliveryService, EmailDeliveryService
+from app.services.delivery.delivery_service import ConsoleDeliveryService, EmailDeliveryService
 from app.routers.admin_router import router as admin_router
 from app.routers.public_router import router as public_router
 from app.routers.form_router import router as form_router

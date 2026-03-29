@@ -35,14 +35,14 @@ from typing import Optional
 
 from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.submission_repository import SubmissionRepository
-from app.services.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
-from app.services.delivery_events import (
+from app.services.delivery.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
+from app.services.delivery.delivery_events import (
     DELIVERY_EXHAUSTED,
     DELIVERY_FAILED,
     DELIVERY_RETRY_TOO_EARLY,
     DELIVERY_SENT,
 )
-from app.services.delivery_service import DeliveryService, EmailDeliveryError
+from app.services.delivery.delivery_service import DeliveryService, EmailDeliveryError
 
 logger = logging.getLogger(__name__)
 

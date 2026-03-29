@@ -1,6 +1,6 @@
 from typing import Dict
 from app.models.runtime_state import RuntimeState
-from app.services.explicit_answers import ExplicitAnswers
+from app.models.explicit_answers import ExplicitAnswers
 
 EXPLICIT_SOURCES = {
     "patient",

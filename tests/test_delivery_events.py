@@ -13,7 +13,7 @@ import os
 
 
 def test_event_constants_exist_and_have_correct_values():
-    from app.services.delivery_events import (
+    from app.services.delivery.delivery_events import (
         DELIVERY_SENT,
         DELIVERY_FAILED,
         DELIVERY_EXHAUSTED,
@@ -27,7 +27,7 @@ def test_event_constants_exist_and_have_correct_values():
 
 
 def test_all_constants_are_unique():
-    from app.services import delivery_events
+    from app.service.delivery import delivery_events
 
     values = [
         delivery_events.DELIVERY_SENT,
@@ -40,7 +40,7 @@ def test_all_constants_are_unique():
 
 def test_no_application_imports():
     """delivery_events must have no imports from app.*"""
-    from app.services import delivery_events
+    from app.services.delivery import delivery_events
 
     source_path = inspect.getfile(delivery_events)
     with open(source_path) as f:
