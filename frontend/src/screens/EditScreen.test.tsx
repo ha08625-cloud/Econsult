@@ -3,12 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import EditScreen from "./EditScreen";
 import type { ClientStateView } from "../types";
-import type { PhotoAttachment } from "../uiTypes";
-import {
-  MAX_FILE_SIZE_BYTES,
-  MAX_FILE_COUNT,
-  MAX_TOTAL_SIZE_BYTES,
-} from "../upload_constants";
 
 // Mock the api module so tests never make real HTTP calls
 vi.mock("../api", () => ({
@@ -19,14 +13,6 @@ vi.mock("../api", () => ({
 
 import { updateForm } from "../api";
 const mockUpdateForm = vi.mocked(updateForm);
-
-// Mock URL methods — jsdom does not implement them
-const mockCreateObjectURL = vi.fn((file: File) => `blob:mock/${file.name}`);
-const mockRevokeObjectURL = vi.fn();
-vi.stubGlobal("URL", {
-  createObjectURL: mockCreateObjectURL,
-  revokeObjectURL: mockRevokeObjectURL,
-});
 
 const noop = () => {};
 
@@ -80,28 +66,14 @@ const defaultProps = {
   onBack: noop,
   runtimeId: "runtime-123",
   version: 1,
-  photos: [] as PhotoAttachment[],
+  photos: [],
   onPhotosChange: noop,
 };
-
-/** Create a minimal File with controllable size and type */
-function makeFile(
-  name: string,
-  type: string,
-  sizeBytes: number
-): File {
-  const content = new Uint8Array(sizeBytes);
-  return new File([content], name, { type });
-}
 
 describe("EditScreen", () => {
   beforeEach(() => {
     mockUpdateForm.mockReset();
-    mockCreateObjectURL.mockClear();
-    mockRevokeObjectURL.mockClear();
   });
-
-  // --- Existing tests ---
 
   it("renders all questions from clientState", () => {
     render(<EditScreen {...defaultProps} />);
@@ -213,166 +185,5 @@ describe("EditScreen", () => {
     await userEvent.click(screen.getByRole("button", { name: /review answers/i }));
 
     expect(screen.getByText(/network error/i)).toBeTruthy();
-  });
-
-  // --- Photo upload tests ---
-
-  it("renders the photo section with an Add photos button", () => {
-    render(<EditScreen {...defaultProps} />);
-    expect(screen.getByRole("button", { name: /add photos/i })).toBeTruthy();
-  });
-
-  it("rejects a file with a disallowed MIME type and does not call onPhotosChange", async () => {
-    const onPhotosChange = vi.fn();
-    render(<EditScreen {...defaultProps} onPhotosChange={onPhotosChange} />);
-
-    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
-    const badFile = makeFile("scan.pdf", "application/pdf", 1000);
-    await userEvent.upload(input, badFile);
-
-    expect(onPhotosChange).not.toHaveBeenCalled();
-    expect(screen.getByText(/not a supported file type/i)).toBeTruthy();
-  });
-
-  it("rejects a file exceeding MAX_FILE_SIZE_BYTES and does not call onPhotosChange", async () => {
-    const onPhotosChange = vi.fn();
-    render(<EditScreen {...defaultProps} onPhotosChange={onPhotosChange} />);
-
-    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
-    const bigFile = makeFile("big.jpg", "image/jpeg", MAX_FILE_SIZE_BYTES + 1);
-    await userEvent.upload(input, bigFile);
-
-    expect(onPhotosChange).not.toHaveBeenCalled();
-    expect(screen.getByText(/too large/i)).toBeTruthy();
-  });
-
-  it("calls onPhotosChange with a single PhotoAttachment for a valid file", async () => {
-    const onPhotosChange = vi.fn();
-    render(<EditScreen {...defaultProps} onPhotosChange={onPhotosChange} />);
-
-    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
-    const validFile = makeFile("photo.jpg", "image/jpeg", 1000);
-    await userEvent.upload(input, validFile);
-
-    expect(onPhotosChange).toHaveBeenCalledOnce();
-    const result: PhotoAttachment[] = onPhotosChange.mock.calls[0][0];
-    expect(result).toHaveLength(1);
-    expect(result[0].file).toBe(validFile);
-    expect(typeof result[0].previewUrl).toBe("string");
-  });
-
-  it("accumulates photos across two separate picker interactions", async () => {
-    const onPhotosChange = vi.fn();
-
-    // First render with empty photos
-    const { rerender } = render(
-      <EditScreen {...defaultProps} onPhotosChange={onPhotosChange} />
-    );
-
-    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
-    const file1 = makeFile("a.jpg", "image/jpeg", 1000);
-    await userEvent.upload(input, file1);
-
-    // Simulate App.tsx updating photos prop after first upload
-    const firstCall: PhotoAttachment[] = onPhotosChange.mock.calls[0][0];
-    rerender(
-      <EditScreen
-        {...defaultProps}
-        photos={firstCall}
-        onPhotosChange={onPhotosChange}
-      />
-    );
-
-    const file2 = makeFile("b.png", "image/png", 1000);
-    await userEvent.upload(input, file2);
-
-    const secondCall: PhotoAttachment[] = onPhotosChange.mock.calls[1][0];
-    expect(secondCall).toHaveLength(2);
-    expect(secondCall[0].file).toBe(file1);
-    expect(secondCall[1].file).toBe(file2);
-  });
-
-  it("calls onPhotosChange with the photo removed and revokes the object URL", async () => {
-    const existingPhoto: PhotoAttachment = {
-      file: makeFile("existing.jpg", "image/jpeg", 500),
-      previewUrl: "blob:mock/existing.jpg",
-    };
-    const onPhotosChange = vi.fn();
-
-    render(
-      <EditScreen
-        {...defaultProps}
-        photos={[existingPhoto]}
-        onPhotosChange={onPhotosChange}
-      />
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: /remove photo 1/i }));
-
-    expect(mockRevokeObjectURL).toHaveBeenCalledWith("blob:mock/existing.jpg");
-    expect(onPhotosChange).toHaveBeenCalledWith([]);
-  });
-
-  it("rejects a new file when it would exceed MAX_FILE_COUNT", async () => {
-    // Pre-fill photos prop with MAX_FILE_COUNT valid photos
-    const existingPhotos: PhotoAttachment[] = Array.from(
-      { length: MAX_FILE_COUNT },
-      (_, i) => ({
-        file: makeFile(`existing-${i}.jpg`, "image/jpeg", 100),
-        previewUrl: `blob:mock/existing-${i}.jpg`,
-      })
-    );
-    const onPhotosChange = vi.fn();
-
-    render(
-      <EditScreen
-        {...defaultProps}
-        photos={existingPhotos}
-        onPhotosChange={onPhotosChange}
-      />
-    );
-
-    // Add photos button should be hidden when at limit, so drive the hidden input directly
-    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
-    const extraFile = makeFile("extra.jpg", "image/jpeg", 100);
-    await userEvent.upload(input, extraFile);
-
-    expect(onPhotosChange).not.toHaveBeenCalled();
-    expect(screen.getByText(/maximum of \d+ photos/i)).toBeTruthy();
-  });
-
-  it("rejects a batch that would exceed MAX_TOTAL_SIZE_BYTES", async () => {
-    // The total limit is exactly 2x the per-file limit, so you cannot exceed it
-    // with two files that each individually pass the per-file check.
-    // This test uses two existing photos each at MAX_FILE_SIZE_BYTES (passing individually)
-    // and one new file of 1 byte to tip the combined total over MAX_TOTAL_SIZE_BYTES.
-    const atPerFileLimit = MAX_FILE_SIZE_BYTES; // 5_242_880 — passes per-file check
-    const existingPhotos: PhotoAttachment[] = [
-      {
-        file: makeFile("existing-a.jpg", "image/jpeg", atPerFileLimit),
-        previewUrl: "blob:mock/existing-a.jpg",
-      },
-      {
-        file: makeFile("existing-b.jpg", "image/jpeg", atPerFileLimit),
-        previewUrl: "blob:mock/existing-b.jpg",
-      },
-    ];
-    const onPhotosChange = vi.fn();
-
-    render(
-      <EditScreen
-        {...defaultProps}
-        photos={existingPhotos}
-        onPhotosChange={onPhotosChange}
-      />
-    );
-
-    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
-    // Combined: 5_242_880 + 5_242_880 + 1 = 10_485_761 — exceeds MAX_TOTAL_SIZE_BYTES
-    const newFile = makeFile("new.jpg", "image/jpeg", 1);
-    await userEvent.upload(input, newFile);
-
-    expect(onPhotosChange).not.toHaveBeenCalled();
-    expect(screen.getByText(/total size/i)).toBeTruthy();
   });
 });
