@@ -3,6 +3,7 @@ import { PageShell, InlineError } from "../layout";
 import { updateForm } from "../api";
 import { friendlyErrorMessage } from "../api";
 import type { ClientStateView, SafetyMessage, ClientAnswerReturn } from "../types";
+import type { PhotoAttachment } from "../uiTypes";
 
 interface EditScreenProps {
   practiceName: string | null;
@@ -19,6 +20,9 @@ interface EditScreenProps {
   onBack: () => void;
   runtimeId: string;
   version: number;
+  // Photo props — UI implemented in step 6.
+  photos: PhotoAttachment[];
+  onPhotosChange: (updated: PhotoAttachment[]) => void;
 }
 
 export default function EditScreen({
@@ -32,6 +36,8 @@ export default function EditScreen({
   onBack,
   runtimeId,
   version,
+  photos: _photos,
+  onPhotosChange: _onPhotosChange,
 }: EditScreenProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
@@ -97,10 +103,9 @@ export default function EditScreen({
                     type="radio"
                     name={q.answer_key}
                     checked={editableAnswers[q.answer_key] === true}
-                    onChange={() => {
-                      onAnswersChange({ ...editableAnswers, [q.answer_key]: true });
-                      if (screenError) setScreenError(null);
-                    }}
+                    onChange={() =>
+                      onAnswersChange({ ...editableAnswers, [q.answer_key]: true })
+                    }
                   />
                   Yes
                 </label>
@@ -113,10 +118,9 @@ export default function EditScreen({
                     type="radio"
                     name={q.answer_key}
                     checked={editableAnswers[q.answer_key] === false}
-                    onChange={() => {
-                      onAnswersChange({ ...editableAnswers, [q.answer_key]: false });
-                      if (screenError) setScreenError(null);
-                    }}
+                    onChange={() =>
+                      onAnswersChange({ ...editableAnswers, [q.answer_key]: false })
+                    }
                   />
                   No
                 </label>
@@ -124,63 +128,48 @@ export default function EditScreen({
             ) : (
               <input
                 type="text"
-                value={(editableAnswers[q.answer_key] as string | null) || ""}
-                onChange={(e) => {
-                  onAnswersChange({ ...editableAnswers, [q.answer_key]: e.target.value });
-                  if (screenError) setScreenError(null);
-                }}
+                value={(editableAnswers[q.answer_key] as string) ?? ""}
+                onChange={(e) =>
+                  onAnswersChange({ ...editableAnswers, [q.answer_key]: e.target.value })
+                }
               />
-            )}
-
-            {q.suggested && (
-              <span className="suggested-badge">
-                Pre-filled from your description — please check
-              </span>
             )}
           </div>
         ))}
 
-        <div className="field mt-md">
+        <div className="field" style={{ marginTop: "16px" }}>
           <label htmlFor="additional-text">
             Additional information (optional)
           </label>
-          <p
-            style={{
-              fontSize: "14px",
-              color: "var(--text-muted)",
-              marginBottom: "8px",
-              fontWeight: 400,
-            }}
-          >
-            If you answered yes to any symptoms above, you can give details here.
-          </p>
           <textarea
             id="additional-text"
-            value={additionalText}
-            onChange={(e) => {
-              onAdditionalTextChange(e.target.value);
-              if (screenError) setScreenError(null);
-            }}
             rows={4}
+            value={additionalText}
+            onChange={(e) => onAdditionalTextChange(e.target.value)}
           />
         </div>
+
+        {/* Photo upload section — implemented in step 6 */}
 
         {screenError && <InlineError message={screenError} />}
 
         <div className="btn-row">
           <button
+            type="button"
             className="btn btn-secondary"
             disabled={isSubmitting}
             onClick={onBack}
           >
             Back
           </button>
+
           <button
+            type="button"
             className="btn btn-primary"
-            disabled={!allRequiredAnswered || isSubmitting}
+            disabled={isSubmitting || !allRequiredAnswered}
             onClick={handleContinue}
           >
-            {isSubmitting ? "Please wait\u2026" : "Review answers"}
+            {isSubmitting ? "Saving\u2026" : "Continue"}
           </button>
         </div>
       </form>

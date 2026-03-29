@@ -1,10 +1,13 @@
 import { PageShell } from "../layout";
 import type { ClientStateView, SafetyMessage } from "../types";
+import type { PhotoAttachment } from "../uiTypes";
 
 interface ReviewScreenProps {
   practiceName: string | null;
   clientState: ClientStateView;
   safetyMessages: SafetyMessage[];
+  // Photo props — UI implemented in step 7.
+  photos: PhotoAttachment[];
   onBack: () => void;
   onContinue: () => void;
 }
@@ -13,6 +16,7 @@ export default function ReviewScreen({
   practiceName,
   clientState,
   safetyMessages,
+  photos: _photos,
   onBack,
   onContinue,
 }: ReviewScreenProps) {
@@ -59,6 +63,8 @@ export default function ReviewScreen({
           </div>
         </>
       )}
+
+      {/* Photo thumbnails — implemented in step 7 */}
 
       {hasSafetyBlock && (
         <div className="alert alert-danger">

@@ -9,6 +9,8 @@ interface ContactScreenProps {
   runtimeId: string;
   version: number;
   patientDetails: PatientDetails;
+  // Photo files — passed to finishForm in step 8.
+  photos: File[];
   onSubmit: () => void;
   onBack: () => void;
 }
@@ -18,6 +20,7 @@ export default function ContactScreen({
   runtimeId,
   version,
   patientDetails,
+  photos: _photos,
   onSubmit,
   onBack,
 }: ContactScreenProps) {
@@ -96,6 +99,7 @@ export default function ContactScreen({
     setIsSubmitting(true);
     setScreenError(null);
 
+    // photos will be passed here in step 8
     finishForm(runtimeId, version, cleanPreferences, patientDetails)
       .then(() => {
         onSubmit();
