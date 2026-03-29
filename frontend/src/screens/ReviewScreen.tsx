@@ -6,7 +6,6 @@ interface ReviewScreenProps {
   practiceName: string | null;
   clientState: ClientStateView;
   safetyMessages: SafetyMessage[];
-  // Photo props — UI implemented in step 7.
   photos: PhotoAttachment[];
   onBack: () => void;
   onContinue: () => void;
@@ -16,7 +15,7 @@ export default function ReviewScreen({
   practiceName,
   clientState,
   safetyMessages,
-  photos: _photos,
+  photos,
   onBack,
   onContinue,
 }: ReviewScreenProps) {
@@ -64,7 +63,29 @@ export default function ReviewScreen({
         </>
       )}
 
-      {/* Photo thumbnails — implemented in step 7 */}
+      {photos.length > 0 && (
+        <>
+          <h3>Photos ({photos.length})</h3>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "8px",
+              marginBottom: "8px",
+            }}
+          >
+            {photos.map((photo, index) => (
+              <img
+                key={photo.previewUrl}
+                src={photo.previewUrl}
+                alt={`Photo ${index + 1}`}
+                style={{ height: "80px", objectFit: "cover" }}
+              />
+            ))}
+          </div>
+          <p>To remove a photo, go back to the previous step.</p>
+        </>
+      )}
 
       {hasSafetyBlock && (
         <div className="alert alert-danger">

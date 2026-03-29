@@ -2,8 +2,13 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ReviewScreen from "./ReviewScreen";
 import type { ClientStateView, SafetyMessage } from "../types";
+import type { PhotoAttachment } from "../uiTypes";
 
 const noop = () => {};
+
+function makePhoto(n: number): PhotoAttachment {
+  return { file: new File([], `photo${n}.jpg`), previewUrl: `blob:fake-url-${n}` };
+}
 
 const baseClientState: ClientStateView = {
   condition_label: "Urinary symptoms",
@@ -35,6 +40,7 @@ describe("ReviewScreen", () => {
       <ReviewScreen
         clientState={baseClientState}
         safetyMessages={[]}
+        photos={[]}
         onBack={noop}
         onContinue={noop}
       />
@@ -70,6 +76,7 @@ describe("ReviewScreen", () => {
       <ReviewScreen
         clientState={clientState}
         safetyMessages={[]}
+        photos={[]}
         onBack={noop}
         onContinue={noop}
       />
@@ -86,6 +93,7 @@ describe("ReviewScreen", () => {
       <ReviewScreen
         clientState={baseClientState}
         safetyMessages={safetyMessages}
+        photos={[]}
         onBack={noop}
         onContinue={noop}
       />
@@ -102,6 +110,7 @@ describe("ReviewScreen", () => {
       <ReviewScreen
         clientState={baseClientState}
         safetyMessages={safetyMessages}
+        photos={[]}
         onBack={noop}
         onContinue={noop}
       />
@@ -116,6 +125,7 @@ describe("ReviewScreen", () => {
       <ReviewScreen
         clientState={baseClientState}
         safetyMessages={[]}
+        photos={[]}
         onBack={noop}
         onContinue={noop}
       />
@@ -131,6 +141,7 @@ describe("ReviewScreen", () => {
       <ReviewScreen
         clientState={baseClientState}
         safetyMessages={[]}
+        photos={[]}
         onBack={onBack}
         onContinue={noop}
       />
@@ -145,11 +156,61 @@ describe("ReviewScreen", () => {
       <ReviewScreen
         clientState={baseClientState}
         safetyMessages={[]}
+        photos={[]}
         onBack={noop}
         onContinue={onContinue}
       />
     );
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
     expect(onContinue).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render photos section when photos is empty", () => {
+    render(
+      <ReviewScreen
+        clientState={baseClientState}
+        safetyMessages={[]}
+        photos={[]}
+        onBack={noop}
+        onContinue={noop}
+      />
+    );
+    expect(screen.queryByText(/^Photos/)).toBeNull();
+    expect(screen.queryByText(/to remove a photo/i)).toBeNull();
+  });
+
+  it("renders the correct number of thumbnails when photos are present", () => {
+    const photos = [makePhoto(1), makePhoto(2)];
+    render(
+      <ReviewScreen
+        clientState={baseClientState}
+        safetyMessages={[]}
+        photos={photos}
+        onBack={noop}
+        onContinue={noop}
+      />
+    );
+    expect(screen.getByText("Photos (2)")).toBeTruthy();
+    const images = screen.getAllByRole("img");
+    expect(images).toHaveLength(2);
+    expect(screen.getByText(/to remove a photo/i)).toBeTruthy();
+  });
+
+  it("each thumbnail has the correct src and alt text", () => {
+    const photos = [makePhoto(1), makePhoto(2)];
+    render(
+      <ReviewScreen
+        clientState={baseClientState}
+        safetyMessages={[]}
+        photos={photos}
+        onBack={noop}
+        onContinue={noop}
+      />
+    );
+    const images = screen.getAllByRole("img");
+    expect(images[0].getAttribute("src")).toBe("blob:fake-url-1");
+    expect(images[0].getAttribute("alt")).toBe("Photo 1");
+    expect(images[1].getAttribute("src")).toBe("blob:fake-url-2");
+    expect(images[1].getAttribute("alt")).toBe("Photo 2");
   });
 });
