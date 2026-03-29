@@ -42,7 +42,26 @@ Screen components live in `frontend/src/screens/`. Session state and screen tran
 
 The reset function in `App.tsx` manually clears every `useState` in the file. A checklist comment directly above the reset block names every variable. If a new `useState` is added to `App.tsx`, it must appear in the checklist.
 
-**Dedicated error variable:** `App.tsx` uses `safetyFetchError` for safety warning fetch failures. This is the only fetch that lives in `App.tsx` rather than inside a screen component, so it needs its own error variable. All other fetch errors are owned locally by the screen component that makes the call.
+**Dedicated error variable:** `App.tsx` uses `safetyWarningFetchState` for safety warning fetch failures. This is the only fetch that lives in `App.tsx` rather than inside a screen component, so it needs its own error variable. All other fetch errors are owned locally by the screen component that makes the call.
+
+---
+
+## Photo Attachments
+
+`photos: PhotoAttachment[]` is owned by `App.tsx` and threaded as props to `EditScreen` (read/write via `onPhotosChange`), `ReviewScreen` (read-only), and `ContactScreen` (as `File[]` extracted from the attachment objects).
+
+**Object URL lifecycle:** Each `PhotoAttachment` holds a `previewUrl` created with `URL.createObjectURL`. These must be explicitly revoked to avoid browser memory leaks. The rules are:
+
+- **On remove:** revoke the URL immediately in the remove handler before updating state. Implemented in `EditScreen` (step 6).
+- **On back navigation from EDIT to FREE_TEXT:** `App.tsx` revokes all URLs and clears `photos` before navigating. Photos do not persist across a condition change.
+- **On fatal error reset:** `App.tsx` revokes all URLs before calling `setPhotos([])`. Revocation must happen before the state clear, while references are still available.
+- **On unmount:** a `useEffect` with an empty dependency array in `App.tsx` revokes all remaining URLs via a `photosRef`. A ref is required here because the cleanup closure would otherwise capture the initial empty array.
+
+**Client-side validation in EditScreen:** The `onChange` handler on the file input performs synchronous checks using the constants from `upload_constants.ts`: MIME type against `ALLOWED_MIME_TYPES`, per-file size against `MAX_FILE_SIZE_BYTES`, total count against `MAX_FILE_COUNT`, and combined size against `MAX_TOTAL_SIZE_BYTES`. These checks run against the existing `photos` prop plus the newly selected files, so the total size and count limits account for photos already in state. The server enforces the same limits independently — the client checks are a usability guard, not a security boundary. No magic bytes validation is performed; MIME type is checked via `file.type` (browser-supplied, not cryptographically verified).
+
+**Photos persist** when navigating back from REVIEW to EDIT — this is intentional. The patient has not changed their condition and their photos remain valid.
+
+**Photos do not persist** when navigating back from EDIT to FREE_TEXT. A warning dialog is shown before this navigation regardless of whether any photos are attached (simpler logic, consistent behaviour). The dialog message is: "If you have attached photos, they will be lost and may need to be re-uploaded." The dialog renders as an overlay on top of the EDIT screen so answers are not lost.
 
 ---
 
