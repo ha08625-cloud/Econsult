@@ -103,9 +103,10 @@ export default function EditScreen({
                     type="radio"
                     name={q.answer_key}
                     checked={editableAnswers[q.answer_key] === true}
-                    onChange={() =>
-                      onAnswersChange({ ...editableAnswers, [q.answer_key]: true })
-                    }
+                    onChange={() => {
+                      onAnswersChange({ ...editableAnswers, [q.answer_key]: true });
+                      if (screenError) setScreenError(null);
+                    }}
                   />
                   Yes
                 </label>
@@ -118,9 +119,10 @@ export default function EditScreen({
                     type="radio"
                     name={q.answer_key}
                     checked={editableAnswers[q.answer_key] === false}
-                    onChange={() =>
-                      onAnswersChange({ ...editableAnswers, [q.answer_key]: false })
-                    }
+                    onChange={() => {
+                      onAnswersChange({ ...editableAnswers, [q.answer_key]: false });
+                      if (screenError) setScreenError(null);
+                    }}
                   />
                   No
                 </label>
@@ -128,24 +130,44 @@ export default function EditScreen({
             ) : (
               <input
                 type="text"
-                value={(editableAnswers[q.answer_key] as string) ?? ""}
-                onChange={(e) =>
-                  onAnswersChange({ ...editableAnswers, [q.answer_key]: e.target.value })
-                }
+                value={(editableAnswers[q.answer_key] as string | null) || ""}
+                onChange={(e) => {
+                  onAnswersChange({ ...editableAnswers, [q.answer_key]: e.target.value });
+                  if (screenError) setScreenError(null);
+                }}
               />
+            )}
+
+            {q.suggested && (
+              <span className="suggested-badge">
+                Pre-filled from your description — please check
+              </span>
             )}
           </div>
         ))}
 
-        <div className="field" style={{ marginTop: "16px" }}>
+        <div className="field mt-md">
           <label htmlFor="additional-text">
             Additional information (optional)
           </label>
+          <p
+            style={{
+              fontSize: "14px",
+              color: "var(--text-muted)",
+              marginBottom: "8px",
+              fontWeight: 400,
+            }}
+          >
+            If you answered yes to any symptoms above, you can give details here.
+          </p>
           <textarea
             id="additional-text"
-            rows={4}
             value={additionalText}
-            onChange={(e) => onAdditionalTextChange(e.target.value)}
+            onChange={(e) => {
+              onAdditionalTextChange(e.target.value);
+              if (screenError) setScreenError(null);
+            }}
+            rows={4}
           />
         </div>
 
@@ -155,21 +177,18 @@ export default function EditScreen({
 
         <div className="btn-row">
           <button
-            type="button"
             className="btn btn-secondary"
             disabled={isSubmitting}
             onClick={onBack}
           >
             Back
           </button>
-
           <button
-            type="button"
             className="btn btn-primary"
-            disabled={isSubmitting || !allRequiredAnswered}
+            disabled={!allRequiredAnswered || isSubmitting}
             onClick={handleContinue}
           >
-            {isSubmitting ? "Saving\u2026" : "Continue"}
+            {isSubmitting ? "Please wait\u2026" : "Review answers"}
           </button>
         </div>
       </form>

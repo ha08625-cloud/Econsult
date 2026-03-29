@@ -56,6 +56,7 @@ const baseAnswers: Record<string, boolean | string | null> = {
 };
 
 const defaultProps = {
+  practiceName: null,
   clientState: baseClientState,
   editableAnswers: baseAnswers,
   additionalText: "",
@@ -65,6 +66,8 @@ const defaultProps = {
   onBack: noop,
   runtimeId: "runtime-123",
   version: 1,
+  photos: [],
+  onPhotosChange: noop,
 };
 
 describe("EditScreen", () => {
