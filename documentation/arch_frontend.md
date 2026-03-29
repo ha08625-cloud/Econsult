@@ -48,16 +48,18 @@ The reset function in `App.tsx` manually clears every `useState` in the file. A 
 
 ## Photo Attachments
 
-`photos: PhotoAttachment[]` is owned by `App.tsx` and threaded as props to `EditScreen` (read/write via `onPhotosChange`), `ReviewScreen` (read-only), and `ContactScreen` (as `File[]` extracted from the attachment objects).
+`photos: PhotoAttachment[]` is owned by `App.tsx` and threaded as props to `EditScreen` (read/write via `onPhotosChange`), `ReviewScreen` (read-only thumbnails), and `ContactScreen` (as `File[]` extracted from the attachment objects).
 
 **Object URL lifecycle:** Each `PhotoAttachment` holds a `previewUrl` created with `URL.createObjectURL`. These must be explicitly revoked to avoid browser memory leaks. The rules are:
 
-- **On remove:** revoke the URL immediately in the remove handler before updating state. Implemented in `EditScreen` (step 6).
+- **On remove:** revoke the URL immediately in the remove handler before updating state. Implemented in `EditScreen`.
 - **On back navigation from EDIT to FREE_TEXT:** `App.tsx` revokes all URLs and clears `photos` before navigating. Photos do not persist across a condition change.
 - **On fatal error reset:** `App.tsx` revokes all URLs before calling `setPhotos([])`. Revocation must happen before the state clear, while references are still available.
 - **On unmount:** a `useEffect` with an empty dependency array in `App.tsx` revokes all remaining URLs via a `photosRef`. A ref is required here because the cleanup closure would otherwise capture the initial empty array.
 
 **Client-side validation in EditScreen:** The `onChange` handler on the file input performs synchronous checks using the constants from `upload_constants.ts`: MIME type against `ALLOWED_MIME_TYPES`, per-file size against `MAX_FILE_SIZE_BYTES`, total count against `MAX_FILE_COUNT`, and combined size against `MAX_TOTAL_SIZE_BYTES`. These checks run against the existing `photos` prop plus the newly selected files, so the total size and count limits account for photos already in state. The server enforces the same limits independently — the client checks are a usability guard, not a security boundary. No magic bytes validation is performed; MIME type is checked via `file.type` (browser-supplied, not cryptographically verified).
+
+**ReviewScreen thumbnail display:** `ReviewScreen` renders a read-only `Photos (n)` section when `photos.length > 0`, positioned after `additional_text` and before the safety alert. Thumbnails are 80px tall with descriptive alt text (`Photo 1`, `Photo 2`, etc.). There is no remove affordance on this screen — a plain instruction directs the patient to go back if they need to remove a photo. Photos persist when navigating back from REVIEW to EDIT, so the instruction is always actionable.
 
 **Photos persist** when navigating back from REVIEW to EDIT — this is intentional. The patient has not changed their condition and their photos remain valid.
 
