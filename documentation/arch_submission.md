@@ -145,11 +145,24 @@ Four string constants for structured logging of the delivery lifecycle: `DELIVER
 
 ### PDF Formatter (`app/utils/pdf_formatter.py`)
 
-- Pure function `generate_pdf()` — takes `ClinicalOutput`, metadata, and optional `practice_name`; returns raw PDF bytes.
+- Pure function `generate_pdf()` — takes `ClinicalOutput`, metadata, optional `practice_name`, and optional `photo_bytes: list[bytes] | None`; returns raw PDF bytes.
 - No database access, no imports from routers or delivery service.
 - Called by `form_router.py` at submission time. The returned bytes are stored in `submission_attachments` and sent as-is on every delivery attempt (including retries). The PDF is never regenerated.
 - `practice_name` is injected into the router via `get_practice_name` dependency and passed directly to `generate_pdf`. The name is captured once at startup. If the practice name is changed via the admin interface, PDFs will show the old name until the next server restart — this is a known and accepted limitation.
-- Step 3 will add `photo_bytes: list[bytes] | None = None` as a parameter. Until then, the PDF contains no photos even if photos were submitted.
+- If `photo_bytes` is non-empty, a PHOTOS section is appended after the footer. Each image is embedded at full usable width (180mm), capped at 200mm tall via `keep_aspect_ratio=True` to prevent a single image from overflowing a page. FPDF2 handles pagination between images automatically.
+- Memory note: FPDF2 decodes each JPEG into a raw pixel buffer internally before embedding. A single 5 MB JPEG may decompress to 50–100 MB in memory. With multiple large photos, peak memory during PDF generation can reach several hundred MB. This is synchronous and blocks the request thread. See Known Limitations below.
+
+### Planned: Background Worker for PDF Generation
+
+The current architecture generates the PDF synchronously in the router request thread. For photo-heavy submissions this can consume several hundred MB of memory and block the thread for a meaningful duration. Under concurrent load (multiple patients submitting photos simultaneously) this creates a plausible out-of-memory risk, which is a clinical safety concern — a failed submission mid-process leaves no record for the practice.
+
+The planned mitigation is a background worker. When implemented:
+- Raw photo bytes will be persisted to a `submission_photos` table at request time (the table does not yet exist).
+- PDF generation will move out of the request thread into the worker.
+- `clinical_output_json` is already persisted in `submission_records` and does not need to be re-stored — the worker reads it from there.
+- The request returns to the patient immediately after persisting the submission record and raw photo bytes, before PDF generation begins.
+
+This is a separate ticket. Until it is implemented, the synchronous OOM risk is documented and accepted.
 
 ### Known Limitations on MIME Validation
 
@@ -170,6 +183,7 @@ Server-side MIME validation for photo uploads relies on the HTTP `Content-Type` 
 9. CRITICAL-level logging is the sole alerting mechanism. Structured error reporting should be revisited when the background worker is added.
 10. Alternative delivery backup and admin portal notification for delivery failures are planned as a separate ticket, before collecting real patient data.
 11. The stored PDF may be 20 MB or more for photo-heavy submissions (5 photos at 5 MB each). This is loaded fully into memory on each delivery attempt, including retries. Acceptable at current traffic scale but should be reviewed before significant volume.
+12. PDF generation is synchronous in the request thread. FPDF2 decodes JPEG data into raw pixel buffers before embedding — a single 5 MB photo may consume 50-100 MB; five photos could reach several hundred MB peak. Under concurrent photo-heavy submissions this creates an OOM risk, which is a clinical safety concern. Mitigation is the planned background worker (separate ticket). Until then this is a documented accepted risk.
 
 ---
 
