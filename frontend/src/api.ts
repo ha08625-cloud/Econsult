@@ -10,6 +10,7 @@ import type {
   PatientDetails,
   FinishFormResult,
 } from "./types";
+import { friendlyPhotoErrorMessage } from "./helpers";
 
 const API_BASE = ""; // same-origin
 
@@ -35,6 +36,15 @@ export function friendlyErrorMessage(e: unknown): string {
       // 503 from POST /form/init — practice is closed.
       // detail contains the closed_message from the server.
       return e.detail;
+    }
+    if (e.status === 422 && e.detail) {
+      // 422 from POST /form/finish — server-side photo validation failure.
+      // Attempt to convert the technical server string into patient-friendly
+      // instructions. Falls back to the generic message for unrecognised strings.
+      const photoMessage = friendlyPhotoErrorMessage(e.detail);
+      if (photoMessage !== null) {
+        return photoMessage;
+      }
     }
     if (e.status === 409) {
       return "Please check you do not have this form open in another tab. If you do, close the other tab and try again.";
@@ -168,16 +178,68 @@ export async function updateForm(payload: ClientAnswerReturn): Promise<{
   return postJson("/form/update", payload);
 }
 
+/**
+ * Submits the completed form as multipart/form-data.
+ *
+ * Do NOT use postJson here — postJson sets Content-Type: application/json,
+ * which prevents the browser from setting the multipart boundary that the
+ * server requires to parse the body. Pass a FormData object to fetch directly
+ * and let the browser set Content-Type automatically.
+ *
+ * The JSON payload is sent as a plain string in the `payload` field.
+ * Each photo File is appended as a separate `photos` field.
+ * The server reads these in app/routers/form_router.py → form_finish.
+ */
 export async function finishForm(
   runtimeId: string,
   version: number,
   contactPreferences: ContactPreferences,
   patientDetails: PatientDetails,
+  photos: File[],
 ): Promise<FinishFormResult> {
-  return postJson("/form/finish", {
-    runtime_id: runtimeId,
-    version: version,
-    contact_preferences: contactPreferences,
-    patient_details: patientDetails,
-  });
+  const form = new FormData();
+
+  form.append(
+    "payload",
+    JSON.stringify({
+      runtime_id: runtimeId,
+      version: version,
+      contact_preferences: contactPreferences,
+      patient_details: patientDetails,
+    }),
+  );
+
+  for (const photo of photos) {
+    form.append("photos", photo);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(API_BASE + "/form/finish", {
+      method: "POST",
+      body: form,
+      // Do not set Content-Type — the browser sets it automatically with the
+      // correct multipart boundary when a FormData object is passed as body.
+    });
+  } catch {
+    throw new ApiError("Network failure", null);
+  }
+
+  if (!res.ok) {
+    // For 422 responses, extract the detail field so friendlyErrorMessage can
+    // convert photo validation errors into patient-friendly instructions.
+    if (res.status === 422) {
+      let detail: string | null = null;
+      try {
+        const body = await res.json();
+        detail = body.detail ?? null;
+      } catch {
+        // If we can't parse the body, proceed with null detail.
+      }
+      throw new ApiError(`HTTP ${res.status}`, res.status, detail);
+    }
+    throw new ApiError(`HTTP ${res.status}`, res.status);
+  }
+
+  return (await res.json()) as FinishFormResult;
 }
