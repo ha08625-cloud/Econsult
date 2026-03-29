@@ -1,369 +1,382 @@
-import { useRef, useState } from "react";
-import { PageShell, InlineError } from "../layout";
-import { updateForm } from "../api";
-import { friendlyErrorMessage } from "../api";
-import type { ClientStateView, SafetyMessage, ClientAnswerReturn } from "../types";
+import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { vi } from "vitest";
+import EditScreen from "./EditScreen";
+import type { ClientStateView } from "../types";
 import type { PhotoAttachment } from "../uiTypes";
 import {
-  ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE_BYTES,
   MAX_FILE_COUNT,
   MAX_TOTAL_SIZE_BYTES,
 } from "../upload_constants";
 
-interface EditScreenProps {
-  practiceName: string | null;
-  clientState: ClientStateView;
-  editableAnswers: Record<string, boolean | string | null>;
-  additionalText: string;
-  onAnswersChange: (answers: Record<string, boolean | string | null>) => void;
-  onAdditionalTextChange: (text: string) => void;
-  onContinue: (result: {
-    version: number;
-    clientState: ClientStateView;
-    safetyMessages: SafetyMessage[];
-  }) => void;
-  onBack: () => void;
-  runtimeId: string;
-  version: number;
-  photos: PhotoAttachment[];
-  onPhotosChange: (updated: PhotoAttachment[]) => void;
+// Mock the api module so tests never make real HTTP calls
+vi.mock("../api", () => ({
+  updateForm: vi.fn(),
+  friendlyErrorMessage: (e: unknown) =>
+    e instanceof Error ? e.message : "Unknown error",
+}));
+
+import { updateForm } from "../api";
+const mockUpdateForm = vi.mocked(updateForm);
+
+// Mock URL methods — jsdom does not implement them
+const mockCreateObjectURL = vi.fn((file: File) => `blob:mock/${file.name}`);
+const mockRevokeObjectURL = vi.fn();
+vi.stubGlobal("URL", {
+  createObjectURL: mockCreateObjectURL,
+  revokeObjectURL: mockRevokeObjectURL,
+});
+
+const noop = () => {};
+
+const booleanQuestion = {
+  answer_key: "has_pain",
+  question_text: "Do you have pain?",
+  answer_type: "boolean" as const,
+  current_value: null,
+  required: true,
+  suggested: false,
+};
+
+const textQuestion = {
+  answer_key: "duration",
+  question_text: "How long have you had symptoms?",
+  answer_type: "text" as const,
+  current_value: null,
+  required: true,
+  suggested: false,
+};
+
+const suggestedQuestion = {
+  answer_key: "frequency",
+  question_text: "How often do you experience this?",
+  answer_type: "text" as const,
+  current_value: "Daily",
+  required: false,
+  suggested: true,
+};
+
+const baseClientState: ClientStateView = {
+  condition_label: "Urinary symptoms",
+  free_text: null,
+  additional_text: null,
+  questions: [booleanQuestion, textQuestion],
+};
+
+const baseAnswers: Record<string, boolean | string | null> = {
+  has_pain: null,
+  duration: null,
+};
+
+const defaultProps = {
+  practiceName: null,
+  clientState: baseClientState,
+  editableAnswers: baseAnswers,
+  additionalText: "",
+  onAnswersChange: noop,
+  onAdditionalTextChange: noop,
+  onContinue: noop,
+  onBack: noop,
+  runtimeId: "runtime-123",
+  version: 1,
+  photos: [] as PhotoAttachment[],
+  onPhotosChange: noop,
+};
+
+/** Create a minimal File with controllable size and type */
+function makeFile(
+  name: string,
+  type: string,
+  sizeBytes: number
+): File {
+  const content = new Uint8Array(sizeBytes);
+  return new File([content], name, { type });
 }
 
-export default function EditScreen({
-  practiceName,
-  clientState,
-  editableAnswers,
-  additionalText,
-  onAnswersChange,
-  onAdditionalTextChange,
-  onContinue,
-  onBack,
-  runtimeId,
-  version,
-  photos,
-  onPhotosChange,
-}: EditScreenProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [screenError, setScreenError] = useState<string | null>(null);
-  const [photoError, setPhotoError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+// userEvent.upload does not reliably fire onChange on hidden inputs in jsdom.
+// This helper sets the files property directly and fires a synthetic change event.
+function uploadFiles(input: HTMLInputElement, files: File[]) {
+  Object.defineProperty(input, "files", {
+    value: files,
+    configurable: true,
+  });
+  fireEvent.change(input);
+}
 
-  const allRequiredAnswered = clientState.questions.every((q) => {
-    if (!q.required) return true;
-    const v = editableAnswers[q.answer_key];
-    return v !== null && v !== undefined && v !== "";
+describe("EditScreen", () => {
+  beforeEach(() => {
+    mockUpdateForm.mockReset();
+    mockCreateObjectURL.mockClear();
+    mockRevokeObjectURL.mockClear();
   });
 
-  async function handleContinue() {
-    setScreenError(null);
-    setIsSubmitting(true);
-    try {
-      const payload: ClientAnswerReturn = {
-        runtime_id: runtimeId,
-        base_version: version,
-        answers: editableAnswers,
-        additional_text: additionalText.trim() || null,
-      };
-      const res = await updateForm(payload);
-      onContinue({
-        version: res.version,
-        clientState: res.client_state,
-        safetyMessages: res.safety_messages,
-      });
-    } catch (e) {
-      setScreenError(friendlyErrorMessage(e));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
+  // --- Existing tests ---
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setPhotoError(null);
+  it("renders all questions from clientState", () => {
+    render(<EditScreen {...defaultProps} />);
+    expect(screen.getByText("Do you have pain?")).toBeTruthy();
+    expect(screen.getByText("How long have you had symptoms?")).toBeTruthy();
+  });
 
-    const incoming = Array.from(e.target.files ?? []);
-    // Reset the input so the same file can be re-selected after removal
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  it("boolean questions render Yes and No radio buttons", () => {
+    render(<EditScreen {...defaultProps} />);
+    const radios = screen.getAllByRole("radio");
+    const labels = radios.map((r) => r.parentElement?.textContent?.trim());
+    expect(labels).toContain("Yes");
+    expect(labels).toContain("No");
+  });
 
-    if (incoming.length === 0) return;
+  it("text questions render a text input", () => {
+    render(
+      <EditScreen
+        {...defaultProps}
+        clientState={{ ...baseClientState, questions: [textQuestion] }}
+        editableAnswers={{ duration: "" }}
+      />
+    );
+    // The additional-text textarea is always present, so there are two textboxes:
+    // one for the question input and one for additional information.
+    expect(screen.getAllByRole("textbox")).toHaveLength(2);
+    expect(screen.getByText("How long have you had symptoms?")).toBeTruthy();
+  });
 
-    // Per-file type and size checks
-    for (const file of incoming) {
-      if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-        setPhotoError(
-          `"${file.name}" is not a supported file type. Please upload JPEG or PNG images only.`
-        );
-        return;
-      }
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        const limitMB = (MAX_FILE_SIZE_BYTES / 1_048_576).toFixed(0);
-        setPhotoError(
-          `"${file.name}" is too large. Each photo must be ${limitMB} MB or smaller.`
-        );
-        return;
-      }
-    }
+  it("suggested questions render the suggested badge", () => {
+    render(
+      <EditScreen
+        {...defaultProps}
+        clientState={{ ...baseClientState, questions: [suggestedQuestion] }}
+        editableAnswers={{ frequency: "Daily" }}
+      />
+    );
+    expect(screen.getByText(/pre-filled from your description/i)).toBeTruthy();
+  });
 
-    // Count check — existing + incoming must not exceed MAX_FILE_COUNT
-    if (photos.length + incoming.length > MAX_FILE_COUNT) {
-      setPhotoError(
-        `You can upload a maximum of ${MAX_FILE_COUNT} photos. You currently have ${photos.length}.`
-      );
-      return;
-    }
+  it("Continue button is disabled when a required answer is missing", () => {
+    render(
+      <EditScreen
+        {...defaultProps}
+        editableAnswers={{ has_pain: null, duration: null }}
+      />
+    );
+    expect(
+      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
+    ).toBe(true);
+  });
 
-    // Combined size check — existing bytes + incoming bytes
-    const existingBytes = photos.reduce((sum, p) => sum + p.file.size, 0);
-    const incomingBytes = incoming.reduce((sum, f) => sum + f.size, 0);
-    if (existingBytes + incomingBytes > MAX_TOTAL_SIZE_BYTES) {
-      const limitMB = (MAX_TOTAL_SIZE_BYTES / 1_048_576).toFixed(0);
-      setPhotoError(
-        `The total size of all photos cannot exceed ${limitMB} MB. Please remove a photo or choose smaller files.`
-      );
-      return;
-    }
+  it("Continue button is enabled when all required answers are filled", () => {
+    render(
+      <EditScreen
+        {...defaultProps}
+        editableAnswers={{ has_pain: true, duration: "Three days" }}
+      />
+    );
+    expect(
+      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
+    ).toBe(false);
+  });
 
-    // All checks passed — create PhotoAttachment objects and merge
-    const newAttachments: PhotoAttachment[] = incoming.map((file) => ({
-      file,
-      previewUrl: URL.createObjectURL(file),
-    }));
-    onPhotosChange([...photos, ...newAttachments]);
-  }
+  it("does not crash when editableAnswers has no keys matching clientState questions", () => {
+    // Defensive: prop mismatch should not throw
+    expect(() =>
+      render(<EditScreen {...defaultProps} editableAnswers={{}} />)
+    ).not.toThrow();
+  });
 
-  function handleRemovePhoto(index: number) {
-    const updated = photos.filter((_, i) => i !== index);
-    URL.revokeObjectURL(photos[index].previewUrl);
-    onPhotosChange(updated);
-  }
+  it("calls onContinue with API result on successful submit", async () => {
+    const onContinue = vi.fn();
+    const mockResult = {
+      runtime_id: "runtime-123",
+      version: 2,
+      client_state: { ...baseClientState, questions: [] },
+      safety_messages: [],
+    };
+    mockUpdateForm.mockResolvedValueOnce(mockResult);
 
-  const totalBytes = photos.reduce((sum, p) => sum + p.file.size, 0);
-  const totalMB = (totalBytes / 1_048_576).toFixed(1);
-  const limitMB = (MAX_TOTAL_SIZE_BYTES / 1_048_576).toFixed(0);
+    render(
+      <EditScreen
+        {...defaultProps}
+        editableAnswers={{ has_pain: true, duration: "Two days" }}
+        onContinue={onContinue}
+      />
+    );
 
-  return (
-    <PageShell practiceName={practiceName}>
-      <h1>{clientState.condition_label}</h1>
+    await userEvent.click(screen.getByRole("button", { name: /review answers/i }));
 
-      {clientState.free_text && (
-        <div className="description-box">{clientState.free_text}</div>
-      )}
+    expect(onContinue).toHaveBeenCalledWith({
+      version: 2,
+      clientState: mockResult.client_state,
+      safetyMessages: [],
+    });
+  });
 
-      <form onSubmit={(e) => e.preventDefault()}>
-        {clientState.questions.map((q) => (
-          <div
-            key={q.answer_key}
-            className={`question-card${q.suggested ? " suggested" : ""}`}
-          >
-            <label>
-              {q.question_text}
-              {q.required && (
-                <span style={{ color: "var(--danger)", marginLeft: "4px" }}>*</span>
-              )}
-            </label>
+  it("displays an inline error when the API call fails", async () => {
+    mockUpdateForm.mockRejectedValueOnce(new Error("Network error"));
 
-            {q.answer_type === "boolean" ? (
-              <div className="radio-group">
-                <label
-                  className={`radio-option${
-                    editableAnswers[q.answer_key] === true ? " selected" : ""
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name={q.answer_key}
-                    checked={editableAnswers[q.answer_key] === true}
-                    onChange={() => {
-                      onAnswersChange({ ...editableAnswers, [q.answer_key]: true });
-                      if (screenError) setScreenError(null);
-                    }}
-                  />
-                  Yes
-                </label>
-                <label
-                  className={`radio-option${
-                    editableAnswers[q.answer_key] === false ? " selected" : ""
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name={q.answer_key}
-                    checked={editableAnswers[q.answer_key] === false}
-                    onChange={() => {
-                      onAnswersChange({ ...editableAnswers, [q.answer_key]: false });
-                      if (screenError) setScreenError(null);
-                    }}
-                  />
-                  No
-                </label>
-              </div>
-            ) : (
-              <input
-                type="text"
-                value={(editableAnswers[q.answer_key] as string | null) || ""}
-                onChange={(e) => {
-                  onAnswersChange({ ...editableAnswers, [q.answer_key]: e.target.value });
-                  if (screenError) setScreenError(null);
-                }}
-              />
-            )}
+    render(
+      <EditScreen
+        {...defaultProps}
+        editableAnswers={{ has_pain: true, duration: "Two days" }}
+      />
+    );
 
-            {q.suggested && (
-              <span className="suggested-badge">
-                Pre-filled from your description — please check
-              </span>
-            )}
-          </div>
-        ))}
+    await userEvent.click(screen.getByRole("button", { name: /review answers/i }));
 
-        <div className="field mt-md">
-          <label htmlFor="additional-text">
-            Additional information (optional)
-          </label>
-          <p
-            style={{
-              fontSize: "14px",
-              color: "var(--text-muted)",
-              marginBottom: "8px",
-              fontWeight: 400,
-            }}
-          >
-            If you answered yes to any symptoms above, you can give details here.
-          </p>
-          <textarea
-            id="additional-text"
-            value={additionalText}
-            onChange={(e) => {
-              onAdditionalTextChange(e.target.value);
-              if (screenError) setScreenError(null);
-            }}
-            rows={4}
-          />
-        </div>
+    expect(screen.getByText(/network error/i)).toBeTruthy();
+  });
 
-        {/* Photo upload section */}
-        <div className="field mt-md">
-          <label>Photos (optional)</label>
-          <p
-            style={{
-              fontSize: "14px",
-              color: "var(--text-muted)",
-              marginBottom: "8px",
-              fontWeight: 400,
-            }}
-          >
-            You may attach up to {MAX_FILE_COUNT} photos (JPEG or PNG, max{" "}
-            {(MAX_FILE_SIZE_BYTES / 1_048_576).toFixed(0)} MB each).
-          </p>
+  // --- Photo upload tests ---
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png"
-            multiple
-            style={{ position: "absolute", opacity: 0, width: 0, height: 0, overflow: "hidden" }}
-            aria-label="Upload photos"
-            onChange={handleFileChange}
-          />
+  it("renders the photo section with an Add photos button", () => {
+    render(<EditScreen {...defaultProps} />);
+    expect(screen.getByRole("button", { name: /add photos/i })).toBeTruthy();
+  });
 
-          {photos.length < MAX_FILE_COUNT && (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Add photos
-            </button>
-          )}
+  it("rejects a file with a disallowed MIME type and does not call onPhotosChange", () => {
+    const onPhotosChange = vi.fn();
+    render(<EditScreen {...defaultProps} onPhotosChange={onPhotosChange} />);
 
-          {photos.length > 0 && (
-            <p
-              style={{
-                fontSize: "13px",
-                color: "var(--text-muted)",
-                marginTop: "8px",
-                marginBottom: "8px",
-              }}
-            >
-              {totalMB} MB of {limitMB} MB used
-            </p>
-          )}
+    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
+    const badFile = makeFile("scan.pdf", "application/pdf", 1000);
+    uploadFiles(input, [badFile]);
 
-          {photos.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "12px",
-                marginTop: "8px",
-              }}
-            >
-              {photos.map((photo, index) => (
-                <div
-                  key={photo.previewUrl}
-                  style={{ position: "relative", display: "inline-block" }}
-                >
-                  <img
-                    src={photo.previewUrl}
-                    alt={`Photo ${index + 1}`}
-                    style={{
-                      height: "80px",
-                      width: "80px",
-                      objectFit: "cover",
-                      borderRadius: "4px",
-                      display: "block",
-                    }}
-                  />
-                  <button
-                    type="button"
-                    aria-label={`Remove photo ${index + 1}`}
-                    onClick={() => handleRemovePhoto(index)}
-                    style={{
-                      position: "absolute",
-                      top: "2px",
-                      right: "2px",
-                      background: "rgba(0,0,0,0.6)",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "50%",
-                      width: "20px",
-                      height: "20px",
-                      fontSize: "12px",
-                      cursor: "pointer",
-                      lineHeight: "20px",
-                      padding: 0,
-                      textAlign: "center",
-                    }}
-                  >
-                    &times;
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+    expect(onPhotosChange).not.toHaveBeenCalled();
+    expect(screen.getByText(/not a supported file type/i)).toBeTruthy();
+  });
 
-          {photoError && <InlineError message={photoError} />}
-        </div>
+  it("rejects a file exceeding MAX_FILE_SIZE_BYTES and does not call onPhotosChange", () => {
+    const onPhotosChange = vi.fn();
+    render(<EditScreen {...defaultProps} onPhotosChange={onPhotosChange} />);
 
-        {screenError && <InlineError message={screenError} />}
+    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
+    const bigFile = makeFile("big.jpg", "image/jpeg", MAX_FILE_SIZE_BYTES + 1);
+    uploadFiles(input, [bigFile]);
 
-        <div className="btn-row">
-          <button
-            className="btn btn-secondary"
-            disabled={isSubmitting}
-            onClick={onBack}
-          >
-            Back
-          </button>
-          <button
-            className="btn btn-primary"
-            disabled={!allRequiredAnswered || isSubmitting}
-            onClick={handleContinue}
-          >
-            {isSubmitting ? "Please wait\u2026" : "Review answers"}
-          </button>
-        </div>
-      </form>
-    </PageShell>
-  );
-                }
+    expect(onPhotosChange).not.toHaveBeenCalled();
+    expect(screen.getByText(/too large/i)).toBeTruthy();
+  });
+
+  it("calls onPhotosChange with a single PhotoAttachment for a valid file", () => {
+    const onPhotosChange = vi.fn();
+    render(<EditScreen {...defaultProps} onPhotosChange={onPhotosChange} />);
+
+    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
+    const validFile = makeFile("photo.jpg", "image/jpeg", 1000);
+    uploadFiles(input, [validFile]);
+
+    expect(onPhotosChange).toHaveBeenCalledOnce();
+    const result: PhotoAttachment[] = onPhotosChange.mock.calls[0][0];
+    expect(result).toHaveLength(1);
+    expect(result[0].file).toBe(validFile);
+    expect(typeof result[0].previewUrl).toBe("string");
+  });
+
+  it("accumulates photos across two separate picker interactions", () => {
+    const onPhotosChange = vi.fn();
+
+    const { rerender } = render(
+      <EditScreen {...defaultProps} onPhotosChange={onPhotosChange} />
+    );
+
+    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
+    const file1 = makeFile("a.jpg", "image/jpeg", 1000);
+    uploadFiles(input, [file1]);
+
+    // Simulate App.tsx updating photos prop after first upload
+    const firstCall: PhotoAttachment[] = onPhotosChange.mock.calls[0][0];
+    rerender(
+      <EditScreen
+        {...defaultProps}
+        photos={firstCall}
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    const file2 = makeFile("b.png", "image/png", 1000);
+    uploadFiles(input, [file2]);
+
+    const secondCall: PhotoAttachment[] = onPhotosChange.mock.calls[1][0];
+    expect(secondCall).toHaveLength(2);
+    expect(secondCall[0].file).toBe(file1);
+    expect(secondCall[1].file).toBe(file2);
+  });
+
+  it("calls onPhotosChange with the photo removed and revokes the object URL", async () => {
+    const existingPhoto: PhotoAttachment = {
+      file: makeFile("existing.jpg", "image/jpeg", 500),
+      previewUrl: "blob:mock/existing.jpg",
+    };
+    const onPhotosChange = vi.fn();
+
+    render(
+      <EditScreen
+        {...defaultProps}
+        photos={[existingPhoto]}
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /remove photo 1/i }));
+
+    expect(mockRevokeObjectURL).toHaveBeenCalledWith("blob:mock/existing.jpg");
+    expect(onPhotosChange).toHaveBeenCalledWith([]);
+  });
+
+  it("rejects a new file when it would exceed MAX_FILE_COUNT", () => {
+    const existingPhotos: PhotoAttachment[] = Array.from(
+      { length: MAX_FILE_COUNT },
+      (_, i) => ({
+        file: makeFile(`existing-${i}.jpg`, "image/jpeg", 100),
+        previewUrl: `blob:mock/existing-${i}.jpg`,
+      })
+    );
+    const onPhotosChange = vi.fn();
+
+    render(
+      <EditScreen
+        {...defaultProps}
+        photos={existingPhotos}
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
+    const extraFile = makeFile("extra.jpg", "image/jpeg", 100);
+    uploadFiles(input, [extraFile]);
+
+    expect(onPhotosChange).not.toHaveBeenCalled();
+    expect(screen.getByText(/maximum of \d+ photos/i)).toBeTruthy();
+  });
+
+  it("rejects a batch that would exceed MAX_TOTAL_SIZE_BYTES", () => {
+    // Two existing photos each at MAX_FILE_SIZE_BYTES = 10 MB combined (exactly at limit).
+    // Adding 1 more byte tips over MAX_TOTAL_SIZE_BYTES.
+    const atPerFileLimit = MAX_FILE_SIZE_BYTES;
+    const existingPhotos: PhotoAttachment[] = [
+      {
+        file: makeFile("existing-a.jpg", "image/jpeg", atPerFileLimit),
+        previewUrl: "blob:mock/existing-a.jpg",
+      },
+      {
+        file: makeFile("existing-b.jpg", "image/jpeg", atPerFileLimit),
+        previewUrl: "blob:mock/existing-b.jpg",
+      },
+    ];
+    const onPhotosChange = vi.fn();
+
+    render(
+      <EditScreen
+        {...defaultProps}
+        photos={existingPhotos}
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    const input = screen.getByLabelText("Upload photos") as HTMLInputElement;
+    const newFile = makeFile("new.jpg", "image/jpeg", 1);
+    uploadFiles(input, [newFile]);
+
+    expect(onPhotosChange).not.toHaveBeenCalled();
+    expect(screen.getByText(/total size/i)).toBeTruthy();
+  });
+});
