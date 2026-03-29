@@ -8,6 +8,7 @@ generate_pdf() mirrors the sections in the plain-text email body so both
 outputs carry the same information in the same order.
 """
 
+import io
 from datetime import datetime
 from typing import Optional
 
@@ -54,6 +55,14 @@ _USABLE_W = _PAGE_W - 2 * _MARGIN   # 180mm
 _LABEL_W = 55       # mm — label column width in two-column rows
 _VALUE_W = _USABLE_W - _LABEL_W     # 125mm — value column width
 
+# Maximum height an embedded photo may occupy on the page.
+# Images taller than this at _USABLE_W wide are scaled down to fit.
+# This prevents a single tall image from being taller than a full page,
+# which would cause FPDF2 to clip it rather than paginate correctly.
+# A4 usable height (297mm - 2 * 15mm margin - 15mm auto-page-break margin) = ~252mm.
+# 200mm leaves comfortable breathing room.
+_MAX_IMAGE_H = 200  # mm
+
 
 class _EConsultPDF(FPDF):
     """FPDF subclass with convenience methods for this document style."""
@@ -99,6 +108,7 @@ def generate_pdf(
     submission_id: str,
     submitted_at: datetime,
     practice_name: Optional[str] = None,
+    photo_bytes: Optional[list[bytes]] = None,
 ) -> bytes:
     """
     Generate a PDF representation of a clinical submission.
@@ -108,6 +118,17 @@ def generate_pdf(
     Sections mirror the plain-text email body: header, submission metadata,
     patient details, free text description, answers, additional information,
     safety flags, contact preferences, footer.
+
+    If photo_bytes is provided and non-empty, a PHOTOS section is appended
+    after the footer. Each image is embedded at full usable width (_USABLE_W),
+    capped at _MAX_IMAGE_H tall to prevent overflow on a single page. FPDF2
+    handles pagination automatically between images.
+
+    Memory note: FPDF2 decodes each JPEG into a raw pixel buffer internally
+    before embedding. A single 5 MB JPEG may decompress to 50-100 MB in memory.
+    With multiple large photos, peak memory during PDF generation can be
+    several hundred MB. This is accepted at current scale. A background worker
+    with async PDF generation is the planned mitigation — see arch_submission.md.
     """
     pdf = _EConsultPDF()
     pdf.set_margins(_MARGIN, _MARGIN, _MARGIN)
@@ -203,5 +224,19 @@ def generate_pdf(
         new_y=YPos.NEXT,
         align="C",
     )
+
+    # --- Photos ---
+    # Rendered after the footer so clinical content always appears first.
+    # Each image is embedded at full usable width. Height is capped at
+    # _MAX_IMAGE_H to prevent a single tall image from overflowing a page.
+    # FPDF2 auto-paginates between images when needed.
+    if photo_bytes:
+        pdf.set_text_color(0, 0, 0)
+        pdf.section_heading("PHOTOS")
+        total = len(photo_bytes)
+        for i, img_bytes in enumerate(photo_bytes):
+            pdf.body_text(f"Photo {i + 1} of {total}")
+            pdf.ln(2)
+            pdf.image(io.BytesIO(img_bytes), w=_USABLE_W, h=_MAX_IMAGE_H, keep_aspect_ratio=True)
 
     return bytes(pdf.output())
