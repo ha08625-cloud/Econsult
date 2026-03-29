@@ -32,3 +32,26 @@ export function isValidUkPhone(value: string): boolean {
   const digitsOnly = stripped.replace(/^\+44/, "0");
   return /^07\d{8,11}$/.test(digitsOnly) || /^0[1-9]\d{8,9}$/.test(digitsOnly);
 }
+
+/**
+ * Converts a server-supplied 422 detail string from POST /form/finish into a
+ * plain-English message suitable for display to patients.
+ *
+ * The server strings are defined in app/routers/form_router.py. If those
+ * strings change, update the patterns here to match.
+ *
+ * Unrecognised strings — including 422s unrelated to photos — return null,
+ * which signals the caller to fall back to the generic error message.
+ */
+export function friendlyPhotoErrorMessage(detail: string): string | null {
+  if (detail.startsWith("Photo") && detail.includes("exceeds")) {
+    return "One of your photos is too large to send. Please go back and remove it, then try again.";
+  }
+  if (detail.startsWith("Combined photo size")) {
+    return "Your photos together are too large to send. Please go back and remove one or more, then try again.";
+  }
+  if (detail.startsWith("Too many photos")) {
+    return "You have attached too many photos. Please go back and remove some, then try again.";
+  }
+  return null;
+}
