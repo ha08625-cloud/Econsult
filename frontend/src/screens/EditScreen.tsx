@@ -261,7 +261,7 @@ export default function EditScreen({
             type="file"
             accept="image/jpeg,image/png"
             multiple
-            style={{ display: "none" }}
+            style={{ position: "absolute", opacity: 0, width: 0, height: 0, overflow: "hidden" }}
             aria-label="Upload photos"
             onChange={handleFileChange}
           />
@@ -366,4 +366,4 @@ export default function EditScreen({
       </form>
     </PageShell>
   );
-  }
+                }
