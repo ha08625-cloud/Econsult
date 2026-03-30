@@ -60,8 +60,8 @@ from app.repositories.runtime_state_repository import (
     VersionConflict,
 )
 from app.services.availability_orchestration import check_availability
-from app.services.delivery.delivery_orchestration import attempt_delivery
-from app.services.engine.pipeline import (
+from app.services.delivery_orchestration import attempt_delivery
+from app.services.engine_adapters import (
     apply_update_and_evaluate,
     finish_runtime_state,
     init_runtime_state,
@@ -110,6 +110,7 @@ async def form_init(
 
     try:
         ruleset_path = registry.get_ruleset_path(condition_id)
+        condition_label = registry.get_presentation(condition_id)["label"]
     except ConditionNotFound:
         raise INVALID_PAYLOAD(f"Unknown condition_id: {condition_id}")
 
@@ -119,6 +120,7 @@ async def form_init(
         condition_id=condition_id,
         free_text=free_text,
         ruleset_path=ruleset_path,
+        condition_label=condition_label,
     )
 
     ruleset_hash = registry.get_ruleset_hash(condition_id)
