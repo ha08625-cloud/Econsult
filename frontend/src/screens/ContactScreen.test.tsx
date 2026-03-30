@@ -101,7 +101,8 @@ describe("ContactScreen", () => {
     const emailInput = document.getElementById("contact-email") as HTMLInputElement;
     await userEvent.type(emailInput, "test@example.com");
     await userEvent.click(screen.getByRole("button", { name: /submit/i }));
-    expect(screen.getByText(/please enter your doctor's name/i)).toBeTruthy();
+    // Both the label and the error <p> contain this text, so use getAllByText.
+    expect(screen.getAllByText(/please enter your doctor's name/i).length).toBeGreaterThan(0);
   });
 
   // ---------------------------------
