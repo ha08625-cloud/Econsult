@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   getSafetyWarning,
   getPractice,
   getAvailability,
+  getDoctors,
   getConditions,
   getConditionPresentation,
   friendlyErrorMessage,
@@ -16,7 +17,6 @@ import type {
   SafetyWarningFetchState,
   PracticeNameFetchState,
 } from "./types";
-import type { PhotoAttachment } from "./uiTypes";
 import { GENERAL_CONSULTATION_ID } from './constants';
 import { PageShell } from "./layout";
 import { initialiseEditableAnswers } from "./helpers";
@@ -56,16 +56,8 @@ export default function App() {
   // Patient details (captured before condition selection — NHS contractual obligation)
   const [patientDetails, setPatientDetails] = useState<PatientDetails | null>(null);
 
-  // Photo attachments — object URLs in each PhotoAttachment must be revoked
-  // when photos are removed or the session ends. See cleanup effects below.
-  const [photos, setPhotos] = useState<PhotoAttachment[]>([]);
-
   // Shared UI state
   const [fatalError, setFatalError] = useState<string | null>(null);
-
-  // Warning dialog shown when patient navigates back from EDIT to FREE_TEXT.
-  // Renders as an overlay on top of the EDIT screen so answers are not lost.
-  const [showBackWarning, setShowBackWarning] = useState(false);
 
   // Screen 0 state (safety warning fetch)
   // Single discriminated union — replaces the previous safetyWarningText + safetyFetchError pair.
@@ -93,6 +85,12 @@ export default function App() {
   const [afterHoursNotice, setAfterHoursNotice] = useState<string | null>(null);
   const [practiceIsOpen, setPracticeIsOpen] = useState<boolean | null>(null);
 
+  // Screen 0 state (doctor list)
+  // Fetched once at session start. Fail-open: on any fetch failure getDoctors()
+  // returns [] and the Contact screen falls back to free text entry.
+  // null = not yet fetched. [] = fetched, none configured (or fetch failed).
+  const [doctors, setDoctors] = useState<string[] | null>(null);
+
   // Screen 2 state (condition discovery)
   const [conditions, setConditions] = useState<ConditionSummary[] | null>(null);
   const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
@@ -107,24 +105,6 @@ export default function App() {
   // It is incremented at every navigation boundary into FREE_TEXT and by retryPresentation.
   const [presentationFetchTrigger, setPresentationFetchTrigger] = useState(0);
   const [freeText, setFreeText] = useState<string>("");
-
-  // ---------------------------------
-  // Photo URL cleanup
-  // ---------------------------------
-  // A ref is used here so the unmount cleanup can see the latest photos value.
-  // The cleanup closure would otherwise capture the initial empty array.
-
-  const photosRef = useRef<PhotoAttachment[]>([]);
-
-  useEffect(() => {
-    photosRef.current = photos;
-  }, [photos]);
-
-  useEffect(() => {
-    return () => {
-      photosRef.current.forEach((p) => URL.revokeObjectURL(p.previewUrl));
-    };
-  }, []);
 
   // ---------------------------------
   // Safety warning fetch (Screen 0)
@@ -213,6 +193,31 @@ export default function App() {
   }, [screen, practiceIsOpen]);
 
   // ---------------------------------
+  // Doctor list fetch (Screen 0)
+  // ---------------------------------
+  // Fetched once at session start alongside availability and safety warning.
+  // getDoctors() never throws — it returns [] on any failure. An empty list
+  // causes ContactScreen to fall back to free text, which is the safe default.
+  // This fetch must never block or error the form.
+
+  useEffect(() => {
+    if (screen !== "SAFETY_WARNING") return;
+    // Only fetch once — null means not yet fetched.
+    if (doctors !== null) return;
+
+    let cancelled = false;
+
+    async function fetchDoctors() {
+      const result = await getDoctors();
+      if (!cancelled) setDoctors(result);
+    }
+
+    fetchDoctors();
+
+    return () => { cancelled = true; };
+  }, [screen, doctors]);
+
+  // ---------------------------------
   // Condition list fetch (Screen 2)
   // ---------------------------------
 
@@ -273,9 +278,7 @@ export default function App() {
     }
 
     fetchPresentation();
-
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConditionId, presentationFetchTrigger]);
 
   // ---------------------------------
@@ -286,9 +289,13 @@ export default function App() {
     practiceNameFetchState.status === "success" ? practiceNameFetchState.name : null;
 
   // ---------------------------------
-  // State checklist
+  // Fatal error handling
   // ---------------------------------
-  // Every useState in this file must appear in this list AND in the reset block.
+
+  // RESET CHECKLIST — every useState in App.tsx must appear below.
+  // If you add a new useState to App.tsx, add it to this list.
+  // When a state variable moves into a child component, remove it from
+  // this list AND from the reset block.
   //
   // screen
   // runtimeId
@@ -298,15 +305,14 @@ export default function App() {
   // additionalText
   // safetyMessages
   // patientDetails
-  // photos
   // fatalError
-  // showBackWarning
   // safetyWarningFetchState
   // practiceNameFetchState
   // safetyConfirmed
   // availabilityClosedMessage
   // afterHoursNotice
   // practiceIsOpen
+  // doctors
   // presentationState
   // presentationFetchTrigger
   // conditions
@@ -327,8 +333,6 @@ export default function App() {
           <button
             className="btn btn-primary"
             onClick={() => {
-              // Revoke photo object URLs before clearing state.
-              photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
               setFatalError(null);
               setScreen("SAFETY_WARNING");
               setSafetyWarningFetchState({ status: "loading" });
@@ -341,8 +345,6 @@ export default function App() {
               setAdditionalText("");
               setSafetyMessages([]);
               setPatientDetails(null);
-              setPhotos([]);
-              setShowBackWarning(false);
               setConditions(null);
               setSelectedConditionId(null);
               setPresentationState({ status: "loading" });
@@ -351,6 +353,7 @@ export default function App() {
               setPracticeIsOpen(null);
               setAvailabilityClosedMessage(null);
               setAfterHoursNotice(null);
+              setDoctors(null);
             }}
           >
             Try again
@@ -455,77 +458,28 @@ export default function App() {
     }
 
     return (
-      <>
-        {showBackWarning && (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0,0,0,0.45)",
-              zIndex: 100,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <div
-              style={{
-                background: "var(--surface, #fff)",
-                border: "1px solid var(--border, #d0d7e3)",
-                borderRadius: "8px",
-                padding: "24px",
-                maxWidth: "400px",
-                width: "90%",
-              }}
-            >
-              <p style={{ marginBottom: "20px" }}>
-                If you have attached photos, they will be lost and may need to be re-uploaded.
-              </p>
-              <div className="btn-row">
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => setShowBackWarning(false)}
-                >
-                  Stay on this page
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => {
-                    photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
-                    setPhotos([]);
-                    setShowBackWarning(false);
-                    setPresentationState({ status: "loading" });
-                    setPresentationFetchTrigger((k) => k + 1);
-                    setScreen("FREE_TEXT");
-                  }}
-                >
-                  Go back
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        <EditScreen
-          practiceName={practiceName}
-          clientState={clientState}
-          editableAnswers={editableAnswers}
-          additionalText={additionalText}
-          onAnswersChange={(answers) => setEditableAnswers(answers)}
-          onAdditionalTextChange={(text) => setAdditionalText(text)}
-          onContinue={(result) => {
-            setVersion(result.version);
-            setClientState(result.clientState);
-            setSafetyMessages(result.safetyMessages);
-            setEditableAnswers(null);
-            setScreen("REVIEW");
-          }}
-          onBack={() => setShowBackWarning(true)}
-          runtimeId={runtimeId}
-          version={version}
-          photos={photos}
-          onPhotosChange={(updated) => setPhotos(updated)}
-        />
-      </>
+      <EditScreen
+        practiceName={practiceName}
+        clientState={clientState}
+        editableAnswers={editableAnswers}
+        additionalText={additionalText}
+        onAnswersChange={(answers) => setEditableAnswers(answers)}
+        onAdditionalTextChange={(text) => setAdditionalText(text)}
+        onContinue={(result) => {
+          setVersion(result.version);
+          setClientState(result.clientState);
+          setSafetyMessages(result.safetyMessages);
+          setEditableAnswers(null);
+          setScreen("REVIEW");
+        }}
+        onBack={() => {
+          setPresentationState({ status: "loading" });
+          setPresentationFetchTrigger((k) => k + 1);
+          setScreen("FREE_TEXT");
+        }}
+        runtimeId={runtimeId}
+        version={version}
+      />
     );
   }
 
@@ -540,7 +494,6 @@ export default function App() {
         practiceName={practiceName}
         clientState={clientState}
         safetyMessages={safetyMessages}
-        photos={photos}
         onBack={() => {
           setEditableAnswers(initialiseEditableAnswers(clientState));
           setScreen("EDIT");
@@ -566,7 +519,7 @@ export default function App() {
         runtimeId={runtimeId}
         version={version}
         patientDetails={patientDetails}
-        photos={photos.map((p) => p.file)}
+        doctors={doctors ?? []}
         onSubmit={() => {
           setScreen("DONE");
         }}

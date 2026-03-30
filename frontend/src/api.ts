@@ -139,6 +139,25 @@ export async function getAvailability(): Promise<AvailabilityResult> {
 }
 
 // ---------------------------------
+// Doctor list (Screen 0 — fetched at session start)
+// ---------------------------------
+
+/**
+ * Fetches the doctor list from GET /doctors.
+ * Returns an empty array if the request fails for any reason — the caller
+ * must treat failure as "no list configured" and fall back to free text.
+ * This function never throws; errors are silently swallowed.
+ */
+export async function getDoctors(): Promise<string[]> {
+  try {
+    const data = await getJson<{ doctors: string[] }>("/doctors");
+    return data.doctors;
+  } catch {
+    return [];
+  }
+}
+
+// ---------------------------------
 // Condition discovery (Screens 2-3)
 // ---------------------------------
 
