@@ -20,8 +20,9 @@ Do not define outcome values anywhere else in the backend codebase.
 import json
 import os
 
-_HERE = os.path.dirname(__file__)
-_JSON_PATH = os.path.join(_HERE, "consultation_outcomes.json")
+_HERE = os.path.dirname(__file__)          # app/core/
+_ROOT = os.path.dirname(os.path.dirname(_HERE))  # project root
+_JSON_PATH = os.path.join(_ROOT, "consultation_outcomes.json")
 
 with open(_JSON_PATH, "r", encoding="utf-8") as _f:
     CONSULTATION_OUTCOMES: list[dict] = json.load(_f)
