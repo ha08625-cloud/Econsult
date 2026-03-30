@@ -2,11 +2,12 @@
 Practice repository.
 
 Database access for practice identity and practice-specific configuration.
-Handles the practices and practice_signposting tables.
+Handles the practices, practice_signposting, and practice_doctors tables.
 
 This module is responsible for:
 - CRUD operations for practices (including email)
 - CRUD operations for practice signposting
+- CRUD operations for the doctor list
 - HTML sanitisation for signposting content
 - Email format validation
 
@@ -31,6 +32,9 @@ from app.core.db import get_conn
 MAX_SIGNPOSTING_LENGTH = 5000
 QUILL_EMPTY_OUTPUT = "<p></p>"
 
+MAX_DOCTOR_NAME_LENGTH = 100
+MAX_DOCTOR_LIST_LENGTH = 50
+
 
 class PracticeNotFound(Exception):
     """Raised when a practice_id does not exist."""
@@ -44,6 +48,11 @@ class InvalidSignpostingData(Exception):
 
 class InvalidEmailError(Exception):
     """Raised when an email address fails validation."""
+    pass
+
+
+class InvalidDoctorListError(Exception):
+    """Raised when the doctor list fails validation."""
     pass
 
 
@@ -106,6 +115,33 @@ class PracticeRepository:
             raise InvalidEmailError(
                 "Email must be in format 'local@domain'"
             )
+
+    def _validate_doctor_list(self, names: List[str]) -> None:
+        """
+        Validate a list of doctor names.
+
+        Raises InvalidDoctorListError if:
+        - names is not a list
+        - the list exceeds MAX_DOCTOR_LIST_LENGTH items
+        - any item is not a non-empty string
+        - any item exceeds MAX_DOCTOR_NAME_LENGTH characters
+        """
+        if not isinstance(names, list):
+            raise InvalidDoctorListError("Doctor list must be a list")
+        if len(names) > MAX_DOCTOR_LIST_LENGTH:
+            raise InvalidDoctorListError(
+                f"Doctor list must not exceed {MAX_DOCTOR_LIST_LENGTH} items "
+                f"(received {len(names)})"
+            )
+        for i, name in enumerate(names):
+            if not isinstance(name, str) or not name.strip():
+                raise InvalidDoctorListError(
+                    f"Doctor name at index {i} must be a non-empty string"
+                )
+            if len(name) > MAX_DOCTOR_NAME_LENGTH:
+                raise InvalidDoctorListError(
+                    f"Doctor name at index {i} exceeds {MAX_DOCTOR_NAME_LENGTH} characters"
+                )
 
     # --- Practices ---
 
@@ -269,3 +305,61 @@ class PracticeRepository:
                     """,
                     (practice_id, condition_id),
                 )
+
+    # --- Doctor list ---
+
+    def get_doctors(self, practice_id: str) -> List[str]:
+        """
+        Return the doctor list for a practice, ordered by display_order.
+        Returns an empty list if no doctors are configured.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT name
+                    FROM practice_doctors
+                    WHERE practice_id = %s
+                    ORDER BY display_order ASC
+                    """,
+                    (practice_id,),
+                )
+                rows = cur.fetchall()
+
+        return [row["name"] for row in rows]
+
+    def set_doctors(self, practice_id: str, names: List[str]) -> None:
+        """
+        Replace the entire doctor list for a practice atomically.
+
+        Deletes all existing rows for the practice and re-inserts with
+        sequential display_order values (0-based) in a single transaction.
+
+        An empty list is valid — it clears the doctor list entirely.
+
+        Raises InvalidDoctorListError if validation fails.
+        Raises PracticeNotFound if practice does not exist.
+        """
+        self._validate_doctor_list(names)
+
+        if not self.practice_exists(practice_id):
+            raise PracticeNotFound(f"Practice not found: {practice_id}")
+
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM practice_doctors WHERE practice_id = %s",
+                    (practice_id,),
+                )
+                if names:
+                    psycopg2.extras.execute_values(
+                        cur,
+                        """
+                        INSERT INTO practice_doctors (practice_id, name, display_order)
+                        VALUES %s
+                        """,
+                        [
+                            (practice_id, name.strip(), order)
+                            for order, name in enumerate(names)
+                        ],
+                    )

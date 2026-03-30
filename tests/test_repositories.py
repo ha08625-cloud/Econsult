@@ -82,6 +82,7 @@ from app.repositories.practice_repository import (
     PracticeNotFound,
     InvalidEmailError,
     InvalidSignpostingData,
+    InvalidDoctorListError,
 )
 from app.repositories.submission_repository import (
     SubmissionRepository,
@@ -200,6 +201,11 @@ def _make_practice_repo() -> PracticeRepository:
 def _cleanup_practice(pid: str):
     with get_conn(DATABASE_URL) as conn:
         with conn.cursor() as cur:
+            # Delete child rows before the parent practice row.
+            # practice_doctors and practice_signposting both FK to practices.
+            cur.execute(
+                "DELETE FROM practice_doctors WHERE practice_id = %s", (pid,)
+            )
             cur.execute(
                 "DELETE FROM practice_signposting WHERE practice_id = %s", (pid,)
             )
@@ -333,6 +339,141 @@ def test_signposting_empty_html_deletes_row():
         repo.set_signposting(pid, "uti", "<p></p>")
         result = repo.get_signposting(pid, "uti")
         assert result is None
+    finally:
+        _cleanup_practice(pid)
+
+
+# ---------------------------------------------------------------------------
+# PracticeRepository — doctor list tests
+# ---------------------------------------------------------------------------
+
+def test_doctors_get_returns_empty_list_when_none_configured():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        doctors = repo.get_doctors(pid)
+        assert doctors == [], f"Expected empty list, got {doctors}"
+    finally:
+        _cleanup_practice(pid)
+
+
+def test_doctors_set_and_get_round_trip():
+    repo = _make_practice_repo()
+    pid = _uid()
+    names = ["Dr Smith", "Dr Jones", "Dr Patel"]
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        repo.set_doctors(pid, names)
+        result = repo.get_doctors(pid)
+        assert result == names, f"Expected {names}, got {result}"
+    finally:
+        _cleanup_practice(pid)
+
+
+def test_doctors_set_replaces_existing_list():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        repo.set_doctors(pid, ["Dr Smith", "Dr Jones"])
+        repo.set_doctors(pid, ["Dr Brown"])
+        result = repo.get_doctors(pid)
+        assert result == ["Dr Brown"], f"Expected ['Dr Brown'], got {result}"
+    finally:
+        _cleanup_practice(pid)
+
+
+def test_doctors_set_empty_list_clears_doctors():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        repo.set_doctors(pid, ["Dr Smith", "Dr Jones"])
+        repo.set_doctors(pid, [])
+        result = repo.get_doctors(pid)
+        assert result == [], f"Expected empty list after clearing, got {result}"
+    finally:
+        _cleanup_practice(pid)
+
+
+def test_doctors_order_is_preserved():
+    repo = _make_practice_repo()
+    pid = _uid()
+    # Deliberately non-alphabetical to confirm display_order not alphabetical sort
+    names = ["Dr Zebra", "Dr Apple", "Dr Mango"]
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        repo.set_doctors(pid, names)
+        result = repo.get_doctors(pid)
+        assert result == names, (
+            f"Expected order {names}, got {result}"
+        )
+    finally:
+        _cleanup_practice(pid)
+
+
+def test_doctors_set_raises_for_missing_practice():
+    repo = _make_practice_repo()
+    raised = False
+    try:
+        repo.set_doctors("nonexistent_practice_that_will_never_exist_xyz", ["Dr Smith"])
+    except PracticeNotFound:
+        raised = True
+    assert raised, "Expected PracticeNotFound was not raised"
+
+
+def test_doctors_set_raises_for_empty_name():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        raised = False
+        try:
+            repo.set_doctors(pid, ["Dr Smith", "  ", "Dr Jones"])
+        except InvalidDoctorListError:
+            raised = True
+        assert raised, "Expected InvalidDoctorListError for empty/whitespace name"
+    finally:
+        _cleanup_practice(pid)
+
+
+def test_doctors_set_raises_for_name_too_long():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        long_name = "Dr " + "A" * 100  # 103 chars, over limit of 100
+        raised = False
+        try:
+            repo.set_doctors(pid, [long_name])
+        except InvalidDoctorListError:
+            raised = True
+        assert raised, "Expected InvalidDoctorListError for name exceeding 100 characters"
+    finally:
+        _cleanup_practice(pid)
+
+
+def test_doctors_set_raises_for_list_too_long():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        too_many = [f"Dr Doctor{i}" for i in range(51)]  # 51 items, over limit of 50
+        raised = False
+        try:
+            repo.set_doctors(pid, too_many)
+        except InvalidDoctorListError:
+            raised = True
+        assert raised, "Expected InvalidDoctorListError for list exceeding 50 items"
     finally:
         _cleanup_practice(pid)
 
@@ -812,6 +953,17 @@ if __name__ == "__main__":
     run_test("set_signposting and get_signposting", test_signposting_set_and_get)
     run_test("delete_signposting removes row", test_signposting_delete)
     run_test("set_signposting with empty html deletes row", test_signposting_empty_html_deletes_row)
+
+    print("\n--- PracticeRepository — doctor list ---")
+    run_test("get_doctors returns empty list when none configured", test_doctors_get_returns_empty_list_when_none_configured)
+    run_test("set_doctors and get_doctors round-trip", test_doctors_set_and_get_round_trip)
+    run_test("set_doctors replaces existing list", test_doctors_set_replaces_existing_list)
+    run_test("set_doctors with empty list clears doctors", test_doctors_set_empty_list_clears_doctors)
+    run_test("get_doctors preserves insertion order", test_doctors_order_is_preserved)
+    run_test("set_doctors raises PracticeNotFound for missing practice", test_doctors_set_raises_for_missing_practice)
+    run_test("set_doctors raises InvalidDoctorListError for empty name", test_doctors_set_raises_for_empty_name)
+    run_test("set_doctors raises InvalidDoctorListError for name too long", test_doctors_set_raises_for_name_too_long)
+    run_test("set_doctors raises InvalidDoctorListError for list too long", test_doctors_set_raises_for_list_too_long)
 
     print("\n--- SubmissionRepository ---")
     run_test("create_submission and get_submission", test_submission_create_and_get)
