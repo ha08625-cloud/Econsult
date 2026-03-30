@@ -19,7 +19,9 @@ The system has two Postgres databases on Railway:
 | Production | Real patient data (`summertown_health_centre`) | `DATABASE_URL` |
 | Test | Integration tests only (`test-practice`) | `TEST_DATABASE_URL` |
 
-These must never be the same URL. The integration test module (`test_form_routes.py`) enforces this with a hard guardrail at the top of the file: if `TEST_DATABASE_URL` is not set, the entire module is skipped. This guardrail must never be removed, even during development.
+These must never be the same URL locally. The integration test module (`test_form_routes.py`) enforces this with a hard guardrail at the top of the file: if `TEST_DATABASE_URL` is not set, the entire module is skipped. This guardrail must never be removed, even during development.
+
+**CI exception:** In GitHub Actions, `DATABASE_URL` and `TEST_DATABASE_URL` intentionally point at the same ephemeral Postgres container. This is safe because the container is created fresh for each run, contains no real data, and is destroyed when the job completes. The two-database rule exists to protect production data locally — it does not apply to a throwaway CI container.
 
 The test database was provisioned separately on Railway and seeded with a practice record:
 - `practice_id`: `test-practice`

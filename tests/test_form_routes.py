@@ -340,7 +340,7 @@ def test_form_finish_delivery_failure_does_not_prevent_submission_id():
     the failure and returns a DeliveryOutcome. The router's except Exception
     block catches any unexpected errors from the orchestration layer.
     """
-    from app.services.delivery_service import EmailDeliveryError
+    from app.services.delivery.delivery_service import EmailDeliveryError
 
     class FailingDeliveryService(DeliveryService):
         def send_clinical_output(
