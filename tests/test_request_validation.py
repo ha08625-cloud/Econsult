@@ -5,6 +5,8 @@ Tests validate_patient_details — all validation paths including DOB numeric
 checks, calendar date assembly, future date rejection, postcode format,
 and submitter field conditionals.
 
+Tests validate_contact_preferences — consultation_outcome validation paths.
+
 These are pure unit tests. No database, no HTTP, no app startup required.
 
 Run from project root:
@@ -14,7 +16,7 @@ Run from project root:
 import unittest
 from datetime import date
 
-from app.core.request_validation import validate_patient_details
+from app.core.request_validation import validate_patient_details, validate_contact_preferences
 from app.core.errors import APIError
 
 
@@ -58,6 +60,40 @@ def _raises_with(pd: dict, expected_fragment: str):
     """
     try:
         validate_patient_details(pd)
+        raise AssertionError(
+            f"Expected APIError containing {expected_fragment!r} but no exception was raised"
+        )
+    except APIError as e:
+        assert expected_fragment in e.message, (
+            f"Expected {expected_fragment!r} in error message, got: {e.message!r}"
+        )
+
+
+def _valid_cp(**overrides) -> dict:
+    """
+    Return a valid contact_preferences dict.
+    Keyword arguments override individual fields.
+    """
+    base = {
+        "contact_methods": ["email"],
+        "email_address": "patient@example.com",
+        "phone_number": None,
+        "best_time_to_call": None,
+        "doctor_preference": "any",
+        "usual_doctor_name": None,
+        "consultation_outcome": "face_to_face",
+    }
+    base.update(overrides)
+    return base
+
+
+def _cp_raises_with(cp: dict, expected_fragment: str):
+    """
+    Assert that validate_contact_preferences raises APIError and that the
+    message contains expected_fragment.
+    """
+    try:
+        validate_contact_preferences(cp)
         raise AssertionError(
             f"Expected APIError containing {expected_fragment!r} but no exception was raised"
         )
@@ -254,3 +290,66 @@ class TestValidatePatientDetailsSubmitterFields(unittest.TestCase):
     def test_me_with_submitter_name_populated_passes(self):
         # For patient_for="me", submitter fields are ignored even if populated
         validate_patient_details(_valid_pd(submitter_name="Someone", submitter_relationship="carer"))
+
+
+# ---------------------------------------------------------------------------
+# Section 2: validate_contact_preferences — consultation_outcome
+# ---------------------------------------------------------------------------
+
+class TestValidateContactPreferencesOutcomeHappyPath(unittest.TestCase):
+
+    def test_all_valid_outcome_values_pass(self):
+        valid_values = [
+            "admin_task",
+            "face_to_face",
+            "phone_appointment",
+            "advice_only",
+            "medication",
+            "not_sure",
+        ]
+        for value in valid_values:
+            with self.subTest(outcome=value):
+                validate_contact_preferences(_valid_cp(consultation_outcome=value))
+
+    def test_valid_cp_with_outcome_passes(self):
+        validate_contact_preferences(_valid_cp())
+
+
+class TestValidateContactPreferencesOutcomeRejection(unittest.TestCase):
+
+    def test_unknown_outcome_value_raises(self):
+        _cp_raises_with(
+            _valid_cp(consultation_outcome="video_call"),
+            "consultation_outcome",
+        )
+
+    def test_empty_string_outcome_raises(self):
+        _cp_raises_with(
+            _valid_cp(consultation_outcome=""),
+            "consultation_outcome",
+        )
+
+    def test_null_outcome_raises(self):
+        _cp_raises_with(
+            _valid_cp(consultation_outcome=None),
+            "consultation_outcome",
+        )
+
+    def test_missing_outcome_field_raises(self):
+        cp = _valid_cp()
+        del cp["consultation_outcome"]
+        # require_keys will catch the missing field as an illegal-fields violation
+        # only if it is absent from the allowlist — but here it is absent from the
+        # payload, so the cp.get() will return None and trigger the null check.
+        try:
+            validate_contact_preferences(cp)
+            raise AssertionError("Expected APIError but none was raised")
+        except APIError as e:
+            assert "consultation_outcome" in e.message or "Illegal" in e.message, (
+                f"Unexpected error message: {e.message!r}"
+            )
+
+    def test_extra_unknown_field_alongside_outcome_raises(self):
+        cp = _valid_cp()
+        cp["unexpected_field"] = "surprise"
+        _cp_raises_with(cp, "Illegal")

@@ -79,7 +79,11 @@ def minimal_clinical_output() -> ClinicalOutput:
             "q3": "Shortness of breath?",
         },
         patient_details=patient,
-        contact_preferences={"contact_methods": ["phone"], "phone_number": "07700900000"},
+        contact_preferences={
+            "contact_methods": ["phone"],
+            "phone_number": "07700900000",
+            "consultation_outcome": "face_to_face",
+        },
     )
 
 
@@ -176,3 +180,94 @@ def test_generate_pdf_no_photos_and_empty_list_same_size(
         **submission_kwargs,
     )
     assert len(none_result) == len(empty_result)
+
+
+# ---------------------------------------------------------------------------
+# Consultation outcome tests
+# ---------------------------------------------------------------------------
+
+def test_generate_pdf_renders_consultation_outcome(submission_kwargs):
+    """consultation_outcome value must appear as a human-readable label in the PDF text."""
+    patient = PatientDetails(
+        patient_for="me",
+        first_name="Test",
+        last_name="Patient",
+        date_of_birth="1990-01-01",
+        postcode="SW1A 1AA",
+    )
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="Some symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=patient,
+        contact_preferences={
+            "contact_methods": ["email"],
+            "email_address": "test@example.com",
+            "consultation_outcome": "face_to_face",
+        },
+    )
+    pdf_bytes = generate_pdf(clinical_output=output, **submission_kwargs)
+    # Extract text content from PDF bytes for assertion.
+    # The label "A face to face appointment" must appear somewhere in the output.
+    pdf_text = pdf_bytes.decode("latin-1")
+    assert "face to face" in pdf_text.lower()
+
+
+def test_generate_pdf_outcome_absent_produces_no_outcome_row(submission_kwargs):
+    """If consultation_outcome is absent from contact_preferences, no outcome row is rendered."""
+    patient = PatientDetails(
+        patient_for="me",
+        first_name="Test",
+        last_name="Patient",
+        date_of_birth="1990-01-01",
+        postcode="SW1A 1AA",
+    )
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="Some symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=patient,
+        contact_preferences={
+            "contact_methods": ["email"],
+            "email_address": "test@example.com",
+            # consultation_outcome deliberately absent — old submission format
+        },
+    )
+    # Must not raise
+    pdf_bytes = generate_pdf(clinical_output=output, **submission_kwargs)
+    assert pdf_bytes[:4] == b"%PDF"
+
+
+def test_generate_pdf_not_sure_outcome_renders_correctly(submission_kwargs):
+    """The not_sure outcome must render as 'Not sure', not the raw value string."""
+    patient = PatientDetails(
+        patient_for="me",
+        first_name="Test",
+        last_name="Patient",
+        date_of_birth="1990-01-01",
+        postcode="SW1A 1AA",
+    )
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="Some symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=patient,
+        contact_preferences={
+            "contact_methods": ["email"],
+            "email_address": "test@example.com",
+            "consultation_outcome": "not_sure",
+        },
+    )
+    pdf_bytes = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = pdf_bytes.decode("latin-1")
+    assert "Not sure" in pdf_text
+    assert "not_sure" not in pdf_text

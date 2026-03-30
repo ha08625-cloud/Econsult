@@ -76,6 +76,7 @@ const CONTACT_PREFS: ContactPreferences = {
   best_time_to_call: null,
   doctor_preference: "any",
   usual_doctor_name: null,
+  consultation_outcome: "not_sure",
 };
 
 const PATIENT_DETAILS: PatientDetails = {

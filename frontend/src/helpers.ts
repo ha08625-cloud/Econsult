@@ -11,7 +11,10 @@ export function initialiseEditableAnswers(
   }, {} as Record<string, boolean | string | null>);
 }
 
-export function initialiseContactPreferences(): ContactPreferences {
+// Returns the contact-preference fields that belong to this screen's local
+// form state. consultation_outcome is excluded because it is captured earlier
+// on the OUTCOME screen and passed in as a prop to ContactScreen.
+export function initialiseContactPreferences(): Omit<ContactPreferences, "consultation_outcome"> {
   return {
     contact_methods: [],
     email_address: null,

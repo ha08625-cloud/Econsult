@@ -3,7 +3,6 @@ import {
   getSafetyWarning,
   getPractice,
   getAvailability,
-  getDoctors,
   getConditions,
   getConditionPresentation,
   friendlyErrorMessage,
@@ -16,6 +15,7 @@ import type {
   PatientDetails,
   SafetyWarningFetchState,
   PracticeNameFetchState,
+  ConsultationOutcome,
 } from "./types";
 import type { PhotoAttachment } from "./uiTypes";
 import { GENERAL_CONSULTATION_ID } from './constants';
@@ -24,6 +24,7 @@ import { initialiseEditableAnswers } from "./helpers";
 import DoneScreen from "./screens/DoneScreen";
 import SafetyWarningScreen from "./screens/SafetyWarningScreen";
 import PatientDetailsScreen from "./screens/PatientDetailsScreen";
+import OutcomeScreen from "./screens/OutcomeScreen";
 import SelectConditionScreen from "./screens/SelectConditionScreen";
 import ReviewScreen from "./screens/ReviewScreen";
 import EditScreen from "./screens/EditScreen";
@@ -38,6 +39,7 @@ export default function App() {
   const [screen, setScreen] = useState<
     | "SAFETY_WARNING"
     | "PATIENT_DETAILS"
+    | "OUTCOME"
     | "SELECT_CONDITION"
     | "FREE_TEXT"
     | "EDIT"
@@ -56,6 +58,9 @@ export default function App() {
 
   // Patient details (captured before condition selection — NHS contractual obligation)
   const [patientDetails, setPatientDetails] = useState<PatientDetails | null>(null);
+
+  // Consultation outcome (captured on OUTCOME screen, required before submission)
+  const [consultationOutcome, setConsultationOutcome] = useState<ConsultationOutcome | null>(null);
 
   // Photo attachments — object URLs in each PhotoAttachment must be revoked
   // when photos are removed or the session ends. See cleanup effects below.
@@ -93,13 +98,6 @@ export default function App() {
   const [availabilityClosedMessage, setAvailabilityClosedMessage] = useState<string | null>(null);
   const [afterHoursNotice, setAfterHoursNotice] = useState<string | null>(null);
   const [practiceIsOpen, setPracticeIsOpen] = useState<boolean | null>(null);
-
-  // Screen 0 state (doctor list)
-  // Fail-open: if the fetch fails, stays as an empty array.
-  // An empty array causes ContactScreen to show only the free text fallback.
-  const [doctors, setDoctors] = useState<string[]>([]);
-  // null = not yet attempted. false = fetch done (success or failure).
-  const [doctorsFetched, setDoctorsFetched] = useState<boolean>(false);
 
   // Screen 2 state (condition discovery)
   const [conditions, setConditions] = useState<ConditionSummary[] | null>(null);
@@ -221,35 +219,6 @@ export default function App() {
   }, [screen, practiceIsOpen]);
 
   // ---------------------------------
-  // Doctor list fetch (Screen 0)
-  // ---------------------------------
-  // Fetched once at session start alongside availability.
-  // Fail-open: any error leaves doctors as [] and the form proceeds.
-  // An empty list causes ContactScreen to show only the free text fallback.
-
-  useEffect(() => {
-    if (screen !== "SAFETY_WARNING") return;
-    if (doctorsFetched) return;
-
-    let cancelled = false;
-
-    async function fetchDoctorList() {
-      try {
-        const res = await getDoctors();
-        if (!cancelled) setDoctors(res.doctors ?? []);
-      } catch {
-        // Fail open — leave doctors as [].
-      } finally {
-        if (!cancelled) setDoctorsFetched(true);
-      }
-    }
-
-    fetchDoctorList();
-
-    return () => { cancelled = true; };
-  }, [screen, doctorsFetched]);
-
-  // ---------------------------------
   // Condition list fetch (Screen 2)
   // ---------------------------------
 
@@ -335,6 +304,7 @@ export default function App() {
   // additionalText
   // safetyMessages
   // patientDetails
+  // consultationOutcome
   // photos
   // fatalError
   // showBackWarning
@@ -344,8 +314,6 @@ export default function App() {
   // availabilityClosedMessage
   // afterHoursNotice
   // practiceIsOpen
-  // doctors
-  // doctorsFetched
   // presentationState
   // presentationFetchTrigger
   // conditions
@@ -380,6 +348,7 @@ export default function App() {
               setAdditionalText("");
               setSafetyMessages([]);
               setPatientDetails(null);
+              setConsultationOutcome(null);
               setPhotos([]);
               setShowBackWarning(false);
               setConditions(null);
@@ -390,8 +359,6 @@ export default function App() {
               setPracticeIsOpen(null);
               setAvailabilityClosedMessage(null);
               setAfterHoursNotice(null);
-              setDoctors([]);
-              setDoctorsFetched(false);
             }}
           >
             Try again
@@ -424,9 +391,22 @@ export default function App() {
         practiceName={practiceName}
         onContinue={(details) => {
           setPatientDetails(details);
-          setScreen("SELECT_CONDITION");
+          setScreen("OUTCOME");
         }}
         onBack={() => setScreen("SAFETY_WARNING")}
+      />
+    );
+  }
+
+  if (screen === "OUTCOME") {
+    return (
+      <OutcomeScreen
+        practiceName={practiceName}
+        onContinue={(outcome) => {
+          setConsultationOutcome(outcome);
+          setScreen("SELECT_CONDITION");
+        }}
+        onBack={() => setScreen("PATIENT_DETAILS")}
       />
     );
   }
@@ -458,6 +438,7 @@ export default function App() {
           setPresentationFetchTrigger((k) => k + 1);
           setScreen("FREE_TEXT");
         }}
+        onBack={() => setScreen("OUTCOME")}
       />
     );
   }
@@ -600,6 +581,10 @@ export default function App() {
       setFatalError("Patient details missing at submission");
       return null;
     }
+    if (consultationOutcome === null) {
+      setFatalError("Consultation outcome missing at submission");
+      return null;
+    }
 
     return (
       <ContactScreen
@@ -607,8 +592,8 @@ export default function App() {
         runtimeId={runtimeId}
         version={version}
         patientDetails={patientDetails}
+        consultationOutcome={consultationOutcome}
         photos={photos.map((p) => p.file)}
-        doctors={doctors}
         onSubmit={() => {
           setScreen("DONE");
         }}
