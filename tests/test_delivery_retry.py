@@ -171,6 +171,7 @@ def _create_submission(sid: str) -> None:
         submitted_at=datetime.now(timezone.utc),
         attachment_count=0,
     )
+    att_repo.save_attachment(sid, b"%PDF-1.4 stub bytes")
 
 
 def _cleanup(sid: str) -> None:
