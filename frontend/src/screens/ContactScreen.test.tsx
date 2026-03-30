@@ -106,6 +106,8 @@ describe("ContactScreen", () => {
   });
 
   it("calls finishForm with an empty photos array when no photos are provided", async () => {
+    mockFinishForm.mockResolvedValue({ submission_id: "x" });
+
     render(<ContactScreen {...defaultProps} photos={[]} />);
     await submitWithEmail();
 
@@ -115,6 +117,8 @@ describe("ContactScreen", () => {
   });
 
   it("calls finishForm with the correct photos array when photos are provided", async () => {
+    mockFinishForm.mockResolvedValue({ submission_id: "x" });
+
     const file1 = new File([new Uint8Array([0xff, 0xd8, 0xff])], "photo1.jpg", {
       type: "image/jpeg",
     });
