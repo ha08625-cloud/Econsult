@@ -123,11 +123,12 @@ async def form_init(
         condition_label=condition_label,
     )
 
-    version = runtime_repo.create_session(
+    runtime_repo.create_initial(
         runtime_id=runtime_id,
         ruleset_hash=ruleset_hash,
         state_dict=initial_state.to_dict(),
     )
+    version = 1
 
     return {
         "runtime_id": runtime_id,
