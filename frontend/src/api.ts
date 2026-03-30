@@ -141,20 +141,11 @@ export async function getAvailability(): Promise<AvailabilityResult> {
 // ---------------------------------
 // Doctor list (Screen 0 — fetched at session start)
 // ---------------------------------
+// Fail-open: caller must catch and fall back to an empty array.
+// Never throws intentionally — the public endpoint guarantees a 200.
 
-/**
- * Fetches the doctor list from GET /doctors.
- * Returns an empty array if the request fails for any reason — the caller
- * must treat failure as "no list configured" and fall back to free text.
- * This function never throws; errors are silently swallowed.
- */
-export async function getDoctors(): Promise<string[]> {
-  try {
-    const data = await getJson<{ doctors: string[] }>("/doctors");
-    return data.doctors;
-  } catch {
-    return [];
-  }
+export async function getDoctors(): Promise<{ doctors: string[] }> {
+  return getJson("/doctors");
 }
 
 // ---------------------------------

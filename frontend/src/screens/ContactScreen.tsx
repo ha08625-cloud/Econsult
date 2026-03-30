@@ -4,17 +4,13 @@ import { finishForm, friendlyErrorMessage } from "../api";
 import { initialiseContactPreferences, isValidUkPhone } from "../helpers";
 import type { ContactPreferences, ContactMethod, PatientDetails } from "../types";
 
-// "any"   — soonest available (maps to doctor_preference: "any")
-// "other" — someone not on the list (maps to doctor_preference: "usual", name from free text)
-// any other string — a named doctor from the list (maps to doctor_preference: "usual", name = value)
-type DoctorDropdownValue = "any" | "other" | string;
-
 interface ContactScreenProps {
   practiceName: string | null;
   runtimeId: string;
   version: number;
   patientDetails: PatientDetails;
-  photos?: File[];
+  photos: File[];
+  /** Doctor names from GET /doctors. Empty array = no list configured; show free text only. */
   doctors: string[];
   onSubmit: () => void;
   onBack: () => void;
@@ -25,7 +21,7 @@ export default function ContactScreen({
   runtimeId,
   version,
   patientDetails,
-  photos = [],
+  photos,
   doctors,
   onSubmit,
   onBack,
@@ -37,16 +33,13 @@ export default function ContactScreen({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
 
-  // doctorDropdown is the selected value of the doctor list dropdown.
-  // Only used when doctors.length > 0.
-  // Initialised to "any" (soonest available).
-  const [doctorDropdown, setDoctorDropdown] = useState<DoctorDropdownValue>("any");
-
-  // freeTextDoctorName is always submitted when the list is shown.
-  // When doctorDropdown === "other", this populates usual_doctor_name.
-  // When a named doctor is selected, this is ignored in favour of the dropdown value.
-  // When doctorDropdown === "any", this is submitted but doctor_preference stays "any".
-  const [freeTextDoctorName, setFreeTextDoctorName] = useState<string>("");
+  // When a list is shown, this tracks the value of the dropdown separately
+  // from doctor_preference / usual_doctor_name so we can map to those fields
+  // on submit. Values: "any" | "other" | <a doctor name from the list>.
+  const [doctorSelection, setDoctorSelection] = useState<string>("any");
+  // Free text box is always visible when a list is shown; also the sole
+  // input when no list is configured.
+  const [freeTextDoctor, setFreeTextDoctor] = useState<string>("");
 
   const cp = contactPreferences;
   const methods = cp.contact_methods;
@@ -54,8 +47,7 @@ export default function ContactScreen({
   const wantsText = methods.includes("text");
   const wantsPhoneOrText = wantsPhone || wantsText;
   const wantsEmail = methods.includes("email");
-
-  const showDoctorList = doctors.length > 0;
+  const hasDoctorList = doctors.length > 0;
 
   function toggleMethod(method: ContactMethod) {
     const next = methods.includes(method)
@@ -93,14 +85,15 @@ export default function ContactScreen({
       }
     }
 
-    if (showDoctorList) {
-      // When the list is shown, the only validation needed is:
-      // if "Someone not on this list" is selected, the free text box must not be empty.
-      if (doctorDropdown === "other" && !freeTextDoctorName.trim()) {
-        errors.usual_doctor_name = "Please enter your doctor's name.";
+    // Doctor validation — list path
+    if (hasDoctorList) {
+      // "other" selected but free text box is empty: require a name.
+      if (doctorSelection === "other" && !freeTextDoctor.trim()) {
+        errors.free_text_doctor = "Please enter your doctor's name.";
       }
+      // Named doctor selected or "any": no validation needed.
     } else {
-      // Legacy free text path — original validation applies.
+      // Legacy path (no list): validate the existing field.
       if (cp.doctor_preference === "usual") {
         if (!cp.usual_doctor_name?.trim()) {
           errors.usual_doctor_name = "Please enter your doctor's name.";
@@ -113,23 +106,25 @@ export default function ContactScreen({
       return;
     }
 
-    // Build doctor_preference and usual_doctor_name from whichever path we used.
+    // Build doctor preference fields for the payload.
     let doctorPreference: "any" | "usual";
     let usualDoctorName: string | null;
 
-    if (showDoctorList) {
-      if (doctorDropdown === "any") {
+    if (hasDoctorList) {
+      if (doctorSelection === "any") {
         doctorPreference = "any";
         usualDoctorName = null;
-      } else if (doctorDropdown === "other") {
+      } else if (doctorSelection === "other") {
+        // Patient typed their own name.
         doctorPreference = "usual";
-        usualDoctorName = freeTextDoctorName.trim() || null;
+        usualDoctorName = freeTextDoctor.trim() || null;
       } else {
-        // A named doctor was selected — the dropdown value is the name.
+        // A named doctor was selected from the list — takes precedence over free text.
         doctorPreference = "usual";
-        usualDoctorName = doctorDropdown;
+        usualDoctorName = doctorSelection;
       }
     } else {
+      // Legacy path.
       doctorPreference = cp.doctor_preference;
       usualDoctorName =
         cp.doctor_preference === "usual" ? (cp.usual_doctor_name?.trim() || null) : null;
@@ -269,21 +264,18 @@ export default function ContactScreen({
         </div>
       )}
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Doctor preference — list path                                        */}
-      {/* ------------------------------------------------------------------ */}
-
-      {showDoctorList ? (
+      {/* Doctor preference — list path */}
+      {hasDoctorList ? (
         <>
           <div className="field" style={{ marginTop: "24px" }}>
             <label htmlFor="doctor-preference">Which doctor would you prefer to hear from?</label>
             <select
               id="doctor-preference"
-              value={doctorDropdown}
+              value={doctorSelection}
               onChange={(e) => {
-                setDoctorDropdown(e.target.value);
-                if (contactErrors.usual_doctor_name) {
-                  setContactErrors({ ...contactErrors, usual_doctor_name: "" });
+                setDoctorSelection(e.target.value);
+                if (contactErrors.free_text_doctor) {
+                  setContactErrors({ ...contactErrors, free_text_doctor: "" });
                 }
               }}
               style={{ marginTop: "8px" }}
@@ -305,25 +297,23 @@ export default function ContactScreen({
             <input
               id="usual-doctor-name"
               type="text"
-              value={freeTextDoctorName}
+              value={freeTextDoctor}
               onChange={(e) => {
-                setFreeTextDoctorName(e.target.value);
-                if (contactErrors.usual_doctor_name) {
-                  setContactErrors({ ...contactErrors, usual_doctor_name: "" });
+                setFreeTextDoctor(e.target.value);
+                if (contactErrors.free_text_doctor) {
+                  setContactErrors({ ...contactErrors, free_text_doctor: "" });
                 }
               }}
             />
-            {contactErrors.usual_doctor_name && (
+            {contactErrors.free_text_doctor && (
               <p style={{ color: "var(--danger)", fontSize: "13px", marginTop: "2px" }}>
-                {contactErrors.usual_doctor_name}
+                {contactErrors.free_text_doctor}
               </p>
             )}
           </div>
         </>
       ) : (
-        /* ---------------------------------------------------------------- */
-        /* Doctor preference — legacy free text path                         */
-        /* ---------------------------------------------------------------- */
+        /* Doctor preference — legacy path (no list configured or fetch failed) */
         <>
           <div className="field" style={{ marginTop: "24px" }}>
             <label htmlFor="doctor-preference">Which doctor would you prefer to hear from?</label>
