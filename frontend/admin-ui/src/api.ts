@@ -138,6 +138,41 @@ export async function updatePracticeEmail(
 }
 
 // ---------------------------------------------------------------------------
+// Doctor list
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetches the current doctor list for the practice.
+ * Returns an empty array if no doctors are configured.
+ */
+export async function getDoctors(token: string): Promise<string[]> {
+  const res = await apiFetch("/admin/doctors", token);
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
+  const data = await res.json();
+  return data.doctors as string[];
+}
+
+/**
+ * Replaces the doctor list for the practice.
+ * An empty array is valid — it clears the list entirely.
+ * Returns the saved list as confirmed by the server.
+ */
+export async function putDoctors(
+  token: string,
+  doctors: string[]
+): Promise<string[]> {
+  const res = await apiFetch("/admin/doctors", token, {
+    method: "PUT",
+    body: JSON.stringify({ doctors }),
+  });
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res));
+  }
+  const data = await res.json();
+  return data.doctors as string[];
+}
+
+// ---------------------------------------------------------------------------
 // Availability
 // ---------------------------------------------------------------------------
 

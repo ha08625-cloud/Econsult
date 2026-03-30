@@ -1,29 +1,39 @@
 /**
- * PracticeSettingsTab.tsx — practice contact details editor.
+ * PracticeSettingsTab.tsx — practice contact details and doctor list editor.
  *
- * Fetches the current practice record on mount and allows the admin to
- * update the email address.
+ * Contains two independent sections:
  *
- * State machine:
- * - "loading"  — initial fetch in progress
- * - "ready"    — fetch succeeded; form is interactive
- * - "error"    — initial fetch failed; shows error message with no form
+ * 1. Contact email — fetches and updates the practice email address.
+ * 2. Doctor list — fetches and replaces the ordered list of doctor names
+ *    used to populate the patient-facing dropdown on the Contact screen.
  *
- * Save state is separate from load state and uses a plain string
- * discriminant rather than a union type, consistent with SaveStatus
- * elsewhere in the admin UI.
+ * Both sections share a single load state. Both fetches are issued in
+ * parallel on mount and the component enters "ready" only when both
+ * succeed. If either fails, the component enters "error".
+ *
+ * Save state for each section is independent — saving the email does not
+ * affect the doctor list save status, and vice versa.
+ *
+ * Doctor list editing:
+ * - Up/down arrow buttons reorder items. These are simpler than drag-and-drop
+ *   and require no additional dependencies.
+ * - Each item has a delete button.
+ * - An "Add doctor" input and button append a new name to the list.
+ *   The input is cleared after a successful add.
+ * - A Save button issues PUT /admin/doctors with the current list.
+ * - An empty list is valid — it clears the configured list entirely.
+ *
+ * No unsaved-change guard for either section — consistent with the existing
+ * email field behaviour. Stakes of losing an in-progress list on tab switch
+ * are low for a first version.
  *
  * This component is conditionally rendered by EditorView (destroyed and
  * recreated on each tab switch), so it always performs a fresh fetch on
- * entry. This is intentional — practice details are not expected to change
- * frequently and stale-on-return is not a concern here.
- *
- * No unsaved-change guard is needed: the input is a single text field and
- * any partially typed value is low-stakes to lose on tab switch.
+ * entry. This is intentional.
  */
 
 import { useEffect, useState } from "react";
-import { getPractice, updatePracticeEmail } from "./api";
+import { getPractice, updatePracticeEmail, getDoctors, putDoctors } from "./api";
 import type { PracticeDetails } from "./api";
 
 interface Props {
@@ -31,31 +41,52 @@ interface Props {
 }
 
 type LoadState = "loading" | "ready" | "error";
+type SaveStatus = "idle" | "saving" | "success" | "error";
 
 export default function PracticeSettingsTab({ token }: Props) {
+  // -------------------------------------------------------------------------
+  // Shared load state
+  // -------------------------------------------------------------------------
+
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // -------------------------------------------------------------------------
+  // Email section state
+  // -------------------------------------------------------------------------
+
   const [practice, setPractice] = useState<PracticeDetails | null>(null);
   const [emailInput, setEmailInput] = useState("");
+  const [emailSaveStatus, setEmailSaveStatus] = useState<SaveStatus>("idle");
+  const [emailSaveError, setEmailSaveError] = useState<string | null>(null);
 
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  // -------------------------------------------------------------------------
+  // Doctor list section state
+  // -------------------------------------------------------------------------
+
+  const [doctors, setDoctors] = useState<string[]>([]);
+  const [addInput, setAddInput] = useState("");
+  const [doctorSaveStatus, setDoctorSaveStatus] = useState<SaveStatus>("idle");
+  const [doctorSaveError, setDoctorSaveError] = useState<string | null>(null);
+
+  // -------------------------------------------------------------------------
+  // On mount: fetch practice details and doctor list in parallel
+  // -------------------------------------------------------------------------
 
   useEffect(() => {
     let cancelled = false;
 
-    getPractice(token)
-      .then((data) => {
+    Promise.all([getPractice(token), getDoctors(token)])
+      .then(([practiceData, doctorData]) => {
         if (cancelled) return;
-        setPractice(data);
-        setEmailInput(data.email);
+        setPractice(practiceData);
+        setEmailInput(practiceData.email);
+        setDoctors(doctorData);
         setLoadState("ready");
       })
       .catch((err) => {
         if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : "Failed to load practice details.");
+        setLoadError(err instanceof Error ? err.message : "Failed to load practice settings.");
         setLoadState("error");
       });
 
@@ -64,22 +95,78 @@ export default function PracticeSettingsTab({ token }: Props) {
     };
   }, [token]);
 
-  async function handleSave() {
+  // -------------------------------------------------------------------------
+  // Email save handler
+  // -------------------------------------------------------------------------
+
+  async function handleEmailSave() {
     if (!practice) return;
 
-    setSaveError(null);
-    setSaveSuccess(false);
-    setIsSaving(true);
+    setEmailSaveError(null);
+    setEmailSaveStatus("saving");
 
     try {
       const updated = await updatePracticeEmail(token, emailInput.trim());
       setPractice(updated);
       setEmailInput(updated.email);
-      setSaveSuccess(true);
+      setEmailSaveStatus("success");
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Save failed.");
-    } finally {
-      setIsSaving(false);
+      setEmailSaveError(err instanceof Error ? err.message : "Save failed.");
+      setEmailSaveStatus("error");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Doctor list handlers
+  // -------------------------------------------------------------------------
+
+  function handleMoveUp(index: number) {
+    if (index === 0) return;
+    const updated = [...doctors];
+    [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
+    setDoctors(updated);
+    setDoctorSaveStatus("idle");
+  }
+
+  function handleMoveDown(index: number) {
+    if (index === doctors.length - 1) return;
+    const updated = [...doctors];
+    [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
+    setDoctors(updated);
+    setDoctorSaveStatus("idle");
+  }
+
+  function handleDelete(index: number) {
+    setDoctors(doctors.filter((_, i) => i !== index));
+    setDoctorSaveStatus("idle");
+  }
+
+  function handleAdd() {
+    const name = addInput.trim();
+    if (!name) return;
+    setDoctors([...doctors, name]);
+    setAddInput("");
+    setDoctorSaveStatus("idle");
+  }
+
+  function handleAddKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAdd();
+    }
+  }
+
+  async function handleDoctorSave() {
+    setDoctorSaveError(null);
+    setDoctorSaveStatus("saving");
+
+    try {
+      const saved = await putDoctors(token, doctors);
+      setDoctors(saved);
+      setDoctorSaveStatus("success");
+    } catch (err) {
+      setDoctorSaveError(err instanceof Error ? err.message : "Save failed.");
+      setDoctorSaveStatus("error");
     }
   }
 
@@ -115,7 +202,11 @@ export default function PracticeSettingsTab({ token }: Props) {
   return (
     <div className="card">
       <p className="card-title">Practice settings</p>
-      <p className="card-subtitle">Practice contact details and email configuration.</p>
+      <p className="card-subtitle">Practice contact details and configuration.</p>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Practice identity (read-only)                                       */}
+      {/* ------------------------------------------------------------------ */}
 
       <hr className="divider" />
 
@@ -128,6 +219,10 @@ export default function PracticeSettingsTab({ token }: Props) {
         <span className="field-label">Practice ID</span>
         <span className="field-value field-value--muted">{practice!.practice_id}</span>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Contact email                                                        */}
+      {/* ------------------------------------------------------------------ */}
 
       <hr className="divider" />
 
@@ -143,27 +238,141 @@ export default function PracticeSettingsTab({ token }: Props) {
           value={emailInput}
           onChange={(e) => {
             setEmailInput(e.target.value);
-            setSaveSuccess(false);
-            setSaveError(null);
+            setEmailSaveStatus("idle");
+            setEmailSaveError(null);
           }}
-          disabled={isSaving}
+          disabled={emailSaveStatus === "saving"}
           aria-label="Contact email address"
         />
         <button
           className="btn-primary"
-          onClick={handleSave}
-          disabled={isSaving || emailInput.trim() === ""}
+          onClick={handleEmailSave}
+          disabled={emailSaveStatus === "saving" || emailInput.trim() === ""}
         >
-          {isSaving ? "Saving..." : "Save"}
+          {emailSaveStatus === "saving" ? "Saving..." : "Save"}
         </button>
       </div>
 
-      {saveSuccess && (
+      {emailSaveStatus === "success" && (
         <p className="save-success">Email address updated.</p>
       )}
 
-      {saveError && (
-        <p className="error-message">{saveError}</p>
+      {emailSaveStatus === "error" && emailSaveError && (
+        <p className="error-message">{emailSaveError}</p>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Doctor list                                                          */}
+      {/* ------------------------------------------------------------------ */}
+
+      <hr className="divider" />
+
+      <p className="section-label">Doctor list</p>
+      <p className="card-subtitle">
+        Configure the list of doctors shown to patients on the contact screen.
+        Patients will be able to select their preferred doctor from this list,
+        or enter a name manually. Leave this list empty to show only a free text
+        field.
+      </p>
+
+      {doctors.length === 0 ? (
+        <div className="empty-state" style={{ marginBottom: "16px" }}>
+          No doctors configured. Add a name below.
+        </div>
+      ) : (
+        <ul
+          style={{
+            listStyle: "none",
+            padding: 0,
+            margin: "0 0 16px 0",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--btn-radius)",
+            overflow: "hidden",
+          }}
+        >
+          {doctors.map((name, index) => (
+            <li
+              key={index}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "10px 12px",
+                borderBottom: index < doctors.length - 1 ? "1px solid var(--border)" : "none",
+                background: "var(--surface)",
+                fontSize: "14px",
+              }}
+            >
+              <span style={{ flex: 1 }}>{name}</span>
+              <button
+                className="btn btn-ghost"
+                onClick={() => handleMoveUp(index)}
+                disabled={index === 0}
+                aria-label={`Move ${name} up`}
+                title="Move up"
+                style={{ padding: "2px 6px" }}
+              >
+                ↑
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => handleMoveDown(index)}
+                disabled={index === doctors.length - 1}
+                aria-label={`Move ${name} down`}
+                title="Move down"
+                style={{ padding: "2px 6px" }}
+              >
+                ↓
+              </button>
+              <button
+                className="btn btn-ghost"
+                onClick={() => handleDelete(index)}
+                aria-label={`Remove ${name}`}
+                title="Remove"
+                style={{ padding: "2px 6px", color: "var(--danger)" }}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="input-row" style={{ marginBottom: "16px" }}>
+        <input
+          type="text"
+          className="text-input"
+          placeholder="e.g. Dr Smith"
+          value={addInput}
+          onChange={(e) => setAddInput(e.target.value)}
+          onKeyDown={handleAddKeyDown}
+          aria-label="New doctor name"
+        />
+        <button
+          className="btn-outline btn"
+          onClick={handleAdd}
+          disabled={addInput.trim() === ""}
+        >
+          Add
+        </button>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <button
+          className="btn-primary btn"
+          onClick={handleDoctorSave}
+          disabled={doctorSaveStatus === "saving"}
+        >
+          {doctorSaveStatus === "saving" ? "Saving..." : "Save doctor list"}
+        </button>
+
+        {doctorSaveStatus === "success" && (
+          <p className="save-success" style={{ margin: 0 }}>Doctor list saved.</p>
+        )}
+      </div>
+
+      {doctorSaveStatus === "error" && doctorSaveError && (
+        <p className="error-message" style={{ marginTop: "8px" }}>{doctorSaveError}</p>
       )}
     </div>
   );
