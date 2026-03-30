@@ -10,6 +10,7 @@ This module is responsible for:
 - Availability configuration
 - Manual override management
 - Per-date exception management
+- Doctor list management
 
 This module must never import:
 - Clinical engine modules (form_logic, safety_engine, encoder_mapping, etc.)
@@ -24,7 +25,14 @@ from datetime import timezone
 from fastapi import APIRouter, Request, Depends
 
 from app.core.admin_context import AdminContext, require_admin
-from app.repositories.practice_repository import InvalidSignpostingData, InvalidEmailError, MAX_SIGNPOSTING_LENGTH
+from app.repositories.practice_repository import (
+    InvalidSignpostingData,
+    InvalidEmailError,
+    InvalidDoctorListError,
+    MAX_SIGNPOSTING_LENGTH,
+    MAX_DOCTOR_NAME_LENGTH,
+    MAX_DOCTOR_LIST_LENGTH,
+)
 from app.services.availability_service import (
     validate_availability_config,
     validate_override,
@@ -289,6 +297,72 @@ async def delete_signposting(
         raise ConditionNotFound(condition_id)
 
     practice_repo.delete_signposting(admin.practice_id, condition_id)
+
+
+# ---------------------------------------------------------------------------
+# Doctor list
+# ---------------------------------------------------------------------------
+
+@router.get("/doctors")
+async def get_doctors(
+    admin: AdminContext = Depends(require_admin),
+    practice_repo=Depends(get_practice_repo),
+):
+    """
+    Return the doctor list for the practice.
+
+    Returns {"doctors": ["Dr Smith", "Dr Jones", ...]} in display order.
+    Returns {"doctors": []} if no doctors are configured.
+    """
+    doctors = practice_repo.get_doctors(admin.practice_id)
+    return {"doctors": doctors}
+
+
+@router.put("/doctors")
+async def put_doctors(
+    request: Request,
+    admin: AdminContext = Depends(require_admin),
+    practice_repo=Depends(get_practice_repo),
+):
+    """
+    Replace the doctor list for the practice.
+
+    Accepts: {"doctors": ["Dr Smith", "Dr Jones", ...]}
+
+    An empty list is valid — it clears the doctor list entirely.
+
+    Validation:
+    - doctors key must be present and must be a list
+    - each item must be a non-empty string
+    - each item must not exceed MAX_DOCTOR_NAME_LENGTH characters
+    - list must not exceed MAX_DOCTOR_LIST_LENGTH items
+
+    Catches InvalidDoctorListError and converts to INVALID_PAYLOAD.
+    Does not catch PracticeNotFound — the practice is guaranteed to exist
+    at startup.
+
+    Returns {"doctors": [...]} reflecting the saved list.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise INVALID_PAYLOAD("Invalid JSON body")
+
+    if not isinstance(body, dict) or "doctors" not in body:
+        raise INVALID_PAYLOAD('Body must be {"doctors": [...]}')
+
+    doctors = body["doctors"]
+
+    if not isinstance(doctors, list):
+        raise INVALID_FIELD_TYPE("doctors", "a list")
+
+    try:
+        practice_repo.set_doctors(admin.practice_id, doctors)
+    except InvalidDoctorListError as e:
+        raise INVALID_PAYLOAD(str(e))
+
+    saved = practice_repo.get_doctors(admin.practice_id)
+    return {"doctors": saved}
 
 
 # ---------------------------------------------------------------------------
