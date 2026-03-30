@@ -133,3 +133,34 @@ def test_get_safety_warning_is_non_empty_string():
     body = response.json()
     assert isinstance(body["universal_safety_warning"], str)
     assert len(body["universal_safety_warning"]) > 0
+
+# ---------------------------------------------------------------------------
+# GET /doctors
+# ---------------------------------------------------------------------------
+
+def test_get_doctors_returns_200():
+    response = client.get("/doctors")
+    assert response.status_code == 200
+
+def test_get_doctors_returns_doctors_key():
+    response = client.get("/doctors")
+    body = response.json()
+    assert "doctors" in body
+
+def test_get_doctors_value_is_a_list():
+    response = client.get("/doctors")
+    body = response.json()
+    assert isinstance(body["doctors"], list)
+
+def test_get_doctors_items_are_strings_when_list_is_non_empty():
+    # Only asserts type if the list is non-empty.
+    # An empty list is a valid response when no doctors are configured.
+    response = client.get("/doctors")
+    doctors = response.json()["doctors"]
+    for item in doctors:
+        assert isinstance(item, str), f"Expected string, got {type(item)}: {item}"
+
+def test_get_doctors_requires_no_authentication():
+    # Confirm the endpoint is genuinely unauthenticated — no Authorization header.
+    response = client.get("/doctors")
+    assert response.status_code == 200
