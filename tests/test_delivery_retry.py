@@ -169,8 +169,8 @@ def _create_submission(sid: str) -> None:
         audit_output=audit,
         delivery_email="test@example.com",
         submitted_at=datetime.now(timezone.utc),
+        attachment_count=0,
     )
-    att_repo.save_attachment(sid, b"%PDF-1.4 stub bytes")
 
 
 def _cleanup(sid: str) -> None:
@@ -450,6 +450,7 @@ def test_missing_attachment_raises_attachment_not_found():
             audit_output=audit,
             delivery_email="test@example.com",
             submitted_at=datetime.now(timezone.utc),
+            attachment_count=0,
         )
         # No save_attachment call — attachment is deliberately absent.
 

@@ -580,8 +580,12 @@ def test_finish_rejects_combined_size_exceeding_total_limit():
     return 422 even if each individual file is within MAX_FILE_SIZE_BYTES.
     No submission record is created.
 
-    Strategy: send two files each just over half of MAX_TOTAL_SIZE_BYTES
-    but under MAX_FILE_SIZE_BYTES, so only the combined check fires.
+    Strategy: send three files each just over one third of MAX_TOTAL_SIZE_BYTES
+    but well under MAX_FILE_SIZE_BYTES, so only the combined check fires.
+
+    With current constants (MAX_FILE_SIZE_BYTES=5 MB, MAX_TOTAL_SIZE_BYTES=10 MB),
+    two files at half the total limit plus one byte would each exceed the per-file
+    limit, so three files are required to keep each chunk safely under MAX_FILE_SIZE_BYTES.
     """
     mock_delivery = MockDeliveryService()
     app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
@@ -596,17 +600,22 @@ def test_finish_rejects_combined_size_exceeding_total_limit():
                 "contact_preferences": _valid_contact_preferences(),
                 "patient_details": _valid_patient_details(),
             }
-            # Each file is (MAX_TOTAL_SIZE_BYTES // 2) + 1 bytes — individually
-            # within MAX_FILE_SIZE_BYTES (5 MB) but combined over MAX_TOTAL_SIZE_BYTES (10 MB).
-            chunk_size = (MAX_TOTAL_SIZE_BYTES // 2) + 1
+            # Each file is (MAX_TOTAL_SIZE_BYTES // 3) + 1 bytes — individually
+            # well within MAX_FILE_SIZE_BYTES but three together exceed MAX_TOTAL_SIZE_BYTES.
+            chunk_size = (MAX_TOTAL_SIZE_BYTES // 3) + 1
             assert chunk_size <= MAX_FILE_SIZE_BYTES, (
                 "Test assumption violated: chunk_size must be <= MAX_FILE_SIZE_BYTES. "
+                "If the constants change, review this test."
+            )
+            assert chunk_size * 3 > MAX_TOTAL_SIZE_BYTES, (
+                "Test assumption violated: three chunks must exceed MAX_TOTAL_SIZE_BYTES. "
                 "If the constants change, review this test."
             )
             chunk = b"\xff\xd8\xff" + b"\x00" * (chunk_size - 3)
             files = [
                 ("photos", ("a.jpg", chunk, "image/jpeg")),
                 ("photos", ("b.jpg", chunk, "image/jpeg")),
+                ("photos", ("c.jpg", chunk, "image/jpeg")),
             ]
             finish_res = client.post(
                 "/form/finish",
