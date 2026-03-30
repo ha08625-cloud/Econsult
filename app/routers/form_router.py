@@ -116,14 +116,12 @@ async def form_init(
 
     runtime_id = str(uuid.uuid4())
 
-    initial_state, client_state = init_runtime_state(
+    initial_state, ruleset_hash, client_state = init_runtime_state(
         condition_id=condition_id,
         free_text=free_text,
         ruleset_path=ruleset_path,
         condition_label=condition_label,
     )
-
-    ruleset_hash = registry.get_ruleset_hash(condition_id)
 
     version = runtime_repo.create_session(
         runtime_id=runtime_id,
