@@ -38,16 +38,18 @@ Screen components live in `frontend/src/screens/`. Session state and screen tran
 
 ## Consultation Outcome Constants (`consultation_outcomes.json`)
 
-The list of selectable outcomes is defined in `consultation_outcomes.json` at the project root. Each entry has a `value` (machine-readable, stored in the database and printed in the PDF) and a `label` (human-readable, shown to the patient).
+The list of selectable outcomes is defined in `app/core/consultation_outcomes.json`. Each entry has a `value` (machine-readable, stored in the database and printed in the PDF) and a `label` (human-readable, shown to the patient).
 
-This file is the single source of truth. It is consumed by:
+This file is the single source of truth. It lives at `app/core/` alongside `consultation_outcomes.py`. The Dockerfile frontend build stage copies it explicitly into the frontend workdir so Vite can resolve the import in `OutcomeScreen.tsx`.
+
+It is consumed by:
 - `OutcomeScreen.tsx` — imported directly via `resolveJsonModule` to render the radio list
 - `consultation_outcomes.py` — loaded at import time; exposes `CONSULTATION_OUTCOMES` and `VALID_OUTCOME_VALUES`
 - `pdf_formatter.py` — derives its label lookup dict from `CONSULTATION_OUTCOMES` at module load time
 - `request_validation.py` — uses `VALID_OUTCOME_VALUES` to validate incoming submissions
 
-**SYNC OBLIGATION:** The `ConsultationOutcome` union type in `frontend/src/types.ts` is defined manually and must be kept in sync with the `value` strings in `consultation_outcomes.json`. TypeScript's `resolveJsonModule` cannot derive a discriminated union automatically. When adding a new outcome:
-1. Add the entry to `consultation_outcomes.json`
+**SYNC OBLIGATION:** The `ConsultationOutcome` union type in `frontend/src/types.ts` is defined manually and must be kept in sync with the `value` strings in the JSON. TypeScript's `resolveJsonModule` cannot derive a discriminated union automatically. When adding a new outcome:
+1. Add the entry to `app/core/consultation_outcomes.json`
 2. Add the value string to the `ConsultationOutcome` union in `types.ts`
 3. `VALID_OUTCOME_VALUES` in `consultation_outcomes.py` is derived automatically from the JSON — no manual update needed there
 
