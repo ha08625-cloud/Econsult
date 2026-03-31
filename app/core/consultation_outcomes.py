@@ -23,7 +23,8 @@ import json
 import os
 
 _HERE = os.path.dirname(__file__)
-_JSON_PATH = os.path.join(_HERE, "consultation_outcomes.json")
+# consultation_outcomes.json lives at the project root, two levels above app/core/
+_JSON_PATH = os.path.join(_HERE, "..", "..", "consultation_outcomes.json")
 
 with open(_JSON_PATH, "r", encoding="utf-8") as _f:
     _data = json.load(_f)
