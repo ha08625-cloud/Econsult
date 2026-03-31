@@ -112,6 +112,7 @@ def _valid_contact_preferences() -> dict:
         "best_time_to_call": None,
         "doctor_preference": "any",
         "usual_doctor_name": None,
+        "consultation_outcome": "not_sure",
     }
 
 
