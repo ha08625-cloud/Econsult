@@ -11,6 +11,8 @@ interface ContactScreenProps {
   patientDetails: PatientDetails;
   consultationOutcome: ConsultationOutcome;
   photos: File[];
+  /** Doctor names from GET /doctors. Empty array = no list configured; show free text only. */
+  doctors: string[];
   onSubmit: () => void;
   onBack: () => void;
 }
@@ -22,15 +24,24 @@ export default function ContactScreen({
   patientDetails,
   consultationOutcome,
   photos,
+  doctors,
   onSubmit,
   onBack,
 }: ContactScreenProps) {
-  const [contactPreferences, setContactPreferences] = useState<Omit<ContactPreferences, "consultation_outcome">>(
+  const [contactPreferences, setContactPreferences] = useState<ContactPreferences>(
     initialiseContactPreferences()
   );
   const [contactErrors, setContactErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
+
+  // When a list is shown, this tracks the value of the dropdown separately
+  // from doctor_preference / usual_doctor_name so we can map to those fields
+  // on submit. Values: "any" | "other" | <a doctor name from the list>.
+  const [doctorSelection, setDoctorSelection] = useState<string>("any");
+  // Free text box is always visible when a list is shown; also the sole
+  // input when no list is configured.
+  const [freeTextDoctor, setFreeTextDoctor] = useState<string>("");
 
   const cp = contactPreferences;
   const methods = cp.contact_methods;
@@ -38,6 +49,7 @@ export default function ContactScreen({
   const wantsText = methods.includes("text");
   const wantsPhoneOrText = wantsPhone || wantsText;
   const wantsEmail = methods.includes("email");
+  const hasDoctorList = doctors.length > 0;
 
   function toggleMethod(method: ContactMethod) {
     const next = methods.includes(method)
@@ -75,9 +87,19 @@ export default function ContactScreen({
       }
     }
 
-    if (cp.doctor_preference === "usual") {
-      if (!cp.usual_doctor_name?.trim()) {
-        errors.usual_doctor_name = "Please enter your doctor's name.";
+    // Doctor validation — list path
+    if (hasDoctorList) {
+      // "other" selected but free text box is empty: require a name.
+      if (doctorSelection === "other" && !freeTextDoctor.trim()) {
+        errors.free_text_doctor = "Please enter your doctor's name.";
+      }
+      // Named doctor selected or "any": no validation needed.
+    } else {
+      // Legacy path (no list): validate the existing field.
+      if (cp.doctor_preference === "usual") {
+        if (!cp.usual_doctor_name?.trim()) {
+          errors.usual_doctor_name = "Please enter your doctor's name.";
+        }
       }
     }
 
@@ -86,17 +108,38 @@ export default function ContactScreen({
       return;
     }
 
+    // Build doctor preference fields for the payload.
+    let doctorPreference: "any" | "usual";
+    let usualDoctorName: string | null;
+
+    if (hasDoctorList) {
+      if (doctorSelection === "any") {
+        doctorPreference = "any";
+        usualDoctorName = null;
+      } else if (doctorSelection === "other") {
+        // Patient typed their own name.
+        doctorPreference = "usual";
+        usualDoctorName = freeTextDoctor.trim() || null;
+      } else {
+        // A named doctor was selected from the list — takes precedence over free text.
+        doctorPreference = "usual";
+        usualDoctorName = doctorSelection;
+      }
+    } else {
+      // Legacy path.
+      doctorPreference = cp.doctor_preference;
+      usualDoctorName =
+        cp.doctor_preference === "usual" ? (cp.usual_doctor_name?.trim() || null) : null;
+    }
+
     // Build clean payload — null out fields that are not relevant.
-    // consultation_outcome is sourced from App.tsx state, not from this screen's
-    // local form state, because it was captured on the OUTCOME screen.
     const cleanPreferences: ContactPreferences = {
       contact_methods: methods,
       email_address: wantsEmail ? (cp.email_address?.trim() || null) : null,
       phone_number: wantsPhoneOrText ? (cp.phone_number?.trim() || null) : null,
       best_time_to_call: wantsPhone ? (cp.best_time_to_call?.trim() || null) : null,
-      doctor_preference: cp.doctor_preference,
-      usual_doctor_name:
-        cp.doctor_preference === "usual" ? (cp.usual_doctor_name?.trim() || null) : null,
+      doctor_preference: doctorPreference,
+      usual_doctor_name: usualDoctorName,
       consultation_outcome: consultationOutcome,
     };
 
@@ -224,48 +267,101 @@ export default function ContactScreen({
         </div>
       )}
 
-      <div className="field" style={{ marginTop: "24px" }}>
-        <label htmlFor="doctor-preference">Which doctor would you prefer to hear from?</label>
-        <select
-          id="doctor-preference"
-          value={cp.doctor_preference}
-          onChange={(e) => {
-            setContactPreferences({
-              ...cp,
-              doctor_preference: e.target.value as "any" | "usual",
-              usual_doctor_name: null,
-            });
-            if (contactErrors.usual_doctor_name) {
-              setContactErrors({ ...contactErrors, usual_doctor_name: "" });
-            }
-          }}
-          style={{ marginTop: "8px" }}
-        >
-          <option value="any">Soonest available doctor</option>
-          <option value="usual">I would prefer my usual doctor</option>
-        </select>
-      </div>
+      {/* Doctor preference — list path */}
+      {hasDoctorList ? (
+        <>
+          <div className="field" style={{ marginTop: "24px" }}>
+            <label htmlFor="doctor-preference">Which doctor would you prefer to hear from?</label>
+            <select
+              id="doctor-preference"
+              value={doctorSelection}
+              onChange={(e) => {
+                setDoctorSelection(e.target.value);
+                if (contactErrors.free_text_doctor) {
+                  setContactErrors({ ...contactErrors, free_text_doctor: "" });
+                }
+              }}
+              style={{ marginTop: "8px" }}
+            >
+              <option value="any">Soonest available doctor</option>
+              <option value="other">Someone not on this list</option>
+              {doctors.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-      {cp.doctor_preference === "usual" && (
-        <div className="field">
-          <label htmlFor="usual-doctor-name">Please enter your doctor's name</label>
-          <input
-            id="usual-doctor-name"
-            type="text"
-            value={cp.usual_doctor_name ?? ""}
-            onChange={(e) => {
-              setContactPreferences({ ...cp, usual_doctor_name: e.target.value });
-              if (contactErrors.usual_doctor_name) {
-                setContactErrors({ ...contactErrors, usual_doctor_name: "" });
-              }
-            }}
-          />
-          {contactErrors.usual_doctor_name && (
-            <p style={{ color: "var(--danger)", fontSize: "13px", marginTop: "2px" }}>
-              {contactErrors.usual_doctor_name}
-            </p>
+          <div className="field">
+            <label htmlFor="usual-doctor-name">
+              If your preferred doctor is not listed above, please write their name here
+            </label>
+            <input
+              id="usual-doctor-name"
+              type="text"
+              value={freeTextDoctor}
+              onChange={(e) => {
+                setFreeTextDoctor(e.target.value);
+                if (contactErrors.free_text_doctor) {
+                  setContactErrors({ ...contactErrors, free_text_doctor: "" });
+                }
+              }}
+            />
+            {contactErrors.free_text_doctor && (
+              <p style={{ color: "var(--danger)", fontSize: "13px", marginTop: "2px" }}>
+                {contactErrors.free_text_doctor}
+              </p>
+            )}
+          </div>
+        </>
+      ) : (
+        /* Doctor preference — legacy path (no list configured or fetch failed) */
+        <>
+          <div className="field" style={{ marginTop: "24px" }}>
+            <label htmlFor="doctor-preference">Which doctor would you prefer to hear from?</label>
+            <select
+              id="doctor-preference"
+              value={cp.doctor_preference}
+              onChange={(e) => {
+                setContactPreferences({
+                  ...cp,
+                  doctor_preference: e.target.value as "any" | "usual",
+                  usual_doctor_name: null,
+                });
+                if (contactErrors.usual_doctor_name) {
+                  setContactErrors({ ...contactErrors, usual_doctor_name: "" });
+                }
+              }}
+              style={{ marginTop: "8px" }}
+            >
+              <option value="any">Soonest available doctor</option>
+              <option value="usual">I would prefer my usual doctor</option>
+            </select>
+          </div>
+
+          {cp.doctor_preference === "usual" && (
+            <div className="field">
+              <label htmlFor="usual-doctor-name">Please enter your doctor's name</label>
+              <input
+                id="usual-doctor-name"
+                type="text"
+                value={cp.usual_doctor_name ?? ""}
+                onChange={(e) => {
+                  setContactPreferences({ ...cp, usual_doctor_name: e.target.value });
+                  if (contactErrors.usual_doctor_name) {
+                    setContactErrors({ ...contactErrors, usual_doctor_name: "" });
+                  }
+                }}
+              />
+              {contactErrors.usual_doctor_name && (
+                <p style={{ color: "var(--danger)", fontSize: "13px", marginTop: "2px" }}>
+                  {contactErrors.usual_doctor_name}
+                </p>
+              )}
+            </div>
           )}
-        </div>
+        </>
       )}
 
       {screenError && <InlineError message={screenError} />}

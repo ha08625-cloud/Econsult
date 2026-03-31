@@ -1,38 +1,35 @@
 """
 Consultation outcome constants.
 
-Single source of truth for consultation outcome values and labels, shared across:
-  - consultation_outcomes.json  — canonical data file (this is what you edit)
-  - app/core/consultation_outcomes.py  — this file (Python side)
-  - frontend/src/types.ts  — ConsultationOutcome union type (must be kept in sync manually)
+Single source of truth for valid consultation outcome values and their
+human-readable labels, shared across:
+  - app/core/consultation_outcomes.py  (this file — Python side)
+  - frontend/src/types.ts              (ConsultationOutcome union type — must be
+                                        kept in sync manually; see comment there)
 
-The JSON file is loaded once at module import time. A missing or malformed
-JSON file is a deployment error and will raise immediately at startup.
+The value strings are stored in the database (inside the clinical_output_json
+JSONB blob) and printed in the PDF. They are IMMUTABLE once deployed:
+  - Adding new entries to consultation_outcomes.json is safe.
+  - Renaming or removing existing values is a breaking change.
 
-VALUE STRINGS ARE IMMUTABLE once the system has live data. Adding new entries
-is safe. Renaming or removing existing values is a breaking change — old
-submissions stored in the database will contain values that no longer exist
-in this list.
+If a value is added, also update the ConsultationOutcome union type in
+frontend/src/types.ts.
 
-Do not define outcome values anywhere else in the backend codebase.
+Values are loaded once at module import time. A missing or malformed JSON
+file is a deployment error and will raise immediately at startup.
 """
 
 import json
 import os
 
-_HERE = os.path.dirname(__file__)          # app/core/
-_ROOT = os.path.dirname(os.path.dirname(_HERE))  # project root
-_JSON_PATH = os.path.join(_ROOT, "consultation_outcomes.json")
+_HERE = os.path.dirname(__file__)
+_JSON_PATH = os.path.join(_HERE, "consultation_outcomes.json")
 
 with open(_JSON_PATH, "r", encoding="utf-8") as _f:
-    CONSULTATION_OUTCOMES: list[dict] = json.load(_f)
+    _data = json.load(_f)
 
-# Derived: frozenset of valid value strings, used for O(1) validation.
+CONSULTATION_OUTCOMES: list[dict] = _data
+
 VALID_OUTCOME_VALUES: frozenset[str] = frozenset(
     entry["value"] for entry in CONSULTATION_OUTCOMES
 )
-
-# Derived: mapping from value string to human-readable label, used in PDF rendering.
-OUTCOME_LABELS: dict[str, str] = {
-    entry["value"]: entry["label"] for entry in CONSULTATION_OUTCOMES
-}

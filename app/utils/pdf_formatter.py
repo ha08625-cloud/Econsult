@@ -16,7 +16,7 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
 from app.models.serialisation_contracts import ClinicalOutput
-from app.core.consultation_outcomes import OUTCOME_LABELS
+from app.core.consultation_outcomes import CONSULTATION_OUTCOMES
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +63,12 @@ _VALUE_W = _USABLE_W - _LABEL_W     # 125mm — value column width
 # A4 usable height (297mm - 2 * 15mm margin - 15mm auto-page-break margin) = ~252mm.
 # 200mm leaves comfortable breathing room.
 _MAX_IMAGE_H = 200  # mm
+
+# Lookup dict from outcome value to human-readable label.
+# Derived from CONSULTATION_OUTCOMES at module load time — do not hardcode here.
+_OUTCOME_LABELS: dict[str, str] = {
+    entry["value"]: entry["label"] for entry in CONSULTATION_OUTCOMES
+}
 
 
 class _EConsultPDF(FPDF):
@@ -193,14 +199,6 @@ def generate_pdf(
     if cp:
         pdf.section_heading("CONTACT PREFERENCES")
 
-        # Consultation outcome — looked up from OUTCOME_LABELS (loaded from
-        # consultation_outcomes.json via app/core/consultation_outcomes.py).
-        # Falls back to the raw value string if the value is unrecognised,
-        # which guards against old submissions predating this field.
-        outcome = cp.get("consultation_outcome")
-        if outcome:
-            pdf.row("Consultation outcome:", OUTCOME_LABELS.get(outcome, outcome))
-
         methods = cp.get("contact_methods") or []
         method_labels = {"email": "Email", "text": "Text message", "phone": "Phone call"}
         readable_methods = ", ".join(method_labels.get(m, m) for m in methods)
@@ -221,6 +219,11 @@ def generate_pdf(
                 pdf.row("Usual doctor name:", cp["usual_doctor_name"])
         elif doctor_pref == "any":
             pdf.row("Doctor preference:", "Soonest available doctor")
+
+        outcome = cp.get("consultation_outcome")
+        if outcome:
+            outcome_label = _OUTCOME_LABELS.get(outcome, outcome)
+            pdf.row("Consultation outcome:", outcome_label)
 
     # --- Footer ---
     pdf.ln(_SECTION_GAP)

@@ -10,6 +10,7 @@ interface SelectConditionScreenProps {
   onConditionChange: (id: string | null) => void;
   onContinue: () => void;
   onBlankForm: () => void;
+  onBack: () => void;
 }
 
 export default function SelectConditionScreen({
@@ -19,6 +20,7 @@ export default function SelectConditionScreen({
   onConditionChange,
   onContinue,
   onBlankForm,
+  onBack,
 }: SelectConditionScreenProps) {
   return (
     <PageShell practiceName={practiceName}>
@@ -40,6 +42,9 @@ export default function SelectConditionScreen({
           </div>
 
           <div className="btn-row">
+            <button className="btn btn-secondary" onClick={onBack}>
+              Back
+            </button>
             <button
               className="btn btn-primary"
               disabled={selectedConditionId === null}

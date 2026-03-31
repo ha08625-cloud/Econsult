@@ -3,6 +3,7 @@ import {
   getSafetyWarning,
   getPractice,
   getAvailability,
+  getDoctors,
   getConditions,
   getConditionPresentation,
   friendlyErrorMessage,
@@ -59,7 +60,7 @@ export default function App() {
   // Patient details (captured before condition selection — NHS contractual obligation)
   const [patientDetails, setPatientDetails] = useState<PatientDetails | null>(null);
 
-  // Consultation outcome (captured on OUTCOME screen, required before submission)
+  // Consultation outcome (captured on OUTCOME screen, before SELECT_CONDITION)
   const [consultationOutcome, setConsultationOutcome] = useState<ConsultationOutcome | null>(null);
 
   // Photo attachments — object URLs in each PhotoAttachment must be revoked
@@ -98,6 +99,13 @@ export default function App() {
   const [availabilityClosedMessage, setAvailabilityClosedMessage] = useState<string | null>(null);
   const [afterHoursNotice, setAfterHoursNotice] = useState<string | null>(null);
   const [practiceIsOpen, setPracticeIsOpen] = useState<boolean | null>(null);
+
+  // Screen 0 state (doctor list)
+  // Fail-open: if the fetch fails, stays as an empty array.
+  // An empty array causes ContactScreen to show only the free text fallback.
+  const [doctors, setDoctors] = useState<string[]>([]);
+  // null = not yet attempted. false = fetch done (success or failure).
+  const [doctorsFetched, setDoctorsFetched] = useState<boolean>(false);
 
   // Screen 2 state (condition discovery)
   const [conditions, setConditions] = useState<ConditionSummary[] | null>(null);
@@ -200,16 +208,15 @@ export default function App() {
     async function fetchAvailability() {
       try {
         const res = await getAvailability();
-        if (cancelled) return;
-        setPracticeIsOpen(res.is_open);
-        setAvailabilityClosedMessage(res.closed_message);
-        setAfterHoursNotice(res.after_hours_notice);
-      } catch {
-        // Fail open — silently ignore any error.
-        // The form proceeds as normal.
         if (!cancelled) {
-          setPracticeIsOpen(true);
+          setPracticeIsOpen(res.is_open);
+          setAvailabilityClosedMessage(res.closed_message);
+          setAfterHoursNotice(res.after_hours_notice);
         }
+      } catch {
+        // Fail open — do not update practiceIsOpen so the guard above will
+        // not re-trigger, but treat the practice as open.
+        if (!cancelled) setPracticeIsOpen(true);
       }
     }
 
@@ -217,6 +224,33 @@ export default function App() {
 
     return () => { cancelled = true; };
   }, [screen, practiceIsOpen]);
+
+  // ---------------------------------
+  // Doctor list fetch (Screen 0)
+  // ---------------------------------
+  // Fetched once on Screen 0. Fail-open: an error leaves doctors as [].
+
+  useEffect(() => {
+    if (screen !== "SAFETY_WARNING") return;
+    if (doctorsFetched) return;
+
+    let cancelled = false;
+
+    async function fetchDoctors() {
+      try {
+        const res = await getDoctors();
+        if (!cancelled) setDoctors(res.doctors ?? []);
+      } catch {
+        // Fail open — doctors stays as [].
+      } finally {
+        if (!cancelled) setDoctorsFetched(true);
+      }
+    }
+
+    fetchDoctors();
+
+    return () => { cancelled = true; };
+  }, [screen, doctorsFetched]);
 
   // ---------------------------------
   // Condition list fetch (Screen 2)
@@ -231,16 +265,9 @@ export default function App() {
     async function fetchConditions() {
       try {
         const res = await getConditions();
-        if (cancelled) return;
-        if (!res.conditions || res.conditions.length === 0) {
-          setFatalError("No conditions are currently available. Please contact the practice directly.");
-          return;
-        }
-        setConditions(res.conditions);
+        if (!cancelled) setConditions(res.conditions);
       } catch (e) {
-        if (!cancelled) {
-          setFatalError(friendlyErrorMessage(e));
-        }
+        if (!cancelled) setFatalError(friendlyErrorMessage(e));
       }
     }
 
@@ -252,20 +279,15 @@ export default function App() {
   // ---------------------------------
   // Presentation fetch (Screen 3)
   // ---------------------------------
-  // Fires when selectedConditionId changes or when presentationFetchTrigger
-  // is incremented (navigation into FREE_TEXT, or retry).
-  //
-  // Note: in development with React StrictMode, this effect fires twice on
-  // every FREE_TEXT entry. The cancelled flag discards the first result.
-  // You will see two network requests in the browser dev tools — this is
-  // expected and not a bug.
 
   useEffect(() => {
+    if (screen !== "FREE_TEXT") return;
     if (selectedConditionId === null) return;
 
     let cancelled = false;
-    // Belt-and-braces: Step 3 already sets loading at the navigation boundary,
-    // but this also covers the case where selectedConditionId changes without
+
+    // Always reset to loading at the start of this effect. This covers the case
+    // where the effect fires due to presentationFetchTrigger incrementing during
     // a screen transition (cannot happen today, but guards future refactors).
     setPresentationState({ status: "loading" });
 
@@ -314,6 +336,8 @@ export default function App() {
   // availabilityClosedMessage
   // afterHoursNotice
   // practiceIsOpen
+  // doctors
+  // doctorsFetched
   // presentationState
   // presentationFetchTrigger
   // conditions
@@ -359,6 +383,8 @@ export default function App() {
               setPracticeIsOpen(null);
               setAvailabilityClosedMessage(null);
               setAfterHoursNotice(null);
+              setDoctors([]);
+              setDoctorsFetched(false);
             }}
           >
             Try again
@@ -438,7 +464,6 @@ export default function App() {
           setPresentationFetchTrigger((k) => k + 1);
           setScreen("FREE_TEXT");
         }}
-        onBack={() => setScreen("OUTCOME")}
       />
     );
   }
@@ -594,6 +619,7 @@ export default function App() {
         patientDetails={patientDetails}
         consultationOutcome={consultationOutcome}
         photos={photos.map((p) => p.file)}
+        doctors={doctors}
         onSubmit={() => {
           setScreen("DONE");
         }}

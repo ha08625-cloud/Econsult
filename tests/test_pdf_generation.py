@@ -79,11 +79,7 @@ def minimal_clinical_output() -> ClinicalOutput:
             "q3": "Shortness of breath?",
         },
         patient_details=patient,
-        contact_preferences={
-            "contact_methods": ["phone"],
-            "phone_number": "07700900000",
-            "consultation_outcome": "face_to_face",
-        },
+        contact_preferences={"contact_methods": ["phone"], "phone_number": "07700900000"},
     )
 
 
@@ -183,17 +179,82 @@ def test_generate_pdf_no_photos_and_empty_list_same_size(
 
 
 # ---------------------------------------------------------------------------
-# Consultation outcome tests
+# Consultation outcome in PDF tests
 # ---------------------------------------------------------------------------
 
-def test_generate_pdf_renders_consultation_outcome(submission_kwargs):
-    """consultation_outcome value must appear as a human-readable label in the PDF text."""
+def _make_output_with_outcome(outcome: str | None) -> ClinicalOutput:
     patient = PatientDetails(
         patient_for="me",
-        first_name="Test",
-        last_name="Patient",
-        date_of_birth="1990-01-01",
-        postcode="SW1A 1AA",
+        first_name="Jane",
+        last_name="Smith",
+        date_of_birth="1985-06-15",
+        postcode="OX1 1AA",
+    )
+    cp: dict = {
+        "contact_methods": ["email"],
+        "email_address": "patient@example.com",
+        "doctor_preference": "any",
+    }
+    if outcome is not None:
+        cp["consultation_outcome"] = outcome
+
+    return ClinicalOutput(
+        condition_id="test_condition",
+        free_text="Some symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=patient,
+        contact_preferences=cp,
+    )
+
+
+def test_consultation_outcome_appears_in_pdf(submission_kwargs):
+    """A known outcome value must appear as its human-readable label in the PDF."""
+    output = _make_output_with_outcome("face_to_face")
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    # The PDF bytes contain the rendered text. Decode leniently to search for the label.
+    pdf_text = result.decode("latin-1")
+    assert "A face to face appointment" in pdf_text
+    assert "Consultation outcome:" in pdf_text
+
+
+def test_all_outcome_values_render_with_known_label(submission_kwargs):
+    """Every valid outcome value must render its human-readable label, not the raw value."""
+    outcomes = {
+        "admin_task": "Administrative task only",
+        "face_to_face": "A face to face appointment",
+        "phone_appointment": "A phone appointment",
+        "advice_only": "Medical advice by text or email only",
+        "medication": "Medication request or query",
+        "not_sure": "Not sure",
+    }
+    for value, expected_fragment in outcomes.items():
+        output = _make_output_with_outcome(value)
+        result = generate_pdf(clinical_output=output, **submission_kwargs)
+        pdf_text = result.decode("latin-1")
+        assert expected_fragment in pdf_text, (
+            f"Expected label fragment {expected_fragment!r} for outcome {value!r} not found in PDF"
+        )
+
+
+def test_absent_outcome_produces_no_outcome_row(submission_kwargs):
+    """When consultation_outcome is absent from contact_preferences, no outcome row is rendered."""
+    output = _make_output_with_outcome(None)
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = result.decode("latin-1")
+    assert "Consultation outcome:" not in pdf_text
+
+
+def test_null_outcome_produces_no_outcome_row(submission_kwargs):
+    """When consultation_outcome is explicitly None, no outcome row is rendered."""
+    patient = PatientDetails(
+        patient_for="me",
+        first_name="Jane",
+        last_name="Smith",
+        date_of_birth="1985-06-15",
+        postcode="OX1 1AA",
     )
     output = ClinicalOutput(
         condition_id="test_condition",
@@ -205,69 +266,11 @@ def test_generate_pdf_renders_consultation_outcome(submission_kwargs):
         patient_details=patient,
         contact_preferences={
             "contact_methods": ["email"],
-            "email_address": "test@example.com",
-            "consultation_outcome": "face_to_face",
+            "email_address": "patient@example.com",
+            "doctor_preference": "any",
+            "consultation_outcome": None,
         },
     )
-    pdf_bytes = generate_pdf(clinical_output=output, **submission_kwargs)
-    # Extract text content from PDF bytes for assertion.
-    # The label "A face to face appointment" must appear somewhere in the output.
-    pdf_text = pdf_bytes.decode("latin-1")
-    assert "face to face" in pdf_text.lower()
-
-
-def test_generate_pdf_outcome_absent_produces_no_outcome_row(submission_kwargs):
-    """If consultation_outcome is absent from contact_preferences, no outcome row is rendered."""
-    patient = PatientDetails(
-        patient_for="me",
-        first_name="Test",
-        last_name="Patient",
-        date_of_birth="1990-01-01",
-        postcode="SW1A 1AA",
-    )
-    output = ClinicalOutput(
-        condition_id="test_condition",
-        free_text="Some symptoms",
-        additional_text=None,
-        answers={},
-        safety_messages=[],
-        question_labels={},
-        patient_details=patient,
-        contact_preferences={
-            "contact_methods": ["email"],
-            "email_address": "test@example.com",
-            # consultation_outcome deliberately absent — old submission format
-        },
-    )
-    # Must not raise
-    pdf_bytes = generate_pdf(clinical_output=output, **submission_kwargs)
-    assert pdf_bytes[:4] == b"%PDF"
-
-
-def test_generate_pdf_not_sure_outcome_renders_correctly(submission_kwargs):
-    """The not_sure outcome must render as 'Not sure', not the raw value string."""
-    patient = PatientDetails(
-        patient_for="me",
-        first_name="Test",
-        last_name="Patient",
-        date_of_birth="1990-01-01",
-        postcode="SW1A 1AA",
-    )
-    output = ClinicalOutput(
-        condition_id="test_condition",
-        free_text="Some symptoms",
-        additional_text=None,
-        answers={},
-        safety_messages=[],
-        question_labels={},
-        patient_details=patient,
-        contact_preferences={
-            "contact_methods": ["email"],
-            "email_address": "test@example.com",
-            "consultation_outcome": "not_sure",
-        },
-    )
-    pdf_bytes = generate_pdf(clinical_output=output, **submission_kwargs)
-    pdf_text = pdf_bytes.decode("latin-1")
-    assert "Not sure" in pdf_text
-    assert "not_sure" not in pdf_text
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = result.decode("latin-1")
+    assert "Consultation outcome:" not in pdf_text

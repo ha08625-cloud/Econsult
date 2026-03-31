@@ -1,21 +1,112 @@
-// Wire-format types. These are serialised and sent to / received from the server.
-// UI-only types live in uiTypes.ts.
+// Frontend-visible contracts only
 
-// ---------------------------------------------------------------------------
-// Consultation outcome
-// ---------------------------------------------------------------------------
-//
-// ConsultationOutcome is a union of the value strings defined in
-// consultation_outcomes.json. This type must be kept in sync with that file
-// manually — TypeScript cannot derive a discriminated union from a JSON import.
-//
-// VALUE STRINGS ARE IMMUTABLE once the system has live data. Adding new values
-// requires updating both this type and consultation_outcomes.json. Renaming or
-// removing values is a breaking change against stored database records.
-//
-// The backend validates incoming values against the same JSON file via
-// app/core/consultation_outcomes.py.
+export type AnswerType = "boolean" | "text";
 
+export interface ClientQuestion {
+  answer_key: string;
+  question_text: string;
+  answer_type: AnswerType;
+  current_value: boolean | string | null;
+  required: boolean;
+  suggested: boolean;
+}
+
+export interface ClientStateView {
+  condition_label: string;
+  free_text: string | null;
+  additional_text: string | null;
+  questions: ClientQuestion[];
+}
+
+export interface ClientAnswerReturn {
+  runtime_id: string;
+  base_version: number;
+  answers: Record<string, boolean | string | null>;
+  additional_text: string | null;
+}
+
+export interface SafetyMessage {
+  rule_id: string;
+  message: string;
+}
+
+// --- Pre-session safety gate (Screen 0) ---
+
+export interface SafetyWarning {
+  universal_safety_warning: string;
+}
+
+// Discriminated union for the safety warning fetch lifecycle.
+// Stored as a single state variable in App.tsx.
+// Guard: if (safetyWarningFetchState.status === "success") return — prevents re-fetch.
+// Retry: reset to { status: "loading" } to trigger a new fetch.
+export type SafetyWarningFetchState =
+  | { status: "loading" }
+  | { status: "success"; text: string }
+  | { status: "error"; message: string };
+
+// Discriminated union for the practice name fetch lifecycle.
+// Stored as a single state variable in App.tsx.
+// Guard: if (practiceNameFetchState.status === "success") return — prevents re-fetch.
+// Retry: reset to { status: "loading" } to trigger a new fetch.
+// The practice name fetch is fail-closed: the Continue button on SafetyWarningScreen
+// is disabled until this reaches "success".
+export type PracticeNameFetchState =
+  | { status: "loading" }
+  | { status: "success"; name: string }
+  | { status: "error"; message: string };
+
+// --- Availability (Screen 0) ---
+
+export interface AvailabilityResult {
+  is_open: boolean;
+  closed_message: string | null;
+  after_hours_notice: string | null;
+}
+
+// --- Condition discovery and presentation (Screens 1-2) ---
+
+export interface ConditionSummary {
+  id: string;
+  label: string;
+  search_tags: string[];
+}
+
+export interface ConditionPresentation {
+  label: string;
+  free_text_prompt?: string;
+  universal_safety_warning: string;
+  practice_signposting?: string;
+}
+
+// Discriminated union for the presentation fetch lifecycle.
+// No idle state — this value is only rendered inside the FREE_TEXT screen block,
+// and both transitions into FREE_TEXT reset it to "loading" before navigating.
+// If a future developer adds a third path to FREE_TEXT, they must do the same.
+export type PresentationState =
+  | { status: "loading" }
+  | { status: "success"; data: ConditionPresentation }
+  | { status: "error"; message: string };
+
+// --- Form finish response ---
+
+export interface FinishFormResult {
+  submission_id: string;
+}
+
+// --- Consultation outcome (Screen 2, OUTCOME) ---
+
+// SYNC OBLIGATION: This type must exactly match the "value" strings in
+// consultation_outcomes.json. It cannot be derived automatically from the JSON
+// because JSON imports do not produce discriminated union types.
+//
+// When adding a new outcome:
+//   1. Add the entry to consultation_outcomes.json
+//   2. Add the value string to this union type
+//   3. Add the value string to VALID_OUTCOME_VALUES in consultation_outcomes.py
+//
+// Renaming or removing existing values is a breaking change — stored submissions
+// contain these strings verbatim.
 export type ConsultationOutcome =
   | "admin_task"
   | "face_to_face"
@@ -24,26 +115,32 @@ export type ConsultationOutcome =
   | "medication"
   | "not_sure";
 
-// ---------------------------------------------------------------------------
-// Contact preferences
-// ---------------------------------------------------------------------------
+// --- Contact preferences (Screen 5) ---
 
 export type ContactMethod = "email" | "text" | "phone";
 
+export type DoctorPreference = "any" | "usual";
+
 export interface ContactPreferences {
-  contact_methods: ContactMethod[];
-  email_address: string | null;
-  phone_number: string | null;
-  best_time_to_call: string | null;
-  doctor_preference: "any" | "usual";
-  usual_doctor_name: string | null;
-  consultation_outcome: ConsultationOutcome;
+  contact_methods: ContactMethod[];          // min length 1
+  email_address: string | null;             // required if "email" in contact_methods
+  phone_number: string | null;              // required if "text" or "phone" in contact_methods
+  best_time_to_call: string | null;         // required if "phone" in contact_methods
+  doctor_preference: DoctorPreference;
+  usual_doctor_name: string | null;         // required if doctor_preference === "usual"
+  // consultation_outcome is optional here because ContactPreferences is also used as
+  // the local form state type inside ContactScreen (via initialiseContactPreferences),
+  // where the outcome is not yet known. The value is always set on the wire payload
+  // in ContactScreen.validateAndSubmit before calling finishForm. The backend will
+  // reject a missing value with a 422.
+  consultation_outcome?: ConsultationOutcome;
 }
 
-// ---------------------------------------------------------------------------
-// Patient details
-// ---------------------------------------------------------------------------
+// --- Patient details (Screen 1, immediately after safety warning) ---
 
+// Wire format sent from frontend to backend.
+// Each field is a string containing only digits — validated client-side before
+// submission. The backend validates numeric content and assembles into a date.
 export interface DateOfBirth {
   day: string;
   month: string;
@@ -56,87 +153,6 @@ export interface PatientDetails {
   last_name: string;
   date_of_birth: DateOfBirth;
   postcode: string;
-  submitter_name?: string | null;
-  submitter_relationship?: string | null;
+  submitter_name?: string;       // required when patient_for === "someone_else"
+  submitter_relationship?: string; // required when patient_for === "someone_else"
 }
-
-// ---------------------------------------------------------------------------
-// API response shapes
-// ---------------------------------------------------------------------------
-
-export interface SafetyWarning {
-  universal_safety_warning: string;
-}
-
-export interface AvailabilityResult {
-  is_open: boolean;
-  closed_message: string | null;
-  after_hours_notice: string | null;
-}
-
-export interface ConditionSummary {
-  id: string;
-  label: string;
-}
-
-export interface QuestionView {
-  answer_key: string;
-  question_text: string;
-  answer_type: string;
-  current_value: boolean | string | null;
-  is_required: boolean;
-  options?: string[];
-}
-
-export interface ClientStateView {
-  condition_id: string;
-  condition_label: string;
-  questions: QuestionView[];
-  additional_text: string | null;
-}
-
-export interface SafetyMessage {
-  id: string;
-  text: string;
-}
-
-export interface ConditionPresentation {
-  condition_id: string;
-  condition_label: string;
-  framing_text: string | null;
-  universal_safety_warning: string;
-}
-
-export interface ClientAnswerReturn {
-  runtime_id: string;
-  base_version: number;
-  answers: Record<string, boolean | string | null>;
-  additional_text: string | null;
-}
-
-export interface FinishFormResult {
-  submission_id: string;
-}
-
-// ---------------------------------------------------------------------------
-// Fetch state discriminated unions (Screen 0)
-// ---------------------------------------------------------------------------
-
-export type SafetyWarningFetchState =
-  | { status: "loading" }
-  | { status: "success"; text: string }
-  | { status: "error"; message: string };
-
-export type PracticeNameFetchState =
-  | { status: "loading" }
-  | { status: "success"; name: string }
-  | { status: "error"; message: string };
-
-// ---------------------------------------------------------------------------
-// Presentation state discriminated union (Screen 3)
-// ---------------------------------------------------------------------------
-
-export type PresentationState =
-  | { status: "loading" }
-  | { status: "success"; data: ConditionPresentation }
-  | { status: "error"; message: string };

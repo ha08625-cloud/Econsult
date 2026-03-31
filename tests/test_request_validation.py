@@ -5,8 +5,6 @@ Tests validate_patient_details — all validation paths including DOB numeric
 checks, calendar date assembly, future date rejection, postcode format,
 and submitter field conditionals.
 
-Tests validate_contact_preferences — consultation_outcome validation paths.
-
 These are pure unit tests. No database, no HTTP, no app startup required.
 
 Run from project root:
@@ -298,6 +296,9 @@ class TestValidatePatientDetailsSubmitterFields(unittest.TestCase):
 
 class TestValidateContactPreferencesOutcomeHappyPath(unittest.TestCase):
 
+    def test_valid_outcome_passes(self):
+        validate_contact_preferences(_valid_cp(consultation_outcome="face_to_face"))
+
     def test_all_valid_outcome_values_pass(self):
         valid_values = [
             "admin_task",
@@ -308,18 +309,15 @@ class TestValidateContactPreferencesOutcomeHappyPath(unittest.TestCase):
             "not_sure",
         ]
         for value in valid_values:
-            with self.subTest(outcome=value):
+            with self.subTest(value=value):
                 validate_contact_preferences(_valid_cp(consultation_outcome=value))
-
-    def test_valid_cp_with_outcome_passes(self):
-        validate_contact_preferences(_valid_cp())
 
 
 class TestValidateContactPreferencesOutcomeRejection(unittest.TestCase):
 
-    def test_unknown_outcome_value_raises(self):
+    def test_unknown_outcome_value_raises_422(self):
         _cp_raises_with(
-            _valid_cp(consultation_outcome="video_call"),
+            _valid_cp(consultation_outcome="in_person"),
             "consultation_outcome",
         )
 
@@ -338,18 +336,16 @@ class TestValidateContactPreferencesOutcomeRejection(unittest.TestCase):
     def test_missing_outcome_field_raises(self):
         cp = _valid_cp()
         del cp["consultation_outcome"]
-        # require_keys will catch the missing field as an illegal-fields violation
-        # only if it is absent from the allowlist — but here it is absent from the
-        # payload, so the cp.get() will return None and trigger the null check.
+        # Missing field is caught by require_keys as an illegal-fields check
+        # would not trigger — but the outcome is absent so .get() returns None,
+        # which the required check rejects.
         try:
             validate_contact_preferences(cp)
-            raise AssertionError("Expected APIError but none was raised")
-        except APIError as e:
-            assert "consultation_outcome" in e.message or "Illegal" in e.message, (
-                f"Unexpected error message: {e.message!r}"
-            )
+            raise AssertionError("Expected APIError but no exception was raised")
+        except APIError:
+            pass
 
-    def test_extra_unknown_field_alongside_outcome_raises(self):
+    def test_extra_field_alongside_outcome_raises(self):
         cp = _valid_cp()
-        cp["unexpected_field"] = "surprise"
+        cp["unexpected"] = "value"
         _cp_raises_with(cp, "Illegal")

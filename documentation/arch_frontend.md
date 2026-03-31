@@ -6,7 +6,7 @@
 
 ## Scope
 
-Stateless React rendering of a seven-screen patient form flow. All clinical intelligence lives on the server — the frontend renders what the server returns and never makes branching clinical decisions.
+Stateless React rendering of an eight-screen patient form flow. All clinical intelligence lives on the server — the frontend renders what the server returns and never makes branching clinical decisions.
 
 Screen components live in `frontend/src/screens/`. Session state and screen transition logic live in `App.tsx`. See `file_structure.md` for the full file list.
 
@@ -22,13 +22,36 @@ Screen components live in `frontend/src/screens/`. Session state and screen tran
 
 ## Screen Flow
 
-`SAFETY_WARNING` → `SELECT_CONDITION` → `FREE_TEXT` → `EDIT` → `REVIEW` → `CONTACT` → `DONE`
+`SAFETY_WARNING` → `PATIENT_DETAILS` → `OUTCOME` → `SELECT_CONDITION` → `FREE_TEXT` → `EDIT` → `REVIEW` → `CONTACT` → `DONE`
 
 - `SAFETY_WARNING` (Screen 0) is a hard block — Continue is disabled until the patient acknowledges the warning. Availability is fetched in parallel on this screen.
-- `REVIEW` (Screen 4) transitions to `CONTACT` without an API call.
-- `CONTACT` (Screen 5) calls `POST /form/finish`.
+- `PATIENT_DETAILS` (Screen 1) captures patient identity before condition selection.
+- `OUTCOME` (Screen 2) captures the patient's desired consultation outcome before condition selection. No API call. A selection is required to proceed — `not_sure` is the explicit "I don't know" option.
+- `REVIEW` (Screen 6) transitions to `CONTACT` without an API call.
+- `CONTACT` (Screen 7) calls `POST /form/finish`.
 
-**API quirk:** The `GET /conditions/{id}/presentation` response includes `universal_safety_warning` for backend compatibility. The frontend must ignore this field and never display it on Screen 2. Do not remove this field from the API response.
+**Back navigation:** `SELECT_CONDITION` navigates back to `OUTCOME`. `OUTCOME` navigates back to `PATIENT_DETAILS`.
+
+**API quirk:** The `GET /conditions/{id}/presentation` response includes `universal_safety_warning` for backend compatibility. The frontend must ignore this field and never display it on Screen 4. Do not remove this field from the API response.
+
+---
+
+## Consultation Outcome Constants (`consultation_outcomes.json`)
+
+The list of selectable outcomes is defined in `consultation_outcomes.json` at the project root. Each entry has a `value` (machine-readable, stored in the database and printed in the PDF) and a `label` (human-readable, shown to the patient).
+
+This file is the single source of truth. It is consumed by:
+- `OutcomeScreen.tsx` — imported directly via `resolveJsonModule` to render the radio list
+- `consultation_outcomes.py` — loaded at import time; exposes `CONSULTATION_OUTCOMES` and `VALID_OUTCOME_VALUES`
+- `pdf_formatter.py` — derives its label lookup dict from `CONSULTATION_OUTCOMES` at module load time
+- `request_validation.py` — uses `VALID_OUTCOME_VALUES` to validate incoming submissions
+
+**SYNC OBLIGATION:** The `ConsultationOutcome` union type in `frontend/src/types.ts` is defined manually and must be kept in sync with the `value` strings in `consultation_outcomes.json`. TypeScript's `resolveJsonModule` cannot derive a discriminated union automatically. When adding a new outcome:
+1. Add the entry to `consultation_outcomes.json`
+2. Add the value string to the `ConsultationOutcome` union in `types.ts`
+3. `VALID_OUTCOME_VALUES` in `consultation_outcomes.py` is derived automatically from the JSON — no manual update needed there
+
+**IMMUTABILITY:** The value strings are stored verbatim in the database and in PDFs. Adding new entries is safe. Renaming or removing existing values is a breaking change against stored submissions.
 
 ---
 
@@ -82,11 +105,11 @@ Component logic must never hardcode error messages — delegate to `friendlyErro
 
 ## Fetch State Pattern
 
-Both the safety warning fetch (Screen 0) and the presentation fetch (Screen 2) use a discriminated union `status: "loading" | "success" | "error"`. Keep these consistent with each other if either is changed.
+Both the safety warning fetch (Screen 0) and the presentation fetch (Screen 4) use a discriminated union `status: "loading" | "success" | "error"`. Keep these consistent with each other if either is changed.
 
 Screen 0: `App.tsx` derives the union inline from raw state variables before passing it to `SafetyWarningScreen` as a single prop. The type `SafetyWarningFetchState` is exported from `SafetyWarningScreen.tsx`.
 
-Screen 2: `PresentationState` is defined in `types.ts`. There is no `idle` status — both transitions into `FREE_TEXT` reset it to `loading` before navigating. Any future third entry path must do the same.
+Screen 4: `PresentationState` is defined in `types.ts`. There is no `idle` status — both transitions into `FREE_TEXT` reset it to `loading` before navigating. Any future third entry path must do the same.
 
 The `presentationFetchTrigger` counter in `App.tsx` exists solely to force a re-fetch when `selectedConditionId` has not changed (retry, or same-condition re-entry). Incrementing the counter is the only correct retry mechanism. **The retry callback must only call `setPresentationFetchTrigger(k => k + 1)` — not `setPresentationState({ status: "loading" })`.** The fetch effect sets loading state itself at the top of its body.
 

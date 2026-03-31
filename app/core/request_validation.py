@@ -1,8 +1,22 @@
+import re
+from datetime import date
+
 from app.core.errors import INVALID_PAYLOAD
 from app.core.consultation_outcomes import VALID_OUTCOME_VALUES
 
 VALID_CONTACT_METHODS = {"email", "text", "phone"}
 VALID_DOCTOR_PREFERENCES = {"any", "usual"}
+VALID_PATIENT_FOR_VALUES = {"me", "someone_else"}
+
+# Validates UK postcode format only.
+# Accepts most standard outward + inward code combinations.
+# Does NOT verify the postcode exists or is currently in use.
+# Examples that pass: SW1A 1AA, M1 1AE, B1 1BB, EC1A 1BB
+# An optional space between the two halves is permitted.
+_UK_POSTCODE_RE = re.compile(
+    r"^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$",
+    re.IGNORECASE,
+)
 
 
 def require_keys(obj: dict, allowed: set):
@@ -52,7 +66,7 @@ def validate_contact_preferences(cp: dict):
             "best_time_to_call",
             "doctor_preference",
             "usual_doctor_name",
-            "consultation_outcome",  # SYNC POINT: value strings defined in consultation_outcomes.json
+            "consultation_outcome",
         },
     )
 
@@ -102,20 +116,100 @@ def validate_contact_preferences(cp: dict):
             "usual_doctor_name is required when doctor_preference is 'usual'"
         )
 
-    # consultation_outcome — required, must be a known value string.
-    # Valid values are loaded from consultation_outcomes.json via VALID_OUTCOME_VALUES.
-    # SYNC POINT: frontend/src/types.ts ConsultationOutcome union must list the same values.
+    # consultation_outcome — required, must be a known value
     outcome = cp.get("consultation_outcome")
     if outcome is None:
         raise INVALID_PAYLOAD("consultation_outcome is required")
-    if not isinstance(outcome, str) or outcome not in VALID_OUTCOME_VALUES:
+    if outcome not in VALID_OUTCOME_VALUES:
         raise INVALID_PAYLOAD(
             f"consultation_outcome must be one of: {sorted(VALID_OUTCOME_VALUES)}"
         )
 
 
+def validate_patient_details(pd: dict) -> None:
+    """Validate the patient_details block within a finish payload."""
+
+    if not isinstance(pd, dict):
+        raise INVALID_PAYLOAD("patient_details must be an object")
+
+    require_keys(
+        pd,
+        {
+            "patient_for",
+            "first_name",
+            "last_name",
+            "date_of_birth",
+            "postcode",
+            "submitter_name",
+            "submitter_relationship",
+        },
+    )
+
+    # patient_for
+    patient_for = pd.get("patient_for")
+    if patient_for not in VALID_PATIENT_FOR_VALUES:
+        raise INVALID_PAYLOAD(
+            f"patient_for must be one of: {sorted(VALID_PATIENT_FOR_VALUES)}"
+        )
+
+    # Required string fields
+    for field_name in ("first_name", "last_name", "postcode"):
+        value = pd.get(field_name)
+        if not isinstance(value, str) or not value.strip():
+            raise INVALID_PAYLOAD(f"{field_name} must be a non-empty string")
+
+    # date_of_birth — must be a dict with exactly day, month, year
+    dob = pd.get("date_of_birth")
+    if not isinstance(dob, dict):
+        raise INVALID_PAYLOAD("date_of_birth must be an object")
+
+    require_keys(dob, {"day", "month", "year"})
+
+    for component in ("day", "month", "year"):
+        val = dob.get(component)
+        if not isinstance(val, str) or not val.strip():
+            raise INVALID_PAYLOAD(
+                f"date_of_birth.{component} must be a non-empty string"
+            )
+        if not val.strip().isdigit():
+            raise INVALID_PAYLOAD(
+                f"date_of_birth.{component} must contain digits only, got: {val!r}"
+            )
+
+    # Assemble and validate as a real calendar date
+    try:
+        assembled = date(
+            int(dob["year"].strip()),
+            int(dob["month"].strip()),
+            int(dob["day"].strip()),
+        )
+    except ValueError:
+        raise INVALID_PAYLOAD("date_of_birth is not a valid calendar date")
+
+    if assembled > date.today():
+        raise INVALID_PAYLOAD("date_of_birth cannot be in the future")
+
+    # Postcode format
+    if not _UK_POSTCODE_RE.match(pd["postcode"].strip()):
+        raise INVALID_PAYLOAD(
+            "postcode does not match a recognised UK postcode format"
+        )
+
+    # Submitter fields — required when patient_for is "someone_else"
+    if patient_for == "someone_else":
+        for field_name in ("submitter_name", "submitter_relationship"):
+            value = pd.get(field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise INVALID_PAYLOAD(
+                    f"{field_name} is required when patient_for is 'someone_else'"
+                )
+
+
 def validate_finish_payload(payload: dict):
-    require_keys(payload, {"runtime_id", "version", "contact_preferences"})
+    require_keys(
+        payload,
+        {"runtime_id", "version", "contact_preferences", "patient_details"},
+    )
 
     if not isinstance(payload["runtime_id"], str):
         raise INVALID_PAYLOAD("runtime_id must be string")
@@ -127,3 +221,8 @@ def validate_finish_payload(payload: dict):
         raise INVALID_PAYLOAD("contact_preferences is required")
 
     validate_contact_preferences(payload["contact_preferences"])
+
+    if "patient_details" not in payload:
+        raise INVALID_PAYLOAD("patient_details is required")
+
+    validate_patient_details(payload["patient_details"])
