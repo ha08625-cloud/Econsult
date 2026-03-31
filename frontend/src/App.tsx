@@ -464,6 +464,7 @@ export default function App() {
           setPresentationFetchTrigger((k) => k + 1);
           setScreen("FREE_TEXT");
         }}
+        onBack={() => setScreen("OUTCOME")}
       />
     );
   }
