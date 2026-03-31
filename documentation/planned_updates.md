@@ -2,10 +2,7 @@ Architecture updates:
 - Pydantic request model migration: Replace all hand-written isinstance/type-check validation in both admin_router.py and request_validation.py with Pydantic BaseModel definitions, letting FastAPI handle JSON parsing, type coercion, and missing-field errors automatically. This also requires adding a RequestValidationError exception handler in main.py to convert Pydantic's error format into the existing {"error": {"code": ..., "message": ...}} shape, updating the frontend extractErrorDetail functions to handle any new edge cases, and retiring the unused api_models.py dataclasses.
 
 Features
-- Attach photos
 - Background worker for asynchronous photo processing to prevent OOM errors
-- Add usual GPs
-- Add front page with admin/f2f/phone call/advice choice
 - retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
 - database-backed email delivery queue with retries
