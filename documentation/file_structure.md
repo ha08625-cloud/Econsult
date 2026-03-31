@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout and import mapping
-# Last updated: 2026-03-26
+# Last updated: 2026-03-31
 
 ---
 
@@ -16,6 +16,8 @@ The project root contains the following items:
 - railway.toml — Railway deployment config. Contains only `builder = "DOCKERFILE"`.
 - requirements.txt — Python dependencies.
 - alembic.ini — Alembic configuration. Placeholder database URL; the real URL is injected at runtime from DATABASE_URL. No secrets; safe to commit.
+- consultation_outcomes.json — canonical source of truth for consultation outcome values and labels. Read by consultation_outcomes.py at import time and imported directly by OutcomeScreen.tsx via resolveJsonModule. Value strings are immutable once deployed.
+- upload_constants.json — canonical source of truth for photo upload limits. Read by upload_constants.py at import time.
 - app/ — all Python application code.
 - alembic/ — Alembic migration scripts.
 - frontend/ — patient-facing React app.
@@ -95,10 +97,12 @@ Infrastructure concerns only. No clinical logic.
 Files:
 - app/core/admin_context.py — admin authentication context and FastAPI dependency.
 - app/core/condition_registry.py — loads and indexes condition rulesets at startup; immutable after init.
+- app/core/consultation_outcomes.json — see top-level layout; file lives at project root, not inside app/core/.
+- app/core/consultation_outcomes.py — exposes CONSULTATION_OUTCOMES (list[dict]) and VALID_OUTCOME_VALUES (frozenset[str]) loaded from consultation_outcomes.json at import time. Used by request_validation.py (value validation) and pdf_formatter.py (label lookup). Fails fast at startup if JSON is missing or malformed. Must not be changed without also updating the ConsultationOutcome union type in frontend/src/types.ts.
 - app/core/db.py — shared Postgres connection module. Provides get_conn() context manager and alembic_upgrade() for running migrations at startup.
 - app/core/dependencies.py — shared FastAPI dependency provider functions. All routers import from here to access app.state values via Depends rather than direct request.app.state access.
 - app/core/errors.py — APIError and named error constants.
-- app/core/request_validation.py — validates incoming HTTP payloads.
+- app/core/request_validation.py — validates incoming HTTP payloads. Imports VALID_OUTCOME_VALUES from consultation_outcomes.py to validate the consultation_outcome field in contact_preferences.
 - app/core/upload_constants.json — canonical source of truth for photo upload limits (allowed MIME types, per-file size, total size, file count). Read by upload_constants.py at import time.
 - app/core/upload_constants.py — exposes named constants loaded from upload_constants.json. Used by validate_photo_guards in request_validation.py (step 5). Must not be changed without also updating frontend/src/upload_constants.ts.
 
@@ -107,7 +111,7 @@ Files:
 Pure utility functions. No IO, no database access, no imports from routers or repositories.
 
 Files:
-- app/utils/pdf_formatter.py — generate_pdf() pure function. Takes ClinicalOutput, submission metadata, and optional practice_name; returns raw PDF bytes via fpdf2. Sections mirror the plain-text email body.
+- app/utils/pdf_formatter.py — generate_pdf() pure function. Takes ClinicalOutput, submission metadata, and optional practice_name; returns raw PDF bytes via fpdf2. Sections mirror the plain-text email body. Imports CONSULTATION_OUTCOMES from consultation_outcomes.py to derive the outcome label lookup dict at module load time.
 
 ---
 
@@ -144,10 +148,10 @@ Source files (frontend/src/):
 - frontend/src/layout.tsx — structural React wrappers (PageShell, InlineError). No application state knowledge. Must not import from api.ts, helpers.ts, or any screen component.
 - frontend/src/main.tsx — React entry point.
 - frontend/src/search.ts — condition filtering logic (substring, tag, and Levenshtein fuzzy match).
-- frontend/src/types.ts — frontend-visible contracts only. No logic.
+- frontend/src/types.ts — frontend-visible contracts only. No logic. Contains the ConsultationOutcome union type, which must be kept in sync with consultation_outcomes.json manually — see sync obligation note in arch_frontend.md.
 - frontend/src/test-setup.ts — Vitest setup file. Configures jsdom environment before test runs.
-- frontend/src/upload_constants.ts — hand-written mirror of app/core/upload_constants.json. resolveJsonModule is not enabled in this project's tsconfig, so values are written explicitly. Must be kept in sync with the JSON file manually.
-- frontend/src/uitypes - UI-only types that are never serialised. Kept separate from types.ts, which contains wire-format contracts only.
+- frontend/src/upload_constants.ts — hand-written mirror of upload_constants.json. Values are written explicitly. Must be kept in sync with the JSON file manually.
+- frontend/src/uitypes — UI-only types that are never serialised. Kept separate from types.ts, which contains wire-format contracts only.
 
 Screen components (frontend/src/screens/):
 Screen components are extracted from App.tsx during Phase 2. Each screen component
@@ -156,26 +160,27 @@ remains in App.tsx and is passed down as props.
 
 - frontend/src/screens/DoneScreen.tsx — DONE screen. Props: { practiceWasClosed: boolean }. No state, no API calls.
 - frontend/src/screens/DoneScreen.test.tsx — component tests for DoneScreen.
-- frontend/src/screens/SafetyWarningScreen.tsx - Safety warning screen
+- frontend/src/screens/SafetyWarningScreen.tsx — Safety warning screen.
 - frontend/src/screens/SafetyWarningScreen.test.tsx
-- frontend/src/screens/SelectConditionScreen.tsx - Condition Selection Screen
+- frontend/src/screens/PatientDetailsScreen.tsx — Patient details screen. Captures patient identity before condition selection.
+- frontend/src/screens/PatientDetailsScreen.test.tsx
+- frontend/src/screens/OutcomeScreen.tsx — Consultation outcome screen. Patient selects their desired outcome before condition selection. Imports consultation_outcomes.json directly via resolveJsonModule. No API call; local state only.
+- frontend/src/screens/SelectConditionScreen.tsx — Condition selection screen. Includes a back button navigating to OUTCOME.
 - frontend/src/screens/SelectConditionScreen.test.tsx
-- frontend/src/screens/ReviewScreen.tsx - Review Screen
-- frontend/src/screens/ReviewScreen.test.tsx
-- frontend/src/screens/EditScreen.tsx - Edit Screen
-- frontend/src/screens/EditScreen.test.tsx
-- frontend/src/screens/FreeTextScreen.tsx - Free Text Screen
+- frontend/src/screens/FreeTextScreen.tsx — Free text screen.
 - frontend/src/screens/FreeTextScreen.test.tsx
-- frontend/src/screens/ContactScreen.tsx - Contact Screen
+- frontend/src/screens/EditScreen.tsx — Edit screen.
+- frontend/src/screens/EditScreen.test.tsx
+- frontend/src/screens/ReviewScreen.tsx — Review screen.
+- frontend/src/screens/ReviewScreen.test.tsx
+- frontend/src/screens/ContactScreen.tsx — Contact screen. Accepts consultationOutcome as a required prop and includes it in the finish payload.
 - frontend/src/screens/ContactScreen.test.tsx
-- frontend/src/screens/PatientDetailsScreen.tsx - Patient Details Screen
-- frontend/src/screens/PatientDetailsScreen.test.tsx - Patient Details Screen
 
 Config files (frontend/):
 - frontend/index.html — patient form entry point.
 - frontend/vite.config.ts — Vite build config. No test configuration; that lives in vitest.config.ts.
 - frontend/vitest.config.ts — Vitest test runner config (jsdom environment, setup file). Separated from vite.config.ts to avoid breaking the production Docker build.
-- frontend/tsconfig.json, tsconfig.app.json, tsconfig.node.json - test files explicitly excluded from tsconfig.json, excludes *.test.ts from build
+- frontend/tsconfig.json, tsconfig.app.json, tsconfig.node.json — test files explicitly excluded from tsconfig.json; excludes *.test.ts from build. resolveJsonModule is enabled in tsconfig.app.json to allow OutcomeScreen.tsx to import consultation_outcomes.json directly.
 - frontend/package.json, package-lock.json
 - frontend/eslint.config.js
 
@@ -209,9 +214,9 @@ Unit tests (no database required):
 - tests/test_admin_router.py — router and auth behaviour for admin endpoints; signposting sanitisation.
 - tests/test_delivery_orchestration.py — unit tests for attempt_delivery with mocked dependencies. Covers success path, failure path, error propagation, DeliveryOutcomeStatus enum, and PendingDelivery immutability.
 - tests/test_delivery_service.py
-- tests/test_pdf_generation.py
+- tests/test_pdf_generation.py — tests for generate_pdf including photo embedding and consultation_outcome label rendering.
 - tests/test_practice_endpoint.py — GET /practice endpoint with stub practice repo.
-- tests/test_request_validation.py — validate_patient_details and _format_patient_details.
+- tests/test_request_validation.py — validate_patient_details and validate_contact_preferences including consultation_outcome validation.
 - tests/test_sanitise_signposting.py — sanitise_signposting_html unit tests.
 - tests/test_upload_constants.py — verifies upload_constants.py loads the JSON correctly and exposes the expected types and values.
 
@@ -247,7 +252,8 @@ Each service module lists which other modules it is permitted to import.
 - app/services/delivery/delivery_orchestration.py: imports submission_repository, attachment_repository, delivery_service, delivery_constants, delivery_events. Must not import clinical engine modules, routers, or access the database directly.
 - app/services/engine/pipeline.py: orchestration layer; may import all services above.
 - app/services/presentation_service.py: imports condition_registry, practice_repository.
-- app/utils/pdf_formatter.py: imports ClinicalOutput only. Must not import any service, repository, router, or engine module.
+- app/utils/pdf_formatter.py: imports ClinicalOutput and consultation_outcomes. Must not import any service, repository, router, or engine module.
+- app/core/consultation_outcomes.py: standalone; imports json and os only. No application-module imports.
 
 ---
 
@@ -266,3 +272,4 @@ The following imports must never appear in the codebase:
 - delivery/delivery_orchestration must NOT import engine modules, routers, condition_registry, pdf_formatter, or serialisation. It interacts with clinical data only through repository projections (PendingDelivery) and pre-rendered PDF bytes.
 - delivery/delivery_constants and delivery/delivery_events must NOT import any application module.
 - pdf_formatter must NOT import delivery modules, repositories, routers, or any engine module.
+- consultation_outcomes.py must NOT import any application module.
