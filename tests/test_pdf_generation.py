@@ -1,4 +1,6 @@
 # tests/test_pdf_formatter.py
+import re
+import zlib
 from datetime import datetime, timezone
 
 import pytest
@@ -57,6 +59,39 @@ MINIMAL_JPEG: bytes = bytes([
     0xFA, 0x28, 0xA2, 0x80, 0x3F, 0xFF, 0xD9,
 ])
 
+
+# ---------------------------------------------------------------------------
+# PDF text extraction helper
+# ---------------------------------------------------------------------------
+
+def extract_pdf_text(pdf_bytes: bytes) -> str:
+    """
+    Extract human-readable text from a PDF by decompressing all FlateDecode
+    content streams and decoding with latin-1.
+
+    FPDF2 compresses content streams with zlib (FlateDecode). Decoding the raw
+    bytes with latin-1 only returns the compressed binary, not the text. This
+    function finds every stream block in the PDF, attempts zlib decompression,
+    and concatenates the results.
+
+    Uses only stdlib (zlib, re) — no third-party PDF library required.
+    """
+    # Match every stream...endstream block (handles both \n and \r\n line endings)
+    stream_pattern = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.DOTALL)
+    parts = []
+    for match in stream_pattern.finditer(pdf_bytes):
+        raw = match.group(1)
+        try:
+            parts.append(zlib.decompress(raw).decode("latin-1"))
+        except zlib.error:
+            # Non-compressed stream (e.g. image data) — skip
+            pass
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Shared test fixtures
+# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def minimal_clinical_output() -> ClinicalOutput:
@@ -214,8 +249,7 @@ def test_consultation_outcome_appears_in_pdf(submission_kwargs):
     """A known outcome value must appear as its human-readable label in the PDF."""
     output = _make_output_with_outcome("face_to_face")
     result = generate_pdf(clinical_output=output, **submission_kwargs)
-    # The PDF bytes contain the rendered text. Decode leniently to search for the label.
-    pdf_text = result.decode("latin-1")
+    pdf_text = extract_pdf_text(result)
     assert "A face to face appointment" in pdf_text
     assert "Consultation outcome:" in pdf_text
 
@@ -233,7 +267,7 @@ def test_all_outcome_values_render_with_known_label(submission_kwargs):
     for value, expected_fragment in outcomes.items():
         output = _make_output_with_outcome(value)
         result = generate_pdf(clinical_output=output, **submission_kwargs)
-        pdf_text = result.decode("latin-1")
+        pdf_text = extract_pdf_text(result)
         assert expected_fragment in pdf_text, (
             f"Expected label fragment {expected_fragment!r} for outcome {value!r} not found in PDF"
         )
@@ -243,7 +277,7 @@ def test_absent_outcome_produces_no_outcome_row(submission_kwargs):
     """When consultation_outcome is absent from contact_preferences, no outcome row is rendered."""
     output = _make_output_with_outcome(None)
     result = generate_pdf(clinical_output=output, **submission_kwargs)
-    pdf_text = result.decode("latin-1")
+    pdf_text = extract_pdf_text(result)
     assert "Consultation outcome:" not in pdf_text
 
 
@@ -272,5 +306,5 @@ def test_null_outcome_produces_no_outcome_row(submission_kwargs):
         },
     )
     result = generate_pdf(clinical_output=output, **submission_kwargs)
-    pdf_text = result.decode("latin-1")
+    pdf_text = extract_pdf_text(result)
     assert "Consultation outcome:" not in pdf_text
