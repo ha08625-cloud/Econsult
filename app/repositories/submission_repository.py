@@ -12,6 +12,7 @@ This module is responsible for:
 - Providing lightweight delivery projections (PendingDelivery)
 - Atomically recording delivery attempt outcomes
 - Querying submissions eligible for delivery retry
+- Detecting orphan submissions (pending with no delivery attempt)
 
 Table creation is handled by Alembic migrations at startup.
 
@@ -311,9 +312,9 @@ class SubmissionRepository:
             next_retry_after=row["next_retry_after"],
         )
 
-    def list_retryable(self, limit: int = 50) -> list[PendingDelivery]:
+    def list_retryable(self, limit: int = 50) -> list[str]:
         """
-        Return submissions that are due for a delivery retry.
+        Return submission IDs that are due for a delivery retry.
 
         A submission is eligible when all three conditions hold:
         - delivery_status = 'failed'  (sent and pending submissions are excluded)
@@ -322,8 +323,13 @@ class SubmissionRepository:
 
         Results are ordered by submitted_at ASC so older submissions are
         retried first. The limit parameter caps the number of rows returned
-        per call; the background worker is expected to loop until it hits its
-        own time budget.
+        per call; the background worker calls list_retryable in a loop until
+        it returns an empty list.
+
+        Returns submission IDs only. The worker passes each ID directly to
+        attempt_delivery, which calls get_pending_delivery internally as its
+        first step. This keeps PendingDelivery out of the worker layer and
+        avoids bundling a stale projection into the retry call.
 
         Design note — delivery_status = 'failed' is the tighter filter:
         NOT IN ('sent') would also match pending submissions. A pending
@@ -336,15 +342,10 @@ class SubmissionRepository:
         Returns an empty list if no submissions are eligible.
         """
         with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT delivery_status,
-                           delivery_email,
-                           condition_label,
-                           submitted_at,
-                           delivery_attempts,
-                           next_retry_after
+                    SELECT submission_id
                     FROM submission_records
                     WHERE delivery_status = 'failed'
                       AND next_retry_after IS NOT NULL
@@ -356,17 +357,49 @@ class SubmissionRepository:
                 )
                 rows = cur.fetchall()
 
-        return [
-            PendingDelivery(
-                delivery_status=row["delivery_status"],
-                delivery_email=row["delivery_email"],
-                condition_label=row["condition_label"],
-                submitted_at=row["submitted_at"],
-                delivery_attempts=row["delivery_attempts"],
-                next_retry_after=row["next_retry_after"],
-            )
-            for row in rows
-        ]
+        return [row[0] for row in rows]
+
+    def list_orphans(self, older_than_minutes: int) -> list[str]:
+        """
+        Return submission IDs that appear to be stuck in pending state.
+
+        An orphan is a submission where:
+        - delivery_status = 'pending'
+        - delivery_attempts = 0
+        - submitted_at < NOW() - older_than_minutes
+
+        This pattern indicates the router crashed after inserting the row
+        but before the first delivery attempt completed. Under normal
+        operation no submission should remain pending with zero attempts
+        beyond a short window.
+
+        The background worker calls this once per loop iteration and emits
+        a CRITICAL log if any are found. No mutation is performed — orphan
+        recovery requires operator intervention.
+
+        Known limitation: under high load, genuinely new submissions could
+        satisfy these conditions if the router queue is backed up beyond
+        older_than_minutes. At current single-surgery scale this is not a
+        realistic concern. Document as a known limitation if scale changes.
+
+        Returns submission IDs only. Returns an empty list if none found.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT submission_id
+                    FROM submission_records
+                    WHERE delivery_status = 'pending'
+                      AND delivery_attempts = 0
+                      AND submitted_at < NOW() - INTERVAL '1 minute' * %s
+                    ORDER BY submitted_at ASC
+                    """,
+                    (older_than_minutes,),
+                )
+                rows = cur.fetchall()
+
+        return [row[0] for row in rows]
 
     def record_attempt_outcome(
         self,

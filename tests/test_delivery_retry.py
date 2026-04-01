@@ -52,7 +52,6 @@ from app.repositories.attachment_repository import (  # noqa: E402
 )
 from app.repositories.submission_repository import (  # noqa: E402
     SubmissionRepository,
-    PendingDelivery,
 )
 from app.models.serialisation_contracts import (  # noqa: E402
     ClinicalOutput,
@@ -235,6 +234,7 @@ def test_first_attempt_failure_sets_expected_state():
 
     try:
         _create_submission(sid)
+
         before = datetime.now(timezone.utc)
         outcome = attempt_delivery(sid, sub_repo, att_repo, FailingDeliveryService())
         after = datetime.now(timezone.utc)
@@ -295,8 +295,8 @@ def test_retry_after_backoff_clears_state():
 
 def test_list_retryable_returns_only_eligible_failed():
     """
-    list_retryable returns failed submissions with next_retry_after in the
-    past. A new pending submission is not returned.
+    list_retryable returns submission IDs for failed submissions with
+    next_retry_after in the past. A new pending submission is not returned.
     """
     failed_sid = _uid()
     pending_sid = _uid()
@@ -311,25 +311,18 @@ def test_list_retryable_returns_only_eligible_failed():
         # Create a fresh pending submission (no delivery attempt).
         _create_submission(pending_sid)
 
-        # Verify via raw query that only the failed submission qualifies.
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT submission_id FROM submission_records "
-                    "WHERE submission_id = ANY(%s) "
-                    "AND delivery_status = 'failed' "
-                    "AND next_retry_after IS NOT NULL "
-                    "AND next_retry_after <= NOW()",
-                    ([failed_sid, pending_sid],),
-                )
-                eligible_ids = {row[0] for row in cur.fetchall()}
+        results = sub_repo.list_retryable()
 
-        assert failed_sid in eligible_ids, (
-            "Failed submission with past next_retry_after must be eligible"
+        assert failed_sid in results, (
+            "Failed submission with past next_retry_after must be in list_retryable"
         )
-        assert pending_sid not in eligible_ids, (
+        assert pending_sid not in results, (
             "Pending submission must not appear in list_retryable"
         )
+        for item in results:
+            assert isinstance(item, str), (
+                f"list_retryable must return strings, got {type(item)}"
+            )
     finally:
         _cleanup(failed_sid)
         _cleanup(pending_sid)
@@ -361,20 +354,8 @@ def test_list_retryable_excludes_sent_with_anomalous_next_retry():
                     (past, sid),
                 )
 
-        # The delivery_status = 'failed' filter must exclude this row.
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT submission_id FROM submission_records "
-                    "WHERE submission_id = %s "
-                    "AND delivery_status = 'failed' "
-                    "AND next_retry_after IS NOT NULL "
-                    "AND next_retry_after <= NOW()",
-                    (sid,),
-                )
-                found = cur.fetchone()
-
-        assert found is None, (
+        results = sub_repo.list_retryable()
+        assert sid not in results, (
             "Sent submission must never appear in list_retryable, even with "
             "next_retry_after set"
         )
@@ -406,6 +387,10 @@ def test_list_retryable_respects_limit():
             f"list_retryable(limit={limit}) returned {len(results)} rows, "
             f"expected at most {limit}"
         )
+        for item in results:
+            assert isinstance(item, str), (
+                f"list_retryable must return strings, got {type(item)}"
+            )
     finally:
         for sid in sids:
             _cleanup(sid)
@@ -607,20 +592,8 @@ def test_list_retryable_excludes_pending_with_anomalous_next_retry():
                     (past, sid),
                 )
 
-        # The delivery_status = 'failed' filter must exclude this row.
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT submission_id FROM submission_records "
-                    "WHERE submission_id = %s "
-                    "AND delivery_status = 'failed' "
-                    "AND next_retry_after IS NOT NULL "
-                    "AND next_retry_after <= NOW()",
-                    (sid,),
-                )
-                found = cur.fetchone()
-
-        assert found is None, (
+        results = sub_repo.list_retryable()
+        assert sid not in results, (
             "Pending submission must never appear in list_retryable, even with "
             "next_retry_after set"
         )
