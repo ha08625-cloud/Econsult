@@ -37,8 +37,8 @@ Both URLs live in `.env`. `.env` is never committed to version control.
 ### Unit tests
 Tests that do not require a database connection. Covers two suites that run together under `make test`:
 
-**Python unit tests** — routers, validation, serialisation, sanitisation, and engine logic. Use stubs and in-memory state.
-- Files: everything in `tests/` except `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, and `test_delivery_retry.py`
+**Python unit tests** — routers, validation, serialisation, sanitisation, engine logic, and worker loop. Use stubs and in-memory state.
+- Files: everything in `tests/` except `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_delivery_retry.py`, and `test_delivery_worker_integration.py`
 - Runner: pytest
 
 **Frontend component tests** — screen component rendering and interaction behaviour.
@@ -65,7 +65,9 @@ Tests that exercise the full request pipeline or repository layer against a live
 
 **`tests/test_delivery_retry.py`** — integration tests for the delivery retry pipeline. Exercises `attempt_delivery`, `list_retryable`, and `record_attempt_outcome` directly against the database without going through the HTTP layer. Uses `FailingDeliveryService` and `SucceedingDeliveryService` stubs defined in the file. Requires `TEST_DATABASE_URL`. Each test generates unique IDs and cleans up in a `finally` block.
 
-**Run all four together with:**
+**`tests/test_delivery_worker_integration.py`** — integration tests for the worker loop. Exercises `run_worker` against a live database using real delivery service stubs. Patches `time.sleep` to halt the loop after a controlled number of iterations. Requires `TEST_DATABASE_URL`. Each test generates unique IDs and cleans up in a `finally` block. Covers: batch drain (three failed submissions delivered in one iteration), backoff enforcement (future `next_retry_after` not retried), retry schedule progression across multiple iterations, orphan detection CRITICAL log with submission ID present.
+
+**Run all together with:**
 ```
 make test-integration
 ```
@@ -132,6 +134,9 @@ Frontend tests have no database dependency and belong in the unit suite. Running
 
 ### Why cd frontend instead of a vitest script in package.json?
 Vitest requires the working directory to be `frontend/` so it resolves `vitest.config.ts` correctly. The Makefile uses `cd frontend && npx vitest run` rather than adding a `test` script to `package.json` to keep the entry point for tests in one place (the Makefile) rather than split across two files.
+
+### Why does test_delivery_worker.py patch attempt_delivery at delivery_worker rather than delivery_orchestration?
+When `delivery_worker.py` imports `attempt_delivery` at the top of the file, Python binds the name in `delivery_worker`'s module namespace. Patching `delivery_orchestration.attempt_delivery` replaces the object in the source module but `delivery_worker` still holds the original reference. Patching `delivery_worker.attempt_delivery` intercepts all calls made by the worker. This is standard Python mock patching behaviour and is documented in the test file itself.
 
 ### MINIMAL_JPEG shared fixture
 `MINIMAL_JPEG` is a module-level constant in `tests/test_pdf_generation.py`. Any test that needs a valid JPEG — for PDF generation tests or for multipart upload tests — should import it from there rather than duplicating the bytes. Do not define it in more than one place.

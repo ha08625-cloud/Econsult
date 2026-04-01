@@ -41,7 +41,7 @@ Defined in `delivery_constants.py`. The backoff schedule is `[1, 10, 60]` minute
 
 ### Orchestration (`delivery_orchestration.py`)
 
-`attempt_delivery` is the single entry point for all delivery attempts — both the first attempt from the router and retries from the (deferred) background worker. It enforces all delivery policy:
+`attempt_delivery` is the single entry point for all delivery attempts — both the first attempt from the router and retries from the background worker. It enforces all delivery policy:
 
 Guards (checked in order before any send or increment):
 1. Already sent — returns immediately if `delivery_status == "sent"`.
@@ -56,7 +56,7 @@ The guards mean the worker can call `attempt_delivery` on any submission without
 
 **Backoff index calculation:** On `EmailDeliveryError`, `next_retry_after` is computed before calling `record_attempt_outcome`, using `pending.delivery_attempts + 1` as the expected post-increment count (`backoff_index = post_increment_count - 1`). This allows exactly one call to `record_attempt_outcome` per attempt. The `RETURNING delivery_attempts` value is used as `actual_count` in the `DeliveryOutcome` to confirm the database count matches expectations, and guards against a potential future TOCTOU race where `pending.delivery_attempts` could be stale.
 
-**Concurrency (TOCTOU):** Two races exist in `attempt_delivery`. First, the already-sent guard reads `delivery_status` from `get_pending_delivery`; concurrent calls could both pass this guard before either completes. Second, `pending.delivery_attempts` used for backoff index calculation is a pre-read value — the `RETURNING` clause on `record_attempt_outcome` provides the authoritative post-increment count but does not prevent both concurrent calls from reading the same pre-increment value. In single-process operation neither race is exploitable. Once a background worker is added, row-level locking (`SELECT ... FOR UPDATE`) or an atomic compare-and-swap is required. This is a documented requirement for the worker ticket.
+**Concurrency (TOCTOU):** Two races exist in `attempt_delivery`. First, the already-sent guard reads `delivery_status` from `get_pending_delivery`; concurrent calls could both pass this guard before either completes. Second, `pending.delivery_attempts` used for backoff index calculation is a pre-read value — the `RETURNING` clause on `record_attempt_outcome` provides the authoritative post-increment count but does not prevent both concurrent calls from reading the same pre-increment value. The single-threaded worker eliminates internal contention. The remaining router/worker overlap race is rare but not impossible. Proper closure requires row-level locking (`SELECT ... FOR UPDATE`) or an atomic compare-and-swap, deferred to a future ticket.
 
 ### Exhaustion Policy
 
@@ -64,9 +64,21 @@ The guards mean the worker can call `attempt_delivery` on any submission without
 
 ### Retryable Query (`list_retryable`)
 
-`SubmissionRepository.list_retryable(limit=50)` returns `PendingDelivery` objects for submissions where `delivery_status = 'failed' AND next_retry_after IS NOT NULL AND next_retry_after <= NOW()`, ordered by `submitted_at ASC`.
+`SubmissionRepository.list_retryable(limit=50)` returns a `list[str]` of submission IDs for submissions where `delivery_status = 'failed' AND next_retry_after IS NOT NULL AND next_retry_after <= NOW()`, ordered by `submitted_at ASC`.
 
-Uses `delivery_status = 'failed'` (not `NOT IN ('sent')`) so that pending submissions with anomalous `next_retry_after` values are left for operator investigation rather than silently retried. The `limit` parameter prevents a single sweep from attempting an unbounded number of failed submissions. The background worker is expected to call `list_retryable` in a loop until it returns empty or hits its own time budget.
+Returns IDs only, not `PendingDelivery` objects. The worker passes each ID directly to `attempt_delivery`, which calls `get_pending_delivery` internally as its first step. This avoids bundling a potentially stale projection into the retry call and keeps `PendingDelivery` out of the worker layer.
+
+Uses `delivery_status = 'failed'` (not `NOT IN ('sent')`) so that pending submissions with anomalous `next_retry_after` values are left for operator investigation rather than silently retried. The `limit` parameter prevents a single sweep from attempting an unbounded number of failed submissions. The worker calls `list_retryable` in a loop until it returns an empty list.
+
+### Orphan Detection (`list_orphans`)
+
+`SubmissionRepository.list_orphans(older_than_minutes)` returns a `list[str]` of submission IDs where `delivery_status = 'pending' AND delivery_attempts = 0 AND submitted_at < NOW() - older_than_minutes`.
+
+This pattern indicates the router crashed after inserting the row but before the first delivery attempt completed. No mutation is performed — orphan recovery requires operator intervention.
+
+The background worker calls `list_orphans(older_than_minutes=5)` once per loop iteration and emits a CRITICAL log if any IDs are returned. The log is rate-limited to once every 60 seconds to prevent the same stuck submission flooding the log on every poll cycle.
+
+Known limitation: under high load, genuinely new submissions could satisfy these conditions if the router queue is backed up beyond the threshold. At current single-surgery scale this is not a realistic concern.
 
 ### Manual Recovery SQL
 
@@ -114,7 +126,8 @@ Neither contract may be used as an input back into the engine. This module conta
 - `create_submission` uses named `%(name)s` parameters rather than positional `%s` placeholders. This makes the column-to-value mapping explicit in the source and prevents silent data corruption if columns are reordered.
 - `get_submission` and `list_by_status` use an explicit `_SUBMISSION_COLUMNS` constant rather than `SELECT *`. This constant must be updated when migrations add or remove columns.
 - `record_attempt_outcome` is the sole post-attempt write path. It performs a single atomic UPDATE with `RETURNING delivery_attempts`.
-- `list_retryable(limit=50)` returns `PendingDelivery` objects. It does not return `submission_id` — the orchestration layer does not need it, and excluding it keeps the projection minimal.
+- `list_retryable(limit=50)` returns `list[str]` (submission IDs). The worker passes each ID directly to `attempt_delivery`. See Retryable Query section above.
+- `list_orphans(older_than_minutes)` returns `list[str]` (submission IDs). See Orphan Detection section above.
 - Must never: send emails, import engine modules, or make retry decisions.
 
 ### Attachment Repository (`attachment_repository.py`)
@@ -162,13 +175,13 @@ Server-side MIME validation for photo uploads relies on the HTTP `Content-Type` 
 
 1. A process crash after a successful send but before `record_attempt_outcome` completes results in a duplicate delivery on retry. This is the accepted tradeoff: duplicate delivery is safer than silently exhausting retries without a successful send.
 2. `delivery_attempts` counts recorded outcomes, not physical SMTP connections. A crash during the send leaves the count un-incremented.
-3. Attachments are not deleted on successful delivery. Storage cost for PDFs is trivial. A cleanup job is deferred until the background worker exists.
+3. Attachments are not deleted on successful delivery. Storage cost for PDFs is trivial. A cleanup job is deferred to a future ticket.
 4. `ConsoleDeliveryService` in dev mode exercises the retry path but never produces a real `EmailDeliveryError` unless deliberately stubbed.
-5. Orphan detection (pending submissions with `delivery_attempts = 0` older than 5 minutes) currently runs only at startup. An orphan created after startup is invisible until the next deploy. Periodic orphan checking is desired and should be implemented when the background worker arrives.
+5. Orphan detection runs once per worker loop iteration (every ~10 seconds when the queue is empty). CRITICAL log emission is rate-limited to once every 60 seconds per orphan cycle to prevent log flooding. Orphan recovery requires operator intervention — no automatic remediation is performed.
 6. Manual recovery from an exhausted submission requires direct database access.
-7. Systemic failures (e.g. expired SMTP credentials) cause submissions to accumulate. `list_retryable` processes them in batches. Each timed-out submission incurs the full SMTP timeout (~30s). The worker ticket must address timeout and concurrency strategy.
-8. `attempt_delivery` has two TOCTOU races: the already-sent guard (concurrent calls could both pass before either completes) and the backoff index calculation (both calls could read the same pre-increment `delivery_attempts` value). Neither is exploitable in single-process operation. The worker ticket must implement row-level locking or atomic compare-and-swap to close both gaps.
-9. CRITICAL-level logging is the sole alerting mechanism. Structured error reporting should be revisited when the background worker is added.
+7. Systemic failures (e.g. expired SMTP credentials) cause submissions to accumulate. Under a full SMTP outage with 50 failed submissions in the batch, worst-case drain time is approximately 25 minutes (50 × 30s SMTP timeout). Submissions that become retryable mid-sweep are not picked up until the current sweep completes. Acceptable at current single-surgery scale.
+8. The router/worker TOCTOU overlap race is possible but rare. Proper closure requires row-level locking or atomic compare-and-swap, deferred to a future ticket.
+9. CRITICAL-level logging is the sole alerting mechanism. Structured error reporting should be revisited in a future ticket.
 10. Alternative delivery backup and admin portal notification for delivery failures are planned as a separate ticket, before collecting real patient data.
 11. The stored PDF may be 20 MB or more for photo-heavy submissions (5 photos at 5 MB each). This is loaded fully into memory on each delivery attempt, including retries. Acceptable at current traffic scale but should be reviewed before significant volume.
 
@@ -184,4 +197,4 @@ These conditions abort startup rather than silently degrade:
 - Practice has no email address
 - SMTP env vars not set in production mode
 
-At startup, `main.py` also queries for orphan submissions (`delivery_status = 'pending'`, `delivery_attempts = 0`, `submitted_at` older than 5 minutes) and emits a CRITICAL-level log if any are found.
+At startup, `main.py` queries for orphan submissions (`delivery_status = 'pending'`, `delivery_attempts = 0`, `submitted_at` older than 5 minutes) and emits a CRITICAL-level log if any are found. Ongoing orphan detection is handled by the background worker, which calls `list_orphans` once per loop iteration.
