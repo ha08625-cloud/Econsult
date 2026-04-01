@@ -9,6 +9,7 @@
 The project root contains the following items:
 
 - main.py — FastAPI entry point. HTTP layer only.
+- worker_main.py — Background worker entry point. Validates env vars, instantiates repositories and delivery service, calls run_worker. No HTTP server, no migrations.
 - seed_db.py — database seed script, safe to run multiple times.
 - .env — local environment variables, not committed.
 - Dockerfile — container build definition.
@@ -72,6 +73,7 @@ Files:
 - app/services/delivery/delivery_orchestration.py — single entry point for all delivery attempts (first attempt and retries). Contains DeliveryOutcomeStatus enum, DeliveryOutcome dataclass, and attempt_delivery function. Imports from submission_repository, attachment_repository, delivery_service, delivery_constants, delivery_events.
 - app/services/delivery/delivery_constants.py — retry backoff schedule (RETRY_BACKOFF_MINUTES) and MAX_ATTEMPTS. No application-module imports. Single canonical source for the exhaustion threshold.
 - app/services/delivery/delivery_events.py — four string constants for structured logging of delivery lifecycle (DELIVERY_SENT, DELIVERY_FAILED, DELIVERY_EXHAUSTED, DELIVERY_RETRY_TOO_EARLY). No application-module imports.
+- app/services/delivery/delivery_worker.py — background worker loop. run_worker fetches retryable submission IDs via list_retryable, calls attempt_delivery per ID, and sleeps only when the queue is empty. Per-item exceptions are caught and logged at CRITICAL; psycopg2.OperationalError from list_retryable propagates uncaught so the process exits and Railway restarts. Orphan detection runs once per loop iteration with CRITICAL log emission rate-limited to once per 60 seconds. Imports from submission_repository, attachment_repository, delivery_service, delivery_orchestration only.
 
 #### app/services/ (flat)
 
@@ -88,7 +90,7 @@ Files:
 - app/repositories/availability_repository.py — weekly hours, overrides, and per-date exceptions.
 - app/repositories/practice_repository.py — practice record CRUD including update_email.
 - app/repositories/runtime_state_repository.py — session state read/write. Registered in app.state as runtime_repo.
-- app/repositories/submission_repository.py — submission record creation, delivery status tracking, and delivery retry support. Contains PendingDelivery dataclass (lightweight read-only projection for the orchestration layer), get_pending_delivery, and record_attempt_outcome (atomic UPDATE with RETURNING).
+- app/repositories/submission_repository.py — submission record creation, delivery status tracking, and delivery retry support. Contains PendingDelivery dataclass (lightweight read-only projection for the orchestration layer), get_pending_delivery, and record_attempt_outcome (atomic UPDATE with RETURNING). list_retryable returns list[str] (submission IDs only, not PendingDelivery objects) so the worker can pass IDs directly to attempt_delivery without carrying a stale projection. list_orphans returns submission IDs for pending submissions with delivery_attempts=0 older than a given threshold.
 
 ### 2.4 app/core/
 
@@ -214,6 +216,7 @@ Unit tests (no database required):
 - tests/test_admin_router.py — router and auth behaviour for admin endpoints; signposting sanitisation.
 - tests/test_delivery_orchestration.py — unit tests for attempt_delivery with mocked dependencies. Covers success path, failure path, error propagation, DeliveryOutcomeStatus enum, and PendingDelivery immutability.
 - tests/test_delivery_service.py
+- tests/test_delivery_worker.py — unit tests for the worker loop. No database required. Patches attempt_delivery at delivery_worker (not delivery_orchestration — see comment in file), time.sleep, and list_retryable/list_orphans via MagicMock. Covers: per-item processing, exception resilience, sleep-only-on-empty-queue, no-sleep-between-batches, DB failure exit, and orphan detection CRITICAL log with rate limiting.
 - tests/test_pdf_generation.py — tests for generate_pdf including photo embedding and consultation_outcome label rendering.
 - tests/test_practice_endpoint.py — GET /practice endpoint with stub practice repo.
 - tests/test_request_validation.py — validate_patient_details and validate_contact_preferences including consultation_outcome validation.
@@ -224,6 +227,8 @@ Integration tests (require DATABASE_URL):
 - tests/test_form_routes.py — full form pipeline via TestClient against live database. MockDeliveryService and FailingDeliveryService match the current DeliveryService ABC signature (pdf_bytes, submitted_at; no ClinicalOutput).
 - tests/test_public_routes.py — public endpoint tests via TestClient; imports main.py directly.
 - tests/test_repositories.py — repository layer tests; must be run directly, not via pytest.
+- tests/test_delivery_retry.py — delivery retry pipeline integration tests. Exercises attempt_delivery, list_retryable, and record_attempt_outcome directly against the database. Requires TEST_DATABASE_URL.
+- tests/test_delivery_worker_integration.py — worker loop integration tests. Exercises run_worker against a live database using real delivery service stubs. Patches time.sleep via StopIteration to halt the loop after one iteration. Covers batch drain, backoff-too-early enforcement, full retry schedule progression, and orphan detection CRITICAL log. Requires TEST_DATABASE_URL.
 
 ---
 
@@ -250,6 +255,7 @@ Each service module lists which other modules it is permitted to import.
 - app/services/delivery/delivery_constants.py: standalone; no application-module imports.
 - app/services/delivery/delivery_events.py: standalone; no application-module imports.
 - app/services/delivery/delivery_orchestration.py: imports submission_repository, attachment_repository, delivery_service, delivery_constants, delivery_events. Must not import clinical engine modules, routers, or access the database directly.
+- app/services/delivery/delivery_worker.py: imports submission_repository, attachment_repository, delivery_service, delivery_orchestration. Must not import clinical engine modules, routers, or access the database directly. Must not implement delivery policy — all policy lives in delivery_orchestration.
 - app/services/engine/pipeline.py: orchestration layer; may import all services above.
 - app/services/presentation_service.py: imports condition_registry, practice_repository.
 - app/utils/pdf_formatter.py: imports ClinicalOutput and consultation_outcomes. Must not import any service, repository, router, or engine module.
@@ -271,5 +277,6 @@ The following imports must never appear in the codebase:
 - delivery/delivery_service must NOT import engine modules, repositories, condition_registry, or pdf_formatter.
 - delivery/delivery_orchestration must NOT import engine modules, routers, condition_registry, pdf_formatter, or serialisation. It interacts with clinical data only through repository projections (PendingDelivery) and pre-rendered PDF bytes.
 - delivery/delivery_constants and delivery/delivery_events must NOT import any application module.
+- delivery/delivery_worker must NOT import clinical engine modules, routers, condition_registry, pdf_formatter, or serialisation. It must NOT implement retry policy or make decisions about delivery outcomes — those belong in delivery_orchestration.
 - pdf_formatter must NOT import delivery modules, repositories, routers, or any engine module.
 - consultation_outcomes.py must NOT import any application module.
