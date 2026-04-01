@@ -3,10 +3,7 @@ Architecture updates:
 
 Features
 - Background worker for asynchronous photo processing to prevent OOM errors
-- retry loop
 - safety rules implemented on clicking yes/no, rather than on submit form
-- database-backed email delivery queue with retries
-- database-backed email delivery queue with retries - add background worker
 - non blocking advisory messages
 - Admin portal audit trails
 - Patient facing audit trails
@@ -19,7 +16,6 @@ Features
 Late prototype updates
 - Deterministic data augmentation
 - Full question sets
-- UI and UX improvements
 - Encoder/head training
 - dockerise and cloud
 runtime_id is a bearer capability
