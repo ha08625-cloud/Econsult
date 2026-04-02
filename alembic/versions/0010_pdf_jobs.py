@@ -45,7 +45,7 @@ def upgrade() -> None:
         """
         CREATE TABLE pdf_jobs (
             id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-            submission_id    UUID        NOT NULL REFERENCES submission_records(submission_id),
+            submission_id    TEXT        NOT NULL REFERENCES submission_records(submission_id),
             status           TEXT        NOT NULL DEFAULT 'pending'
                                          CHECK (status IN ('pending', 'done', 'failed')),
             attempt_count    INTEGER     NOT NULL DEFAULT 0,
