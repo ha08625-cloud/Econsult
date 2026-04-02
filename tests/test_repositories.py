@@ -87,8 +87,6 @@ from app.repositories.practice_repository import (
 from app.repositories.submission_repository import (
     SubmissionRepository,
     SubmissionNotFound,
-    InvalidDeliveryStatus,
-    PendingDelivery,
 )
 from app.repositories.attachment_repository import (
     AttachmentRepository,
@@ -519,9 +517,16 @@ def _make_dummy_outputs():
 
 
 def _cleanup_submission(sid: str):
-    """Delete submission and its attachment (child row first for FK constraint)."""
+    """Delete submission and all child rows in dependency order."""
     with get_conn(DATABASE_URL) as conn:
         with conn.cursor() as cur:
+            # delivery_jobs and pdf_jobs FK to submission_records
+            cur.execute(
+                "DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,)
+            )
+            cur.execute(
+                "DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,)
+            )
             cur.execute(
                 "DELETE FROM submission_attachments WHERE submission_id = %s", (sid,)
             )
@@ -565,35 +570,6 @@ def test_submission_create_and_get():
         _cleanup_submission(sid)
 
 
-def test_submission_update_to_sent():
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        now = datetime.now(timezone.utc)
-        repo.update_delivery_status(sid, "sent", delivered_at=now)
-        row = repo.get_submission(sid)
-        assert row["delivery_status"] == "sent"
-        assert row["delivered_at"] is not None
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_submission_update_to_failed():
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        repo.update_delivery_status(sid, "failed", delivery_error="SMTP timeout")
-        row = repo.get_submission(sid)
-        assert row["delivery_status"] == "failed"
-        assert row["delivery_error"] == "SMTP timeout"
-    finally:
-        _cleanup_submission(sid)
-
-
 def test_submission_not_found():
     repo = _make_submission_repo()
     raised = False
@@ -602,320 +578,6 @@ def test_submission_not_found():
     except SubmissionNotFound:
         raised = True
     assert raised, "Expected SubmissionNotFound was not raised"
-
-
-def test_submission_invalid_status():
-    repo = _make_submission_repo()
-    raised = False
-    try:
-        repo.update_delivery_status("any_id", "delivered")
-    except InvalidDeliveryStatus:
-        raised = True
-    assert raised, "Expected InvalidDeliveryStatus was not raised"
-
-
-def test_submission_list_by_status():
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        pending = repo.list_by_status("pending")
-        ids = [r["submission_id"] for r in pending]
-        assert sid in ids
-    finally:
-        _cleanup_submission(sid)
-
-
-# ---------------------------------------------------------------------------
-# SubmissionRepository — list_retryable tests
-# ---------------------------------------------------------------------------
-
-def test_list_retryable_returns_eligible():
-    """A failed submission with next_retry_after in the past is returned."""
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        past = datetime.now(timezone.utc) - timedelta(minutes=2)
-        repo.record_attempt_outcome(
-            sid, "failed", delivery_error="SMTP timeout", next_retry_after=past
-        )
-        results = repo.list_retryable()
-        assert sid in results, f"Expected {sid} in list_retryable results"
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_retryable_excludes_future_retry():
-    """A failed submission whose next_retry_after is in the future is not returned."""
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        future = datetime.now(timezone.utc) + timedelta(minutes=10)
-        repo.record_attempt_outcome(
-            sid, "failed", delivery_error="SMTP timeout", next_retry_after=future
-        )
-        row = repo.get_submission(sid)
-        assert row["delivery_status"] == "failed"
-        assert row["next_retry_after"] is not None
-
-        results = repo.list_retryable()
-        assert sid not in results, "Submission with future next_retry_after should not be retryable"
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_retryable_excludes_null_next_retry():
-    """
-    A failed submission with next_retry_after IS NULL is not returned.
-    This is the state of a first-attempt failure before retry scheduling
-    is implemented, or an exhausted submission.
-    """
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        repo.record_attempt_outcome(
-            sid, "failed", delivery_error="SMTP timeout", next_retry_after=None
-        )
-        row = repo.get_submission(sid)
-        assert row["delivery_status"] == "failed"
-        assert row["next_retry_after"] is None
-
-        results = repo.list_retryable()
-        assert sid not in results, "Submission with NULL next_retry_after should not be retryable"
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_retryable_excludes_sent():
-    """
-    A sent submission is never returned even if next_retry_after is set.
-    This simulates a data integrity anomaly (should not occur in normal
-    operation) and verifies the delivery_status = 'failed' filter holds.
-    """
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        now = datetime.now(timezone.utc)
-        past = now - timedelta(minutes=2)
-        repo.update_delivery_status(sid, "sent", delivered_at=now)
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE submission_records SET next_retry_after = %s WHERE submission_id = %s",
-                    (past, sid),
-                )
-
-        results = repo.list_retryable()
-        assert sid not in results, "Sent submission should never appear in list_retryable"
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_retryable_excludes_pending():
-    """
-    A pending submission is never returned even if next_retry_after is set.
-    This simulates a data integrity anomaly.
-    """
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        past = datetime.now(timezone.utc) - timedelta(minutes=2)
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE submission_records SET next_retry_after = %s WHERE submission_id = %s",
-                    (past, sid),
-                )
-
-        row = repo.get_submission(sid)
-        assert row["delivery_status"] == "pending"
-
-        results = repo.list_retryable()
-        assert sid not in results, "Pending submission should never appear in list_retryable"
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_retryable_respects_limit():
-    """
-    list_retryable(limit=n) returns at most n results even when more
-    eligible submissions exist.
-    """
-    repo = _make_submission_repo()
-    limit = 3
-    n_submissions = limit + 2  # create more than the limit
-    sids = [_uid() for _ in range(n_submissions)]
-    past = datetime.now(timezone.utc) - timedelta(minutes=2)
-
-    try:
-        for sid in sids:
-            _create_test_submission(repo, sid)
-            repo.record_attempt_outcome(
-                sid, "failed", delivery_error="SMTP timeout", next_retry_after=past
-            )
-
-        results = repo.list_retryable(limit=limit)
-        assert len(results) == limit, (
-            f"Expected exactly {limit} results, got {len(results)}"
-        )
-    finally:
-        for sid in sids:
-            _cleanup_submission(sid)
-
-
-def test_list_retryable_returns_string_ids():
-    """Each item returned by list_retryable is a string submission ID."""
-    repo = _make_submission_repo()
-    sid = _uid()
-    past = datetime.now(timezone.utc) - timedelta(minutes=2)
-
-    try:
-        _create_test_submission(repo, sid)
-        repo.record_attempt_outcome(
-            sid, "failed", delivery_error="SMTP timeout", next_retry_after=past
-        )
-        results = repo.list_retryable(limit=100)
-        assert len(results) >= 1
-        for item in results:
-            assert isinstance(item, str), (
-                f"Expected str submission ID, got {type(item)}"
-            )
-        assert sid in results
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_retryable_empty():
-    """list_retryable returns an empty list when no submissions are eligible."""
-    repo = _make_submission_repo()
-    # limit=0 always returns empty regardless of database state
-    results = repo.list_retryable(limit=0)
-    assert isinstance(results, list), "Expected list from list_retryable"
-    assert len(results) == 0, "limit=0 should always return an empty list"
-
-
-# ---------------------------------------------------------------------------
-# SubmissionRepository — list_orphans tests
-# ---------------------------------------------------------------------------
-
-def test_list_orphans_returns_old_pending_submission():
-    """
-    A pending submission with delivery_attempts=0 older than the threshold
-    is returned by list_orphans.
-    """
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        # Backdate submitted_at to 6 minutes ago to exceed the 5-minute threshold.
-        six_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=6)
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE submission_records SET submitted_at = %s WHERE submission_id = %s",
-                    (six_minutes_ago, sid),
-                )
-
-        results = repo.list_orphans(older_than_minutes=5)
-        assert sid in results, (
-            f"Expected {sid} in list_orphans results for a 6-minute-old pending submission"
-        )
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_orphans_excludes_recent_pending():
-    """
-    A pending submission submitted less than the threshold ago is not an orphan.
-    """
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        # submitted_at defaults to now — within the threshold
-        results = repo.list_orphans(older_than_minutes=5)
-        assert sid not in results, (
-            "A freshly created pending submission should not appear in list_orphans"
-        )
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_orphans_excludes_failed_submission():
-    """
-    A failed submission (delivery attempted) is never an orphan, even if old.
-    """
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        repo.record_attempt_outcome(
-            sid, "failed", delivery_error="SMTP timeout", next_retry_after=None
-        )
-        # Backdate to make it old
-        six_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=6)
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE submission_records SET submitted_at = %s WHERE submission_id = %s",
-                    (six_minutes_ago, sid),
-                )
-
-        results = repo.list_orphans(older_than_minutes=5)
-        assert sid not in results, (
-            "A failed submission must never appear in list_orphans"
-        )
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_orphans_excludes_sent_submission():
-    """
-    A sent submission is never an orphan, even if old.
-    """
-    repo = _make_submission_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(repo, sid)
-        repo.update_delivery_status(sid, "sent", delivered_at=datetime.now(timezone.utc))
-        six_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=6)
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE submission_records SET submitted_at = %s WHERE submission_id = %s",
-                    (six_minutes_ago, sid),
-                )
-
-        results = repo.list_orphans(older_than_minutes=5)
-        assert sid not in results, (
-            "A sent submission must never appear in list_orphans"
-        )
-    finally:
-        _cleanup_submission(sid)
-
-
-def test_list_orphans_returns_empty_when_none():
-    """list_orphans returns an empty list when no orphans exist."""
-    repo = _make_submission_repo()
-    # No setup — any existing orphans in the DB are fine; we just confirm
-    # the call does not raise and returns a list.
-    results = repo.list_orphans(older_than_minutes=5)
-    assert isinstance(results, list), "Expected list from list_orphans"
 
 
 # ---------------------------------------------------------------------------
@@ -1044,28 +706,7 @@ if __name__ == "__main__":
 
     print("\n--- SubmissionRepository ---")
     run_test("create_submission and get_submission", test_submission_create_and_get)
-    run_test("update_delivery_status to sent", test_submission_update_to_sent)
-    run_test("update_delivery_status to failed with error message", test_submission_update_to_failed)
     run_test("get_submission raises SubmissionNotFound for missing id", test_submission_not_found)
-    run_test("update_delivery_status raises InvalidDeliveryStatus for bad status", test_submission_invalid_status)
-    run_test("list_by_status returns pending submissions", test_submission_list_by_status)
-
-    print("\n--- SubmissionRepository — list_retryable ---")
-    run_test("list_retryable returns eligible failed submission", test_list_retryable_returns_eligible)
-    run_test("list_retryable excludes submission with future next_retry_after", test_list_retryable_excludes_future_retry)
-    run_test("list_retryable excludes failed submission with NULL next_retry_after", test_list_retryable_excludes_null_next_retry)
-    run_test("list_retryable excludes sent submission even with next_retry_after set", test_list_retryable_excludes_sent)
-    run_test("list_retryable excludes pending submission even with next_retry_after set", test_list_retryable_excludes_pending)
-    run_test("list_retryable respects limit parameter", test_list_retryable_respects_limit)
-    run_test("list_retryable items are string submission IDs", test_list_retryable_returns_string_ids)
-    run_test("list_retryable returns empty list when limit=0", test_list_retryable_empty)
-
-    print("\n--- SubmissionRepository — list_orphans ---")
-    run_test("list_orphans returns old pending submission", test_list_orphans_returns_old_pending_submission)
-    run_test("list_orphans excludes recent pending submission", test_list_orphans_excludes_recent_pending)
-    run_test("list_orphans excludes failed submission", test_list_orphans_excludes_failed_submission)
-    run_test("list_orphans excludes sent submission", test_list_orphans_excludes_sent_submission)
-    run_test("list_orphans returns empty list when none", test_list_orphans_returns_empty_when_none)
 
     print("\n--- AttachmentRepository ---")
     run_test("save_attachment and get_attachment round-trip", test_attachment_save_and_get)
