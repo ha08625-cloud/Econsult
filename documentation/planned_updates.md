@@ -1,9 +1,8 @@
 Architecture updates:
 - Pydantic request model migration: Replace all hand-written isinstance/type-check validation in both admin_router.py and request_validation.py with Pydantic BaseModel definitions, letting FastAPI handle JSON parsing, type coercion, and missing-field errors automatically. This also requires adding a RequestValidationError exception handler in main.py to convert Pydantic's error format into the existing {"error": {"code": ..., "message": ...}} shape, updating the frontend extractErrorDetail functions to handle any new edge cases, and retiring the unused api_models.py dataclasses.
 
-Features
-- Background worker for asynchronous photo processing to prevent OOM errors
-- safety rules implemented on clicking yes/no, rather than on submit form
+Updates
+- test block is getting unwieldy
 - non blocking advisory messages
 - Admin portal audit trails
 - Patient facing audit trails
@@ -12,6 +11,7 @@ Features
 - TLS for SMTP
 - encrypted database storage
 - Notification architecture
+- safety rules implemented on clicking yes/no, rather than on submit form (defer - big feature change and we need to know if blocking safety rules are desired or not)
 
 Late prototype updates
 - Deterministic data augmentation
