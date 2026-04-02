@@ -12,10 +12,25 @@ Finalizing forms, persisting submission records, auditing, PDF generation, attac
 
 ---
 
+## Information Stages
+
+This system is a form collection and routing tool, not an electronic health record. No single artifact is more authoritative than another — each information stage serves a distinct purpose, audience, and retention period. Patient-identifiable data is not retained beyond what is necessary for delivery, both for practical storage reasons and because there is no lawful basis under data protection principles to retain it longer.
+
+| Stage | Content | Purpose | Audience | Retention |
+|---|---|---|---|---|
+| RuntimeState | Full lossless engine state including all answers, encoder provenance, and ruleset hash | Session continuity and deterministic replay during form completion | Server only | Deleted when session closes |
+| AuditOutput | Lossless snapshot at submission time: full RuntimeState, safety evaluation result, ruleset version | Safety incident investigation, regulatory inspection, debugging | Internal / operator | Stored in `submission_records.audit_output_json` |
+| ClinicalOutput + raw photos | Patient answers in readable form, uploaded photos | Source material for PDF generation | Internal pipeline only | Deleted after PDF is generated (photos) or superseded by the PDF as the practice-facing record |
+| Generated PDF | Rendered clinical summary with photos embedded | What the practice actually receives and acts on. Lossy by design — strips provenance and encoder internals | Practice | Deleted after successful delivery |
+| Future audit trail | Submission ID, condition, timestamp — no patient-identifiable data | System-level operational monitoring and compliance | Internal / operator | Retained indefinitely |
+
+The ClinicalOutput and AuditOutput are both lossy relative to RuntimeState in different ways: ClinicalOutput strips provenance for clinical readability; AuditOutput retains everything but is not the delivery artifact. Neither is "more canonical" than the other — they serve different downstream consumers.
+
+---
+
 ## Submission Lifecycle — Critical Invariants
 
 - A `submission_record` MUST be created in the database with `delivery_status = "pending"` **before** any delivery is attempted. This ensures the record exists even if the process crashes during delivery.
-- The PDF stored in `submission_attachments` is the **canonical delivery artifact**. It is generated once at submission time and must never be regenerated. Whatever was in the PDF at submission time is what gets sent on every delivery attempt, including retries. This is correct clinical behaviour — the submission is immutable from the moment the patient clicks submit.
 - `condition_label` is stored denormalised on `submission_records` for lightweight access during delivery without loading `clinical_output_json`. If a condition label is later changed in the ruleset, historical records retain the label that was active when the patient submitted. This is intentional — it preserves the clinical context at submission time.
 - Delivery failures are **operational, not clinical**. They are never surfaced to the patient. The patient always receives a submission ID regardless of delivery outcome.
 - `delivery_email` is captured from the practice record **at submission time** and stored in the submission record. Historical audits reflect the actual address used even if the practice email is later changed.
@@ -160,7 +175,7 @@ Four string constants for structured logging of the delivery lifecycle: `DELIVER
 
 - Pure function `generate_pdf()` — takes `ClinicalOutput`, metadata, optional `practice_name`, and optional `photo_bytes`; returns raw PDF bytes.
 - No database access, no imports from routers or delivery service.
-- Called by `form_router.py` at submission time. The returned bytes are stored in `submission_attachments` and sent as-is on every delivery attempt (including retries). The PDF is never regenerated.
+- Called by `form_router.py` at submission time. The returned bytes are stored in `submission_attachments` and sent as-is on every delivery attempt (including retries). The PDF is generated once — on success it is the practice-facing output; on retry the same bytes are reused without regeneration.
 - `practice_name` is injected into the router via `get_practice_name` dependency and passed directly to `generate_pdf`. The name is captured once at startup. If the practice name is changed via the admin interface, PDFs will show the old name until the next server restart — this is a known and accepted limitation.
 - `photo_bytes` is passed from `form_router.py` as the list of raw bytes read from the uploaded photo files. The router reads all photo bytes into memory before any database access, then passes the list to `generate_pdf`. This means photo bytes are in memory for the duration of the submission request.
 - `photo_bytes=None` and `photo_bytes=[]` both produce a PDF with no photos section. A non-empty list appends a PHOTOS section after the footer.

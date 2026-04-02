@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application source
 COPY app/ ./app/
 COPY main.py ./
+COPY worker_main.py ./
 
 # Copy Alembic configuration and migrations
 COPY alembic.ini ./
