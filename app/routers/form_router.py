@@ -4,18 +4,21 @@ Form session router.
 Handles the three form lifecycle endpoints:
   POST /form/init   — start a new session, run availability check (fail-open)
   POST /form/update — apply patient answers, evaluate safety rules
-  POST /form/finish — finalise submission, persist, deliver
+  POST /form/finish — finalise submission, persist photos, enqueue PDF job
 
 Architecture rules:
   - No request.app.state access in handler bodies.
   - All dependencies injected via Depends from app/core/dependencies.py.
   - No clinical logic. No encoder invocation.
   - Validation calls are the first statement in each handler body.
-  - Delivery is delegated to delivery_orchestration.attempt_delivery.
-    Any exception from attempt_delivery is caught, logged at CRITICAL,
-    and swallowed — the patient always receives their submission_id.
+  - form_finish no longer generates PDFs or sends email. It persists the
+    submission and photos, enqueues a pdf_jobs row, and returns immediately.
+    PDF generation and delivery are handled by background workers.
+  - The patient always receives a submission_id regardless of any downstream
+    worker failure.
 """
 
+import io
 import json
 import logging
 import uuid
@@ -23,14 +26,14 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
+from PIL import Image
 
 from app.core.condition_registry import ConditionNotFound
 from app.core.dependencies import (
     get_availability_repo,
-    get_attachment_repo,
-    get_delivery_service,
+    get_pdf_repo,
+    get_photo_repo,
     get_practice_id,
-    get_practice_name,
     get_practice_repo,
     get_registry,
     get_runtime_repo,
@@ -60,13 +63,11 @@ from app.repositories.runtime_state_repository import (
     VersionConflict,
 )
 from app.services.availability_orchestration import check_availability
-from app.services.delivery.delivery_orchestration import attempt_delivery
 from app.services.engine.pipeline import (
     apply_update_and_evaluate,
     finish_runtime_state,
     init_runtime_state,
 )
-from app.utils.pdf_formatter import generate_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -116,19 +117,20 @@ async def form_init(
 
     runtime_id = str(uuid.uuid4())
 
-    initial_state, ruleset_hash, client_state = init_runtime_state(
+    initial_state, client_state = init_runtime_state(
         condition_id=condition_id,
         free_text=free_text,
         ruleset_path=ruleset_path,
         condition_label=condition_label,
     )
 
-    runtime_repo.create_initial(
+    ruleset_hash = registry.get_ruleset_hash(condition_id)
+
+    version = runtime_repo.create_session(
         runtime_id=runtime_id,
         ruleset_hash=ruleset_hash,
         state_dict=initial_state.to_dict(),
     )
-    version = 1
 
     return {
         "runtime_id": runtime_id,
@@ -211,11 +213,10 @@ async def form_finish(
     registry=Depends(get_registry),
     runtime_repo=Depends(get_runtime_repo),
     submission_repo=Depends(get_submission_repo),
-    attachment_repo=Depends(get_attachment_repo),
     practice_repo=Depends(get_practice_repo),
     practice_id: str = Depends(get_practice_id),
-    practice_name: str = Depends(get_practice_name),
-    delivery_service=Depends(get_delivery_service),
+    pdf_repo=Depends(get_pdf_repo),
+    photo_repo=Depends(get_photo_repo),
 ):
     data = json.loads(payload)
     validate_finish_payload(data)
@@ -239,6 +240,18 @@ async def form_finish(
             f"Too many photos: maximum is {MAX_FILE_COUNT}"
         )
 
+    # Pillow header validation — checks that each file has a valid image header.
+    # verify() is header-only: a file with a valid header but a truncated body
+    # will pass here but may cause the PDF worker to fail during generation.
+    # In that case the PDF worker retries and eventually marks the job failed.
+    # This is accepted — the submission record exists and the failure is logged.
+    for i, b in enumerate(photo_bytes):
+        try:
+            img = Image.open(io.BytesIO(b))
+            img.verify()
+        except Exception:
+            raise INVALID_PAYLOAD(f"Photo {i + 1} is not a valid image")
+
     runtime_id = data["runtime_id"]
     version = data["version"]
     contact_preferences = data["contact_preferences"]
@@ -247,8 +260,6 @@ async def form_finish(
     # Assemble PatientDetails dataclass.
     # Validation has already confirmed that day/month/year are digit-only strings
     # and form a valid calendar date, so the date() call here will not raise.
-    # The router's responsibility is assembly into the domain type; date formatting
-    # for human display happens later in delivery_service.py.
     dob = pd_raw["date_of_birth"]
     dob_iso = date(
         int(dob["year"].strip()),
@@ -295,10 +306,27 @@ async def form_finish(
     submission_id = str(uuid.uuid4())
 
     # Capture the authoritative submission timestamp here, immediately before
-    # persisting. This same value is passed to both create_submission and
-    # send_clinical_output so the DB record and the delivered output are
-    # guaranteed to carry identical timestamps.
+    # persisting. This same value is passed to create_submission and
+    # pdf_repo.create_job so the DB record and the PDF carry identical timestamps.
     submitted_at = datetime.now(timezone.utc)
+
+    # Persistence ordering (steps below are deliberate and must not be reordered):
+    #
+    # 1. create_submission — creates the FK target for submission_photos and pdf_jobs.
+    #    If this crashes, the submission is lost. Nothing else references it yet.
+    #
+    # 2. photo_repo.save_photos — stores the raw bytes the PDF worker needs.
+    #    If this crashes after create_submission, the orphan detection LEFT JOIN
+    #    will find the submission (no pdf_jobs row). Photos may be missing or
+    #    partial. The submission is potentially unrecoverable via automation.
+    #
+    # 3. pdf_repo.create_job — enqueues PDF generation.
+    #    If this crashes after save_photos, an operator can manually insert a
+    #    pdf_jobs row for full recovery (photos exist and count matches).
+    #    This is the ordering that maximises recoverability on crash.
+    #
+    # 4. runtime_repo.close_session — closes the form session.
+    #    Not a data-loss risk; the session TTL will expire it naturally.
 
     submission_repo.create_submission(
         submission_id=submission_id,
@@ -307,43 +335,16 @@ async def form_finish(
         condition_label=condition_label,
         clinical_output=clinical,
         audit_output=audit,
-        delivery_email=delivery_email,
         submitted_at=submitted_at,
-        attachment_count=len(photo_bytes),
     )
 
-    # Generate PDF once at submission time. This is the canonical delivery
-    # artifact — it is stored in submission_attachments and sent as-is on
-    # every delivery attempt (including retries). It must never be regenerated.
-    # photo_bytes will be passed here in Step 3 when pdf_formatter is updated.
-    pdf_bytes = generate_pdf(
-        condition_label=condition_label,
-        clinical_output=clinical,
+    photo_repo.save_photos(submission_id, photo_bytes)
+
+    pdf_repo.create_job(
         submission_id=submission_id,
-        submitted_at=submitted_at,
-        practice_name=practice_name,
+        attachment_count=len(photo_bytes),
+        delivery_email=delivery_email,
     )
-    attachment_repo.save_attachment(submission_id, pdf_bytes)
-
-    # Delivery is delegated to the orchestration layer. Any exception —
-    # whether from SMTP failure, attachment retrieval, or a repository bug —
-    # is caught and logged at CRITICAL. The patient always receives their
-    # submission_id. The submission and attachment are already persisted.
-    try:
-        attempt_delivery(
-            submission_id=submission_id,
-            submission_repo=submission_repo,
-            attachment_repo=attachment_repo,
-            delivery_service=delivery_service,
-        )
-    except Exception:
-        logger.critical(
-            "Delivery orchestration failed for submission %s. "
-            "The submission is persisted but delivery status may be inconsistent. "
-            "Investigate immediately.",
-            submission_id,
-            exc_info=True,
-        )
 
     runtime_repo.close_session(runtime_id, version)
 

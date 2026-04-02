@@ -24,6 +24,41 @@ class ClinicalOutput:
     patient_details: PatientDetails
     contact_preferences: Optional[Dict[str, Any]] = field(default=None)
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "ClinicalOutput":
+        """
+        Reconstruct a ClinicalOutput from a plain dict (e.g. as returned by
+        psycopg2 when reading clinical_output_json from the database).
+
+        Handles the nested PatientDetails dataclass, which cannot be
+        reconstructed by a bare **data unpack. All other fields are scalars
+        or plain dicts/lists and pass through unchanged.
+
+        Raises KeyError if required fields are absent, which surfaces the
+        schema mismatch as an immediate loud error rather than a silent wrong
+        value.
+        """
+        patient_details_raw = data["patient_details"]
+        patient_details = PatientDetails(
+            patient_for=patient_details_raw["patient_for"],
+            first_name=patient_details_raw["first_name"],
+            last_name=patient_details_raw["last_name"],
+            date_of_birth=patient_details_raw["date_of_birth"],
+            postcode=patient_details_raw["postcode"],
+            submitter_name=patient_details_raw.get("submitter_name"),
+            submitter_relationship=patient_details_raw.get("submitter_relationship"),
+        )
+        return cls(
+            condition_id=data["condition_id"],
+            free_text=data["free_text"],
+            additional_text=data.get("additional_text"),
+            answers=data["answers"],
+            safety_messages=data["safety_messages"],
+            question_labels=data["question_labels"],
+            patient_details=patient_details,
+            contact_preferences=data.get("contact_preferences"),
+        )
+
 
 @dataclass(frozen=True)
 class AuditOutput:

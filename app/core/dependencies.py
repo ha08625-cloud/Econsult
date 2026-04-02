@@ -20,6 +20,9 @@ from app.repositories.availability_repository import AvailabilityRepository
 from app.repositories.runtime_state_repository import RuntimeStateRepository
 from app.repositories.submission_repository import SubmissionRepository
 from app.repositories.attachment_repository import AttachmentRepository
+from app.repositories.pdf_repository import PDFRepository
+from app.repositories.photo_repository import PhotoRepository
+from app.repositories.delivery_repository import DeliveryRepository
 from app.services.delivery.delivery_service import DeliveryService
 from app.services.presentation_service import PresentationService
 
@@ -52,12 +55,24 @@ def get_submission_repo(request: Request) -> SubmissionRepository:
     return request.app.state.submission_repo
 
 
-def get_delivery_service(request: Request) -> DeliveryService:
-    return request.app.state.delivery_service
-
-
 def get_attachment_repo(request: Request) -> AttachmentRepository:
     return request.app.state.attachment_repo
+
+
+def get_pdf_repo(request: Request) -> PDFRepository:
+    return request.app.state.pdf_repo
+
+
+def get_photo_repo(request: Request) -> PhotoRepository:
+    return request.app.state.photo_repo
+
+
+def get_delivery_repo(request: Request) -> DeliveryRepository:
+    return request.app.state.delivery_repo
+
+
+def get_delivery_service(request: Request) -> DeliveryService:
+    return request.app.state.delivery_service
 
 
 def get_practice_name(request: Request) -> str:

@@ -24,6 +24,9 @@ from app.repositories.availability_repository import AvailabilityRepository
 from app.repositories.runtime_state_repository import RuntimeStateRepository
 from app.repositories.submission_repository import SubmissionRepository
 from app.repositories.attachment_repository import AttachmentRepository
+from app.repositories.pdf_repository import PDFRepository
+from app.repositories.photo_repository import PhotoRepository
+from app.repositories.delivery_repository import DeliveryRepository
 from app.services.presentation_service import PresentationService
 from app.core.errors import APIError
 from app.services.delivery.delivery_service import ConsoleDeliveryService, EmailDeliveryService
@@ -138,6 +141,9 @@ registry = ConditionRegistry(DATA_DIR)
 practice_repo = PracticeRepository(DATABASE_URL)
 submission_repo = SubmissionRepository(DATABASE_URL)
 attachment_repo = AttachmentRepository(DATABASE_URL)
+pdf_repo = PDFRepository(DATABASE_URL)
+photo_repo = PhotoRepository(DATABASE_URL)
+delivery_repo = DeliveryRepository(DATABASE_URL)
 availability_repo = AvailabilityRepository(DATABASE_URL)
 presentation_service = PresentationService(registry, practice_repo)
 
@@ -152,6 +158,9 @@ app.state.presentation_service = presentation_service
 app.state.runtime_repo = repo
 app.state.submission_repo = submission_repo
 app.state.attachment_repo = attachment_repo
+app.state.pdf_repo = pdf_repo
+app.state.photo_repo = photo_repo
+app.state.delivery_repo = delivery_repo
 
 # Look up practice name for use in generated PDFs.
 # Captured once at startup. If the practice name is changed via the admin

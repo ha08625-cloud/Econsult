@@ -8,9 +8,7 @@
 
 Finalizing forms, persisting submission records, auditing, photo storage, PDF generation, attachment storage, and delivering clinical output to the practice via a three-stage async pipeline.
 
-**Key files (Commit 1, fully deployed):** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `delivery_service.py`, `delivery_orchestration.py`, `delivery_constants.py`, `delivery_events.py`, `pdf_formatter.py`, `pdf_repository.py`, `delivery_repository.py`, `pdf_constants.py`
-
-**Key files (Commit 2, not yet deployed):** `pdf_worker.py`, `pdf_worker_main.py`, `photo_repository.py`, `delivery_worker.py` (rewritten), `deletion_job.py`
+**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `photo_repository.py`, `delivery_service.py`, `delivery_constants.py`, `pdf_formatter.py`, `pdf_repository.py`, `pdf_constants.py`, `delivery_repository.py`, `pdf_worker.py`, `pdf_worker_main.py`, `delivery_worker.py`, `worker_main.py`, `deletion_job.py`
 
 ---
 
@@ -21,10 +19,10 @@ The system uses a three-stage async pipeline. The web request persists the submi
 ```
 HTTP request (form_router.py)
   -> submission_records (create)
-  -> submission_photos (save raw photos)       [Commit 2]
+  -> submission_photos (save raw photos)
   -> pdf_jobs (enqueue)
 
-PDF worker (pdf_worker.py)                     [Commit 2]
+PDF worker (pdf_worker.py)
   -> submission_photos (read)
   -> submission_attachments (UPSERT pdf bytes)
   -> delivery_jobs (enqueue)
@@ -36,12 +34,10 @@ Delivery worker (delivery_worker.py)
   -> SMTP send
   -> delivery_jobs (mark sent/failed)
 
-Deletion cron (deletion_job.py)               [Commit 2]
+Deletion cron (deletion_job.py)
   -> submission_photos (delete where sent)
   -> submission_attachments (delete where sent)
 ```
-
-**Until Commit 2 is deployed**, the system continues to run entirely on the old synchronous path: `form_router.py` generates the PDF inline, writes to `submission_attachments`, and calls `attempt_delivery` directly. The `pdf_jobs` and `delivery_jobs` tables exist in the schema but are empty and unused.
 
 ---
 
@@ -51,7 +47,7 @@ Deletion cron (deletion_job.py)               [Commit 2]
 - The PDF stored in `submission_attachments` is the canonical delivery artifact. It is generated once by the PDF worker and sent as-is on every delivery attempt, including retries. The submission is immutable from the moment the patient clicks submit.
 - `condition_label` is stored denormalised on `submission_records` at submission time. Historical records retain the label that was active when the patient submitted, even if the ruleset is later updated.
 - Delivery failures are operational, not clinical. They are never surfaced to the patient. The patient always receives a submission ID regardless of delivery outcome.
-- `delivery_email` is captured at submission time and stored on `pdf_jobs.delivery_email`. After Commit 2, it does not appear on `submission_records`. Historical audits reflect the actual address used even if the practice email is later changed.
+- `delivery_email` is captured at submission time and stored on `pdf_jobs.delivery_email`. It does not appear on `submission_records`. Historical audits reflect the actual address used even if the practice email is later changed.
 
 ---
 
@@ -88,7 +84,7 @@ One row per submission. Created by `form_router.py` immediately after saving pho
 
 Status values: `pending`, `done`, `failed`.
 
-`attachment_count` and `delivery_email` are captured at job creation time by the form router. This makes the PDF worker immune to Migration D (which drops those columns from `submission_records`) — the worker reads them from the job row, not from `submission_records`.
+`attachment_count` and `delivery_email` are captured at job creation time by the form router. The PDF worker reads them from the job row, not from `submission_records`. This is why these columns were dropped from `submission_records` in Migration 0013 — they live exclusively on `pdf_jobs`.
 
 `status` remains `pending` throughout all retries until `mark_done` succeeds or `MAX_PDF_ATTEMPTS` is exhausted (at which point it becomes `failed` permanently).
 
@@ -124,8 +120,6 @@ Both `PDFRepository.claim_next_pending` and `DeliveryRepository.claim_next_pendi
 
 ## Orphan Detection
 
-### PDF worker orphan detection
-
 `PDFRepository.list_orphaned_submissions(older_than_minutes)` uses a LEFT JOIN between `submission_records` and `pdf_jobs` to find submissions that have no corresponding PDF job and are older than the threshold:
 
 ```sql
@@ -138,11 +132,7 @@ WHERE pj.submission_id IS NULL
 
 This catches the case where `form_router.py` crashed after `create_submission` but before `pdf_repo.create_job`. No mutation is performed — the PDF worker logs at CRITICAL (rate-limited to once per 60 seconds) and continues. Recovery requires operator intervention.
 
-**Manual recovery:** Inspect whether `submission_photos` rows exist for the orphaned submission. If photos are present and the count matches `attachment_count` on the pdf_jobs row, an operator can manually insert a `pdf_jobs` row. If photos are missing or incomplete, the submission is unrecoverable via automation and must be communicated to the practice for re-collection.
-
-### Pre-Commit-2 orphan detection (delivery worker)
-
-Until Commit 2, the delivery worker calls `SubmissionRepository.list_orphans` (checking `delivery_status = 'pending'` with zero attempts) and logs at CRITICAL. This is replaced by the PDF worker's LEFT JOIN orphan detection after Commit 2.
+**Manual recovery:** Inspect whether `submission_photos` rows exist for the orphaned submission. If photos are present and the count can be determined from a manual inspection, an operator can manually insert a `pdf_jobs` row. If photos are missing or incomplete, the submission is unrecoverable via automation and must be communicated to the practice for re-collection.
 
 ---
 
@@ -177,10 +167,10 @@ The form router runs `Image.open(...).verify()` on each uploaded photo before an
 
 Two output types with distinct purposes:
 
-- **`ClinicalOutput`** — lossy by design. Strips provenance and encoder internals. Safe for clinical and patient use. Contains `question_labels` (answer_key -> question text at submission time) so the record is self-contained and interpretable without reloading the ruleset.
+- **`ClinicalOutput`** — lossy by design. Strips provenance and encoder internals. Safe for clinical and patient use. Contains `question_labels` (answer_key -> question text at submission time) so the record is self-contained and interpretable without reloading the ruleset. Provides a `from_dict` classmethod for reconstructing from the JSONB dict returned by psycopg2, which handles the nested `PatientDetails` dataclass.
 - **`AuditOutput`** — lossless. Contains full `runtime_state` snapshot, safety evaluation, and ruleset version. Intended for debugging, safety review, and regulatory inspection.
 
-Neither contract may be used as an input back into the engine. This module contains no logic.
+Neither contract may be used as an input back into the engine. This module contains no logic beyond the `from_dict` reconstruction helper.
 
 ### Serialisation (`serialisation.py`)
 
@@ -190,19 +180,23 @@ Neither contract may be used as an input back into the engine. This module conta
 
 ### Submission Repository (`submission_repository.py`)
 
-Owns the `submission_records` table. After Commit 1, this module is responsible only for `create_submission` and `get_submission`. Delivery status tracking, retry queries, and orphan detection have moved to `DeliveryRepository` and `PDFRepository`.
+Owns the `submission_records` table. Responsible only for `create_submission` and `get_submission`. Delivery status tracking, retry queries, and orphan detection have moved to `DeliveryRepository` and `PDFRepository`.
 
-`_SUBMISSION_COLUMNS` is an explicit column list used in all SELECT queries. Never use `SELECT *`. This constant must be updated when migrations add or remove columns. After Migration D (Commit 2), the delivery columns (`delivery_status`, `delivery_email`, etc.) are removed from both the table and this constant.
+`_SUBMISSION_COLUMNS` is an explicit column list used in all SELECT queries. Never use `SELECT *`. This constant must be updated when migrations add or remove columns. The delivery columns (`delivery_status`, `delivery_email`, etc.) were removed by Migration 0013 and are no longer present.
 
-`create_submission` uses named `%(name)s` parameters rather than positional `%s` placeholders to make the column-to-value mapping explicit.
+`create_submission` no longer accepts `delivery_email` or `attachment_count` — these are now captured on `pdf_jobs` at job creation time. It uses named `%(name)s` parameters rather than positional `%s` placeholders to make the column-to-value mapping explicit.
 
 ### Attachment Repository (`attachment_repository.py`)
 
-Owns the `submission_attachments` table. After Commit 2, `save_attachment` becomes an UPSERT (`ON CONFLICT (submission_id) DO UPDATE SET pdf_bytes = EXCLUDED.pdf_bytes`) to support safe PDF worker retries. Until Commit 2 it raises on duplicate (exactly-once invariant on the old path).
+Owns the `submission_attachments` table. `save_attachment` is an UPSERT (`ON CONFLICT (submission_id) DO UPDATE SET pdf_bytes = EXCLUDED.pdf_bytes`) to support safe PDF worker retries. PDF generation from the same inputs is deterministic, so overwriting is safe.
 
 `get_attachment` raises `AttachmentNotFound` if absent. A missing attachment at delivery time is always an error — the ordering invariant guarantees it cannot happen under normal operation.
 
 Attachments are stored as BYTEA in Postgres. At current scale (~5 photos/day, nightly cleanup) this is acceptable. If the system scales to multiple practices with high photo volume, BYTEA storage will cause WAL bloat, expensive vacuuming, and slow backups. Migrate to object storage (S3/equivalent) at that point.
+
+### Photo Repository (`photo_repository.py`)
+
+Owns the `submission_photos` table. `save_photos` inserts one row per photo with `photo_index` from enumeration (0-based) to preserve upload order. `get_photos` returns bytes ordered by `photo_index`. No delete method is provided — photo deletion is exclusively the responsibility of `deletion_job.py`.
 
 ### Delivery Service (`delivery_service.py`)
 
@@ -217,6 +211,17 @@ Must never: access the database, update delivery status, import engine modules, 
 
 ---
 
+## What Was Removed in Commit 2
+
+- `delivery_orchestration.py` — synchronous delivery logic, no longer used.
+- `delivery_events.py` — string constants used only by `delivery_orchestration.py`.
+- `PendingDelivery` dataclass from `submission_repository.py`.
+- `delivery_status`, `delivery_email`, `delivered_at`, `delivery_error`, `delivery_attempts`, `last_attempt_at`, `next_retry_after`, `attachment_count` columns from `submission_records` (Migration 0013).
+- `list_retryable`, `list_orphans`, `record_attempt_outcome`, `get_pending_delivery`, `update_delivery_status` methods from `SubmissionRepository`.
+- `test_delivery_orchestration.py`.
+
+---
+
 ## Known Limitations
 
 1. **Duplicate delivery on crash.** A process crash after a successful SMTP send but before `mark_sent` results in a re-send on the next retry. Duplicate delivery is safer than silently dropping a submission.
@@ -228,4 +233,3 @@ Must never: access the database, update delivery status, import engine modules, 
 7. **`pdf_jobs` and `delivery_jobs` accumulate indefinitely.** They serve as an operational audit trail. Storage cost is trivial. Periodic cleanup can be added later.
 8. **CRITICAL-level logging is the sole alerting mechanism.** Structured error reporting should be revisited in a future ticket.
 9. **Alternative delivery backup and admin portal notification for delivery failures** are planned as a separate ticket, before collecting real patient data.
-10. **Migration D edge case.** If Migration D runs while a PDF job is mid-flight, the worker's retry will succeed because `delivery_email` and `attachment_count` are read from `pdf_jobs`, not `submission_records`. No data loss occurs.

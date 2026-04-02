@@ -9,16 +9,17 @@ Run from project root:
     TEST_DATABASE_URL=... python -m pytest tests/test_form_routes.py -v
 
 Architecture notes:
-- MockDeliveryService is injected via app.dependency_overrides so no SMTP
-  config is needed during tests.
-- The availability check in form_init is also overridden to return open
-  for the happy-path test, and to raise for the fail-open test.
+- form_finish no longer calls the delivery service synchronously. It persists
+  the submission and photos, enqueues a pdf_jobs row, and returns immediately.
+  MockDeliveryService is retained for tests that inject it via other paths,
+  but form_finish tests no longer assert on delivery service calls.
+- Tests that previously checked attachment_count on submission_records now
+  check pdf_jobs.attachment_count and submission_photos row count instead,
+  since those columns were moved in Migration 0013.
+- The availability check in form_init is overridden to return open for
+  happy-path tests, and to raise for the fail-open test.
 - Each test that writes to the database uses a unique condition_id drawn
   from the real registry so that the engine can load its ruleset.
-- form_finish delegates to delivery_orchestration.attempt_delivery, which
-  calls get_pending_delivery and get_attachment on the real database before
-  calling delivery_service.send_clinical_output on the mock. The mock must
-  match the current DeliveryService ABC signature.
 - form_finish accepts multipart/form-data. The JSON payload is sent as the
   'payload' form field (a string). Photos are optional and sent as 'photos'
   file fields. Use _finish_multipart() to build the data= and files= args
@@ -48,47 +49,17 @@ from datetime import datetime  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from main import app  # noqa: E402
-from app.core.dependencies import get_delivery_service, get_availability_repo  # noqa: E402
+from app.core.db import get_conn  # noqa: E402
+from app.core.dependencies import get_availability_repo  # noqa: E402
 from app.core.upload_constants import (  # noqa: E402
     MAX_FILE_COUNT,
     MAX_FILE_SIZE_BYTES,
     MAX_TOTAL_SIZE_BYTES,
 )
-from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
 from app.services.delivery.delivery_service import DeliveryService  # noqa: E402
 from tests.test_pdf_generation import MINIMAL_JPEG  # noqa: E402
 
-
-# ---------------------------------------------------------------------------
-# Mock delivery service
-# ---------------------------------------------------------------------------
-
-class MockDeliveryService(DeliveryService):
-    """
-    Captures send calls for assertion without touching SMTP.
-
-    Matches the current DeliveryService ABC signature: to_email,
-    condition_label, pdf_bytes, submission_id, submitted_at.
-    """
-
-    def __init__(self):
-        self.calls: list[dict] = []
-
-    def send_clinical_output(
-        self,
-        to_email: str,
-        condition_label: str,
-        pdf_bytes: bytes,
-        submission_id: str,
-        submitted_at: datetime,
-    ) -> None:
-        self.calls.append({
-            "to_email": to_email,
-            "condition_label": condition_label,
-            "pdf_bytes": pdf_bytes,
-            "submission_id": submission_id,
-            "submitted_at": submitted_at,
-        })
+DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 
 
 # ---------------------------------------------------------------------------
@@ -117,10 +88,6 @@ def _valid_contact_preferences() -> dict:
 
 
 def _valid_patient_details() -> dict:
-    """
-    Minimal valid patient_details payload for use in finish requests.
-    Uses patient_for="me" — no submitter fields required.
-    """
     return {
         "patient_for": "me",
         "first_name": "Jane",
@@ -133,10 +100,6 @@ def _valid_patient_details() -> dict:
 
 
 def _build_answers(client_state: dict) -> dict:
-    """
-    Build a minimal valid answers dict from a client_state.
-    Booleans default to True; text fields default to 'test'.
-    """
     answers = {}
     for q in client_state["questions"]:
         if q["answer_type"] == "boolean":
@@ -148,17 +111,8 @@ def _build_answers(client_state: dict) -> dict:
 
 def _finish_multipart(runtime_id: str, version: int) -> dict:
     """
-    Build the data= and files= kwargs for a multipart form_finish request.
-
-    form_finish accepts multipart/form-data with:
-      - 'payload': the JSON-stringified finish payload (string form field)
-      - 'photos':  optional list of file tuples (omitted here — no photos)
-
-    Usage:
-        finish_res = client.post("/form/finish", **_finish_multipart(runtime_id, version))
-
-    To include photos in a test, build the request manually instead of using
-    this helper.
+    Build the data= and files= kwargs for a multipart form_finish request
+    with no photos.
     """
     payload = {
         "runtime_id": runtime_id,
@@ -177,8 +131,6 @@ def _run_full_flow(client: TestClient) -> tuple[str, int]:
     Run init -> update through to a ready-to-finish state.
 
     Returns (runtime_id, version) ready to pass to a finish call.
-    The caller is responsible for making the finish request so it can
-    vary the photos argument.
     """
     condition = _get_first_condition(client)
     condition_id = condition["id"]
@@ -205,12 +157,42 @@ def _run_full_flow(client: TestClient) -> tuple[str, int]:
     return runtime_id, version
 
 
-def _make_submission_repo() -> SubmissionRepository:
-    return SubmissionRepository(os.environ["TEST_DATABASE_URL"])
+def _count_pdf_jobs(submission_id: str) -> int:
+    with get_conn(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM pdf_jobs WHERE submission_id = %s",
+                (submission_id,),
+            )
+            return cur.fetchone()[0]
+
+
+def _read_pdf_job(submission_id: str) -> dict | None:
+    with get_conn(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM pdf_jobs WHERE submission_id = %s",
+                (submission_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            cols = [desc[0] for desc in cur.description]
+    return dict(zip(cols, row))
+
+
+def _count_submission_photos(submission_id: str) -> int:
+    with get_conn(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM submission_photos WHERE submission_id = %s",
+                (submission_id,),
+            )
+            return cur.fetchone()[0]
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Core flow tests
 # ---------------------------------------------------------------------------
 
 def test_happy_path_end_to_end():
@@ -218,28 +200,18 @@ def test_happy_path_end_to_end():
     Full init -> update -> finish flow.
 
     Asserts:
-    - Each step returns HTTP 200
-    - finish response contains submission_id
-    - finish response does NOT contain submitted_after_hours
-    - MockDeliveryService captured one send call with correct submission_id
-    - The send call received a non-empty pdf_bytes and valid submitted_at
-    - The send call received the correct condition_label
-
-    Note: ClinicalOutput assertions (contact_preferences, patient_details)
-    are no longer possible via the delivery mock because the delivery service
-    no longer receives ClinicalOutput. Those fields are verified by the
-    repository integration tests (test_repositories.py) which read back
-    the persisted clinical_output_json.
+    - Each step returns HTTP 200.
+    - finish response contains submission_id.
+    - finish response does NOT contain submitted_after_hours.
+    - A pdf_jobs row is created with status = 'pending'.
+    - No delivery_jobs row is created (delivery happens asynchronously).
+    - No direct delivery call is made by the web request.
     """
-    mock_delivery = MockDeliveryService()
-    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
-
     try:
         with TestClient(app) as client:
             condition = _get_first_condition(client)
             condition_id = condition["id"]
 
-            # --- init ---
             init_res = client.post("/form/init", json={
                 "condition_id": condition_id,
                 "free_text": "Test symptom description",
@@ -252,7 +224,6 @@ def test_happy_path_end_to_end():
             assert runtime_id
             assert version == 1
 
-            # --- update ---
             answers = _build_answers(client_state)
             update_res = client.post("/form/update", json={
                 "runtime_id": runtime_id,
@@ -261,11 +232,9 @@ def test_happy_path_end_to_end():
                 "additional_text": None,
             })
             assert update_res.status_code == 200, update_res.text
-            update_body = update_res.json()
-            version = update_body["version"]
+            version = update_res.json()["version"]
             assert version == 2
 
-            # --- finish ---
             finish_res = client.post(
                 "/form/finish",
                 **_finish_multipart(runtime_id, version),
@@ -273,33 +242,32 @@ def test_happy_path_end_to_end():
             assert finish_res.status_code == 200, finish_res.text
             finish_body = finish_res.json()
 
-            # submission_id present
             assert "submission_id" in finish_body
             assert finish_body["submission_id"]
+            assert "submitted_after_hours" not in finish_body
 
-            # submitted_after_hours must be absent
-            assert "submitted_after_hours" not in finish_body, (
-                "submitted_after_hours must not be in the finish response"
-            )
+            submission_id = finish_body["submission_id"]
 
-            # delivery was called exactly once
-            assert len(mock_delivery.calls) == 1
-            call = mock_delivery.calls[0]
-            assert call["submission_id"] == finish_body["submission_id"]
+            # Pipeline state: pdf_jobs row exists, pending.
+            assert _count_pdf_jobs(submission_id) == 1
+            pdf_job = _read_pdf_job(submission_id)
+            assert pdf_job["status"] == "pending"
 
-            # The delivery service received the correct condition label
-            assert call["condition_label"] == condition["label"]
+            # No photos submitted: no submission_photos rows.
+            assert _count_submission_photos(submission_id) == 0
 
-            # PDF bytes were generated and passed to the delivery service
-            assert isinstance(call["pdf_bytes"], bytes)
-            assert len(call["pdf_bytes"]) > 0
-
-            # submitted_at is a timezone-aware datetime
-            assert isinstance(call["submitted_at"], datetime)
-            assert call["submitted_at"].tzinfo is not None
+            # No delivery_jobs row yet (delivery is async).
+            with get_conn(DATABASE_URL) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
+                        (submission_id,),
+                    )
+                    delivery_count = cur.fetchone()[0]
+            assert delivery_count == 0
 
     finally:
-        app.dependency_overrides.pop(get_delivery_service, None)
+        pass  # No dependency overrides to clean up.
 
 
 def test_form_init_fail_open_on_availability_error():
@@ -325,183 +293,162 @@ def test_form_init_fail_open_on_availability_error():
                 "free_text": None,
             })
             assert res.status_code == 200, (
-                f"form_init must fail-open when availability check raises, got {res.status_code}: {res.text}"
+                f"form_init must fail-open when availability check raises, "
+                f"got {res.status_code}: {res.text}"
             )
     finally:
         app.dependency_overrides.pop(get_availability_repo, None)
 
 
-def test_form_finish_delivery_failure_does_not_prevent_submission_id():
+def test_form_finish_always_returns_submission_id():
     """
-    If the delivery service raises EmailDeliveryError, form_finish must
-    still return HTTP 200 with a submission_id.
-
-    The patient must always receive confirmation that their submission was
-    saved. The delivery failure is caught by attempt_delivery, which records
-    the failure and returns a DeliveryOutcome. The router's except Exception
-    block catches any unexpected errors from the orchestration layer.
+    form_finish must return HTTP 200 with a submission_id. This test
+    verifies the guarantee holds under normal conditions on the new
+    pipeline path (no delivery service is invoked synchronously).
     """
-    from app.services.delivery.delivery_service import EmailDeliveryError
-
-    class FailingDeliveryService(DeliveryService):
-        def send_clinical_output(
-            self,
-            to_email: str,
-            condition_label: str,
-            pdf_bytes: bytes,
-            submission_id: str,
-            submitted_at: datetime,
-        ) -> None:
-            raise EmailDeliveryError("Simulated SMTP failure")
-
-    app.dependency_overrides[get_delivery_service] = lambda: FailingDeliveryService()
-
-    try:
-        with TestClient(app) as client:
-            condition = _get_first_condition(client)
-            condition_id = condition["id"]
-
-            init_res = client.post("/form/init", json={
-                "condition_id": condition_id,
-                "free_text": None,
-            })
-            assert init_res.status_code == 200, init_res.text
-            body = init_res.json()
-            runtime_id = body["runtime_id"]
-            version = body["version"]
-            client_state = body["client_state"]
-
-            answers = _build_answers(client_state)
-            update_res = client.post("/form/update", json={
-                "runtime_id": runtime_id,
-                "base_version": version,
-                "answers": answers,
-                "additional_text": None,
-            })
-            assert update_res.status_code == 200, update_res.text
-            version = update_res.json()["version"]
-
-            finish_res = client.post(
-                "/form/finish",
-                **_finish_multipart(runtime_id, version),
-            )
-            assert finish_res.status_code == 200, (
-                f"form_finish must return 200 even when delivery fails, got {finish_res.status_code}: {finish_res.text}"
-            )
-            assert "submission_id" in finish_res.json()
-
-    finally:
-        app.dependency_overrides.pop(get_delivery_service, None)
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+        finish_res = client.post("/form/finish", **_finish_multipart(runtime_id, version))
+        assert finish_res.status_code == 200, finish_res.text
+        assert "submission_id" in finish_res.json()
 
 
 def test_form_finish_submitted_after_hours_absent():
     """
-    Explicit guard: submitted_after_hours must never appear in the
-    form_finish response regardless of availability state.
+    submitted_after_hours must never appear in the form_finish response.
     """
-    mock_delivery = MockDeliveryService()
-    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+    with TestClient(app) as client:
+        condition = _get_first_condition(client)
+        condition_id = condition["id"]
 
-    try:
-        with TestClient(app) as client:
-            condition = _get_first_condition(client)
-            condition_id = condition["id"]
+        init_res = client.post("/form/init", json={
+            "condition_id": condition_id,
+            "free_text": None,
+        })
+        assert init_res.status_code == 200
+        body = init_res.json()
+        runtime_id, version = body["runtime_id"], body["version"]
+        client_state = body["client_state"]
 
-            init_res = client.post("/form/init", json={
-                "condition_id": condition_id,
-                "free_text": None,
-            })
-            assert init_res.status_code == 200
-            body = init_res.json()
-            runtime_id, version = body["runtime_id"], body["version"]
-            client_state = body["client_state"]
+        update_res = client.post("/form/update", json={
+            "runtime_id": runtime_id,
+            "base_version": version,
+            "answers": _build_answers(client_state),
+            "additional_text": None,
+        })
+        assert update_res.status_code == 200
+        version = update_res.json()["version"]
 
-            update_res = client.post("/form/update", json={
-                "runtime_id": runtime_id,
-                "base_version": version,
-                "answers": _build_answers(client_state),
-                "additional_text": None,
-            })
-            assert update_res.status_code == 200
-            version = update_res.json()["version"]
-
-            finish_res = client.post(
-                "/form/finish",
-                **_finish_multipart(runtime_id, version),
-            )
-            assert finish_res.status_code == 200
-            assert "submitted_after_hours" not in finish_res.json()
-
-    finally:
-        app.dependency_overrides.pop(get_delivery_service, None)
+        finish_res = client.post(
+            "/form/finish",
+            **_finish_multipart(runtime_id, version),
+        )
+        assert finish_res.status_code == 200
+        assert "submitted_after_hours" not in finish_res.json()
 
 
 # ---------------------------------------------------------------------------
 # Photo upload tests
 # ---------------------------------------------------------------------------
 
-def test_finish_with_no_photos_records_attachment_count_zero():
+def test_finish_with_no_photos_creates_pdf_job_with_attachment_count_zero():
     """
-    A valid finish with no photos must return 200 and persist
-    attachment_count = 0 on the submission record.
+    A valid finish with no photos must return 200, create a pdf_jobs row
+    with attachment_count = 0, and create no submission_photos rows.
     """
-    mock_delivery = MockDeliveryService()
-    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+        finish_res = client.post("/form/finish", **_finish_multipart(runtime_id, version))
+        assert finish_res.status_code == 200, finish_res.text
+        submission_id = finish_res.json()["submission_id"]
 
-    try:
-        with TestClient(app) as client:
-            runtime_id, version = _run_full_flow(client)
+    pdf_job = _read_pdf_job(submission_id)
+    assert pdf_job is not None, "pdf_jobs row must exist after form_finish"
+    assert pdf_job["attachment_count"] == 0
+    assert _count_submission_photos(submission_id) == 0
 
-            finish_res = client.post(
-                "/form/finish",
-                **_finish_multipart(runtime_id, version),
+
+def test_finish_with_one_photo_creates_pdf_job_and_photo_row():
+    """
+    A valid finish with one real JPEG must return 200, create a pdf_jobs
+    row with attachment_count = 1, and create one submission_photos row.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+        }
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[("photos", ("photo.jpg", MINIMAL_JPEG, "image/jpeg"))],
+        )
+        assert finish_res.status_code == 200, finish_res.text
+        submission_id = finish_res.json()["submission_id"]
+
+    pdf_job = _read_pdf_job(submission_id)
+    assert pdf_job is not None
+    assert pdf_job["attachment_count"] == 1
+    assert _count_submission_photos(submission_id) == 1
+
+
+def test_finish_with_multiple_photos_creates_correct_photo_rows():
+    """
+    A finish with two photos must persist two submission_photos rows and
+    record attachment_count = 2 on the pdf_jobs row.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+        }
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[
+                ("photos", ("a.jpg", MINIMAL_JPEG, "image/jpeg")),
+                ("photos", ("b.jpg", MINIMAL_JPEG, "image/jpeg")),
+            ],
+        )
+        assert finish_res.status_code == 200, finish_res.text
+        submission_id = finish_res.json()["submission_id"]
+
+    pdf_job = _read_pdf_job(submission_id)
+    assert pdf_job is not None
+    assert pdf_job["attachment_count"] == 2
+    assert _count_submission_photos(submission_id) == 2
+
+
+def test_finish_no_delivery_call_is_made():
+    """
+    form_finish must not invoke the delivery service synchronously.
+    After form_finish, delivery_jobs must have no row for the submission.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+        finish_res = client.post("/form/finish", **_finish_multipart(runtime_id, version))
+        assert finish_res.status_code == 200, finish_res.text
+        submission_id = finish_res.json()["submission_id"]
+
+    with get_conn(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
+                (submission_id,),
             )
-            assert finish_res.status_code == 200, finish_res.text
-            submission_id = finish_res.json()["submission_id"]
-
-        repo = _make_submission_repo()
-        row = repo.get_submission(submission_id)
-        assert row["attachment_count"] == 0
-
-    finally:
-        app.dependency_overrides.pop(get_delivery_service, None)
-
-
-def test_finish_with_one_photo_records_attachment_count_one():
-    """
-    A valid finish with one real JPEG must return 200 and persist
-    attachment_count = 1 on the submission record.
-
-    MINIMAL_JPEG is the shared fixture from test_pdf_generation.py —
-    a valid 631-byte JPEG that the PDF renderer can process without error.
-    """
-    mock_delivery = MockDeliveryService()
-    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
-
-    try:
-        with TestClient(app) as client:
-            runtime_id, version = _run_full_flow(client)
-
-            payload = {
-                "runtime_id": runtime_id,
-                "version": version,
-                "contact_preferences": _valid_contact_preferences(),
-                "patient_details": _valid_patient_details(),
-            }
-            finish_res = client.post(
-                "/form/finish",
-                data={"payload": json.dumps(payload)},
-                files=[("photos", ("photo.jpg", MINIMAL_JPEG, "image/jpeg"))],
-            )
-            assert finish_res.status_code == 200, finish_res.text
-            submission_id = finish_res.json()["submission_id"]
-
-        repo = _make_submission_repo()
-        row = repo.get_submission(submission_id)
-        assert row["attachment_count"] == 1
-
-    finally:
-        app.dependency_overrides.pop(get_delivery_service, None)
+            count = cur.fetchone()[0]
+    assert count == 0, (
+        "delivery_jobs must have no row after form_finish — "
+        "delivery is enqueued asynchronously by the PDF worker"
+    )
 
 
 def test_finish_rejects_too_many_photos():
@@ -509,123 +456,114 @@ def test_finish_rejects_too_many_photos():
     Submitting more than MAX_FILE_COUNT photos must return 422.
     No submission record is created.
     """
-    mock_delivery = MockDeliveryService()
-    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
 
-    try:
-        with TestClient(app) as client:
-            runtime_id, version = _run_full_flow(client)
-
-            payload = {
-                "runtime_id": runtime_id,
-                "version": version,
-                "contact_preferences": _valid_contact_preferences(),
-                "patient_details": _valid_patient_details(),
-            }
-            # MAX_FILE_COUNT + 1 files, each a valid minimal JPEG
-            files = [
-                ("photos", (f"photo{i}.jpg", MINIMAL_JPEG, "image/jpeg"))
-                for i in range(MAX_FILE_COUNT + 1)
-            ]
-            finish_res = client.post(
-                "/form/finish",
-                data={"payload": json.dumps(payload)},
-                files=files,
-            )
-            assert finish_res.status_code == 422, (
-                f"Expected 422 for {MAX_FILE_COUNT + 1} photos, got {finish_res.status_code}: {finish_res.text}"
-            )
-
-    finally:
-        app.dependency_overrides.pop(get_delivery_service, None)
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+        }
+        files = [
+            ("photos", (f"photo{i}.jpg", MINIMAL_JPEG, "image/jpeg"))
+            for i in range(MAX_FILE_COUNT + 1)
+        ]
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=files,
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for {MAX_FILE_COUNT + 1} photos, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
 
 
 def test_finish_rejects_single_file_exceeding_size_limit():
     """
     A single file whose byte length exceeds MAX_FILE_SIZE_BYTES must
     return 422. No submission record is created.
-
-    The oversized bytes are sent with a valid JPEG content-type so the
-    rejection is triggered by the size check, not the MIME check.
     """
-    mock_delivery = MockDeliveryService()
-    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
 
-    try:
-        with TestClient(app) as client:
-            runtime_id, version = _run_full_flow(client)
-
-            payload = {
-                "runtime_id": runtime_id,
-                "version": version,
-                "contact_preferences": _valid_contact_preferences(),
-                "patient_details": _valid_patient_details(),
-            }
-            oversized_bytes = b"\xff\xd8\xff" + b"\x00" * MAX_FILE_SIZE_BYTES  # one byte over
-            finish_res = client.post(
-                "/form/finish",
-                data={"payload": json.dumps(payload)},
-                files=[("photos", ("big.jpg", oversized_bytes, "image/jpeg"))],
-            )
-            assert finish_res.status_code == 422, (
-                f"Expected 422 for oversized file, got {finish_res.status_code}: {finish_res.text}"
-            )
-
-    finally:
-        app.dependency_overrides.pop(get_delivery_service, None)
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+        }
+        oversized_bytes = b"\xff\xd8\xff" + b"\x00" * MAX_FILE_SIZE_BYTES
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[("photos", ("big.jpg", oversized_bytes, "image/jpeg"))],
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for oversized file, got {finish_res.status_code}: {finish_res.text}"
+        )
 
 
 def test_finish_rejects_combined_size_exceeding_total_limit():
     """
     Multiple files whose combined size exceeds MAX_TOTAL_SIZE_BYTES must
     return 422 even if each individual file is within MAX_FILE_SIZE_BYTES.
-    No submission record is created.
-
-    Strategy: send three files each just over one third of MAX_TOTAL_SIZE_BYTES
-    but well under MAX_FILE_SIZE_BYTES, so only the combined check fires.
-
-    With current constants (MAX_FILE_SIZE_BYTES=5 MB, MAX_TOTAL_SIZE_BYTES=10 MB),
-    two files at half the total limit plus one byte would each exceed the per-file
-    limit, so three files are required to keep each chunk safely under MAX_FILE_SIZE_BYTES.
     """
-    mock_delivery = MockDeliveryService()
-    app.dependency_overrides[get_delivery_service] = lambda: mock_delivery
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
 
-    try:
-        with TestClient(app) as client:
-            runtime_id, version = _run_full_flow(client)
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+        }
+        chunk_size = (MAX_TOTAL_SIZE_BYTES // 3) + 1
+        assert chunk_size <= MAX_FILE_SIZE_BYTES, (
+            "Test assumption violated: chunk_size must be <= MAX_FILE_SIZE_BYTES."
+        )
+        assert chunk_size * 3 > MAX_TOTAL_SIZE_BYTES, (
+            "Test assumption violated: three chunks must exceed MAX_TOTAL_SIZE_BYTES."
+        )
+        chunk = b"\xff\xd8\xff" + b"\x00" * (chunk_size - 3)
+        files = [
+            ("photos", ("a.jpg", chunk, "image/jpeg")),
+            ("photos", ("b.jpg", chunk, "image/jpeg")),
+            ("photos", ("c.jpg", chunk, "image/jpeg")),
+        ]
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=files,
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for combined size over limit, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
 
-            payload = {
-                "runtime_id": runtime_id,
-                "version": version,
-                "contact_preferences": _valid_contact_preferences(),
-                "patient_details": _valid_patient_details(),
-            }
-            # Each file is (MAX_TOTAL_SIZE_BYTES // 3) + 1 bytes — individually
-            # well within MAX_FILE_SIZE_BYTES but three together exceed MAX_TOTAL_SIZE_BYTES.
-            chunk_size = (MAX_TOTAL_SIZE_BYTES // 3) + 1
-            assert chunk_size <= MAX_FILE_SIZE_BYTES, (
-                "Test assumption violated: chunk_size must be <= MAX_FILE_SIZE_BYTES. "
-                "If the constants change, review this test."
-            )
-            assert chunk_size * 3 > MAX_TOTAL_SIZE_BYTES, (
-                "Test assumption violated: three chunks must exceed MAX_TOTAL_SIZE_BYTES. "
-                "If the constants change, review this test."
-            )
-            chunk = b"\xff\xd8\xff" + b"\x00" * (chunk_size - 3)
-            files = [
-                ("photos", ("a.jpg", chunk, "image/jpeg")),
-                ("photos", ("b.jpg", chunk, "image/jpeg")),
-                ("photos", ("c.jpg", chunk, "image/jpeg")),
-            ]
-            finish_res = client.post(
-                "/form/finish",
-                data={"payload": json.dumps(payload)},
-                files=files,
-            )
-            assert finish_res.status_code == 422, (
-                f"Expected 422 for combined size over limit, got {finish_res.status_code}: {finish_res.text}"
-            )
 
-    finally:
-        app.dependency_overrides.pop(get_delivery_service, None)
+def test_finish_rejects_invalid_image_header():
+    """
+    A file that fails Pillow header validation must return 422.
+    The bytes have a valid JPEG start marker but are otherwise corrupt.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+        }
+        # Valid JPEG start marker, but the rest is junk — verify() will reject it.
+        corrupt_bytes = b"\xff\xd8\xff" + b"\x00" * 50
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[("photos", ("corrupt.jpg", corrupt_bytes, "image/jpeg"))],
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for corrupt image, got {finish_res.status_code}: {finish_res.text}"
+        )

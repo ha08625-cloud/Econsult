@@ -1,10 +1,10 @@
 """
 tests/test_pipeline_repositories.py
 
-Integration tests for PDFRepository and DeliveryRepository.
+Integration tests for PDFRepository, DeliveryRepository, and PhotoRepository.
 
-Exercises the pdf_jobs and delivery_jobs tables directly against a live
-Postgres database. Does not use the HTTP layer.
+Exercises the pdf_jobs, delivery_jobs, and submission_photos tables directly
+against a live Postgres database. Does not use the HTTP layer.
 
 Requires TEST_DATABASE_URL in the environment.
 Run via: make test-integration
@@ -12,10 +12,10 @@ Run via: make test-integration
 Design notes:
 - Each test creates its own submission with a unique ID and cleans up in a
   finally block. No test depends on another test's data.
-- _create_submission inserts only a submission_records row. PDFRepository
-  and DeliveryRepository tests create their own job rows.
+- _create_submission inserts only a submission_records row. Repository tests
+  create their own child rows.
 - _cleanup deletes child rows before the parent submission_records row to
-  satisfy FK constraints.
+  satisfy FK constraints. submission_photos is now included.
 - claim_next_pending tests use backdating of next_retry_after via get_conn
   to simulate eligibility without waiting for real time to pass.
 """
@@ -44,6 +44,7 @@ from app.core.db import get_conn, alembic_upgrade  # noqa: E402
 from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
 from app.repositories.pdf_repository import PDFRepository, PDFJobNotFound  # noqa: E402
 from app.repositories.delivery_repository import DeliveryRepository, DeliveryJobNotFound  # noqa: E402
+from app.repositories.photo_repository import PhotoRepository  # noqa: E402
 from app.models.serialisation_contracts import (  # noqa: E402
     ClinicalOutput,
     AuditOutput,
@@ -73,7 +74,12 @@ def _create_submission(sid: str) -> None:
     """
     Insert a minimal valid submission_records row.
 
-    Does not create pdf_jobs or delivery_jobs rows — individual tests do that.
+    delivery_email and attachment_count are no longer columns on
+    submission_records (dropped by Migration 0013). create_submission
+    no longer accepts those parameters.
+
+    Does not create pdf_jobs, delivery_jobs, or submission_photos rows —
+    individual tests do that.
     """
     repo = SubmissionRepository(DATABASE_URL)
 
@@ -106,9 +112,7 @@ def _create_submission(sid: str) -> None:
         condition_label="Urinary Tract Infection",
         clinical_output=clinical,
         audit_output=audit,
-        delivery_email="gp@example.com",
         submitted_at=datetime.now(timezone.utc),
-        attachment_count=2,
     )
 
 
@@ -119,6 +123,7 @@ def _cleanup(sid: str) -> None:
             cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
             cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
             cur.execute("DELETE FROM submission_attachments WHERE submission_id = %s", (sid,))
+            cur.execute("DELETE FROM submission_photos WHERE submission_id = %s", (sid,))
             cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
 
 
@@ -161,6 +166,85 @@ def _read_delivery_job(job_id: str) -> dict:
 
 
 # ===========================================================================
+# PhotoRepository tests
+# ===========================================================================
+
+class TestPhotoRepositorySaveAndGet:
+    def test_save_photos_inserts_one_row_per_photo(self):
+        """save_photos inserts one row per byte payload with the correct index."""
+        sid = _uid()
+        repo = PhotoRepository(DATABASE_URL)
+        try:
+            _create_submission(sid)
+            repo.save_photos(sid, [b"photo-0", b"photo-1", b"photo-2"])
+
+            with get_conn(DATABASE_URL) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT photo_index, photo_bytes FROM submission_photos "
+                        "WHERE submission_id = %s ORDER BY photo_index",
+                        (sid,),
+                    )
+                    rows = cur.fetchall()
+
+            assert len(rows) == 3
+            assert rows[0][0] == 0
+            assert rows[1][0] == 1
+            assert rows[2][0] == 2
+        finally:
+            _cleanup(sid)
+
+    def test_get_photos_returns_bytes_in_order(self):
+        """get_photos returns photo bytes in photo_index order."""
+        sid = _uid()
+        repo = PhotoRepository(DATABASE_URL)
+        photos = [b"first", b"second", b"third"]
+        try:
+            _create_submission(sid)
+            repo.save_photos(sid, photos)
+            result = repo.get_photos(sid)
+            assert result == photos
+        finally:
+            _cleanup(sid)
+
+    def test_get_photos_returns_empty_list_when_none_saved(self):
+        """get_photos returns [] when no photos exist for the submission."""
+        sid = _uid()
+        repo = PhotoRepository(DATABASE_URL)
+        try:
+            _create_submission(sid)
+            result = repo.get_photos(sid)
+            assert result == []
+        finally:
+            _cleanup(sid)
+
+    def test_save_photos_empty_list_inserts_nothing(self):
+        """save_photos with an empty list returns silently and inserts no rows."""
+        sid = _uid()
+        repo = PhotoRepository(DATABASE_URL)
+        try:
+            _create_submission(sid)
+            repo.save_photos(sid, [])
+            result = repo.get_photos(sid)
+            assert result == []
+        finally:
+            _cleanup(sid)
+
+    def test_save_photos_preserves_byte_content_exactly(self):
+        """Photo bytes round-trip through the database unchanged."""
+        sid = _uid()
+        repo = PhotoRepository(DATABASE_URL)
+        payload = [b"\x00\x01\x02\xff", b"plain text bytes"]
+        try:
+            _create_submission(sid)
+            repo.save_photos(sid, payload)
+            result = repo.get_photos(sid)
+            assert result == payload
+        finally:
+            _cleanup(sid)
+
+
+# ===========================================================================
 # PDFRepository tests
 # ===========================================================================
 
@@ -196,8 +280,6 @@ class TestPDFRepositoryCreateJob:
 class TestPDFRepositoryClaimNextPending:
     def test_returns_none_when_queue_is_empty(self):
         repo = PDFRepository(DATABASE_URL)
-        # We cannot guarantee the queue is truly empty in a shared DB, but we
-        # can verify the call does not raise and returns None or a dict.
         result = repo.claim_next_pending()
         assert result is None or isinstance(result, dict)
 
@@ -246,7 +328,6 @@ class TestPDFRepositoryClaimNextPending:
             first = repo.claim_next_pending()
             assert first is not None
 
-            # The second job is now beyond the claim window. Backdate it.
             _backdate_pdf_job_retry(job_id2 if str(first["id"]) == job_id1 else job_id1)
             second = repo.claim_next_pending()
             assert second is not None
@@ -275,7 +356,6 @@ class TestPDFRepositoryMarkDone:
 
 class TestPDFRepositoryMarkFailed:
     def test_below_max_attempts_leaves_status_pending(self):
-        """A failure below MAX_PDF_ATTEMPTS keeps status = 'pending' for retry."""
         assert MAX_PDF_ATTEMPTS > 1, "Test requires MAX_PDF_ATTEMPTS > 1"
         sid = _uid()
         repo = PDFRepository(DATABASE_URL)
@@ -293,7 +373,6 @@ class TestPDFRepositoryMarkFailed:
             _cleanup(sid)
 
     def test_at_max_attempts_sets_status_failed(self):
-        """After MAX_PDF_ATTEMPTS failures, status is set to 'failed' permanently."""
         sid = _uid()
         repo = PDFRepository(DATABASE_URL)
         future = datetime.now(timezone.utc) + timedelta(minutes=5)
@@ -312,9 +391,7 @@ class TestPDFRepositoryMarkFailed:
             _backdate_pdf_job_retry(job_id)
             repo.mark_failed(job_id, f"failure {MAX_PDF_ATTEMPTS}", next_retry_after=future)
             row = _read_pdf_job(job_id)
-            assert row["status"] == "failed", (
-                f"Expected failed after {MAX_PDF_ATTEMPTS} attempts, got {row['status']}"
-            )
+            assert row["status"] == "failed"
             assert row["attempt_count"] == MAX_PDF_ATTEMPTS
         finally:
             _cleanup(sid)
@@ -323,11 +400,7 @@ class TestPDFRepositoryMarkFailed:
         repo = PDFRepository(DATABASE_URL)
         raised = False
         try:
-            repo.mark_failed(
-                str(uuid4()),
-                "error",
-                next_retry_after=None,
-            )
+            repo.mark_failed(str(uuid4()), "error", next_retry_after=None)
         except PDFJobNotFound:
             raised = True
         assert raised, "Expected PDFJobNotFound was not raised"
@@ -358,13 +431,9 @@ class TestPDFRepositoryGet:
 
 class TestPDFRepositoryListOrphanedSubmissions:
     def test_returns_submission_with_no_pdf_job(self):
-        """
-        A submission older than the threshold with no pdf_jobs entry is an orphan.
-        """
         sid = _uid()
         try:
             _create_submission(sid)
-            # Backdate submitted_at to 6 minutes ago.
             with get_conn(DATABASE_URL) as conn:
                 with conn.cursor() as cur:
                     six_ago = datetime.now(timezone.utc) - timedelta(minutes=6)
@@ -372,17 +441,13 @@ class TestPDFRepositoryListOrphanedSubmissions:
                         "UPDATE submission_records SET submitted_at = %s WHERE submission_id = %s",
                         (six_ago, sid),
                     )
-
             repo = PDFRepository(DATABASE_URL)
             orphans = repo.list_orphaned_submissions(older_than_minutes=5)
-            assert sid in orphans, f"Expected {sid} in orphan list, got {orphans}"
+            assert sid in orphans
         finally:
             _cleanup(sid)
 
     def test_does_not_return_submission_with_pdf_job(self):
-        """
-        A submission that has a pdf_jobs entry is not an orphan, even if old.
-        """
         sid = _uid()
         repo = PDFRepository(DATABASE_URL)
         try:
@@ -395,25 +460,18 @@ class TestPDFRepositoryListOrphanedSubmissions:
                         "UPDATE submission_records SET submitted_at = %s WHERE submission_id = %s",
                         (six_ago, sid),
                     )
-
             orphans = repo.list_orphaned_submissions(older_than_minutes=5)
-            assert sid not in orphans, (
-                f"Submission with a pdf_jobs entry should not be an orphan"
-            )
+            assert sid not in orphans
         finally:
             _cleanup(sid)
 
     def test_does_not_return_recent_submission(self):
-        """A submission created just now is not an orphan regardless of pdf_jobs."""
         sid = _uid()
         try:
             _create_submission(sid)
-            # submitted_at is NOW() by default — within the 5-minute threshold
             repo = PDFRepository(DATABASE_URL)
             orphans = repo.list_orphaned_submissions(older_than_minutes=5)
-            assert sid not in orphans, (
-                "A freshly created submission should not appear in orphan list"
-            )
+            assert sid not in orphans
         finally:
             _cleanup(sid)
 
@@ -467,11 +525,7 @@ class TestDeliveryRepositoryCreateJob:
                 condition_label="Urinary Tract Infection",
                 submitted_at=submitted_at,
             )
-            # Both calls return the same job id
-            assert job_id_1 == job_id_2, (
-                f"Expected same job_id on conflict, got {job_id_1} vs {job_id_2}"
-            )
-            # Only one row exists
+            assert job_id_1 == job_id_2
             with get_conn(DATABASE_URL) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
@@ -479,7 +533,7 @@ class TestDeliveryRepositoryCreateJob:
                         (sid,),
                     )
                     count = cur.fetchone()[0]
-            assert count == 1, f"Expected 1 delivery_jobs row, got {count}"
+            assert count == 1
         finally:
             _cleanup(sid)
 
@@ -503,7 +557,7 @@ class TestDeliveryRepositoryClaimNextPending:
                 submitted_at=submitted_at,
             )
             claimed = repo.claim_next_pending()
-            assert claimed is not None, "Expected a claimed job, got None"
+            assert claimed is not None
             assert str(claimed["id"]) == job_id
         finally:
             _cleanup(sid)
@@ -589,16 +643,12 @@ class TestDeliveryRepositoryMarkFailed:
                 _backdate_delivery_job_retry(job_id)
                 repo.mark_failed(job_id, f"failure {i + 1}", next_retry_after=future)
                 row = _read_delivery_job(job_id)
-                assert row["status"] == "pending", (
-                    f"Expected pending after failure {i + 1}, got {row['status']}"
-                )
+                assert row["status"] == "pending"
 
             _backdate_delivery_job_retry(job_id)
             repo.mark_failed(job_id, f"failure {MAX_ATTEMPTS}", next_retry_after=future)
             row = _read_delivery_job(job_id)
-            assert row["status"] == "failed", (
-                f"Expected failed after {MAX_ATTEMPTS} attempts, got {row['status']}"
-            )
+            assert row["status"] == "failed"
             assert row["attempt_count"] == MAX_ATTEMPTS
         finally:
             _cleanup(sid)
