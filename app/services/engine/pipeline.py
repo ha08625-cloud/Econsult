@@ -70,7 +70,7 @@ def init_runtime_state(
 
     client_state = serialize_client_state(runtime_state, ruleset, condition_label)
 
-    return runtime_state, client_state
+    return runtime_state, rh, client_state
 
 
 def apply_update_and_evaluate(
