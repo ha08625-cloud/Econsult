@@ -124,8 +124,6 @@ async def form_init(
         condition_label=condition_label,
     )
 
-    ruleset_hash = registry.get_ruleset_hash(condition_id)
-
     version = runtime_repo.create_session(
         runtime_id=runtime_id,
         ruleset_hash=ruleset_hash,
