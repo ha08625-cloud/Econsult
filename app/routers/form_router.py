@@ -117,7 +117,7 @@ async def form_init(
 
     runtime_id = str(uuid.uuid4())
 
-    initial_state, client_state = init_runtime_state(
+    initial_state, _rh, client_state = init_runtime_state(
         condition_id=condition_id,
         free_text=free_text,
         ruleset_path=ruleset_path,
