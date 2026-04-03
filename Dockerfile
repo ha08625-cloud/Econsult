@@ -26,6 +26,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ ./app/
 COPY main.py ./
 COPY worker_main.py ./
+COPY pdf_worker_main.py ./
+COPY deletion_job.py ./
 
 # Copy Alembic configuration and migrations
 COPY alembic.ini ./
