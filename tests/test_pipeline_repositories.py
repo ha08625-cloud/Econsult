@@ -165,6 +165,27 @@ def _read_delivery_job(job_id: str) -> dict:
     return dict(zip(cols, row))
 
 
+def _claim_until(claim_fn, target_job_id: str, limit: int = 50):
+    """
+    Call claim_fn repeatedly until it returns our target job or the queue
+    is empty. Any other job claimed along the way has its next_retry_after
+    left as-is (already pushed to the future by the claim, so it will not
+    interfere with subsequent calls). Returns the claimed row for our job,
+    or None if it was not found within `limit` calls.
+
+    This helper exists because claim_next_pending returns the globally oldest
+    eligible job, not the one we just created. In a shared CI database with
+    residual rows from other test runs, our job may not be first in line.
+    """
+    for _ in range(limit):
+        row = claim_fn()
+        if row is None:
+            return None
+        if str(row["id"]) == target_job_id:
+            return row
+    return None
+
+
 # ===========================================================================
 # PhotoRepository tests
 # ===========================================================================
@@ -283,39 +304,50 @@ class TestPDFRepositoryClaimNextPending:
         result = repo.claim_next_pending()
         assert result is None or isinstance(result, dict)
 
-    def test_claim_returns_the_pending_row(self):
+    def test_claim_marks_our_job_as_claimed(self):
+        """
+        After claim_next_pending runs, our specific job must eventually be
+        claimed. We drain the queue with _claim_until rather than asserting
+        on queue position, making the test immune to residual rows from other
+        tests in the shared CI database.
+        """
         sid = _uid()
         repo = PDFRepository(DATABASE_URL)
         try:
             _create_submission(sid)
             job_id = repo.create_job(sid, attachment_count=2, delivery_email="gp@example.com")
-            claimed = repo.claim_next_pending()
-            assert claimed is not None, "Expected a claimed job, got None"
+            claimed = _claim_until(repo.claim_next_pending, job_id)
+            assert claimed is not None, (
+                f"Expected job {job_id} to be claimed; it was never returned by "
+                "claim_next_pending. Check for residual rows blocking the queue."
+            )
             assert str(claimed["id"]) == job_id
         finally:
             _cleanup(sid)
 
     def test_claim_updates_next_retry_after_atomically(self):
         """
-        After claiming, next_retry_after should be set to a future time so the
-        job is not immediately re-claimed by a concurrent worker.
+        After our job is claimed, next_retry_after must be set to a future time
+        so it cannot be immediately re-claimed by a concurrent worker.
         """
         sid = _uid()
         repo = PDFRepository(DATABASE_URL)
         try:
             _create_submission(sid)
             job_id = repo.create_job(sid, attachment_count=2, delivery_email="gp@example.com")
-            repo.claim_next_pending()
+            _claim_until(repo.claim_next_pending, job_id)
             row = _read_pdf_job(job_id)
             assert row["next_retry_after"] is not None
             assert row["next_retry_after"] > datetime.now(timezone.utc)
         finally:
             _cleanup(sid)
 
-    def test_two_eligible_rows_only_one_claimed(self):
+    def test_two_eligible_rows_each_claimed_exactly_once(self):
         """
-        With two eligible jobs, a single call to claim_next_pending returns
-        exactly one row. The second call (after backdating) returns the other.
+        Both of our jobs must be claimable. After claiming both (draining any
+        interleaved foreign jobs with _claim_until), both rows must have
+        next_retry_after set. We assert on row state rather than on global
+        queue position.
         """
         sid1, sid2 = _uid(), _uid()
         repo = PDFRepository(DATABASE_URL)
@@ -325,15 +357,17 @@ class TestPDFRepositoryClaimNextPending:
             job_id1 = repo.create_job(sid1, attachment_count=0, delivery_email="gp@example.com")
             job_id2 = repo.create_job(sid2, attachment_count=0, delivery_email="gp@example.com")
 
-            first = repo.claim_next_pending()
-            assert first is not None
+            claimed1 = _claim_until(repo.claim_next_pending, job_id1)
+            assert claimed1 is not None, f"job1 ({job_id1}) was never claimed"
 
-            _backdate_pdf_job_retry(job_id2 if str(first["id"]) == job_id1 else job_id1)
-            second = repo.claim_next_pending()
-            assert second is not None
+            _backdate_pdf_job_retry(job_id2)
+            claimed2 = _claim_until(repo.claim_next_pending, job_id2)
+            assert claimed2 is not None, f"job2 ({job_id2}) was never claimed"
 
-            claimed_ids = {str(first["id"]), str(second["id"])}
-            assert claimed_ids == {job_id1, job_id2}
+            row1 = _read_pdf_job(job_id1)
+            row2 = _read_pdf_job(job_id2)
+            assert row1["next_retry_after"] is not None, "job1 must have been claimed"
+            assert row2["next_retry_after"] is not None, "job2 must have been claimed"
         finally:
             _cleanup(sid1)
             _cleanup(sid2)
@@ -544,7 +578,11 @@ class TestDeliveryRepositoryClaimNextPending:
         result = repo.claim_next_pending()
         assert result is None or isinstance(result, dict)
 
-    def test_claim_returns_the_pending_row(self):
+    def test_claim_marks_our_job_as_claimed(self):
+        """
+        After claim_next_pending runs, our specific delivery job must eventually
+        be claimed. We use _claim_until rather than asserting on queue position.
+        """
         sid = _uid()
         repo = DeliveryRepository(DATABASE_URL)
         submitted_at = datetime.now(timezone.utc)
@@ -556,8 +594,10 @@ class TestDeliveryRepositoryClaimNextPending:
                 condition_label="Urinary Tract Infection",
                 submitted_at=submitted_at,
             )
-            claimed = repo.claim_next_pending()
-            assert claimed is not None
+            claimed = _claim_until(repo.claim_next_pending, job_id)
+            assert claimed is not None, (
+                f"Expected delivery job {job_id} to be claimed"
+            )
             assert str(claimed["id"]) == job_id
         finally:
             _cleanup(sid)
@@ -574,7 +614,7 @@ class TestDeliveryRepositoryClaimNextPending:
                 condition_label="Urinary Tract Infection",
                 submitted_at=submitted_at,
             )
-            repo.claim_next_pending()
+            _claim_until(repo.claim_next_pending, job_id)
             row = _read_delivery_job(job_id)
             assert row["next_retry_after"] is not None
             assert row["next_retry_after"] > datetime.now(timezone.utc)
