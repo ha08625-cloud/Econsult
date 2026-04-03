@@ -24,6 +24,18 @@ You do not need to solve auth in Phase 6, but you should:
 state that runtime_id must be unguessable
 state that rate-limiting and access control are deferred but required
 
+deferred (no services available)
+Step 4: Set up the Deletion Cron
+This is a separate Railway service, not a long-running worker.
+In your Railway project, click "New Service" and again choose GitHub Repo.
+Set the Start Command to:
+python deletion_job.py
+Add only one environment variable: DATABASE_URL referencing your Postgres service.
+In the service Settings, look for "Cron Schedule". Enable it and set the schedule to:
+0 0 * * *
+That runs at midnight UTC every day. Railway will start the container, run the script, and the process will exit with code 0 on success. A non-zero exit code marks it as failed in the Railway dashboard.
+One thing to be aware of: Railway cron services still build and run from your Dockerfile, which includes building the frontend. That build takes some time. The deletion job itself runs in seconds once the container starts. This is a minor inefficiency but not worth creating a separate lighter Dockerfile for at this scale.
+
 Test suite
 Good question to ask now before real patient data exists. There is no single universal standard, but there is a well-established approach that most professional teams converge on. Let me describe it honestly, including where the theory meets pragmatic reality for a project of your size.
 
