@@ -124,11 +124,12 @@ async def form_init(
         condition_label=condition_label,
     )
 
-    version = runtime_repo.create_session(
+    runtime_repo.create_initial(
         runtime_id=runtime_id,
         ruleset_hash=ruleset_hash,
         state_dict=initial_state.to_dict(),
     )
+    version = 1
 
     return {
         "runtime_id": runtime_id,
@@ -258,6 +259,8 @@ async def form_finish(
     # Assemble PatientDetails dataclass.
     # Validation has already confirmed that day/month/year are digit-only strings
     # and form a valid calendar date, so the date() call here will not raise.
+    # The router's responsibility is assembly into the domain type; date formatting
+    # for human display happens later in delivery_service.py.
     dob = pd_raw["date_of_birth"]
     dob_iso = date(
         int(dob["year"].strip()),
