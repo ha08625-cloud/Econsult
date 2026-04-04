@@ -34,12 +34,12 @@ INVALID_AUTH_CODE = lambda: APIError(
     "Invalid or expired authentication code.",
 )
 
-# SESSION_EXPIRED: session cookie present but session not found or expired.
-# NOT raised as APIError. Raise directly as:
-#   HTTPException(status_code=401, detail="Session expired or not found.")
-# in admin_context.py. Defined here as a constant string so the message
-# stays consistent and is easy to find.
-SESSION_EXPIRED_MESSAGE = "Session expired or not found."
+# SESSION_EXPIRED: 401 is the primary contract for session expiry.
+# admin_context.py raises HTTPException(status_code=401, ...) directly.
+# No constant is defined here — admin_context.py must never import any
+# project module, so a shared constant cannot be used across that boundary.
+# All 401 responses are reshaped into the standard error envelope by the
+# HTTPException handler registered in main.py.
 
 # RATE_LIMIT_EXCEEDED: code requested within the 60-second cooldown window.
 # Must return HTTP 429. The existing APIError handler hardcodes 422, so this
