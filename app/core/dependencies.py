@@ -23,6 +23,7 @@ from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.pdf_repository import PDFRepository
 from app.repositories.photo_repository import PhotoRepository
 from app.repositories.delivery_repository import DeliveryRepository
+from app.repositories.auth_repository import AuthRepository
 from app.services.delivery.delivery_service import DeliveryService
 from app.services.presentation_service import PresentationService
 
@@ -77,3 +78,7 @@ def get_delivery_service(request: Request) -> DeliveryService:
 
 def get_practice_name(request: Request) -> str:
     return request.app.state.practice_name
+
+
+def get_auth_repo(request: Request) -> AuthRepository:
+    return request.app.state.auth_repo

@@ -27,6 +27,7 @@ from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.pdf_repository import PDFRepository
 from app.repositories.photo_repository import PhotoRepository
 from app.repositories.delivery_repository import DeliveryRepository
+from app.repositories.auth_repository import AuthRepository
 from app.services.presentation_service import PresentationService
 from app.core.errors import APIError, RateLimitError
 from app.services.delivery.delivery_service import ConsoleDeliveryService, EmailDeliveryService
@@ -145,6 +146,7 @@ pdf_repo = PDFRepository(DATABASE_URL)
 photo_repo = PhotoRepository(DATABASE_URL)
 delivery_repo = DeliveryRepository(DATABASE_URL)
 availability_repo = AvailabilityRepository(DATABASE_URL)
+auth_repo = AuthRepository(DATABASE_URL)
 presentation_service = PresentationService(registry, practice_repo)
 
 # Startup validation -- runs at import time (when FastAPI loads the module).
@@ -161,6 +163,7 @@ app.state.attachment_repo = attachment_repo
 app.state.pdf_repo = pdf_repo
 app.state.photo_repo = photo_repo
 app.state.delivery_repo = delivery_repo
+app.state.auth_repo = auth_repo
 
 # Look up practice name for use in generated PDFs.
 # Captured once at startup. If the practice name is changed via the admin
