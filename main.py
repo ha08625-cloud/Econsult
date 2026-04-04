@@ -14,7 +14,8 @@ Single-tenant deployment:
 - INITIAL_ADMIN_EMAIL and ALLOWED_ADMIN_DOMAINS are required in production.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.exception_handlers import http_exception_handler as _default_http_handler
 from fastapi.responses import JSONResponse
 import os
 import logging
@@ -283,6 +284,22 @@ async def rate_limit_handler(_, exc: RateLimitError):
         status_code=429,
         content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": str(exc)}},
     )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_envelope_handler(request, exc: HTTPException):
+    # Reshape 401 responses into the standard error envelope so the frontend
+    # has a consistent body shape across all error types. The HTTP status code
+    # is the primary contract for session expiry — this handler is the single
+    # place that enforces the secondary (body) contract for 401s.
+    # All other HTTP exceptions pass through to FastAPI's default handler
+    # unchanged — we do not want to interfere with 404s, 422s from Pydantic, etc.
+    if exc.status_code == 401:
+        return JSONResponse(
+            status_code=401,
+            content={"error": {"code": "UNAUTHORIZED", "message": exc.detail}},
+        )
+    return await _default_http_handler(request, exc)
 
 
 # ---------------------------------------------------------------------------
