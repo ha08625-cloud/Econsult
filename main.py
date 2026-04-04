@@ -28,7 +28,7 @@ from app.repositories.pdf_repository import PDFRepository
 from app.repositories.photo_repository import PhotoRepository
 from app.repositories.delivery_repository import DeliveryRepository
 from app.services.presentation_service import PresentationService
-from app.core.errors import APIError
+from app.core.errors import APIError, RateLimitError
 from app.services.delivery.delivery_service import ConsoleDeliveryService, EmailDeliveryService
 from app.routers.admin_router import router as admin_router
 from app.routers.public_router import router as public_router
@@ -209,6 +209,14 @@ async def condition_not_found_handler(_, exc: ConditionNotFound):
     return JSONResponse(
         status_code=404,
         content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}},
+    )
+
+
+@app.exception_handler(RateLimitError)
+async def rate_limit_handler(_, exc: RateLimitError):
+    return JSONResponse(
+        status_code=429,
+        content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": str(exc)}},
     )
 
 
