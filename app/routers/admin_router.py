@@ -23,6 +23,7 @@ This module must never import:
 
 import datetime
 import logging
+import os
 from datetime import timezone
 
 from fastapi import APIRouter, Request, Depends
@@ -61,6 +62,9 @@ from app.core.dependencies import (
     get_practice_repo,
     get_availability_repo,
     get_auth_repo,
+    get_admin_delivery_service,
+    get_allowed_admin_domains,
+    get_practice_id,
 )
 from app.services import auth_service
 
@@ -120,16 +124,6 @@ def _format_exception_response(exc: dict) -> dict:
     return result
 
 
-def _get_allowed_domains(request: Request) -> str:
-    """Read ALLOWED_ADMIN_DOMAINS from app.state (set at startup)."""
-    return request.app.state.allowed_admin_domains
-
-
-def _get_delivery_service(request: Request):
-    """Read admin_delivery_service from app.state (set at startup)."""
-    return request.app.state.admin_delivery_service
-
-
 # ---------------------------------------------------------------------------
 # Auth endpoints (unauthenticated)
 # ---------------------------------------------------------------------------
@@ -138,6 +132,9 @@ def _get_delivery_service(request: Request):
 async def request_mfa_code(
     request: Request,
     auth_repo=Depends(get_auth_repo),
+    delivery_service=Depends(get_admin_delivery_service),
+    allowed_domains: str = Depends(get_allowed_admin_domains),
+    practice_id: str = Depends(get_practice_id),
 ):
     """
     Request an MFA code to be sent to an admin email address.
@@ -163,9 +160,6 @@ async def request_mfa_code(
         raise INVALID_PAYLOAD("email must be a non-empty string")
 
     email = email.strip().lower()
-    allowed_domains = _get_allowed_domains(request)
-    delivery_service = _get_delivery_service(request)
-    practice_id = request.app.state.practice_id
 
     auth_service.request_mfa_code(
         email=email,
@@ -197,7 +191,6 @@ async def verify_mfa_code(
     - SameSite=Strict: no cross-site requests
     - Max-Age: SESSION_COOKIE_MAX_AGE seconds
     """
-    import os
     try:
         body = await request.json()
     except Exception:
