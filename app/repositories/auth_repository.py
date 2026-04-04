@@ -15,8 +15,11 @@ All transport logic lives in app/services/delivery/admin_delivery_service.py.
 Table creation is handled by Alembic migration 0014.
 """
 
+import uuid
 from datetime import datetime
 from typing import Optional
+
+from psycopg2.extras import RealDictCursor
 
 from app.core.db import get_conn
 
@@ -35,8 +38,21 @@ class AuthRepository:
         if no matching row exists.
 
         Returned dict keys: id (str), email, practice_id, role, created_at.
+        id is cast to str — psycopg2 returns UUID columns as uuid.UUID
+        objects; callers expect strings throughout the auth layer.
         """
-        raise NotImplementedError
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT id::text, email, practice_id, role, created_at
+                    FROM admin_users
+                    WHERE email = %s
+                    """,
+                    (email,),
+                )
+                row = cur.fetchone()
+        return dict(row) if row is not None else None
 
     def count_users_for_practice(self, practice_id: str) -> int:
         """
@@ -45,7 +61,14 @@ class AuthRepository:
         Used at startup to decide whether to seed the initial admin user.
         Returns 0 if no users exist for the practice.
         """
-        raise NotImplementedError
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM admin_users WHERE practice_id = %s",
+                    (practice_id,),
+                )
+                row = cur.fetchone()
+        return row[0] if row else 0
 
     def insert_user(self, email: str, practice_id: str, role: str) -> None:
         """
@@ -56,7 +79,15 @@ class AuthRepository:
         The caller (startup validation) is responsible for calling
         count_users_for_practice first to avoid a redundant insert.
         """
-        raise NotImplementedError
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO admin_users (email, practice_id, role)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (email, practice_id, role),
+                )
 
     # ------------------------------------------------------------------
     # admin_auth_codes
@@ -77,7 +108,21 @@ class AuthRepository:
         attempts_count is reset to 0 on every upsert — a new code starts
         fresh regardless of how many times the old code was attempted.
         """
-        raise NotImplementedError
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO admin_auth_codes
+                        (email, hashed_code, expires_at, attempts_count, last_requested_at)
+                    VALUES (%s, %s, %s, 0, %s)
+                    ON CONFLICT (email) DO UPDATE SET
+                        hashed_code       = EXCLUDED.hashed_code,
+                        expires_at        = EXCLUDED.expires_at,
+                        attempts_count    = 0,
+                        last_requested_at = EXCLUDED.last_requested_at
+                    """,
+                    (email, hashed_code, expires_at, last_requested_at),
+                )
 
     def get_auth_code_record(self, email: str) -> Optional[dict]:
         """
@@ -87,7 +132,19 @@ class AuthRepository:
         Returned dict keys: email, hashed_code, expires_at,
         attempts_count, last_requested_at.
         """
-        raise NotImplementedError
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT email, hashed_code, expires_at,
+                           attempts_count, last_requested_at
+                    FROM admin_auth_codes
+                    WHERE email = %s
+                    """,
+                    (email,),
+                )
+                row = cur.fetchone()
+        return dict(row) if row is not None else None
 
     def increment_code_attempts(self, email: str) -> None:
         """
@@ -97,7 +154,16 @@ class AuthRepository:
         a read-modify-write race. No-ops silently if the row does not exist
         (the code may have been deleted by a concurrent request).
         """
-        raise NotImplementedError
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE admin_auth_codes
+                    SET attempts_count = attempts_count + 1
+                    WHERE email = %s
+                    """,
+                    (email,),
+                )
 
     def delete_auth_code(self, email: str) -> None:
         """
@@ -107,7 +173,12 @@ class AuthRepository:
         Called on successful verification, on lockout (3 failed attempts),
         and on expiry detection.
         """
-        raise NotImplementedError
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM admin_auth_codes WHERE email = %s",
+                    (email,),
+                )
 
     # ------------------------------------------------------------------
     # admin_sessions
@@ -118,15 +189,28 @@ class AuthRepository:
         Create a new session for the given user and return the session_id
         as a string (UUID).
 
-        Also deletes ALL existing sessions for user_id in the same
-        transaction, enforcing single-session behaviour. This ensures only
-        one active login exists per user at any time — not just expired
-        sessions, but valid ones too.
-
-        The two operations (delete all + insert new) run in a single
-        transaction so there is no window where the user has zero sessions.
+        Deletes ALL existing sessions for user_id in the same transaction,
+        enforcing single-session behaviour — not just expired sessions, but
+        valid ones too. Runs as a single transaction so there is no window
+        where the user has zero sessions.
         """
-        raise NotImplementedError
+        session_id = str(uuid.uuid4())
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                # Delete all existing sessions for this user (single-session enforcement).
+                cur.execute(
+                    "DELETE FROM admin_sessions WHERE user_id = %s::uuid",
+                    (user_id,),
+                )
+                # Insert the new session.
+                cur.execute(
+                    """
+                    INSERT INTO admin_sessions (session_id, user_id, expires_at)
+                    VALUES (%s::uuid, %s::uuid, %s)
+                    """,
+                    (session_id, user_id, expires_at),
+                )
+        return session_id
 
     def get_session_context(self, session_id: str) -> Optional[dict]:
         """
@@ -134,15 +218,25 @@ class AuthRepository:
         session does not exist or has expired.
 
         Joins admin_sessions to admin_users on user_id to resolve role
-        and practice_id in a single query.
-
-        Returns None if:
-          - No row with that session_id exists
-          - The row exists but expires_at < NOW()
+        and practice_id in a single query. The expiry check is done in SQL
+        so there is no clock-skew risk from comparing DB timestamps in Python.
 
         Returned dict keys: user_id (str), role (str), practice_id (str).
         """
-        raise NotImplementedError
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT u.id::text AS user_id, u.role, u.practice_id
+                    FROM admin_sessions s
+                    JOIN admin_users u ON s.user_id = u.id
+                    WHERE s.session_id = %s::uuid
+                      AND s.expires_at > NOW()
+                    """,
+                    (session_id,),
+                )
+                row = cur.fetchone()
+        return dict(row) if row is not None else None
 
     def delete_session(self, session_id: str) -> None:
         """
@@ -151,4 +245,9 @@ class AuthRepository:
         Idempotent — no-ops silently if the session does not exist.
         Called by the logout endpoint.
         """
-        raise NotImplementedError
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM admin_sessions WHERE session_id = %s::uuid",
+                    (session_id,),
+                )

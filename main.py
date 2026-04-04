@@ -9,7 +9,9 @@ Single-tenant deployment:
 - The practice must exist in the database with a valid email
 - The database must contain exactly one practice
 - SMTP configuration is required unless DEV_MODE is set
-- ADMIN_TOKEN is required unless DEV_MODE is set
+- ADMIN_TOKEN is now optional; MFA replaces it. If ADMIN_TOKEN is set in
+  production alongside MFA, a warning is logged (both auth methods active).
+- INITIAL_ADMIN_EMAIL and ALLOWED_ADMIN_DOMAINS are required in production.
 """
 
 from fastapi import FastAPI
@@ -31,6 +33,11 @@ from app.repositories.auth_repository import AuthRepository
 from app.services.presentation_service import PresentationService
 from app.core.errors import APIError, RateLimitError
 from app.services.delivery.delivery_service import ConsoleDeliveryService, EmailDeliveryService
+from app.services.delivery.admin_delivery_service import (
+    AdminDeliveryService,
+    ConsoleAdminDeliveryService,
+)
+from app.services.auth_service import validate_admin_domain
 from app.routers.admin_router import router as admin_router
 from app.routers.public_router import router as public_router
 from app.routers.form_router import router as form_router
@@ -55,7 +62,10 @@ def _is_dev_mode() -> bool:
     return os.environ.get("DEV_MODE", "").lower() in ("1", "true")
 
 
-def _validate_startup(practice_repo: PracticeRepository) -> str:
+def _validate_startup(
+    practice_repo: PracticeRepository,
+    auth_repo: AuthRepository,
+) -> str:
     practice_id = _require_env("PRACTICE_ID")
 
     # Seed the practice record if it does not exist.
@@ -101,17 +111,63 @@ def _validate_startup(practice_repo: PracticeRepository) -> str:
                     "Set DEV_MODE=1 to skip email sending during development."
                 )
 
+    # --- ADMIN_TOKEN: optional with MFA, warn if both are active ---
     if not _is_dev_mode():
-        if not os.environ.get("ADMIN_TOKEN"):
-            raise RuntimeError(
-                "Required environment variable not set: ADMIN_TOKEN. "
-                "Set DEV_MODE=1 to skip this check during development."
+        if os.environ.get("ADMIN_TOKEN"):
+            logger.warning(
+                "ADMIN_TOKEN is set alongside MFA authentication. "
+                "Both auth methods are active. Consider removing ADMIN_TOKEN "
+                "once MFA is fully deployed."
             )
     else:
         if not os.environ.get("ADMIN_TOKEN"):
             logger.warning(
                 "ADMIN_TOKEN is not set. In DEV_MODE any non-empty bearer token "
                 "will be accepted by admin endpoints. Do not expose this server publicly."
+            )
+
+    # --- INITIAL_ADMIN_EMAIL and ALLOWED_ADMIN_DOMAINS ---
+    # Required in production. In DEV_MODE, absence is allowed but logged.
+    initial_admin_email = os.environ.get("INITIAL_ADMIN_EMAIL", "").strip()
+    allowed_admin_domains = os.environ.get("ALLOWED_ADMIN_DOMAINS", "").strip()
+
+    if not _is_dev_mode():
+        if not initial_admin_email:
+            raise RuntimeError(
+                "Required environment variable not set: INITIAL_ADMIN_EMAIL. "
+                "Set this to the email address of the first admin user."
+            )
+        if not allowed_admin_domains:
+            raise RuntimeError(
+                "Required environment variable not set: ALLOWED_ADMIN_DOMAINS. "
+                "Set this to a comma-separated list of permitted admin email domains "
+                "(e.g. 'nhs.net,gov.uk')."
+            )
+
+    # Validate that the seed email's domain is in the allowed list.
+    # Runs on every startup to catch the case where domains are changed
+    # without updating the seed email.
+    if initial_admin_email and allowed_admin_domains:
+        if not validate_admin_domain(initial_admin_email, allowed_admin_domains):
+            raise RuntimeError(
+                f"INITIAL_ADMIN_EMAIL domain is not in ALLOWED_ADMIN_DOMAINS. "
+                f"Email: '{initial_admin_email}', "
+                f"Allowed domains: '{allowed_admin_domains}'. "
+                "Update one of these environment variables before starting."
+            )
+
+        # Seed the initial admin user if no users exist for this practice.
+        user_count = auth_repo.count_users_for_practice(practice_id)
+        if user_count == 0:
+            logger.info(
+                "No admin users found for practice '%s' — seeding initial admin: %s",
+                practice_id,
+                initial_admin_email,
+            )
+            auth_repo.insert_user(
+                email=initial_admin_email,
+                practice_id=practice_id,
+                role="admin",
             )
 
     return practice_id
@@ -151,8 +207,8 @@ presentation_service = PresentationService(registry, practice_repo)
 
 # Startup validation -- runs at import time (when FastAPI loads the module).
 # Any failure here prevents the application from starting.
-# Also seeds the practice record if it does not already exist.
-app.state.practice_id = _validate_startup(practice_repo)
+# Also seeds the practice record and initial admin user if they do not exist.
+app.state.practice_id = _validate_startup(practice_repo, auth_repo)
 app.state.registry = registry
 app.state.practice_repo = practice_repo
 app.state.availability_repo = availability_repo
@@ -165,6 +221,10 @@ app.state.photo_repo = photo_repo
 app.state.delivery_repo = delivery_repo
 app.state.auth_repo = auth_repo
 
+# Store allowed domains in app.state so the router can read it without
+# importing os directly (keeps handler signatures self-documenting).
+app.state.allowed_admin_domains = os.environ.get("ALLOWED_ADMIN_DOMAINS", "")
+
 # Look up practice name for use in generated PDFs.
 # Captured once at startup. If the practice name is changed via the admin
 # interface, the running server will use the old name until the next restart.
@@ -174,8 +234,10 @@ app.state.practice_name = _practice_name
 
 if _is_dev_mode():
     app.state.delivery_service = ConsoleDeliveryService()
+    app.state.admin_delivery_service = ConsoleAdminDeliveryService()
 else:
     app.state.delivery_service = EmailDeliveryService()
+    app.state.admin_delivery_service = AdminDeliveryService()
 
 # Insert default availability row if absent.
 # Must run after _validate_startup ensures the practice row exists.

@@ -4,8 +4,8 @@ Tests for admin_context.py and admin_router.py.
 Four sections:
 1. Auth behaviour — tested against GET /admin/conditions
 2. Endpoint behaviour — assumes valid auth throughout
-3. Doctor list endpoints — GET and PUT /admin/doctors
-4. Signposting sanitisation — unit tests for sanitise_signposting_html
+3. Signposting sanitisation — unit tests for sanitise_signposting_html
+4. MFA auth endpoints — request-code, verify, logout
 
 Test setup uses a bare FastAPI app with app.state populated manually,
 bypassing the normal startup sequence in main.py.
@@ -24,16 +24,13 @@ import unittest
 
 from app.repositories.practice_repository import (
     MAX_SIGNPOSTING_LENGTH,
-    MAX_DOCTOR_NAME_LENGTH,
-    MAX_DOCTOR_LIST_LENGTH,
     sanitise_signposting_html,
     InvalidSignpostingData,
-    InvalidDoctorListError,
 )
 
 
 # ---------------------------------------------------------------------------
-# Minimal stubs for registry and practice_repo
+# Minimal stubs
 # ---------------------------------------------------------------------------
 
 class StubRegistry:
@@ -57,24 +54,9 @@ class StubPracticeRepo:
     Calls the real sanitise_signposting_html so that sanitisation
     side-effects (stripping unsafe content, treating empty HTML as None,
     rejecting overlength input) are exercised through the router in tests.
-
-    Doctor list methods delegate to the real _validate_doctor_list logic
-    by importing and calling it directly, so validation errors surface
-    correctly through the router.
     """
     def __init__(self):
-        self._store = {}        # (practice_id, condition_id) -> str | None
-        self._doctors = {}      # practice_id -> list[str]
-
-    def get_practice(self, practice_id):
-        return {
-            "practice_id": practice_id,
-            "name": "Test Practice",
-            "email": "test@example.com",
-        }
-
-    def update_email(self, practice_id, email):
-        pass
+        self._store = {}  # (practice_id, condition_id) -> str | None
 
     def get_signposting(self, practice_id, condition_id):
         return self._store.get((practice_id, condition_id))
@@ -89,37 +71,77 @@ class StubPracticeRepo:
     def delete_signposting(self, practice_id, condition_id):
         self._store.pop((practice_id, condition_id), None)
 
-    def get_doctors(self, practice_id):
-        return list(self._doctors.get(practice_id, []))
 
-    def set_doctors(self, practice_id, names):
-        # Delegate to the real validation so errors surface through the router
-        from app.repositories.practice_repository import PracticeRepository
-        # Instantiate a throwaway repo just to run _validate_doctor_list.
-        # We pass a dummy URL because we never connect to the database.
-        repo = PracticeRepository.__new__(PracticeRepository)
-        repo._validate_doctor_list(names)
-        self._doctors[practice_id] = [name.strip() for name in names]
+class StubAuthRepo:
+    """
+    In-memory auth repo stub for unit tests.
+
+    No sessions are valid by default — session lookups always return None,
+    which causes require_admin to fall through to the DEV_MODE bearer-token
+    fallback. This preserves backward compatibility with the existing auth
+    behaviour tests.
+
+    MFA endpoint tests inject a more capable stub via make_test_app().
+    """
+    def get_session_context(self, session_id):
+        return None
+
+    def get_user_by_email(self, email):
+        return None
+
+    def get_auth_code_record(self, email):
+        return None
+
+    def upsert_auth_code(self, email, hashed_code, expires_at, last_requested_at):
+        pass
+
+    def increment_code_attempts(self, email):
+        pass
+
+    def delete_auth_code(self, email):
+        pass
+
+    def create_session(self, user_id, expires_at):
+        return "stub-session-id"
+
+    def delete_session(self, session_id):
+        pass
+
+    def count_users_for_practice(self, practice_id):
+        return 0
+
+    def insert_user(self, email, practice_id, role):
+        pass
+
+
+class StubAdminDeliveryService:
+    """Captures send_mfa_code calls without sending email."""
+    def __init__(self):
+        self.calls = []
+
+    def send_mfa_code(self, email, code):
+        self.calls.append({"email": email, "code": code})
 
 
 # ---------------------------------------------------------------------------
 # App factory for tests
 # ---------------------------------------------------------------------------
 
-def make_test_app(condition_ids=None):
+def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None):
     """
     Build a bare FastAPI app with the admin router registered and
     app.state populated. Does not run the normal startup validation.
 
-    Registers the same two exception handlers as main.py:
+    Registers the same exception handlers as main.py:
       - ConditionNotFound  → 404
       - APIError           → 422
-    Both are required so that error-path tests reflect production behaviour.
+      - RateLimitError     → 429
+    All three are required so that error-path tests reflect production behaviour.
     """
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
     from app.routers.admin_router import router as admin_router
-    from app.core.errors import APIError
+    from app.core.errors import APIError, RateLimitError
     from app.core.condition_registry import ConditionNotFound
 
     app = FastAPI()
@@ -128,6 +150,9 @@ def make_test_app(condition_ids=None):
     app.state.practice_id = "test_practice"
     app.state.registry = StubRegistry(condition_ids or ["urinary_symptoms"])
     app.state.practice_repo = StubPracticeRepo()
+    app.state.auth_repo = auth_repo or StubAuthRepo()
+    app.state.allowed_admin_domains = "nhs.net"
+    app.state.admin_delivery_service = delivery_service or StubAdminDeliveryService()
 
     @app.exception_handler(ConditionNotFound)
     async def condition_not_found_handler(_, exc: ConditionNotFound):
@@ -141,6 +166,13 @@ def make_test_app(condition_ids=None):
         return JSONResponse(
             status_code=422,
             content={"error": {"code": exc.code, "message": exc.message}},
+        )
+
+    @app.exception_handler(RateLimitError)
+    async def rate_limit_handler(_, exc: RateLimitError):
+        return JSONResponse(
+            status_code=429,
+            content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": str(exc)}},
         )
 
     return app
@@ -172,21 +204,23 @@ class TestAuthBehaviour(unittest.TestCase):
 
     def test_wrong_token_when_admin_token_set_returns_401(self):
         os.environ["ADMIN_TOKEN"] = "correct-token"
-        os.environ.pop("DEV_MODE", None)
+        os.environ["DEV_MODE"] = "1"
         try:
             res = self._get(headers={"Authorization": "Bearer wrong-token"})
             self.assertEqual(res.status_code, 401)
         finally:
             del os.environ["ADMIN_TOKEN"]
+            del os.environ["DEV_MODE"]
 
     def test_correct_token_when_admin_token_set_returns_200(self):
         os.environ["ADMIN_TOKEN"] = "correct-token"
-        os.environ.pop("DEV_MODE", None)
+        os.environ["DEV_MODE"] = "1"
         try:
             res = self._get(headers={"Authorization": "Bearer correct-token"})
             self.assertEqual(res.status_code, 200)
         finally:
             del os.environ["ADMIN_TOKEN"]
+            del os.environ["DEV_MODE"]
 
     def test_any_nonempty_token_accepted_in_dev_mode_without_admin_token(self):
         os.environ["DEV_MODE"] = "1"
@@ -264,13 +298,11 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIn("Call physio", data["signposting"])
 
     def test_put_empty_string_clears_signposting_and_returns_null(self):
-        # Step 1: store something first
         self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>something</p>"},
             headers=VALID_AUTH,
         )
-        # Step 2: PUT with empty string — this is a clear, not an error
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": ""},
@@ -278,7 +310,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["signposting"])
-        # Step 3: subsequent GET also returns null
         get_res = self.client.get(
             f"/admin/conditions/{self.condition_id}/signposting",
             headers=VALID_AUTH,
@@ -286,7 +317,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIsNone(get_res.json()["signposting"])
 
     def test_put_whitespace_only_string_is_treated_as_clear_and_returns_null(self):
-        # Whitespace-only content is never stored — treated as a clear instruction
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "   "},
@@ -296,8 +326,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIsNone(res.json()["signposting"])
 
     def test_put_quill_empty_output_clears_signposting(self):
-        # <p></p> is what the Quill editor emits when the user clears the field.
-        # It must be treated as empty and return null, not stored as a blank paragraph.
         self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>existing content</p>"},
@@ -312,8 +340,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIsNone(res.json()["signposting"])
 
     def test_put_response_reflects_sanitised_content_not_raw_input(self):
-        # A javascript: href must be stripped by nh3 before storage.
-        # The PUT response must reflect what was stored, not the raw input.
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": '<p><a href="javascript:alert(1)">click me</a></p>'},
@@ -321,13 +347,10 @@ class TestEndpointBehaviour(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
         saved = res.json()["signposting"]
-        # After nh3 strips the unsafe href, the link text survives but the
-        # javascript: attribute is gone. The result is non-null (text remains).
         if saved is not None:
             self.assertNotIn("javascript:", saved)
 
     def test_put_overlength_returns_422(self):
-        # Content exceeding MAX_SIGNPOSTING_LENGTH is rejected before sanitisation.
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "a" * (MAX_SIGNPOSTING_LENGTH + 1)},
@@ -337,9 +360,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertIn(str(MAX_SIGNPOSTING_LENGTH), res.json()["error"]["message"])
 
     def test_put_exactly_max_length_returns_200(self):
-        # Exactly MAX_SIGNPOSTING_LENGTH characters must be accepted.
-        # Build a string that contains real content so nh3 does not strip
-        # it to empty. Wrap in a <p> tag and pad to the limit.
         inner = "a" * (MAX_SIGNPOSTING_LENGTH - len("<p></p>"))
         raw = f"<p>{inner}</p>"
         raw = raw[:MAX_SIGNPOSTING_LENGTH]
@@ -351,7 +371,6 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
 
     def test_put_rejects_non_string_value_with_422(self):
-        # signposting must be a string; a list is the wrong type
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": ["item"]},
@@ -386,19 +405,16 @@ class TestEndpointBehaviour(unittest.TestCase):
     # --- DELETE signposting ---
 
     def test_delete_removes_signposting_and_subsequent_get_returns_null(self):
-        # Set up signposting first
         self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>item</p>"},
             headers=VALID_AUTH,
         )
-        # Delete
         res = self.client.delete(
             f"/admin/conditions/{self.condition_id}/signposting",
             headers=VALID_AUTH,
         )
         self.assertEqual(res.status_code, 204)
-        # Subsequent GET returns null
         get_res = self.client.get(
             f"/admin/conditions/{self.condition_id}/signposting",
             headers=VALID_AUTH,
@@ -421,133 +437,7 @@ class TestEndpointBehaviour(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Section 3: Doctor list endpoints
-# ---------------------------------------------------------------------------
-
-class TestDoctorListEndpoints(unittest.TestCase):
-
-    def setUp(self):
-        os.environ["DEV_MODE"] = "1"
-        os.environ.pop("ADMIN_TOKEN", None)
-        from fastapi.testclient import TestClient
-        self.app = make_test_app()
-        self.client = TestClient(self.app, raise_server_exceptions=True)
-
-    def tearDown(self):
-        os.environ.pop("DEV_MODE", None)
-
-    # --- GET /admin/doctors ---
-
-    def test_get_doctors_returns_empty_list_when_none_configured(self):
-        res = self.client.get("/admin/doctors", headers=VALID_AUTH)
-        self.assertEqual(res.status_code, 200)
-        data = res.json()
-        self.assertIn("doctors", data)
-        self.assertEqual(data["doctors"], [])
-
-    def test_get_doctors_returns_list_after_put(self):
-        names = ["Dr Smith", "Dr Jones"]
-        self.client.put("/admin/doctors", json={"doctors": names}, headers=VALID_AUTH)
-        res = self.client.get("/admin/doctors", headers=VALID_AUTH)
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json()["doctors"], names)
-
-    # --- PUT /admin/doctors ---
-
-    def test_put_doctors_returns_saved_list(self):
-        names = ["Dr Smith", "Dr Jones", "Dr Patel"]
-        res = self.client.put("/admin/doctors", json={"doctors": names}, headers=VALID_AUTH)
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json()["doctors"], names)
-
-    def test_put_doctors_replaces_existing_list(self):
-        self.client.put(
-            "/admin/doctors",
-            json={"doctors": ["Dr Smith", "Dr Jones"]},
-            headers=VALID_AUTH,
-        )
-        res = self.client.put(
-            "/admin/doctors",
-            json={"doctors": ["Dr Brown"]},
-            headers=VALID_AUTH,
-        )
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json()["doctors"], ["Dr Brown"])
-
-    def test_put_doctors_with_empty_list_clears_doctors(self):
-        self.client.put(
-            "/admin/doctors",
-            json={"doctors": ["Dr Smith"]},
-            headers=VALID_AUTH,
-        )
-        res = self.client.put("/admin/doctors", json={"doctors": []}, headers=VALID_AUTH)
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json()["doctors"], [])
-
-    def test_put_doctors_preserves_order(self):
-        # Non-alphabetical order to confirm storage order is respected
-        names = ["Dr Zebra", "Dr Apple", "Dr Mango"]
-        res = self.client.put("/admin/doctors", json={"doctors": names}, headers=VALID_AUTH)
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json()["doctors"], names)
-
-    def test_put_doctors_missing_key_returns_422(self):
-        res = self.client.put(
-            "/admin/doctors",
-            json={"wrong_key": ["Dr Smith"]},
-            headers=VALID_AUTH,
-        )
-        self.assertEqual(res.status_code, 422)
-
-    def test_put_doctors_non_list_value_returns_422(self):
-        res = self.client.put(
-            "/admin/doctors",
-            json={"doctors": "Dr Smith"},
-            headers=VALID_AUTH,
-        )
-        self.assertEqual(res.status_code, 422)
-
-    def test_put_doctors_empty_name_in_list_returns_422(self):
-        res = self.client.put(
-            "/admin/doctors",
-            json={"doctors": ["Dr Smith", "  ", "Dr Jones"]},
-            headers=VALID_AUTH,
-        )
-        self.assertEqual(res.status_code, 422)
-
-    def test_put_doctors_name_too_long_returns_422(self):
-        long_name = "Dr " + "A" * 100  # 103 chars, over limit
-        res = self.client.put(
-            "/admin/doctors",
-            json={"doctors": [long_name]},
-            headers=VALID_AUTH,
-        )
-        self.assertEqual(res.status_code, 422)
-
-    def test_put_doctors_list_too_long_returns_422(self):
-        too_many = [f"Dr Doctor{i}" for i in range(MAX_DOCTOR_LIST_LENGTH + 1)]
-        res = self.client.put(
-            "/admin/doctors",
-            json={"doctors": too_many},
-            headers=VALID_AUTH,
-        )
-        self.assertEqual(res.status_code, 422)
-
-    def test_get_doctors_requires_auth(self):
-        res = self.client.get("/admin/doctors")
-        self.assertEqual(res.status_code, 401)
-
-    def test_put_doctors_requires_auth(self):
-        res = self.client.put("/admin/doctors", json={"doctors": []})
-        self.assertEqual(res.status_code, 401)
-
-
-# ---------------------------------------------------------------------------
-# Section 4: Signposting sanitisation — unit tests for sanitise_signposting_html
-#
-# These tests call the sanitiser directly because the behaviour being tested
-# is in the repository layer, not the HTTP layer. Testing via the router
-# would require inspecting side effects rather than return values.
+# Section 3: Signposting sanitisation — unit tests for sanitise_signposting_html
 # ---------------------------------------------------------------------------
 
 class TestSignpostingSanitisation(unittest.TestCase):
@@ -581,8 +471,6 @@ class TestSignpostingSanitisation(unittest.TestCase):
             sanitise_signposting_html("a" * (MAX_SIGNPOSTING_LENGTH + 1))
 
     def test_exactly_max_length_does_not_raise(self):
-        # The length check fires before nh3 runs, so a string at exactly the
-        # limit must not raise even if nh3 strips most of it.
         inner = "a" * (MAX_SIGNPOSTING_LENGTH - len("<p></p>"))
         raw = f"<p>{inner}</p>"
         raw = raw[:MAX_SIGNPOSTING_LENGTH]
@@ -593,6 +481,307 @@ class TestSignpostingSanitisation(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertNotIn("<script>", result)
         self.assertIn("text", result)
+
+
+# ---------------------------------------------------------------------------
+# Section 4: MFA auth endpoints
+# ---------------------------------------------------------------------------
+
+class SpyAuthRepo(StubAuthRepo):
+    """
+    Extends StubAuthRepo with configurable return values and call recording.
+
+    Allows individual tests to control what the repo returns without
+    building a full database-backed repo.
+    """
+
+    def __init__(
+        self,
+        user=None,
+        auth_code_record=None,
+        session_context=None,
+    ):
+        self._user = user
+        self._auth_code_record = auth_code_record
+        self._session_context = session_context
+        self.upserted = []
+        self.deleted_codes = []
+        self.deleted_sessions = []
+        self.incremented = []
+        self.created_sessions = []
+
+    def get_user_by_email(self, email):
+        return self._user
+
+    def get_auth_code_record(self, email):
+        return self._auth_code_record
+
+    def get_session_context(self, session_id):
+        return self._session_context
+
+    def upsert_auth_code(self, email, hashed_code, expires_at, last_requested_at):
+        self.upserted.append(email)
+
+    def delete_auth_code(self, email):
+        self.deleted_codes.append(email)
+
+    def increment_code_attempts(self, email):
+        self.incremented.append(email)
+
+    def create_session(self, user_id, expires_at):
+        self.created_sessions.append(user_id)
+        return "test-session-id"
+
+    def delete_session(self, session_id):
+        self.deleted_sessions.append(session_id)
+
+
+class TestRequestMfaCode(unittest.TestCase):
+    """Tests for POST /admin/auth/request-code."""
+
+    def _make_client(self, auth_repo=None, delivery_service=None):
+        from fastapi.testclient import TestClient
+        os.environ["DEV_MODE"] = "1"
+        app = make_test_app(auth_repo=auth_repo, delivery_service=delivery_service)
+        return TestClient(app, raise_server_exceptions=False)
+
+    def tearDown(self):
+        os.environ.pop("DEV_MODE", None)
+
+    def test_unknown_domain_returns_422(self):
+        client = self._make_client()
+        res = client.post(
+            "/admin/auth/request-code",
+            json={"email": "user@notallowed.com"},
+        )
+        self.assertEqual(res.status_code, 422)
+
+    def test_unregistered_email_with_valid_domain_returns_200(self):
+        # Silent return — must not reveal the email is unregistered.
+        repo = SpyAuthRepo(user=None)
+        client = self._make_client(auth_repo=repo)
+        res = client.post(
+            "/admin/auth/request-code",
+            json={"email": "unknown@nhs.net"},
+        )
+        self.assertEqual(res.status_code, 200)
+        # No code upserted and no email sent.
+        self.assertEqual(len(repo.upserted), 0)
+
+    def test_registered_email_sends_code_and_returns_200(self):
+        user = {"id": "user-uuid", "email": "admin@nhs.net",
+                "practice_id": "test_practice", "role": "admin"}
+        repo = SpyAuthRepo(user=user)
+        delivery = StubAdminDeliveryService()
+        client = self._make_client(auth_repo=repo, delivery_service=delivery)
+        res = client.post(
+            "/admin/auth/request-code",
+            json={"email": "admin@nhs.net"},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(repo.upserted), 1)
+        self.assertEqual(len(delivery.calls), 1)
+        self.assertEqual(delivery.calls[0]["email"], "admin@nhs.net")
+
+    def test_missing_email_field_returns_422(self):
+        client = self._make_client()
+        res = client.post("/admin/auth/request-code", json={})
+        self.assertEqual(res.status_code, 422)
+
+    def test_email_normalised_to_lowercase(self):
+        user = {"id": "user-uuid", "email": "admin@nhs.net",
+                "practice_id": "test_practice", "role": "admin"}
+        repo = SpyAuthRepo(user=user)
+        delivery = StubAdminDeliveryService()
+        client = self._make_client(auth_repo=repo, delivery_service=delivery)
+        res = client.post(
+            "/admin/auth/request-code",
+            json={"email": "ADMIN@NHS.NET"},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(delivery.calls[0]["email"], "admin@nhs.net")
+
+
+class TestVerifyMfaCode(unittest.TestCase):
+    """Tests for POST /admin/auth/verify."""
+
+    def _make_client(self, auth_repo=None):
+        from fastapi.testclient import TestClient
+        os.environ["DEV_MODE"] = "1"
+        app = make_test_app(auth_repo=auth_repo)
+        return TestClient(app, raise_server_exceptions=False)
+
+    def tearDown(self):
+        os.environ.pop("DEV_MODE", None)
+
+    def _valid_code_repo(self):
+        """
+        Return a SpyAuthRepo configured with a user and a valid (unexpired,
+        unhashed) code record. Uses a known plaintext code "123456" with
+        a real bcrypt hash so verify_code passes.
+        """
+        import bcrypt
+        from datetime import datetime, timezone, timedelta
+
+        code = "123456"
+        hashed = bcrypt.hashpw(code.encode(), bcrypt.gensalt()).decode()
+        user = {"id": "user-uuid", "email": "admin@nhs.net",
+                "practice_id": "test_practice", "role": "admin"}
+        record = {
+            "email": "admin@nhs.net",
+            "hashed_code": hashed,
+            "expires_at": datetime.now(tz=timezone.utc) + timedelta(minutes=5),
+            "attempts_count": 0,
+            "last_requested_at": datetime.now(tz=timezone.utc),
+        }
+        return SpyAuthRepo(user=user, auth_code_record=record), code
+
+    def test_correct_code_returns_200_and_sets_cookie(self):
+        repo, code = self._valid_code_repo()
+        client = self._make_client(auth_repo=repo)
+        res = client.post(
+            "/admin/auth/verify",
+            json={"email": "admin@nhs.net", "code": code},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("session_id", res.cookies)
+
+    def test_wrong_code_returns_422(self):
+        repo, _ = self._valid_code_repo()
+        client = self._make_client(auth_repo=repo)
+        res = client.post(
+            "/admin/auth/verify",
+            json={"email": "admin@nhs.net", "code": "000000"},
+        )
+        self.assertEqual(res.status_code, 422)
+        self.assertEqual(res.json()["error"]["code"], "INVALID_AUTH_CODE")
+
+    def test_non_digit_code_returns_422(self):
+        client = self._make_client()
+        res = client.post(
+            "/admin/auth/verify",
+            json={"email": "admin@nhs.net", "code": "abcdef"},
+        )
+        self.assertEqual(res.status_code, 422)
+
+    def test_short_code_returns_422(self):
+        client = self._make_client()
+        res = client.post(
+            "/admin/auth/verify",
+            json={"email": "admin@nhs.net", "code": "123"},
+        )
+        self.assertEqual(res.status_code, 422)
+
+    def test_no_user_returns_422(self):
+        repo = SpyAuthRepo(user=None)
+        client = self._make_client(auth_repo=repo)
+        res = client.post(
+            "/admin/auth/verify",
+            json={"email": "nobody@nhs.net", "code": "123456"},
+        )
+        self.assertEqual(res.status_code, 422)
+        self.assertEqual(res.json()["error"]["code"], "INVALID_AUTH_CODE")
+
+    def test_no_code_record_returns_422(self):
+        user = {"id": "user-uuid", "email": "admin@nhs.net",
+                "practice_id": "test_practice", "role": "admin"}
+        repo = SpyAuthRepo(user=user, auth_code_record=None)
+        client = self._make_client(auth_repo=repo)
+        res = client.post(
+            "/admin/auth/verify",
+            json={"email": "admin@nhs.net", "code": "123456"},
+        )
+        self.assertEqual(res.status_code, 422)
+
+    def test_expired_code_returns_422(self):
+        import bcrypt
+        from datetime import datetime, timezone, timedelta
+
+        code = "123456"
+        hashed = bcrypt.hashpw(code.encode(), bcrypt.gensalt()).decode()
+        user = {"id": "user-uuid", "email": "admin@nhs.net",
+                "practice_id": "test_practice", "role": "admin"}
+        # expires_at in the past
+        record = {
+            "email": "admin@nhs.net",
+            "hashed_code": hashed,
+            "expires_at": datetime.now(tz=timezone.utc) - timedelta(minutes=1),
+            "attempts_count": 0,
+            "last_requested_at": datetime.now(tz=timezone.utc),
+        }
+        repo = SpyAuthRepo(user=user, auth_code_record=record)
+        client = self._make_client(auth_repo=repo)
+        res = client.post(
+            "/admin/auth/verify",
+            json={"email": "admin@nhs.net", "code": code},
+        )
+        self.assertEqual(res.status_code, 422)
+
+    def test_locked_out_after_max_attempts_returns_422(self):
+        import bcrypt
+        from datetime import datetime, timezone, timedelta
+
+        code = "123456"
+        hashed = bcrypt.hashpw(code.encode(), bcrypt.gensalt()).decode()
+        user = {"id": "user-uuid", "email": "admin@nhs.net",
+                "practice_id": "test_practice", "role": "admin"}
+        # attempts_count at maximum
+        record = {
+            "email": "admin@nhs.net",
+            "hashed_code": hashed,
+            "expires_at": datetime.now(tz=timezone.utc) + timedelta(minutes=5),
+            "attempts_count": 3,
+            "last_requested_at": datetime.now(tz=timezone.utc),
+        }
+        repo = SpyAuthRepo(user=user, auth_code_record=record)
+        client = self._make_client(auth_repo=repo)
+        res = client.post(
+            "/admin/auth/verify",
+            json={"email": "admin@nhs.net", "code": code},
+        )
+        self.assertEqual(res.status_code, 422)
+        # Code should have been deleted on lockout.
+        self.assertIn("admin@nhs.net", repo.deleted_codes)
+
+
+class TestLogout(unittest.TestCase):
+    """Tests for POST /admin/auth/logout."""
+
+    def _make_client(self, auth_repo=None):
+        from fastapi.testclient import TestClient
+        os.environ["DEV_MODE"] = "1"
+        app = make_test_app(auth_repo=auth_repo)
+        return TestClient(app, raise_server_exceptions=False)
+
+    def tearDown(self):
+        os.environ.pop("DEV_MODE", None)
+
+    def test_logout_without_cookie_returns_200(self):
+        repo = SpyAuthRepo()
+        client = self._make_client(auth_repo=repo)
+        res = client.post("/admin/auth/logout")
+        self.assertEqual(res.status_code, 200)
+        # No session_id cookie present, so delete_session must not be called.
+        self.assertEqual(len(repo.deleted_sessions), 0)
+
+    def test_logout_with_cookie_deletes_session_and_returns_200(self):
+        repo = SpyAuthRepo()
+        client = self._make_client(auth_repo=repo)
+        client.cookies.set("session_id", "some-session-id")
+        res = client.post("/admin/auth/logout")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("some-session-id", repo.deleted_sessions)
+
+    def test_logout_clears_cookie(self):
+        repo = SpyAuthRepo()
+        client = self._make_client(auth_repo=repo)
+        client.cookies.set("session_id", "some-session-id")
+        res = client.post("/admin/auth/logout")
+        # Cookie should be cleared (Max-Age=0 sets an expired cookie).
+        # TestClient reflects the Set-Cookie header in res.headers.
+        set_cookie = res.headers.get("set-cookie", "")
+        self.assertIn("session_id", set_cookie)
+        self.assertIn("Max-Age=0", set_cookie)
 
 
 # ---------------------------------------------------------------------------

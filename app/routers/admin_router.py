@@ -1,10 +1,13 @@
 """
 Admin API router.
 
-All endpoints require a valid Bearer token via require_admin.
+All endpoints require a valid session cookie via require_admin, except the
+three auth endpoints below which are unauthenticated by design.
+
 Prefix /admin and tag "admin" are applied when registered in main.py.
 
 This module is responsible for:
+- MFA authentication (request-code, verify, logout)
 - Signposting management per condition
 - Admin condition list
 - Availability configuration
@@ -23,8 +26,15 @@ import logging
 from datetime import timezone
 
 from fastapi import APIRouter, Request, Depends
+from fastapi.responses import JSONResponse, Response
 
-from app.core.admin_context import AdminContext, require_admin
+from app.core.admin_context import (
+    AdminContext,
+    require_admin,
+    SESSION_COOKIE_NAME,
+    SESSION_COOKIE_MAX_AGE,
+    SESSION_TTL_MINUTES,
+)
 from app.repositories.practice_repository import (
     InvalidSignpostingData,
     InvalidEmailError,
@@ -46,7 +56,13 @@ from app.core.errors import (
     INVALID_DATE_FORMAT,
     INVALID_FIELD_TYPE,
 )
-from app.core.dependencies import get_registry, get_practice_repo, get_availability_repo
+from app.core.dependencies import (
+    get_registry,
+    get_practice_repo,
+    get_availability_repo,
+    get_auth_repo,
+)
+from app.services import auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +118,159 @@ def _format_exception_response(exc: dict) -> dict:
         "note": exc.get("note"),
     }
     return result
+
+
+def _get_allowed_domains(request: Request) -> str:
+    """Read ALLOWED_ADMIN_DOMAINS from app.state (set at startup)."""
+    return request.app.state.allowed_admin_domains
+
+
+def _get_delivery_service(request: Request):
+    """Read admin_delivery_service from app.state (set at startup)."""
+    return request.app.state.admin_delivery_service
+
+
+# ---------------------------------------------------------------------------
+# Auth endpoints (unauthenticated)
+# ---------------------------------------------------------------------------
+
+@router.post("/auth/request-code", status_code=200)
+async def request_mfa_code(
+    request: Request,
+    auth_repo=Depends(get_auth_repo),
+):
+    """
+    Request an MFA code to be sent to an admin email address.
+
+    Accepts: {"email": "user@domain.com"}
+
+    Always returns 200 regardless of whether the email is registered,
+    to prevent user enumeration.
+
+    Returns 422 if the email domain is not in ALLOWED_ADMIN_DOMAINS.
+    Returns 429 if a code was requested within the last 60 seconds.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise INVALID_PAYLOAD("Invalid JSON body")
+
+    if not isinstance(body, dict) or "email" not in body:
+        raise INVALID_PAYLOAD('Body must be {"email": "..."}')
+
+    email = body["email"]
+    if not isinstance(email, str) or not email.strip():
+        raise INVALID_PAYLOAD("email must be a non-empty string")
+
+    email = email.strip().lower()
+    allowed_domains = _get_allowed_domains(request)
+    delivery_service = _get_delivery_service(request)
+    practice_id = request.app.state.practice_id
+
+    auth_service.request_mfa_code(
+        email=email,
+        auth_repo=auth_repo,
+        delivery_service=delivery_service,
+        allowed_domains=allowed_domains,
+        practice_id=practice_id,
+    )
+
+    return {"ok": True}
+
+
+@router.post("/auth/verify", status_code=200)
+async def verify_mfa_code(
+    request: Request,
+    auth_repo=Depends(get_auth_repo),
+):
+    """
+    Verify a 6-digit MFA code and issue a session cookie on success.
+
+    Accepts: {"email": "user@domain.com", "code": "047823"}
+
+    On success: returns 200 and sets an HttpOnly session cookie.
+    On failure: returns 422 with INVALID_AUTH_CODE for all failure modes.
+
+    The session cookie attributes:
+    - HttpOnly: not readable by JavaScript
+    - Secure: HTTPS only (set False in DEV_MODE to work over HTTP locally)
+    - SameSite=Strict: no cross-site requests
+    - Max-Age: SESSION_COOKIE_MAX_AGE seconds
+    """
+    import os
+    try:
+        body = await request.json()
+    except Exception:
+        raise INVALID_PAYLOAD("Invalid JSON body")
+
+    if not isinstance(body, dict):
+        raise INVALID_PAYLOAD("Body must be a JSON object")
+
+    email = body.get("email")
+    code = body.get("code")
+
+    if not isinstance(email, str) or not email.strip():
+        raise INVALID_PAYLOAD("email must be a non-empty string")
+    if not isinstance(code, str) or not code.strip():
+        raise INVALID_PAYLOAD("code must be a non-empty string")
+
+    email = email.strip().lower()
+    code = code.strip()
+
+    # Format validation: code must be exactly 6 digits.
+    if not code.isdigit() or len(code) != 6:
+        raise INVALID_PAYLOAD("code must be a 6-digit number")
+
+    session_id = auth_service.verify_mfa_code(
+        email=email,
+        code=code,
+        auth_repo=auth_repo,
+        session_ttl_minutes=SESSION_TTL_MINUTES,
+    )
+
+    is_dev = os.environ.get("DEV_MODE", "").lower() in ("1", "true")
+
+    response = JSONResponse(content={"ok": True})
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_id,
+        httponly=True,
+        secure=not is_dev,
+        samesite="strict",
+        max_age=SESSION_COOKIE_MAX_AGE,
+    )
+    return response
+
+
+@router.post("/auth/logout", status_code=200)
+async def logout(
+    request: Request,
+    auth_repo=Depends(get_auth_repo),
+):
+    """
+    Log out by deleting the session and clearing the cookie.
+
+    Does not require require_admin. The client may be calling this after
+    a session has already expired, or the cookie may have been cleared
+    already. Both cases must succeed cleanly.
+
+    If no session cookie is present, skip the DB call entirely.
+    Always returns an expired cookie to clear any browser state.
+    """
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        auth_repo.delete_session(session_id)
+
+    response = JSONResponse(content={"ok": True})
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value="",
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        max_age=0,
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -297,72 +466,6 @@ async def delete_signposting(
         raise ConditionNotFound(condition_id)
 
     practice_repo.delete_signposting(admin.practice_id, condition_id)
-
-
-# ---------------------------------------------------------------------------
-# Doctor list
-# ---------------------------------------------------------------------------
-
-@router.get("/doctors")
-async def get_doctors(
-    admin: AdminContext = Depends(require_admin),
-    practice_repo=Depends(get_practice_repo),
-):
-    """
-    Return the doctor list for the practice.
-
-    Returns {"doctors": ["Dr Smith", "Dr Jones", ...]} in display order.
-    Returns {"doctors": []} if no doctors are configured.
-    """
-    doctors = practice_repo.get_doctors(admin.practice_id)
-    return {"doctors": doctors}
-
-
-@router.put("/doctors")
-async def put_doctors(
-    request: Request,
-    admin: AdminContext = Depends(require_admin),
-    practice_repo=Depends(get_practice_repo),
-):
-    """
-    Replace the doctor list for the practice.
-
-    Accepts: {"doctors": ["Dr Smith", "Dr Jones", ...]}
-
-    An empty list is valid — it clears the doctor list entirely.
-
-    Validation:
-    - doctors key must be present and must be a list
-    - each item must be a non-empty string
-    - each item must not exceed MAX_DOCTOR_NAME_LENGTH characters
-    - list must not exceed MAX_DOCTOR_LIST_LENGTH items
-
-    Catches InvalidDoctorListError and converts to INVALID_PAYLOAD.
-    Does not catch PracticeNotFound — the practice is guaranteed to exist
-    at startup.
-
-    Returns {"doctors": [...]} reflecting the saved list.
-    """
-    try:
-        body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
-
-    if not isinstance(body, dict) or "doctors" not in body:
-        raise INVALID_PAYLOAD('Body must be {"doctors": [...]}')
-
-    doctors = body["doctors"]
-
-    if not isinstance(doctors, list):
-        raise INVALID_FIELD_TYPE("doctors", "a list")
-
-    try:
-        practice_repo.set_doctors(admin.practice_id, doctors)
-    except InvalidDoctorListError as e:
-        raise INVALID_PAYLOAD(str(e))
-
-    saved = practice_repo.get_doctors(admin.practice_id)
-    return {"doctors": saved}
 
 
 # ---------------------------------------------------------------------------
@@ -744,3 +847,69 @@ async def delete_exception(
         raise INVALID_DATE_FORMAT("date", date)
 
     availability_repo.delete_exception(admin.practice_id, exception_date)
+
+
+# ---------------------------------------------------------------------------
+# Doctors
+# ---------------------------------------------------------------------------
+
+@router.get("/doctors")
+async def get_doctors(
+    admin: AdminContext = Depends(require_admin),
+    practice_repo=Depends(get_practice_repo),
+):
+    """
+    Return the doctor list for the practice.
+
+    Returns {"doctors": ["Dr Smith", "Dr Jones", ...]} in display order.
+    Returns {"doctors": []} if no doctors are configured.
+    """
+    doctors = practice_repo.get_doctors(admin.practice_id)
+    return {"doctors": doctors}
+
+
+@router.put("/doctors")
+async def put_doctors(
+    request: Request,
+    admin: AdminContext = Depends(require_admin),
+    practice_repo=Depends(get_practice_repo),
+):
+    """
+    Replace the doctor list for the practice.
+
+    Accepts: {"doctors": ["Dr Smith", "Dr Jones", ...]}
+
+    An empty list is valid — it clears the doctor list entirely.
+
+    Validation:
+    - doctors key must be present and must be a list
+    - each item must be a non-empty string
+    - each item must not exceed MAX_DOCTOR_NAME_LENGTH characters
+    - list must not exceed MAX_DOCTOR_LIST_LENGTH items
+
+    Catches InvalidDoctorListError and converts to INVALID_PAYLOAD.
+    Does not catch PracticeNotFound — the practice is guaranteed to exist
+    at startup.
+
+    Returns {"doctors": [...]} reflecting the saved list.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise INVALID_PAYLOAD("Invalid JSON body")
+
+    if not isinstance(body, dict) or "doctors" not in body:
+        raise INVALID_PAYLOAD('Body must be {"doctors": [...]}')
+
+    doctors = body["doctors"]
+
+    if not isinstance(doctors, list):
+        raise INVALID_FIELD_TYPE("doctors", "a list")
+
+    try:
+        practice_repo.set_doctors(admin.practice_id, doctors)
+    except InvalidDoctorListError as e:
+        raise INVALID_PAYLOAD(str(e))
+
+    saved = practice_repo.get_doctors(admin.practice_id)
+    return {"doctors": saved}
