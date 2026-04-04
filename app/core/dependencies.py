@@ -25,7 +25,12 @@ from app.repositories.photo_repository import PhotoRepository
 from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.auth_repository import AuthRepository
 from app.services.delivery.delivery_service import DeliveryService
+from app.services.delivery.admin_delivery_service import (
+    AdminDeliveryService,
+    ConsoleAdminDeliveryService,
+)
 from app.services.presentation_service import PresentationService
+from typing import Union
 
 
 def get_registry(request: Request) -> ConditionRegistry:
@@ -82,3 +87,13 @@ def get_practice_name(request: Request) -> str:
 
 def get_auth_repo(request: Request) -> AuthRepository:
     return request.app.state.auth_repo
+
+
+def get_admin_delivery_service(
+    request: Request,
+) -> Union[AdminDeliveryService, ConsoleAdminDeliveryService]:
+    return request.app.state.admin_delivery_service
+
+
+def get_allowed_admin_domains(request: Request) -> str:
+    return request.app.state.allowed_admin_domains
