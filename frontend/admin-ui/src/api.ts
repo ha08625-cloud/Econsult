@@ -57,16 +57,16 @@ async function apiFetch(
  * Extract a detail message from a non-ok response, or fall back to
  * a generic "Server error: {status}" string.
  *
- * Handles two error shapes:
- * - HTTPException format: {"detail": "..."}
- * - APIError format:      {"error": {"code": "...", "message": "..."}}
+ * All backend error responses use the standard envelope:
+ *   {"error": {"code": "...", "message": "..."}}
+ * The body.detail path has been removed — FastAPI HTTPExceptions are now
+ * reshaped into the standard envelope by the handler in main.py.
  */
 async function extractErrorDetail(res: Response): Promise<string> {
   let detail = `Server error: ${res.status}`;
   try {
     const body = await res.json();
-    if (body.detail) detail = body.detail;
-    else if (body.error?.message) detail = body.error.message;
+    if (body.error?.message) detail = body.error.message;
   } catch (_) {
     // ignore parse errors
   }
