@@ -15,25 +15,29 @@
  * — it avoids complex re-initialisation logic and keeps the component
  * simple. Do not remove key={selectedId} to optimise performance without
  * first understanding this dependency.
+ *
+ * Authentication: requests use the HttpOnly session cookie automatically.
+ * No token is passed. If a request returns 401 (AuthError), onAuthError
+ * is called and App transitions back to LoginView.
  */
 
 import { useEffect, useRef, useState } from "react";
 import Quill from "quill";
 import DOMPurify from "dompurify";
-import { fetchSignposting, putSignposting } from "./api";
+import { fetchSignposting, putSignposting, AuthError } from "./api";
 import { SIGNPOSTING_PURIFY_CONFIG } from "../../src/constants";
 import type { SaveStatus } from "./types";
 
 interface Props {
   conditionId: string;
-  token: string;
   onUnsavedChange: (hasChanges: boolean) => void;
+  onAuthError: () => void;
 }
 
 export default function SignpostingEditor({
   conditionId,
-  token,
   onUnsavedChange,
+  onAuthError,
 }: Props) {
   const editorDivRef = useRef<HTMLDivElement>(null);
   const quillRef = useRef<Quill | null>(null);
@@ -45,7 +49,6 @@ export default function SignpostingEditor({
   const [hasUnsaved, setHasUnsaved] = useState(false);
 
   // Step 1: instantiate Quill once after the component mounts.
-  // Content loading happens in the next effect once quillRef is populated.
   useEffect(() => {
     if (!editorDivRef.current) return;
 
@@ -54,8 +57,6 @@ export default function SignpostingEditor({
       placeholder: "Add information for patients here…",
       modules: {
         toolbar: [["bold", "italic", "link"], [{ list: "bullet" }]],
-        // Disable the default keyboard module's tab behaviour so tab
-        // moves focus out of the editor rather than inserting content.
         keyboard: {
           bindings: {
             tab: false,
@@ -66,13 +67,10 @@ export default function SignpostingEditor({
 
     quillRef.current = quill;
 
-    // Cleanup: null the ref when this component unmounts.
-    // React remounts this component on condition switch (key={selectedId}),
-    // so this runs on every condition change.
     return () => {
       quillRef.current = null;
     };
-  }, []); // empty deps — runs once on mount
+  }, []);
 
   // Step 2: once Quill exists, load content and set up change detection.
   useEffect(() => {
@@ -86,32 +84,28 @@ export default function SignpostingEditor({
       setLoadError(null);
 
       try {
-        const savedHtml = await fetchSignposting(conditionId, token);
+        const savedHtml = await fetchSignposting(conditionId);
 
         if (cancelled) return;
 
         if (savedHtml) {
-          // dangerouslyPasteHTML is synchronous. The listener is attached
-          // after this call so the paste-triggered text-change event does
-          // not incorrectly mark the content as unsaved.
           quill.clipboard.dangerouslyPasteHTML(savedHtml);
         }
 
-        // Capture the baseline text content after initialisation.
-        // We compare text, not raw HTML, to avoid false positives from
-        // Quill normalising the HTML during the paste above.
         const baseline = quill.getText();
 
-        // Attach the change listener only after baseline is captured.
         quill.on("text-change", () => {
           const changed = quill.getText() !== baseline;
           setHasUnsaved(changed);
           onUnsavedChange(changed);
         });
       } catch (err) {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : "Unknown error");
+        if (cancelled) return;
+        if (err instanceof AuthError) {
+          onAuthError();
+          return;
         }
+        setLoadError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -122,9 +116,7 @@ export default function SignpostingEditor({
     return () => {
       cancelled = true;
     };
-  }, [conditionId, token, onUnsavedChange]);
-  // key={selectedId} means this component remounts on condition change
-  // anyway — deps are here for correctness
+  }, [conditionId, onUnsavedChange, onAuthError]);
 
   async function handleSave() {
     const quill = quillRef.current;
@@ -135,20 +127,11 @@ export default function SignpostingEditor({
 
     try {
       const rawHtml = quill.getSemanticHTML();
-
-      // DOMPurify as defence-in-depth before transmission.
-      // The server (nh3) is the authoritative sanitiser.
       const sanitisedHtml = DOMPurify.sanitize(rawHtml, SIGNPOSTING_PURIFY_CONFIG);
+      const savedHtml = await putSignposting(conditionId, sanitisedHtml);
 
-      const savedHtml = await putSignposting(conditionId, token, sanitisedHtml);
-
-      // Update baseline to what the server actually stored (post-sanitisation),
-      // not what we sent. This avoids a false unsaved-change warning if the
-      // server's nh3 pass modifies the content slightly.
       const newBaseline = savedHtml || "";
 
-      // Re-sync the editor to the saved content so the baseline and
-      // editor content are in agreement.
       if (savedHtml) {
         quill.off("text-change");
         quill.clipboard.dangerouslyPasteHTML(savedHtml);
@@ -171,13 +154,16 @@ export default function SignpostingEditor({
         });
       }
 
-      // Suppress TS unused variable warning — newBaseline documents intent
       void newBaseline;
 
       setHasUnsaved(false);
       onUnsavedChange(false);
       setSaveStatus({ type: "success", text: "Saved" });
     } catch (err) {
+      if (err instanceof AuthError) {
+        onAuthError();
+        return;
+      }
       const isNetworkError =
         err instanceof TypeError &&
         err.message.toLowerCase().includes("fetch");

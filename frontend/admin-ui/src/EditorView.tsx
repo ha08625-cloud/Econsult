@@ -1,7 +1,7 @@
 /**
  * EditorView.tsx — main admin panel after authentication.
  *
- * Rendered by App once a valid token is held.
+ * Rendered by App once a valid session is confirmed.
  *
  * Layout: three-tab interface
  * - "Signposting"       — condition selector + SignpostingEditor
@@ -17,25 +17,18 @@
  *   the signposting tab and recreated on return. On recreation, Quill
  *   performs a fresh server fetch. This is intentional.
  * - PracticeSettingsTab is conditionally rendered and performs a fresh
- *   fetch on each mount. This is intentional — practice details are not
- *   expected to change frequently.
+ *   fetch on each mount. This is intentional.
  *
  * Unsaved change tracking:
  * - signpostingUnsavedRef: set by SignpostingEditor via onUnsavedChange
  * - availabilityUnsavedRef: set by AvailabilityEditor via onUnsavedChange
  * Both are refs (not state) so confirm dialogs can read them synchronously.
- * PracticeSettingsTab has no unsaved-change guard — single text field,
- * low stakes to lose on tab switch.
  *
- * Guard behaviour:
- * - Switching away from "signposting": confirms if signpostingUnsavedRef,
- *   resets ref on confirm.
- * - Switching away from "availability": confirms if availabilityUnsavedRef,
- *   resets ref on confirm. Explicit reset is required because AvailabilityEditor
- *   stays mounted and will not re-fetch (which would naturally reset the ref).
- * - Switching away from "practice_settings": no guard, no state.
- * - Condition change: always checks signpostingUnsavedRef, unchanged from
- *   previous behaviour.
+ * Session expiry:
+ * - If any child API call returns 401 (AuthError), the child calls
+ *   onAuthError, which transitions App back to LoginView.
+ * - Any unsaved data is lost on session expiry — no modal, no retry.
+ *   This is intentional given the 24-hour session TTL. See arch_admin.md.
  */
 
 import { useRef, useState } from "react";
@@ -47,18 +40,16 @@ import type { ConditionSummary } from "./types";
 type Tab = "signposting" | "availability" | "practice_settings";
 
 interface Props {
-  token: string;
   conditions: ConditionSummary[];
+  onAuthError: () => void;
 }
 
-export default function EditorView({ token, conditions }: Props) {
+export default function EditorView({ conditions, onAuthError }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("signposting");
   const [selectedId, setSelectedId] = useState<string | null>(
     conditions.length > 0 ? conditions[0].id : null
   );
 
-  // Track unsaved state via refs so confirm dialogs can read them
-  // synchronously without needing to lift state out of child components.
   const signpostingUnsavedRef = useRef(false);
   const availabilityUnsavedRef = useRef(false);
 
@@ -78,8 +69,6 @@ export default function EditorView({ token, conditions }: Props) {
         "You have unsaved changes. Switch tab and discard them?"
       );
       if (!ok) return;
-      // Explicit reset: AvailabilityEditor stays mounted and will not
-      // re-fetch, so the ref would remain stale without this reset.
       availabilityUnsavedRef.current = false;
     }
 
@@ -126,10 +115,10 @@ export default function EditorView({ token, conditions }: Props) {
       {/* Availability tab — always mounted, shown/hidden to preserve state */}
       <div style={{ display: activeTab === "availability" ? "block" : "none" }}>
         <AvailabilityEditor
-          token={token}
           onUnsavedChange={(hasChanges) => {
             availabilityUnsavedRef.current = hasChanges;
           }}
+          onAuthError={onAuthError}
         />
       </div>
 
@@ -156,17 +145,13 @@ export default function EditorView({ token, conditions }: Props) {
           <p className="section-label">Signposting content</p>
 
           {selectedId ? (
-            // key={selectedId} forces a full remount of SignpostingEditor on
-            // every condition change. This destroys and recreates the Quill
-            // instance cleanly rather than requiring complex re-initialisation
-            // logic. Do not remove this key.
             <SignpostingEditor
               key={selectedId}
               conditionId={selectedId}
-              token={token}
               onUnsavedChange={(hasChanges) => {
                 signpostingUnsavedRef.current = hasChanges;
               }}
+              onAuthError={onAuthError}
             />
           ) : (
             <div className="empty-state">Select a condition to begin.</div>
@@ -176,7 +161,7 @@ export default function EditorView({ token, conditions }: Props) {
 
       {/* Practice settings tab — conditionally rendered, fetches on mount */}
       {activeTab === "practice_settings" && (
-        <PracticeSettingsTab token={token} />
+        <PracticeSettingsTab onAuthError={onAuthError} />
       )}
     </>
   );

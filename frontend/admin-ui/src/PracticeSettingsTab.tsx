@@ -11,21 +11,11 @@
  * parallel on mount and the component enters "ready" only when both
  * succeed. If either fails, the component enters "error".
  *
- * Save state for each section is independent — saving the email does not
- * affect the doctor list save status, and vice versa.
+ * Save state for each section is independent.
  *
- * Doctor list editing:
- * - Up/down arrow buttons reorder items. These are simpler than drag-and-drop
- *   and require no additional dependencies.
- * - Each item has a delete button.
- * - An "Add doctor" input and button append a new name to the list.
- *   The input is cleared after a successful add.
- * - A Save button issues PUT /admin/doctors with the current list.
- * - An empty list is valid — it clears the configured list entirely.
- *
- * No unsaved-change guard for either section — consistent with the existing
- * email field behaviour. Stakes of losing an in-progress list on tab switch
- * are low for a first version.
+ * Authentication: requests use the HttpOnly session cookie automatically.
+ * No token is passed. If a request returns 401 (AuthError), onAuthError
+ * is called and App transitions back to LoginView.
  *
  * This component is conditionally rendered by EditorView (destroyed and
  * recreated on each tab switch), so it always performs a fresh fetch on
@@ -33,50 +23,34 @@
  */
 
 import { useEffect, useState } from "react";
-import { getPractice, updatePracticeEmail, getDoctors, putDoctors } from "./api";
+import { getPractice, updatePracticeEmail, getDoctors, putDoctors, AuthError } from "./api";
 import type { PracticeDetails } from "./api";
 
 interface Props {
-  token: string;
+  onAuthError: () => void;
 }
 
 type LoadState = "loading" | "ready" | "error";
 type SaveStatus = "idle" | "saving" | "success" | "error";
 
-export default function PracticeSettingsTab({ token }: Props) {
-  // -------------------------------------------------------------------------
-  // Shared load state
-  // -------------------------------------------------------------------------
-
+export default function PracticeSettingsTab({ onAuthError }: Props) {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  // -------------------------------------------------------------------------
-  // Email section state
-  // -------------------------------------------------------------------------
 
   const [practice, setPractice] = useState<PracticeDetails | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [emailSaveStatus, setEmailSaveStatus] = useState<SaveStatus>("idle");
   const [emailSaveError, setEmailSaveError] = useState<string | null>(null);
 
-  // -------------------------------------------------------------------------
-  // Doctor list section state
-  // -------------------------------------------------------------------------
-
   const [doctors, setDoctors] = useState<string[]>([]);
   const [addInput, setAddInput] = useState("");
   const [doctorSaveStatus, setDoctorSaveStatus] = useState<SaveStatus>("idle");
   const [doctorSaveError, setDoctorSaveError] = useState<string | null>(null);
 
-  // -------------------------------------------------------------------------
-  // On mount: fetch practice details and doctor list in parallel
-  // -------------------------------------------------------------------------
-
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([getPractice(token), getDoctors(token)])
+    Promise.all([getPractice(), getDoctors()])
       .then(([practiceData, doctorData]) => {
         if (cancelled) return;
         setPractice(practiceData);
@@ -86,6 +60,7 @@ export default function PracticeSettingsTab({ token }: Props) {
       })
       .catch((err) => {
         if (cancelled) return;
+        if (err instanceof AuthError) { onAuthError(); return; }
         setLoadError(err instanceof Error ? err.message : "Failed to load practice settings.");
         setLoadState("error");
       });
@@ -93,11 +68,7 @@ export default function PracticeSettingsTab({ token }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
-
-  // -------------------------------------------------------------------------
-  // Email save handler
-  // -------------------------------------------------------------------------
+  }, [onAuthError]);
 
   async function handleEmailSave() {
     if (!practice) return;
@@ -106,19 +77,16 @@ export default function PracticeSettingsTab({ token }: Props) {
     setEmailSaveStatus("saving");
 
     try {
-      const updated = await updatePracticeEmail(token, emailInput.trim());
+      const updated = await updatePracticeEmail(emailInput.trim());
       setPractice(updated);
       setEmailInput(updated.email);
       setEmailSaveStatus("success");
     } catch (err) {
+      if (err instanceof AuthError) { onAuthError(); return; }
       setEmailSaveError(err instanceof Error ? err.message : "Save failed.");
       setEmailSaveStatus("error");
     }
   }
-
-  // -------------------------------------------------------------------------
-  // Doctor list handlers
-  // -------------------------------------------------------------------------
 
   function handleMoveUp(index: number) {
     if (index === 0) return;
@@ -161,18 +129,15 @@ export default function PracticeSettingsTab({ token }: Props) {
     setDoctorSaveStatus("saving");
 
     try {
-      const saved = await putDoctors(token, doctors);
+      const saved = await putDoctors(doctors);
       setDoctors(saved);
       setDoctorSaveStatus("success");
     } catch (err) {
+      if (err instanceof AuthError) { onAuthError(); return; }
       setDoctorSaveError(err instanceof Error ? err.message : "Save failed.");
       setDoctorSaveStatus("error");
     }
   }
-
-  // -------------------------------------------------------------------------
-  // Render: loading
-  // -------------------------------------------------------------------------
 
   if (loadState === "loading") {
     return (
@@ -181,10 +146,6 @@ export default function PracticeSettingsTab({ token }: Props) {
       </div>
     );
   }
-
-  // -------------------------------------------------------------------------
-  // Render: load error
-  // -------------------------------------------------------------------------
 
   if (loadState === "error") {
     return (
@@ -195,18 +156,10 @@ export default function PracticeSettingsTab({ token }: Props) {
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Render: ready
-  // -------------------------------------------------------------------------
-
   return (
     <div className="card">
       <p className="card-title">Practice settings</p>
       <p className="card-subtitle">Practice contact details and configuration.</p>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Practice identity (read-only)                                       */}
-      {/* ------------------------------------------------------------------ */}
 
       <hr className="divider" />
 
@@ -219,10 +172,6 @@ export default function PracticeSettingsTab({ token }: Props) {
         <span className="field-label">Practice ID</span>
         <span className="field-value field-value--muted">{practice!.practice_id}</span>
       </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Contact email                                                        */}
-      {/* ------------------------------------------------------------------ */}
 
       <hr className="divider" />
 
@@ -260,10 +209,6 @@ export default function PracticeSettingsTab({ token }: Props) {
       {emailSaveStatus === "error" && emailSaveError && (
         <p className="error-message">{emailSaveError}</p>
       )}
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Doctor list                                                          */}
-      {/* ------------------------------------------------------------------ */}
 
       <hr className="divider" />
 

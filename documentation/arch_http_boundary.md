@@ -8,7 +8,7 @@
 
 The FastAPI application entry point, startup validation, resource initialisation, router registration, error handling, and static file serving.
 
-**Key files:** `main.py`, `request_validation.py`, `app/routers/public_router.py`, `app/routers/admin_router.py`, `app/routers/form_router.py`, `app/core/dependencies.py`, `app/services/delivery_service.py`
+**Key files:** `main.py`, `request_validation.py`, `app/routers/public_router.py`, `app/routers/admin_router.py`, `app/routers/form_router.py`, `app/core/dependencies.py`, `app/services/delivery/delivery_service.py`
 
 ---
 
@@ -33,35 +33,76 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 4. `availability_repo.init_availability()` seeds a default availability row if absent — must run after step 3 so the practice row exists
 
 **Validation rules enforced by `_validate_startup()`:**
-- `PRACTICE_ID` env var must be set
+- `PRACTICE_ID` env var must be set.
 - If the practice record does not exist, it is **seeded automatically** from `PRACTICE_NAME` and `PRACTICE_EMAIL` env vars. This handles cloud deployments where the DB starts empty on container restart. It is safe to run on every startup — skips if the row already exists.
 - The database must contain **exactly one practice**. Multiple practices is a clinically unsafe configuration (cross-contamination risk) and aborts startup.
 - The practice must have a non-empty email address.
-- Unless `DEV_MODE=1`: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`, and `ADMIN_TOKEN` must all be set.
-- In `DEV_MODE` without `ADMIN_TOKEN`: a warning is logged but startup proceeds. Any non-empty bearer token is accepted by admin endpoints.
+- Unless `DEV_MODE=1`: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_FROM` must all be set.
+- Unless `DEV_MODE=1`: `INITIAL_ADMIN_EMAIL` and `ALLOWED_ADMIN_DOMAINS` must be set.
+- `INITIAL_ADMIN_EMAIL` domain is validated against `ALLOWED_ADMIN_DOMAINS` on **every startup** (not just first run). If the domain is not in the allowed list, startup aborts. This catches the case where domains are changed without updating the seed email.
+- If `admin_users` is empty for the practice, `INITIAL_ADMIN_EMAIL` is inserted as the first admin user with `role="admin"`. This seeding is idempotent — if the user already exists (unique constraint on email), the startup would crash; the count check guards against this.
+- `ADMIN_TOKEN` is **no longer required** in production — MFA replaces it. If `ADMIN_TOKEN` is set alongside MFA in production, a warning is logged (both auth methods active). In `DEV_MODE` without `ADMIN_TOKEN`, a warning is logged and any non-empty bearer token is accepted by admin endpoints via the DEV_MODE fallback in `require_admin`.
+
+**`app.state` values set by startup:**
+
+| Key | Type | Description |
+|---|---|---|
+| `practice_id` | str | The configured practice identifier |
+| `registry` | ConditionRegistry | Condition rulesets, immutable after load |
+| `practice_repo` | PracticeRepository | Practice record access |
+| `availability_repo` | AvailabilityRepository | Availability config access |
+| `presentation_service` | PresentationService | Read-only composition for patient frontend |
+| `runtime_repo` | RuntimeStateRepository | Form session state |
+| `submission_repo` | SubmissionRepository | Submission records |
+| `attachment_repo` | AttachmentRepository | PDF attachment storage |
+| `pdf_repo` | PDFRepository | PDF job queue |
+| `photo_repo` | PhotoRepository | Patient photo storage |
+| `delivery_repo` | DeliveryRepository | Delivery job queue |
+| `auth_repo` | AuthRepository | Admin MFA auth — users, codes, sessions |
+| `delivery_service` | DeliveryService | Clinical email delivery (Console or SMTP) |
+| `admin_delivery_service` | AdminDeliveryService | MFA code email delivery (Console or SMTP) |
+| `practice_name` | str \| None | Captured once for PDF generation |
+| `allowed_admin_domains` | str | Comma-separated permitted admin email domains |
 
 ---
 
 ## Delivery Service Instantiation
 
-`main.py` instantiates the delivery service conditionally at startup and stores it in `app.state.delivery_service`:
+`main.py` instantiates two delivery services at startup:
 
-- `DEV_MODE=1`: `ConsoleDeliveryService` — logs the email body to stdout, never sends. Raises `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental production use.
-- Production: `EmailDeliveryService` — reads SMTP config from environment variables at instantiation time. A missing variable raises `RuntimeError` at startup, not silently at send time.
+**Clinical delivery** (`app.state.delivery_service`):
+- `DEV_MODE=1`: `ConsoleDeliveryService` — logs the email body to stdout, never sends.
+- Production: `EmailDeliveryService` — reads SMTP config from environment at instantiation.
 
-Neither constructor takes `practice_name`. PDF generation has moved to `form_router.py`, where `practice_name` is injected via `get_practice_name` dependency. `app.state.practice_name` is captured once at startup from the practice record.
+**Admin MFA delivery** (`app.state.admin_delivery_service`):
+- `DEV_MODE=1`: `ConsoleAdminDeliveryService` — logs the MFA code to stdout, never sends.
+- Production: `AdminDeliveryService` — reads the same SMTP environment variables but opens a separate SMTP connection per send. No shared state with the clinical delivery path.
 
-Form handlers access the delivery service via `get_delivery_service` from `dependencies.py`. The abstract base class `DeliveryService` is defined in `app/services/delivery_service.py`. `email_service.py` no longer exists — it was replaced by `delivery_service.py` in Phase 3.
+Both console implementations raise `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental production use.
+
+---
+
+## Error Handlers
+
+Three exception handlers are registered in `main.py`:
+
+| Exception | HTTP status | Response body |
+|---|---|---|
+| `APIError` | 422 | `{"error": {"code": "...", "message": "..."}}` |
+| `ConditionNotFound` | 404 | `{"error": {"code": "CONDITION_NOT_FOUND", "message": "..."}}` |
+| `RateLimitError` | 429 | `{"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "..."}}` |
+
+`RateLimitError` is a separate exception class (not an `APIError` subclass) because the `APIError` handler hardcodes status 422. `SESSION_EXPIRED` is raised directly as `HTTPException(status_code=401)` in `admin_context.py` and does not require a registered handler.
+
+The test factory in `test_admin_router.py` registers the same three handlers so that error-path tests reflect production behaviour.
 
 ---
 
 ## Availability Orchestration
 
-`check_availability()` in `app/services/availability_orchestration.py` wires `AvailabilityRepository` and `availability_service` together. It does not belong in `availability_service.py` because the service layer has no database access. This follows the same pattern as `engine_adapters.py`: services contain pure logic; orchestration lives in the calling layer.
+`check_availability()` in `app/services/availability_orchestration.py` wires `AvailabilityRepository` and `availability_service` together. It does not belong in `availability_service.py` because the service layer has no database access.
 
 **Fail-open rule:** Any exception during an availability check (database, network, logic) must be caught and execution must continue as if the practice is open. Patients must never be locked out due to system errors.
-
-This applies in `POST /form/init`, which blocks entry if the practice is closed. The `POST /form/finish` endpoint does **not** perform an availability check. Whether the practice was open is determined from the availability fetch that occurred at Screen 0 (session start) and is held in frontend state — it is not re-checked at submission time.
 
 ---
 
@@ -69,31 +110,13 @@ This applies in `POST /form/init`, which blocks entry if the practice is closed.
 
 `POST /form/finish` accepts `multipart/form-data`. The JSON payload is sent as a string in the `payload` form field. Photos are sent as optional `photos` file fields. Do not set `Content-Type` manually when calling this endpoint — the browser (or httpx in tests) sets it automatically with the correct boundary when a `FormData` object is used.
 
-The handler body executes in this order:
-
-1. `json.loads(payload)` then `validate_finish_payload(data)` — parse and validate the JSON payload string.
-2. Read all photo bytes and enforce size limits — this happens before any database access. FastAPI does not enforce count limits on `list[UploadFile]`, so the count check in the handler is the primary enforcement point.
-3. Assemble `PatientDetails` from the validated payload.
-4. Load runtime state from the database and validate version.
-5. Run engine: `finish_runtime_state()` produces `ClinicalOutput` and `AuditOutput`.
-6. `create_submission()` — persists the submission record with `attachment_count=len(photo_bytes)`.
-7. `generate_pdf()` — generates the PDF (photo embedding added in Step 3).
-8. `save_attachment()` — stores PDF bytes.
-9. `attempt_delivery()` — delegates to the orchestration layer. Any exception is caught and logged at CRITICAL; it never propagates to the patient.
-10. `close_session()` — closes the runtime session.
-11. Return `{"submission_id": submission_id}`.
-
-The submission record and attachment are both persisted before any delivery attempt. `EmailDeliveryError` must never propagate as an HTTP error. The patient always receives their `submission_id`.
+The handler body executes in this order: validate payload, read photo bytes, assemble `PatientDetails`, load runtime state, run engine, `create_submission`, `save_photos`, `create_job`, `close_session`, return `submission_id`. See `arch_submission.md` for full detail.
 
 ---
 
 ## Request Validation (`request_validation.py`)
 
 Validates HTTP input for the three form endpoints before any engine call. Raises `INVALID_PAYLOAD` on failure. Extra/unexpected fields in the payload are rejected — the validator uses an allowlist, not a blocklist. See the source file for exact field rules.
-
-`POST /form/finish` photo size checks (per-file size, combined size, count) are performed in the router handler body, not in `request_validation.py`. This is because the checks require the file bytes to have been read, which only happens after FastAPI parses the multipart body. `request_validation.py` validates the JSON payload field only.
-
-`contact_preferences` is validated by `validate_finish_payload` and then extracted by the `form_finish` handler, which passes it to `finish_runtime_state()`. It is stored inside `ClinicalOutput` and included in the delivery payload.
 
 ---
 

@@ -10,6 +10,10 @@
  * - Override panel: force open / force closed with expiry
  * - Exceptions panel: per-date closures and custom hours
  *
+ * Authentication: requests use the HttpOnly session cookie automatically.
+ * No token is passed. If a request returns 401 (AuthError), onAuthError
+ * is called and App transitions back to LoginView.
+ *
  * If is_active is true and no days are selected, a confirmation dialog
  * is shown before saving.
  *
@@ -36,12 +40,13 @@ import {
   fetchExceptions,
   putException,
   deleteException,
+  AuthError,
 } from "./api";
 import type { AvailabilityConfig, AvailabilityException, SaveStatus } from "./types";
 
 interface Props {
-  token: string;
   onUnsavedChange?: (hasChanges: boolean) => void;
+  onAuthError: () => void;
 }
 
 interface SavedScheduleState {
@@ -64,8 +69,6 @@ const ALL_DAYS = [
 
 /**
  * Format a UTC ISO timestamp in Europe/London local time for display.
- * During BST the UTC offset is +1, so displaying in UTC would show
- * the wrong time to a UK-based admin.
  */
 function formatLondonTime(isoString: string): string {
   const date = new Date(isoString);
@@ -83,7 +86,7 @@ function formatLondonTime(isoString: string): string {
  * Format a YYYY-MM-DD date string for display: "Mon 14 Jul 2025"
  */
 function formatExceptionDate(dateStr: string): string {
-  const date = new Date(dateStr + "T12:00:00"); // noon to avoid timezone shifts
+  const date = new Date(dateStr + "T12:00:00");
   return new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     day: "numeric",
@@ -94,7 +97,6 @@ function formatExceptionDate(dateStr: string): string {
 
 /**
  * Check whether an override is currently active.
- * Uses Date.now() which is UTC-safe. Local time must not be used.
  */
 function isOverrideActive(config: AvailabilityConfig): boolean {
   return (
@@ -106,14 +108,11 @@ function isOverrideActive(config: AvailabilityConfig): boolean {
 
 /**
  * Build a default expiry datetime string for the override form.
- * Returns a local datetime string suitable for datetime-local input,
- * set to 2 hours from now rounded to nearest 15 minutes.
+ * Set to 2 hours from now rounded to nearest 15 minutes.
  */
 function defaultExpiryLocal(): string {
   const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
-  // Round to nearest 15 minutes
   d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
-  // Format as YYYY-MM-DDTHH:MM for datetime-local input
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -138,33 +137,27 @@ function todayDateString(): string {
 
 /**
  * Compare two day arrays by sorting both and comparing as JSON.
- * Required because array reference equality always returns false.
  */
 function daysEqual(a: string[], b: string[]): boolean {
   return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
 }
 
-export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
+export default function AvailabilityEditor({ onUnsavedChange, onAuthError }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
 
-  // Full config from server (includes override fields)
   const [config, setConfig] = useState<AvailabilityConfig | null>(null);
 
-  // Form state for schedule editing
   const [isActive, setIsActive] = useState(false);
   const [weeklyOpenDays, setWeeklyOpenDays] = useState<string[]>([]);
   const [openTime, setOpenTime] = useState("08:00");
   const [closeTime, setCloseTime] = useState("18:30");
   const [closedMessage, setClosedMessage] = useState("");
 
-  // Holds the last-known-clean schedule values (set by syncFormState).
-  // Used to detect unsaved changes without triggering re-renders.
   const savedStateRef = useRef<SavedScheduleState | null>(null);
 
-  // Override form state
   const [overrideFormOpen, setOverrideFormOpen] = useState(false);
   const [overrideFormStatus, setOverrideFormStatus] = useState<"open" | "closed">("closed");
   const [overrideFormExpiry, setOverrideFormExpiry] = useState(defaultExpiryLocal());
@@ -172,7 +165,6 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
   const [overrideError, setOverrideError] = useState<string | null>(null);
   const [isOverrideSubmitting, setIsOverrideSubmitting] = useState(false);
 
-  // Exceptions state
   const [exceptions, setExceptions] = useState<AvailabilityException[]>([]);
   const [exceptionsLoading, setExceptionsLoading] = useState(false);
   const [exceptionsError, setExceptionsError] = useState<string | null>(null);
@@ -186,11 +178,6 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
   const [excFormSubmitting, setExcFormSubmitting] = useState(false);
   const [excDeleting, setExcDeleting] = useState<string | null>(null);
 
-  /**
-   * Apply server config to local form state and reset the clean baseline.
-   * This is the single point where server state becomes local state —
-   * called on initial load and after every successful save or override change.
-   */
   function syncFormState(cfg: AvailabilityConfig) {
     setConfig(cfg);
     setIsActive(cfg.is_active);
@@ -199,7 +186,6 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
     setCloseTime(cfg.close_time);
     setClosedMessage(cfg.closed_message ?? "");
 
-    // Write the clean baseline synchronously before any async gap.
     savedStateRef.current = {
       isActive: cfg.is_active,
       weeklyOpenDays: cfg.weekly_open_days,
@@ -211,11 +197,6 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
     onUnsavedChange?.(false);
   }
 
-  /**
-   * Compare current form values against the saved baseline and notify
-   * the parent if dirty state has changed.
-   * Called after every change to the five schedule fields.
-   */
   function checkDirty(
     currentIsActive: boolean,
     currentDays: string[],
@@ -242,13 +223,13 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
       setIsLoading(true);
       setLoadError(null);
       try {
-        const cfg = await fetchAvailability(token);
+        const cfg = await fetchAvailability();
         if (cancelled) return;
         syncFormState(cfg);
       } catch (err) {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : "Unknown error");
-        }
+        if (cancelled) return;
+        if (err instanceof AuthError) { onAuthError(); return; }
+        setLoadError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -256,9 +237,9 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
 
     load();
     return () => { cancelled = true; };
-  }, [token]);
+  }, [onAuthError]);
 
-  // Load exceptions when isActive becomes true (or on mount if already active)
+  // Load exceptions when isActive becomes true
   useEffect(() => {
     if (!isActive) return;
 
@@ -268,9 +249,11 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
       setExceptionsLoading(true);
       setExceptionsError(null);
       try {
-        const exc = await fetchExceptions(token);
+        const exc = await fetchExceptions();
         if (!cancelled) setExceptions(exc);
       } catch (err) {
+        if (cancelled) return;
+        if (err instanceof AuthError) { onAuthError(); return; }
         if (!cancelled) {
           setExceptionsError(err instanceof Error ? err.message : "Unknown error");
         }
@@ -281,7 +264,7 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
 
     loadExceptions();
     return () => { cancelled = true; };
-  }, [token, isActive]);
+  }, [isActive, onAuthError]);
 
   function toggleDay(day: string) {
     const newDays = weeklyOpenDays.includes(day)
@@ -304,7 +287,7 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
     setSaveStatus(null);
 
     try {
-      const updated = await putAvailability(token, {
+      const updated = await putAvailability({
         is_active: isActive,
         weekly_open_days: weeklyOpenDays,
         open_time: openTime,
@@ -314,14 +297,13 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
       syncFormState(updated);
       setSaveStatus({ type: "success", text: "Saved" });
     } catch (err) {
+      if (err instanceof AuthError) { onAuthError(); return; }
       const msg = err instanceof Error ? err.message : "Unknown error";
       setSaveStatus({ type: "error", text: msg });
     } finally {
       setIsSaving(false);
     }
   }
-
-  // --- Override handlers ---
 
   function openOverrideForm(status: "open" | "closed") {
     setOverrideFormStatus(status);
@@ -336,10 +318,6 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
     setOverrideError(null);
 
     try {
-      // Convert local datetime-local value to UTC ISO string.
-      // The datetime-local input gives us a string without timezone info.
-      // We construct a Date from it (which interprets it as local time)
-      // and then call toISOString() to get UTC.
       const localDate = new Date(overrideFormExpiry);
       if (isNaN(localDate.getTime())) {
         setOverrideError("Please enter a valid date and time.");
@@ -347,7 +325,7 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
       }
       const utcIso = localDate.toISOString();
 
-      const updated = await postOverride(token, {
+      const updated = await postOverride({
         status: overrideFormStatus,
         expires_at: utcIso,
         message: overrideFormMessage.trim() || null,
@@ -355,6 +333,7 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
       syncFormState(updated);
       setOverrideFormOpen(false);
     } catch (err) {
+      if (err instanceof AuthError) { onAuthError(); return; }
       setOverrideError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsOverrideSubmitting(false);
@@ -366,16 +345,15 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
     setOverrideError(null);
 
     try {
-      const updated = await deleteOverride(token);
+      const updated = await deleteOverride();
       syncFormState(updated);
     } catch (err) {
+      if (err instanceof AuthError) { onAuthError(); return; }
       setOverrideError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsOverrideSubmitting(false);
     }
   }
-
-  // --- Exception handlers ---
 
   function openExceptionForm() {
     setExcFormDate("");
@@ -397,17 +375,17 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
     setExcFormError(null);
 
     try {
-      await putException(token, excFormDate, {
+      await putException(excFormDate, {
         exception_type: excFormType,
         open_time: excFormType === "custom_hours" ? excFormOpenTime : null,
         close_time: excFormType === "custom_hours" ? excFormCloseTime : null,
         note: excFormNote.trim() || null,
       });
-      // Reload exceptions list
-      const updated = await fetchExceptions(token);
+      const updated = await fetchExceptions();
       setExceptions(updated);
       setExceptionFormOpen(false);
     } catch (err) {
+      if (err instanceof AuthError) { onAuthError(); return; }
       setExcFormError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setExcFormSubmitting(false);
@@ -417,17 +395,15 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
   async function handleDeleteException(date: string) {
     setExcDeleting(date);
     try {
-      await deleteException(token, date);
+      await deleteException(date);
       setExceptions((prev) => prev.filter((e) => e.exception_date !== date));
     } catch (err) {
-      // Show a brief alert — not worth a dedicated error state per row
+      if (err instanceof AuthError) { onAuthError(); return; }
       alert(err instanceof Error ? err.message : "Failed to delete exception");
     } finally {
       setExcDeleting(null);
     }
   }
-
-  // --- Render ---
 
   if (loadError) {
     return (
@@ -769,7 +745,6 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
                 </div>
               )}
 
-              {/* Exceptions list */}
               {!exceptionsLoading && exceptions.length > 0 && (
                 <div style={{ marginBottom: "16px" }}>
                   {exceptions.map((exc) => (
@@ -819,7 +794,6 @@ export default function AvailabilityEditor({ token, onUnsavedChange }: Props) {
                 </p>
               )}
 
-              {/* Add exception button / form */}
               {!exceptionFormOpen && (
                 <button className="btn btn-outline" onClick={openExceptionForm}>
                   Add exception
