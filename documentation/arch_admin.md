@@ -47,6 +47,13 @@ Authentication is email-based MFA using time-limited one-time codes and HttpOnly
 **Session expiry mid-session:**
 If a session expires while an admin is mid-edit, the next mutating API request returns 401. The frontend detects `AuthError` and redirects to `LoginView`. Any unsaved data is lost. This is acceptable given the 24-hour TTL and infrequent use pattern. No re-auth modal is provided — complexity is not justified.
 
+**401 response contract (HTTP-first):**
+HTTP `401 Unauthorized` is the primary contract for session expiry. The JSON body is secondary. This separation exists because `admin_context.py` cannot import project modules, so no Python constant can be shared across that boundary. The design is:
+- `admin_context.py` raises `HTTPException(status_code=401, detail="...")` with a plain human-readable detail string.
+- `main.py` registers an `HTTPException` handler that reshapes any 401 into the standard envelope: `{"error": {"code": "UNAUTHORIZED", "message": "..."}}`. This is the single place the secondary contract is enforced.
+- `api.ts` throws `AuthError` on `res.status === 401`. Callers catch `AuthError` to trigger a login redirect. The JSON body is not inspected for 401 responses.
+- No `SESSION_EXPIRED` constant exists in `errors.py` — the HTTP status code makes it unnecessary.
+
 ---
 
 ### Signposting (`admin_router.py`, `practice_repository.py`)
