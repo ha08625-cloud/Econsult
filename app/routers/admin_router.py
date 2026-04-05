@@ -254,12 +254,14 @@ async def logout(
     if session_id:
         auth_repo.delete_session(session_id)
 
+    is_dev = os.environ.get("DEV_MODE", "").lower() in ("1", "true")
+
     response = JSONResponse(content={"ok": True})
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value="",
         httponly=True,
-        secure=True,
+        secure=not is_dev,
         samesite="strict",
         max_age=0,
     )
