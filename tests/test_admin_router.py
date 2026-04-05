@@ -783,6 +783,27 @@ class TestLogout(unittest.TestCase):
         self.assertIn("session_id", set_cookie)
         self.assertIn("Max-Age=0", set_cookie)
 
+    def test_logout_cookie_not_secure_in_dev_mode(self):
+        # In DEV_MODE the clearing cookie must not have Secure set, so it
+        # works over plain HTTP in local development. _make_client sets DEV_MODE=1.
+        repo = SpyAuthRepo()
+        client = self._make_client(auth_repo=repo)
+        client.cookies.set("session_id", "some-session-id")
+        res = client.post("/admin/auth/logout")
+        set_cookie = res.headers.get("set-cookie", "").lower()
+        self.assertNotIn("secure", set_cookie)
+
+    def test_logout_cookie_secure_outside_dev_mode(self):
+        # Outside DEV_MODE the clearing cookie must carry the Secure attribute.
+        from fastapi.testclient import TestClient
+        os.environ.pop("DEV_MODE", None)
+        app = make_test_app(auth_repo=SpyAuthRepo())
+        client = TestClient(app, raise_server_exceptions=False)
+        client.cookies.set("session_id", "some-session-id")
+        res = client.post("/admin/auth/logout")
+        set_cookie = res.headers.get("set-cookie", "").lower()
+        self.assertIn("secure", set_cookie)
+
 
 # ---------------------------------------------------------------------------
 # Runner
