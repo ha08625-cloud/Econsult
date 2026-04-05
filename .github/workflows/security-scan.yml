@@ -1,0 +1,36 @@
+name: CE+ Security Scan
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-scan:
+    name: Build & Scan Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Econsult uses a multi-stage Docker build, so we build it locally first
+      - name: Build Econsult Image
+        run: docker build -t econsult:latest .
+
+      - name: Run Trivy vulnerability scanner
+        # MUST use v0.35.0 or higher due to the March 2026 supply chain attack
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: 'econsult:latest'
+          format: 'table'
+          
+          # This tells Trivy to only look for CVSS 7.0 and above
+          severity: 'HIGH,CRITICAL'
+          
+          # This forces the pipeline to fail (red X) if vulnerabilities are found
+          exit-code: '1'
+          
+          # Optional but recommended: Ignore vulnerabilities that don't have a patch yet
+          # so your pipeline doesn't break over something you physically cannot fix
+          ignore-unfixed: true
