@@ -62,7 +62,12 @@ Because the system accepts files and free text from the public, strict validatio
 
 - **Defensive Photo Count Check (PDF Worker).** The PDF worker validates the raw photo count fetched from the database against the declared `attachment_count` on the `pdf_jobs` row. A mismatch (for example, caused by a dropped connection mid-upload) causes the job to fail immediately rather than process a truncated payload.
 
-- **Input Sanitization (XSS).** Admin-provided signposting text is sanitized using the `nh3` Python library before storage. The allowlist configuration — including the reservation of the `rel` attribute on `<a>` tags — must remain synchronised with the frontend `DOMPurify` allowlist to prevent Cross-Site Scripting injection. These two libraries are explicitly pinned together.
+- **Input Sanitization (XSS).** The XSS surface has two distinct paths, each handled differently:
+
+  - **Signposting (admin-authored HTML).** This is the only path where content is rendered as HTML in the browser. Admin-provided signposting text is sanitized using `nh3` on the backend before storage, with a strict tag and attribute allowlist (`p`, `strong`, `em`, `a`, `ul`, `ol`, `li`, `br`; `href`, `rel`, `target` on `<a>` only; `http`/`https` URL schemes only). On the frontend, `DOMPurify.sanitize()` with `SIGNPOSTING_PURIFY_CONFIG` is applied again before rendering via `dangerouslySetInnerHTML`. The two allowlists are kept explicitly synchronised. `nh3` automatically injects `rel="noopener noreferrer"` on `<a>` tags; the `DOMPurify` config must preserve `rel` to avoid stripping this on render.
+  - **Patient free text.** The patient free text field (`FreeTextScreen`) uses React's standard controlled `textarea` (value/onChange). React escapes all content as plain text — it never renders free text as HTML. There is no `dangerouslySetInnerHTML` involved in this path. No additional sanitization is applied or required, as the data is stored and rendered as plain text throughout (including in the PDF output).
+
+- **PDF Output — Injection Risk.** The PDF formatter (`pdf_formatter.py`) uses `fpdf2`. Patient-supplied strings are passed directly to `cell()`, `multi_cell()`, and `body_text()` calls. This is safe: PDF is a binary format, not a markup language, and `fpdf2` does not use its optional HTML rendering mode anywhere in the codebase. There is no mechanism by which text content in a PDF cell can execute code. XSS sanitization is not applicable to this output path. The relevant threat model for PDFs (embedded JavaScript via interactive form fields or PDF actions) does not apply here as no such features are used.
 
 ---
 
