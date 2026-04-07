@@ -167,7 +167,7 @@ def request_mfa_code(
     user = auth_repo.get_user_by_email(email)
     if user is None:
         # Silent return — do not reveal that the email is not registered.
-        logger.info("MFA code requested for unknown email (suppressed): %s", email)
+        logger.warning("auth.request_code.unknown_email: %s", email)
         return
 
     now = datetime.now(tz=timezone.utc)
@@ -179,6 +179,11 @@ def request_mfa_code(
             last_requested = last_requested.replace(tzinfo=timezone.utc)
         elapsed = (now - last_requested).total_seconds()
         if elapsed < _COOLDOWN_SECONDS:
+            logger.warning(
+                "auth.request_code.rate_limited: %s — %.1fs since last request",
+                email,
+                elapsed,
+            )
             raise RATE_LIMIT_EXCEEDED()
 
     code = generate_code()
@@ -228,17 +233,24 @@ def verify_mfa_code(
     # Stage 1: user lookup.
     user = auth_repo.get_user_by_email(email)
     if user is None:
+        logger.warning("auth.verify.user_not_found: %s", email)
         _fixed_delay(start)
         raise INVALID_AUTH_CODE()
 
     # Stage 2: auth code record.
     record = auth_repo.get_auth_code_record(email)
     if record is None:
+        logger.warning("auth.verify.no_code_record: %s", email)
         _fixed_delay(start)
         raise INVALID_AUTH_CODE()
 
     # Stage 3: lockout check.
     if record["attempts_count"] >= _MAX_ATTEMPTS:
+        logger.warning(
+            "auth.verify.locked_out: %s — %d failed attempts",
+            email,
+            record["attempts_count"],
+        )
         auth_repo.delete_auth_code(email)
         _fixed_delay(start)
         raise INVALID_AUTH_CODE()
@@ -248,12 +260,20 @@ def verify_mfa_code(
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(tz=timezone.utc):
+        logger.warning("auth.verify.code_expired: %s", email)
         auth_repo.delete_auth_code(email)
         _fixed_delay(start)
         raise INVALID_AUTH_CODE()
 
     # Stage 5: bcrypt verification.
     if not verify_code(code, record["hashed_code"]):
+        new_attempts = record["attempts_count"] + 1
+        logger.warning(
+            "auth.verify.wrong_code: %s — attempt %d of %d",
+            email,
+            new_attempts,
+            _MAX_ATTEMPTS,
+        )
         auth_repo.increment_code_attempts(email)
         _fixed_delay(start)
         raise INVALID_AUTH_CODE()
