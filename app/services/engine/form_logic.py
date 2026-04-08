@@ -1,11 +1,4 @@
-"""
-Deterministic functional core.
-
-No encoder access. No IO. No serialization. No sequencing.
-Can be fully unit tested without the pipeline or encoder.
-"""
-
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
 from app.services.engine.ruleset import ruleset_hash
@@ -18,14 +11,12 @@ VALID_ANSWER_SOURCES = {
     "patient",
 }
 
-
 def initialise_runtime_state(
     ruleset: dict,
     free_text: str,
     engine_version: str = "0.1",
 ) -> RuntimeState:
-    """Create blank RuntimeState at initialisation."""
-
+    """Creates the initial RuntimeState for a new clinical session."""
     answers = {
         q["answer_key"]: AnswerState(
             value=None,
@@ -45,114 +36,60 @@ def initialise_runtime_state(
         safety_evaluation=SafetyEvaluation(),
         metadata={
             "engine_version": engine_version,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     )
-
 
 def hydrate_runtime_state(
     incoming: RuntimeState,
     ruleset: dict,
 ) -> RuntimeState:
-    """
-    Reload partially filled form on return.
-    Fail loud if incompatible with ruleset version.
-    """
-
+    """Validates that existing state is compatible with the current ruleset."""
     expected_hash = ruleset_hash(ruleset)
     if incoming.ruleset_version != expected_hash:
-        raise ValueError(
-            f"Ruleset version mismatch: state has {incoming.ruleset_version}, "
-            f"ruleset has {expected_hash}"
-        )
+        raise ValueError(f"Ruleset mismatch: state={incoming.ruleset_version}, ruleset={expected_hash}")
 
     rule_keys = {q["answer_key"] for q in ruleset["questions"]}
     state_keys = set(incoming.answers.keys())
 
     if rule_keys != state_keys:
-        missing = rule_keys - state_keys
-        extra = state_keys - rule_keys
-        raise ValueError(
-            f"Answer key mismatch between ruleset and state. "
-            f"Missing from state: {missing}, Extra in state: {extra}"
-        )
+        raise ValueError(f"Key mismatch. Missing: {rule_keys - state_keys}, Extra: {state_keys - rule_keys}")
 
     for key, a in incoming.answers.items():
         if a.source not in VALID_ANSWER_SOURCES:
-            raise ValueError(
-                f"Invalid answer source '{a.source}' for answer_key '{key}'"
-            )
+            raise ValueError(f"Invalid source '{a.source}' for key '{key}'")
 
     return incoming
 
+def apply_additional_text(runtime: RuntimeState, additional_text: Optional[str]) -> None:
+    """Updates the optional patient narrative, normalizing empty strings to None."""
+    runtime.additional_text = additional_text.strip() if additional_text and additional_text.strip() else None
 
-def apply_additional_text(
-    runtime: RuntimeState,
-    additional_text: Optional[str],
-) -> None:
+def apply_patient_answers(runtime: RuntimeState, answers: Dict[str, Any]) -> None:
     """
-    Store the patient's optional additional free text on RuntimeState.
-    Converts empty string to None so downstream code can treat None as absent.
-    Never passed to encoder, safety engine, or validation.
+    Applies patient-provided answers and updates provenance.
+    If an answer was previously provided by an encoder, it is marked as 'corrected'.
     """
-    if additional_text and additional_text.strip():
-        runtime.additional_text = additional_text.strip()
-    else:
-        runtime.additional_text = None
-
-
-def apply_patient_answers(
-    runtime: RuntimeState,
-    answers: Dict[str, Any],
-) -> None:
-    """
-    Apply a dict of patient answers to RuntimeState.
-    Each answer updates the value and sets provenance:
-    - If previously encoder-filled, source becomes encoder_corrected
-    - Otherwise source becomes patient
-    """
-
     for answer_key, value in answers.items():
         if answer_key not in runtime.answers:
             raise KeyError(f"Unknown answer_key: {answer_key}")
 
         a = runtime.answers[answer_key]
         a.value = value
-
-        if a.source == "encoder":
-            a.source = "encoder_corrected"
-        else:
-            a.source = "patient"
-
+        a.source = "encoder_corrected" if a.source == "encoder" else "patient"
 
 def normalise_encoder_provenance(runtime: RuntimeState) -> None:
-    """
-    On submit, any remaining encoder-derived answers that were not
-    explicitly corrected by the patient are treated as confirmed.
-    """
-
+    """Promotes uncorrected encoder answers to 'confirmed' status upon submission."""
     for a in runtime.answers.values():
         if a.source == "encoder":
             a.source = "encoder_confirmed"
 
-
 def validate_required_answers(runtime: RuntimeState) -> None:
-    """
-    Validate that all answers are complete.
-    For MVP all questions are required.
-    additional_text is never validated here — it is always optional.
-    - Boolean answers: value must not be None
-    - Text answers: value must be a non-empty string
-    """
-
+    """Ensures all questions have been answered based on their type requirements."""
     for answer_key, a in runtime.answers.items():
         if a.answer_type == "boolean":
             if a.value is None:
-                raise ValueError(
-                    f"Required boolean answer not provided: {answer_key}"
-                )
+                raise ValueError(f"Missing boolean answer: {answer_key}")
         elif a.answer_type == "text":
-            if not isinstance(a.value, str) or a.value.strip() == "":
-                raise ValueError(
-                    f"Required text answer not provided: {answer_key}"
-                )
+            if not isinstance(a.value, str) or not a.value.strip():
+                raise ValueError(f"Missing text answer: {answer_key}")
