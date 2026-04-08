@@ -3,11 +3,11 @@ uvicorn==0.40.0
 starlette==0.52.1
 pydantic==2.12.5
 anyio==4.12.1
-python-multipart==0.0.9
+python-multipart==0.0.22
 nh3==0.3.3
 psycopg2-binary==2.9.9
 alembic==1.13.3
 tzdata
 fpdf2==2.8.3
-Pillow==11.2.1
+Pillow==12.1.1
 bcrypt==4.2.1
