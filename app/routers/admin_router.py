@@ -68,7 +68,7 @@ from app.core.dependencies import (
     get_allowed_admin_domains,
     get_practice_id,
 )
-from app.repositories.audit_repository import _extract_ip
+from app.core.http_utils import extract_ip
 from app.services import auth_service
 
 logger = logging.getLogger(__name__)
@@ -184,7 +184,10 @@ async def request_mfa_code(
             practice_id=practice_id,
             actor_email=email,
             action="auth.code_requested",
-            ip_address=_extract_ip(request.headers, request.client.host if request.client else None),
+            ip_address=extract_ip(
+                request.headers,
+                request.client.host if request.client else None,
+            ),
             detail={"email": email},
         )
     except Exception:
@@ -245,7 +248,7 @@ async def verify_mfa_code(
     if not code.isdigit() or len(code) != 6:
         raise INVALID_PAYLOAD("code must be a 6-digit number")
 
-    ip_address = _extract_ip(
+    ip_address = extract_ip(
         request.headers,
         request.client.host if request.client else None,
     )
@@ -328,7 +331,10 @@ async def logout(
 
     Audit: session_id is captured from the cookie BEFORE delete_session is
     called. This ordering is intentional — once the session is deleted the
-    ID is no longer available from the database.
+    ID is no longer available from the database. actor_email is recorded as
+    "unknown" — logout is unauthenticated by design so the caller's identity
+    cannot be verified. The session_id in detail is sufficient to correlate
+    with the preceding auth.login.succeeded entry.
     """
     # Capture session_id before any DB call so it is available for the audit log.
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
@@ -340,9 +346,9 @@ async def logout(
         try:
             audit_repo.log_event(
                 practice_id=practice_id,
-                actor_email="unknown",  # session deleted; email not available here
+                actor_email="unknown",
                 action="auth.logout",
-                ip_address=_extract_ip(
+                ip_address=extract_ip(
                     request.headers,
                     request.client.host if request.client else None,
                 ),
