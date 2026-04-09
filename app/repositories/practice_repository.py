@@ -17,6 +17,27 @@ This module must never:
 - Access clinical data (rulesets, RuntimeState, answers)
 - Perform composition logic (that belongs in presentation_service)
 - Handle authentication (that belongs in practice_context, Phase 1B)
+
+# ---------------------------------------------------------------------------
+# conn parameter convention
+# ---------------------------------------------------------------------------
+#
+# Several mutating methods accept an optional conn parameter.
+#
+# When conn is supplied, the method executes on that connection without
+# opening a new one and without committing. The caller owns the transaction
+# lifecycle. Use this when the write must be atomic with another operation
+# (e.g. an audit log insert) in the same transaction.
+#
+# When conn is None, the method opens its own connection via get_conn,
+# which commits on success and rolls back on failure. This is the default
+# and preserves the original behaviour for callers that do not need a
+# shared transaction.
+#
+# Read methods (get_practice, get_signposting, get_doctors, get_email)
+# never accept conn. They are called outside the transaction to read the
+# "before" state, and called again after the transaction commits to build
+# the HTTP response from the committed state.
 """
 
 import re
@@ -195,13 +216,15 @@ class PracticeRepository:
             raise PracticeNotFound(f"Practice not found: {practice_id}")
         return practice["email"]
 
-    def update_email(self, practice_id: str, email: str) -> None:
+    def update_email(self, practice_id: str, email: str, conn=None) -> None:
         """
         Update the email address for a practice.
 
         Raises InvalidEmailError if email is invalid.
         Raises PracticeNotFound if practice does not exist.
         Returns nothing on success.
+
+        conn: see module-level conn parameter convention.
         """
         self._validate_email(email)
 
@@ -209,16 +232,23 @@ class PracticeRepository:
         if practice is None:
             raise PracticeNotFound(f"Practice not found: {practice_id}")
 
-        with get_conn(self.database_url) as conn:
+        def _execute(cur) -> None:
+            cur.execute(
+                """
+                UPDATE practices
+                SET email = %s
+                WHERE practice_id = %s
+                """,
+                (email, practice_id),
+            )
+
+        if conn is not None:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE practices
-                    SET email = %s
-                    WHERE practice_id = %s
-                    """,
-                    (email, practice_id),
-                )
+                _execute(cur)
+        else:
+            with get_conn(self.database_url) as own_conn:
+                with own_conn.cursor() as cur:
+                    _execute(cur)
 
     def practice_exists(self, practice_id: str) -> bool:
         return self.get_practice(practice_id) is not None
@@ -259,16 +289,21 @@ class PracticeRepository:
         return row["signposting_json"]
 
     def set_signposting(
-        self, practice_id: str, condition_id: str, html: str
+        self, practice_id: str, condition_id: str, html: str, conn=None
     ) -> None:
         """
         Set signposting for a practice and condition.
 
-        Sanitises HTML before writing. If sanitised result is None,
-        the row is deleted rather than written.
+        Sanitises HTML before writing. If sanitised result is empty after
+        sanitisation, a DELETE is issued instead of an INSERT/UPDATE.
 
         Raises PracticeNotFound if practice does not exist.
         Raises InvalidSignpostingData if html exceeds MAX_SIGNPOSTING_LENGTH.
+
+        conn: see module-level conn parameter convention. When conn is
+        supplied, both the potential DELETE and the INSERT/UPDATE use the
+        same connection so the entire operation stays within the caller's
+        transaction.
         """
         if not self.practice_exists(practice_id):
             raise PracticeNotFound(f"Practice not found: {practice_id}")
@@ -276,35 +311,57 @@ class PracticeRepository:
         sanitised = sanitise_signposting_html(html)
 
         if sanitised is None:
-            self.delete_signposting(practice_id, condition_id)
+            # Delegate to delete_signposting, forwarding conn so that the
+            # delete stays inside the caller's transaction when one is active.
+            self.delete_signposting(practice_id, condition_id, conn=conn)
             return
 
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO practice_signposting
-                        (practice_id, condition_id, signposting_json, updated_at)
-                    VALUES (%s, %s, %s, NOW())
-                    ON CONFLICT (practice_id, condition_id)
-                    DO UPDATE SET
-                        signposting_json = EXCLUDED.signposting_json,
-                        updated_at       = NOW()
-                    """,
-                    (practice_id, condition_id, sanitised),
-                )
+        def _execute(cur) -> None:
+            cur.execute(
+                """
+                INSERT INTO practice_signposting
+                    (practice_id, condition_id, signposting_json, updated_at)
+                VALUES (%s, %s, %s, NOW())
+                ON CONFLICT (practice_id, condition_id)
+                DO UPDATE SET
+                    signposting_json = EXCLUDED.signposting_json,
+                    updated_at       = NOW()
+                """,
+                (practice_id, condition_id, sanitised),
+            )
 
-    def delete_signposting(self, practice_id: str, condition_id: str) -> None:
-        """Delete signposting for a practice and condition. No error if absent."""
-        with get_conn(self.database_url) as conn:
+        if conn is not None:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    DELETE FROM practice_signposting
-                    WHERE practice_id = %s AND condition_id = %s
-                    """,
-                    (practice_id, condition_id),
-                )
+                _execute(cur)
+        else:
+            with get_conn(self.database_url) as own_conn:
+                with own_conn.cursor() as cur:
+                    _execute(cur)
+
+    def delete_signposting(
+        self, practice_id: str, condition_id: str, conn=None
+    ) -> None:
+        """
+        Delete signposting for a practice and condition. No error if absent.
+
+        conn: see module-level conn parameter convention.
+        """
+        def _execute(cur) -> None:
+            cur.execute(
+                """
+                DELETE FROM practice_signposting
+                WHERE practice_id = %s AND condition_id = %s
+                """,
+                (practice_id, condition_id),
+            )
+
+        if conn is not None:
+            with conn.cursor() as cur:
+                _execute(cur)
+        else:
+            with get_conn(self.database_url) as own_conn:
+                with own_conn.cursor() as cur:
+                    _execute(cur)
 
     # --- Doctor list ---
 
@@ -328,7 +385,7 @@ class PracticeRepository:
 
         return [row["name"] for row in rows]
 
-    def set_doctors(self, practice_id: str, names: List[str]) -> None:
+    def set_doctors(self, practice_id: str, names: List[str], conn=None) -> None:
         """
         Replace the entire doctor list for a practice atomically.
 
@@ -339,27 +396,36 @@ class PracticeRepository:
 
         Raises InvalidDoctorListError if validation fails.
         Raises PracticeNotFound if practice does not exist.
+
+        conn: see module-level conn parameter convention.
         """
         self._validate_doctor_list(names)
 
         if not self.practice_exists(practice_id):
             raise PracticeNotFound(f"Practice not found: {practice_id}")
 
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM practice_doctors WHERE practice_id = %s",
-                    (practice_id,),
+        def _execute(cur) -> None:
+            cur.execute(
+                "DELETE FROM practice_doctors WHERE practice_id = %s",
+                (practice_id,),
+            )
+            if names:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO practice_doctors (practice_id, name, display_order)
+                    VALUES %s
+                    """,
+                    [
+                        (practice_id, name.strip(), order)
+                        for order, name in enumerate(names)
+                    ],
                 )
-                if names:
-                    psycopg2.extras.execute_values(
-                        cur,
-                        """
-                        INSERT INTO practice_doctors (practice_id, name, display_order)
-                        VALUES %s
-                        """,
-                        [
-                            (practice_id, name.strip(), order)
-                            for order, name in enumerate(names)
-                        ],
-                    )
+
+        if conn is not None:
+            with conn.cursor() as cur:
+                _execute(cur)
+        else:
+            with get_conn(self.database_url) as own_conn:
+                with own_conn.cursor() as cur:
+                    _execute(cur)
