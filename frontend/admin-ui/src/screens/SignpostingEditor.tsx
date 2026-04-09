@@ -24,9 +24,9 @@
 import { useEffect, useRef, useState } from "react";
 import Quill from "quill";
 import DOMPurify from "dompurify";
-import { fetchSignposting, putSignposting, AuthError } from "./api";
-import { SIGNPOSTING_PURIFY_CONFIG } from "../../src/constants";
-import type { SaveStatus } from "./types";
+import { fetchSignposting, putSignposting, AuthError } from "../api";
+import { SIGNPOSTING_PURIFY_CONFIG } from "../../../src/constants";
+import type { SaveStatus } from "../types";
 
 interface Props {
   conditionId: string;

@@ -35,7 +35,7 @@ import { useRef, useState } from "react";
 import SignpostingEditor from "./SignpostingEditor";
 import AvailabilityEditor from "./AvailabilityEditor";
 import PracticeSettingsTab from "./PracticeSettingsTab";
-import type { ConditionSummary } from "./types";
+import type { ConditionSummary } from "../types";
 
 type Tab = "signposting" | "availability" | "practice_settings";
 

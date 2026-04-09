@@ -41,8 +41,8 @@ import {
   putException,
   deleteException,
   AuthError,
-} from "./api";
-import type { AvailabilityConfig, AvailabilityException, SaveStatus } from "./types";
+} from "../api";
+import type { AvailabilityConfig, AvailabilityException, SaveStatus } from "../types";
 
 interface Props {
   onUnsavedChange?: (hasChanges: boolean) => void;

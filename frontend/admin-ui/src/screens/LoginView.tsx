@@ -16,7 +16,7 @@
  */
 
 import { useState } from "react";
-import { requestMfaCode, verifyMfaCode } from "./api";
+import { requestMfaCode, verifyMfaCode } from "../api";
 
 interface Props {
   onSuccess: () => void;

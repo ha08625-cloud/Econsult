@@ -23,8 +23,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { getPractice, updatePracticeEmail, getDoctors, putDoctors, AuthError } from "./api";
-import type { PracticeDetails } from "./api";
+import { getPractice, updatePracticeEmail, getDoctors, putDoctors, AuthError } from "../api";
+import type { PracticeDetails } from "../api";
 
 interface Props {
   onAuthError: () => void;

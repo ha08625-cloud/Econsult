@@ -15,8 +15,8 @@
  */
 
 import { useState, useEffect } from "react";
-import LoginView from "./LoginView";
-import EditorView from "./EditorView";
+import LoginView from "./screens/LoginView";
+import EditorView from "./screens/EditorView";
 import type { ConditionSummary } from "./types";
 import { fetchConditions, AuthError } from "./api";
 
