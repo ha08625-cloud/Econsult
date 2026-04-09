@@ -24,6 +24,7 @@ from app.repositories.pdf_repository import PDFRepository
 from app.repositories.photo_repository import PhotoRepository
 from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.auth_repository import AuthRepository
+from app.repositories.audit_repository import AuditRepository
 from app.services.delivery.delivery_service import DeliveryService
 from app.services.delivery.admin_delivery_service import (
     AdminDeliveryService,
@@ -87,6 +88,10 @@ def get_practice_name(request: Request) -> str:
 
 def get_auth_repo(request: Request) -> AuthRepository:
     return request.app.state.auth_repo
+
+
+def get_audit_repo(request: Request) -> AuditRepository:
+    return request.app.state.audit_repo
 
 
 def get_admin_delivery_service(
