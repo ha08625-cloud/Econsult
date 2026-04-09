@@ -2,11 +2,11 @@
  * SignpostingEditor.test.tsx
  *
  * Quill is an imperative DOM library that does not work in jsdom. It is
- * replaced here with a hand-written fake that exposes the same interface
- * the component calls:
+ * replaced here with a hand-written fake class that exposes the same
+ * interface the component calls:
  *
  *   getText()                         — returns the current text content
- *   setText(value)                    — sets text and resets content
+ *   setText(value)                    — sets text content
  *   on(event, handler)                — registers an event handler
  *   off(event)                        — removes all handlers for an event
  *   getSemanticHTML()                 — returns HTML representation
@@ -14,8 +14,6 @@
  *
  * Tests drive the "text-change" event by calling
  * fakeQuillInstance.simulateChange() after mutating fakeQuillInstance.text.
- * This lets us assert on onUnsavedChange callbacks and unsaved-change UI
- * without needing a real browser environment.
  *
  * DOMPurify.sanitize is mocked to return its input unchanged. Sanitisation
  * correctness is the responsibility of the Python backend and is tested
@@ -27,13 +25,17 @@ import userEvent from "@testing-library/user-event";
 import { vi, type Mock } from "vitest";
 
 // ---------------------------------------------------------------------------
-// Quill mock — must be declared before the component import so that Vitest's
-// module mock hoisting replaces the real Quill before SignpostingEditor loads.
+// Quill mock
+//
+// vi.mock is hoisted to the top of the file by Vitest, so the FakeQuill
+// class definition must live inside the factory function — it cannot
+// reference variables declared outside it. The instance is exposed via
+// a module-scope variable that the factory writes to on each construction.
 // ---------------------------------------------------------------------------
 
-interface FakeQuill {
+let fakeQuillInstance: {
   text: string;
-  handlers: Record<string, (() => void)[]>;
+  handlers: Record<string, Array<() => void>>;
   getText: () => string;
   setText: (v: string) => void;
   on: (event: string, handler: () => void) => void;
@@ -41,48 +43,54 @@ interface FakeQuill {
   getSemanticHTML: () => string;
   clipboard: { dangerouslyPasteHTML: (html: string) => void };
   simulateChange: () => void;
-}
-
-// The fake instance is stored in module scope so individual tests can
-// access it to drive text-change events and inspect state.
-let fakeQuillInstance: FakeQuill;
+};
 
 vi.mock("quill", () => {
-  const FakeQuillClass = vi.fn().mockImplementation(() => {
-    fakeQuillInstance = {
-      text: "\n", // Quill's empty state is a single newline
-      handlers: {},
-      getText() {
-        return this.text;
-      },
-      setText(v: string) {
-        this.text = v || "\n";
-      },
-      on(event: string, handler: () => void) {
-        if (!this.handlers[event]) this.handlers[event] = [];
-        this.handlers[event].push(handler);
-      },
-      off(event: string) {
-        this.handlers[event] = [];
-      },
-      getSemanticHTML() {
-        return `<p>${this.text.trim()}</p>`;
-      },
-      clipboard: {
-        dangerouslyPasteHTML(html: string) {
-          // Extract the text content from the pasted HTML so getText()
-          // returns something meaningful after a paste.
-          fakeQuillInstance.text = html.replace(/<[^>]+>/g, "") + "\n";
-        },
-      },
-      simulateChange() {
-        (this.handlers["text-change"] || []).forEach((h) => h());
-      },
-    };
-    return fakeQuillInstance;
-  });
+  class FakeQuill {
+    text: string;
+    handlers: Record<string, Array<() => void>>;
+    clipboard: { dangerouslyPasteHTML: (html: string) => void };
 
-  return { default: FakeQuillClass };
+    constructor() {
+      this.text = "\n"; // Quill's empty state is a single newline
+      this.handlers = {};
+      this.clipboard = {
+        dangerouslyPasteHTML: (html: string) => {
+          // Strip tags so getText() returns meaningful text after a paste
+          this.text = html.replace(/<[^>]+>/g, "") + "\n";
+        },
+      };
+      // Expose this instance so tests can reach it
+      fakeQuillInstance = this as unknown as typeof fakeQuillInstance;
+    }
+
+    getText() {
+      return this.text;
+    }
+
+    setText(v: string) {
+      this.text = v || "\n";
+    }
+
+    on(event: string, handler: () => void) {
+      if (!this.handlers[event]) this.handlers[event] = [];
+      this.handlers[event].push(handler);
+    }
+
+    off(event: string) {
+      this.handlers[event] = [];
+    }
+
+    getSemanticHTML() {
+      return `<p>${this.text.trim()}</p>`;
+    }
+
+    simulateChange() {
+      (this.handlers["text-change"] || []).forEach((h) => h());
+    }
+  }
+
+  return { default: FakeQuill };
 });
 
 // ---------------------------------------------------------------------------
@@ -150,8 +158,7 @@ function renderEditor(overrides: Partial<{
 
 describe("SignpostingEditor — loading state", () => {
   it("shows a loading indicator while the fetch is in progress", async () => {
-    // Never resolves during this test
-    mockFetch.mockReturnValue(new Promise(() => {}));
+    mockFetch.mockReturnValue(new Promise(() => {})); // never resolves
     renderEditor();
     expect(screen.getByText(/loading/i)).toBeTruthy();
   });
@@ -233,7 +240,7 @@ describe("SignpostingEditor — save success", () => {
     await userEvent.click(screen.getByRole("button", { name: /save/i }));
 
     await waitFor(() =>
-      expect(screen.getByText(/saved/i)).toBeTruthy()
+      expect(screen.getByText(/^saved$/i)).toBeTruthy()
     );
   });
 
@@ -264,8 +271,7 @@ describe("SignpostingEditor — save success", () => {
 
   it("Save button is disabled while saving is in progress", async () => {
     mockFetch.mockResolvedValueOnce(null);
-    // putSignposting never resolves during this test
-    mockPut.mockReturnValue(new Promise(() => {}));
+    mockPut.mockReturnValue(new Promise(() => {})); // never resolves
 
     renderEditor();
     await waitFor(() => screen.getByRole("button", { name: /save/i }));
@@ -333,7 +339,6 @@ describe("SignpostingEditor — unsaved change tracking", () => {
     renderEditor({ onUnsavedChange });
     await waitFor(() => screen.getByRole("button", { name: /save/i }));
 
-    // Mutate the fake Quill's text then fire the text-change event
     act(() => {
       fakeQuillInstance.text = "new content\n";
       fakeQuillInstance.simulateChange();
@@ -349,7 +354,7 @@ describe("SignpostingEditor — unsaved change tracking", () => {
     renderEditor({ onUnsavedChange });
     await waitFor(() => screen.getByRole("button", { name: /save/i }));
 
-    // Baseline for an empty load is "\n". Change then revert.
+    // Change then revert to the empty baseline
     act(() => {
       fakeQuillInstance.text = "something\n";
       fakeQuillInstance.simulateChange();
@@ -390,9 +395,7 @@ describe("SignpostingEditor — unsaved change tracking", () => {
     renderEditor();
     await waitFor(() => screen.getByRole("button", { name: /save/i }));
 
-    // After dangerouslyPasteHTML the fake stores the stripped text.
-    // Verify the clipboard method was called by confirming getText()
-    // reflects the pasted content.
+    // dangerouslyPasteHTML strips tags and appends \n in the fake
     expect(fakeQuillInstance.getText()).toContain("existing content");
   });
 });
