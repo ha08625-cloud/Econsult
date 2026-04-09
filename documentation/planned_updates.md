@@ -3,9 +3,12 @@ Architecture updates:
 
 Updates
 - add alerting 
+- seed one admin email
+- papertrail logging
+- separate dev and main and multi tenancy branches
 - merge all migrations before production
 - add testing for admin ui components and combobox 
-- remove submissions after 30 days
+- remove submissions after 7 days
 - add new end object DebugOutput with no confidential info
 - non blocking advisory messages
 - Admin portal audit trails
