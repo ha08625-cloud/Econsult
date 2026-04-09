@@ -31,6 +31,7 @@ from app.repositories.pdf_repository import PDFRepository
 from app.repositories.photo_repository import PhotoRepository
 from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.auth_repository import AuthRepository
+from app.repositories.audit_repository import AuditRepository
 from app.services.presentation_service import PresentationService
 from app.core.errors import APIError, RateLimitError
 from app.services.delivery.delivery_service import ConsoleDeliveryService, EmailDeliveryService
@@ -204,6 +205,7 @@ photo_repo = PhotoRepository(DATABASE_URL)
 delivery_repo = DeliveryRepository(DATABASE_URL)
 availability_repo = AvailabilityRepository(DATABASE_URL)
 auth_repo = AuthRepository(DATABASE_URL)
+audit_repo = AuditRepository(DATABASE_URL)
 presentation_service = PresentationService(registry, practice_repo)
 
 # Startup validation -- runs at import time (when FastAPI loads the module).
@@ -221,6 +223,7 @@ app.state.pdf_repo = pdf_repo
 app.state.photo_repo = photo_repo
 app.state.delivery_repo = delivery_repo
 app.state.auth_repo = auth_repo
+app.state.audit_repo = audit_repo
 
 # Store allowed domains in app.state so the router can read it without
 # importing os directly (keeps handler signatures self-documenting).
