@@ -85,11 +85,9 @@ Two methods:
 # IP address extraction
 # ---------------------------------------------------------------------------
 #
-# _extract_ip reads X-Forwarded-For first (first hop only, to get the
-# real client IP behind a proxy), then X-Real-IP, then falls back to
-# request.client.host. Returns None if none of these are available.
-# Callers pass request.headers and request.client to avoid importing
-# FastAPI Request here.
+# Callers are responsible for extracting the client IP using
+# app.core.http_utils.extract_ip and passing the result as ip_address.
+# This module does not import FastAPI Request.
 """
 
 import base64
@@ -113,36 +111,6 @@ _ACTION_PREFIX_RE = re.compile(r"^[a-z0-9_.]+$")
 # Default and maximum page sizes for list_events.
 _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 200
-
-
-def _extract_ip(
-    headers: dict,
-    client_host: Optional[str],
-) -> Optional[str]:
-    """
-    Extract the real client IP address from request headers.
-
-    Reads X-Forwarded-For first (taking only the first value, which is
-    the original client IP before any proxy hops), then X-Real-IP, then
-    falls back to the direct connection host.
-
-    headers should be a mapping that supports .get() — pass
-    request.headers from FastAPI. client_host should be
-    request.client.host or None.
-
-    Returns None if no IP can be determined.
-    """
-    forwarded_for = headers.get("x-forwarded-for")
-    if forwarded_for:
-        # X-Forwarded-For may be a comma-separated list: "client, proxy1, proxy2"
-        # The first entry is the original client IP.
-        return forwarded_for.split(",")[0].strip()
-
-    real_ip = headers.get("x-real-ip")
-    if real_ip:
-        return real_ip.strip()
-
-    return client_host or None
 
 
 def _encode_cursor(last_id: int, last_occurred_at: datetime) -> str:
