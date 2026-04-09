@@ -26,6 +26,7 @@ Architecture notes:
   for all finish calls.
 """
 
+import io
 import json
 import os
 import pytest
@@ -47,6 +48,7 @@ os.environ.setdefault("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", 
 
 from datetime import datetime  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+from PIL import Image  # noqa: E402
 
 from main import app  # noqa: E402
 from app.core.db import get_conn  # noqa: E402
@@ -543,10 +545,22 @@ def test_finish_rejects_combined_size_exceeding_total_limit():
         )
 
 
-def test_finish_rejects_invalid_image_header():
+def test_finish_rejects_truncated_jpeg():
     """
-    A file that fails Pillow header validation must return 422.
-    The bytes have a valid JPEG start marker but are otherwise corrupt.
+    A truncated JPEG — valid SOI header bytes, abrupt end — must return 422.
+
+    This is the CE+ regression test for CDR. The previous header-only
+    verify() call would pass these bytes because the SOI marker is present.
+    CDR calls convert("RGB") which triggers a full Pillow decode; the missing
+    image data causes decode to fail and the router returns 422 before any
+    database write.
+
+    Structural note: this same full-decode property structurally neutralises
+    polyglot files. A polyglot embeds a second payload in regions Pillow
+    ignores (e.g. bytes appended after the JPEG EOI marker). Because CDR
+    re-encodes from the decoded pixel buffer, appended payloads are not
+    carried through to the stored bytes. There is no need to test this with
+    a specific polyglot payload — it follows from the re-encoding itself.
     """
     with TestClient(app) as client:
         runtime_id, version = _run_full_flow(client)
@@ -557,13 +571,50 @@ def test_finish_rejects_invalid_image_header():
             "contact_preferences": _valid_contact_preferences(),
             "patient_details": _valid_patient_details(),
         }
-        # Valid JPEG start marker, but the rest is junk — verify() will reject it.
-        corrupt_bytes = b"\xff\xd8\xff" + b"\x00" * 50
+        truncated = b"\xff\xd8\xff" + b"\x00" * 50
         finish_res = client.post(
             "/form/finish",
             data={"payload": json.dumps(payload)},
-            files=[("photos", ("corrupt.jpg", corrupt_bytes, "image/jpeg"))],
+            files=[("photos", ("truncated.jpg", truncated, "image/jpeg"))],
         )
         assert finish_res.status_code == 422, (
-            f"Expected 422 for corrupt image, got {finish_res.status_code}: {finish_res.text}"
+            f"Expected 422 for truncated JPEG, got {finish_res.status_code}: {finish_res.text}"
         )
+
+
+def test_finish_sanitizes_png_to_jpeg():
+    """
+    A valid PNG must be accepted, sanitized to JPEG, and result in a 200
+    response with a pdf_jobs row and one submission_photos row.
+
+    This confirms CDR does not incorrectly reject valid PNG uploads — PNG
+    is a declared accepted input type and must survive the sanitization pass.
+    """
+    png_img = Image.new("RGB", (1, 1), color=(0, 128, 0))
+    buf = io.BytesIO()
+    png_img.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+        }
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[("photos", ("photo.png", png_bytes, "image/png"))],
+        )
+        assert finish_res.status_code == 200, (
+            f"Expected 200 for valid PNG upload, got {finish_res.status_code}: {finish_res.text}"
+        )
+        submission_id = finish_res.json()["submission_id"]
+
+    pdf_job = _read_pdf_job(submission_id)
+    assert pdf_job is not None
+    assert pdf_job["attachment_count"] == 1
+    assert _count_submission_photos(submission_id) == 1

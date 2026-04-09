@@ -155,9 +155,32 @@ After claiming a PDF job, the PDF worker compares `len(photos)` from `photo_repo
 
 ---
 
-## Pillow Header Validation
+## Image Sanitization (CDR)
 
-The form router runs `Image.open(...).verify()` on each uploaded photo before any database write. `verify()` checks the file header only, not the full decode. A file with a valid header but a truncated body will pass this check but will cause the PDF worker to fail during PDF generation. In that case the PDF worker retries and eventually marks the job as `failed`. The submission record exists, the failure is logged, and operator intervention can determine whether the photos are recoverable. This is an accepted limitation.
+The form router applies Content Disarm and Reconstruction (CDR) to every uploaded photo before any database write. The implementation is in `app/utils/image_sanitizer.py`.
+
+**What CDR does:**
+
+Each image is fully decoded by Pillow via `convert("RGB")` and then re-encoded from scratch as a JPEG at quality 85. The output buffer is written fresh — no data from the original file is carried through except the decoded pixel values.
+
+**Security properties:**
+
+- **Full-decode validation.** The previous `verify()` call checked the file header only. A file with a valid header but a truncated or corrupt body would pass `verify()` but then fail during PDF generation, leaving the submission unrecoverable. CDR catches this at the router: the full decode fails, the router returns 422, and no database write occurs.
+- **Metadata stripping.** EXIF data, ICC profiles, and all other metadata are discarded. Pillow does not carry these through `convert("RGB")` when no explicit `exif=` argument is passed to `save()`.
+- **Format normalisation.** Output is always JPEG regardless of whether the input was JPEG or PNG. Bytes stored in `submission_photos` are always sanitized JPEG.
+- **Structural polyglot defence.** A polyglot file embeds a second payload in regions Pillow ignores — for example, bytes appended after the JPEG EOI marker. Because CDR re-encodes from the decoded pixel buffer rather than forwarding the original bytes, any such appended payload is discarded and never reaches the database or the PDF worker.
+
+**Post-sanitization size check:**
+
+After CDR, the router re-validates each image against `MAX_FILE_SIZE_BYTES` and the combined total against `MAX_TOTAL_SIZE_BYTES`. This is necessary because re-encoding an already-compressed JPEG at quality 85 can marginally increase its size. In practice this is rare, but the invariant that stored bytes are within the declared limits must be maintained.
+
+**Failure behaviour:**
+
+If CDR raises for any photo, the router returns 422 with a message identifying the photo by 1-based index. No database writes have occurred at this point. The entire submission is rejected.
+
+**Known limitation — lossy PNG conversion:**
+
+PNG-to-JPEG conversion at quality 85 is lossy. This is accepted because PNG uploads in this system are almost always screenshots rather than clinical photographs requiring maximum fidelity. This decision should be revisited if the system is extended to use cases where PNG fidelity matters clinically.
 
 ---
 
@@ -225,11 +248,10 @@ Must never: access the database, update delivery status, import engine modules, 
 ## Known Limitations
 
 1. **Duplicate delivery on crash.** A process crash after a successful SMTP send but before `mark_sent` results in a re-send on the next retry. Duplicate delivery is safer than silently dropping a submission.
-2. **Pillow `verify()` is header-only.** A file with a valid header but truncated body passes upload validation but causes PDF generation failure. The PDF worker retries and eventually marks the job as failed. The failure is visible to operators.
-3. **No health check or liveness probe for workers.** Railway process restart is the only recovery mechanism for a stuck worker. Explicitly deferred. Revisit before scaling to multiple practices.
-4. **Orphan submissions require operator intervention.** If the router crashes between `create_submission` and `pdf_repo.create_job`, the orphan detection query finds the submission but automation cannot determine whether photos were fully saved. Manual inspection is required.
-5. **BYTEA storage for photos.** Acceptable at current scale. Revisit at multi-practice volume.
-6. **Nightly deletion timing.** Minimum retention is ~5.25 hours; maximum ~24 hours. Both are within acceptable data protection bounds.
-7. **`pdf_jobs` and `delivery_jobs` accumulate indefinitely.** They serve as an operational audit trail. Storage cost is trivial. Periodic cleanup can be added later.
-8. **CRITICAL-level logging is the sole alerting mechanism.** Structured error reporting should be revisited in a future ticket.
-9. **Alternative delivery backup and admin portal notification for delivery failures** are planned as a separate ticket, before collecting real patient data.
+2. **No health check or liveness probe for workers.** Railway process restart is the only recovery mechanism for a stuck worker. Explicitly deferred. Revisit before scaling to multiple practices.
+3. **Orphan submissions require operator intervention.** If the router crashes between `create_submission` and `pdf_repo.create_job`, the orphan detection query finds the submission but automation cannot determine whether photos were fully saved. Manual inspection is required.
+4. **BYTEA storage for photos.** Acceptable at current scale. Revisit at multi-practice volume.
+5. **Nightly deletion timing.** Minimum retention is ~5.25 hours; maximum ~24 hours. Both are within acceptable data protection bounds.
+6. **`pdf_jobs` and `delivery_jobs` accumulate indefinitely.** They serve as an operational audit trail. Storage cost is trivial. Periodic cleanup can be added later.
+7. **CRITICAL-level logging is the sole alerting mechanism.** Structured error reporting should be revisited in a future ticket.
+8. **Alternative delivery backup and admin portal notification for delivery failures** are planned as a separate ticket, before collecting real patient data.

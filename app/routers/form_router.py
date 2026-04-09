@@ -18,7 +18,6 @@ Architecture rules:
     worker failure.
 """
 
-import io
 import json
 import logging
 import uuid
@@ -26,7 +25,6 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
-from PIL import Image
 
 from app.core.condition_registry import ConditionNotFound
 from app.core.dependencies import (
@@ -68,6 +66,7 @@ from app.services.engine.pipeline import (
     finish_runtime_state,
     init_runtime_state,
 )
+from app.utils.image_sanitizer import sanitize_image
 
 logger = logging.getLogger(__name__)
 
@@ -239,17 +238,43 @@ async def form_finish(
             f"Too many photos: maximum is {MAX_FILE_COUNT}"
         )
 
-    # Pillow header validation — checks that each file has a valid image header.
-    # verify() is header-only: a file with a valid header but a truncated body
-    # will pass here but may cause the PDF worker to fail during generation.
-    # In that case the PDF worker retries and eventually marks the job failed.
-    # This is accepted — the submission record exists and the failure is logged.
+    # Image CDR (Content Disarm and Reconstruction).
+    #
+    # Each uploaded image is fully decoded by Pillow and re-encoded as a clean
+    # JPEG. This replaces the previous header-only verify() check and provides
+    # stronger guarantees:
+    #
+    # - Full decode: truncated or corrupt image bodies are rejected here rather
+    #   than deferred to the PDF worker.
+    # - Metadata stripping: EXIF, ICC profiles, and all other metadata are
+    #   discarded. The output buffer is written from scratch.
+    # - Format normalisation: output is always JPEG regardless of whether the
+    #   input was JPEG or PNG.
+    # - Structural polyglot defence: any payload embedded in regions Pillow
+    #   ignores (e.g. appended after the JPEG EOI marker) is discarded during
+    #   re-encoding.
+    #
+    # The post-sanitization size check is necessary because re-encoding an
+    # already-compressed JPEG can marginally increase its size. In practice
+    # this is rare, but the invariant that stored bytes are within the declared
+    # limits must be maintained.
+    sanitized = []
     for i, b in enumerate(photo_bytes):
         try:
-            img = Image.open(io.BytesIO(b))
-            img.verify()
-        except Exception:
+            sanitized.append(sanitize_image(b))
+        except ValueError:
             raise INVALID_PAYLOAD(f"Photo {i + 1} is not a valid image")
+    photo_bytes = sanitized
+
+    for i, b in enumerate(photo_bytes):
+        if len(b) > MAX_FILE_SIZE_BYTES:
+            raise INVALID_PAYLOAD(
+                f"Photo {i + 1} exceeds the {MAX_FILE_SIZE_BYTES} byte limit after processing"
+            )
+    if sum(len(b) for b in photo_bytes) > MAX_TOTAL_SIZE_BYTES:
+        raise INVALID_PAYLOAD(
+            f"Combined photo size exceeds the {MAX_TOTAL_SIZE_BYTES} byte limit after processing"
+        )
 
     runtime_id = data["runtime_id"]
     version = data["version"]

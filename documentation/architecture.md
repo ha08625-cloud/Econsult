@@ -85,3 +85,8 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Scope:** Test categories (unit vs integration), two-database rule, migration obligations, Makefile targets.
 * **Domain Doc:** `docs/arch_testing.md`
 * **Key Files:** `tests/test_form_routes.py`, `tests/test_admin_router.py`, `Makefile`
+
+### 3.13 Security & Compliance
+* **Scope:** Access control, MFA, fail-fast configuration boundaries, data retention, file upload security (CDR), input sanitization, and dependency patching. Maps technical controls to Cyber Essentials Plus audit requirements.
+* **Domain Doc:** `docs/arch_security.md`
+* **Key Files:** `dependencies.py`, `admin_router.py`, `auth_repository.py`, `auth_service.py`, `deletion_job.py`, `request_validation.py`, `image_sanitizer.py`, `form_router.py`
