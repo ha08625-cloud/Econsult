@@ -19,6 +19,28 @@ This module must never import:
 - Clinical engine modules (form_logic, safety_engine, encoder_mapping, etc.)
 - presentation_service
 - serialisation, projection, runtime_state
+
+# ---------------------------------------------------------------------------
+# Transaction pattern for mutating endpoints
+# ---------------------------------------------------------------------------
+#
+# Each mutating endpoint (PUT/DELETE that changes state) wraps both the
+# repository mutation and the audit_repo.log_event call in a single database
+# transaction via get_conn. If either operation fails, both roll back.
+#
+# The pattern is:
+#   1. Read "before" state outside the transaction (clean read, no lock held).
+#   2. Open a shared connection with get_conn.
+#   3. Call the repository mutating method with conn=conn.
+#   4. Call audit_repo.log_event(conn=conn, ...).
+#   5. The get_conn context manager commits on exit.
+#
+# The caller owns the transaction boundary. Repository methods do not commit
+# when conn is supplied — they execute on the cursor and return, leaving
+# commit/rollback to the caller.
+#
+# On any exception inside the with block, psycopg2's context manager rolls
+# back, and the endpoint returns HTTP 500.
 """
 
 import datetime
@@ -43,6 +65,7 @@ from app.repositories.practice_repository import (
     MAX_SIGNPOSTING_LENGTH,
     MAX_DOCTOR_NAME_LENGTH,
     MAX_DOCTOR_LIST_LENGTH,
+    sanitise_signposting_html,
 )
 from app.services.availability_service import (
     validate_availability_config,
@@ -68,6 +91,7 @@ from app.core.dependencies import (
     get_allowed_admin_domains,
     get_practice_id,
 )
+from app.core.db import get_conn
 from app.core.http_utils import extract_ip
 from app.services import auth_service
 
@@ -125,6 +149,43 @@ def _format_exception_response(exc: dict) -> dict:
         "note": exc.get("note"),
     }
     return result
+
+
+def _serialise_availability_for_audit(config: dict) -> dict:
+    """
+    Convert a raw availability config dict to a JSON-serialisable form
+    for use in audit log detail fields.
+
+    time objects become HH:MM strings. Datetimes become ISO strings.
+    None values are preserved as-is.
+    """
+    return {
+        "is_active": config.get("is_active"),
+        "weekly_open_days": config.get("weekly_open_days"),
+        "open_time": config["open_time"].strftime("%H:%M") if config.get("open_time") else None,
+        "close_time": config["close_time"].strftime("%H:%M") if config.get("close_time") else None,
+        "closed_message": config.get("closed_message"),
+        "override_status": config.get("override_status"),
+        "override_expires_at": config["override_expires_at"].isoformat() if config.get("override_expires_at") else None,
+        "override_message": config.get("override_message"),
+    }
+
+
+def _serialise_exception_for_audit(exc: dict) -> dict:
+    """
+    Convert a raw exception dict to a JSON-serialisable form for audit
+    log detail fields.
+
+    date becomes ISO string. time objects become HH:MM strings.
+    None values are preserved as-is.
+    """
+    return {
+        "exception_date": exc["exception_date"].isoformat() if exc.get("exception_date") else None,
+        "exception_type": exc.get("exception_type"),
+        "open_time": exc["open_time"].strftime("%H:%M") if exc.get("open_time") else None,
+        "close_time": exc["close_time"].strftime("%H:%M") if exc.get("close_time") else None,
+        "note": exc.get("note"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -421,6 +482,7 @@ async def put_practice_email(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     practice_repo=Depends(get_practice_repo),
+    audit_repo=Depends(get_audit_repo),
 ):
     """
     Update the practice email address.
@@ -437,6 +499,9 @@ async def put_practice_email(
     the unhandled exception traceback is the correct diagnostic signal.
 
     Returns {"practice_id": ..., "name": ..., "email": ...} on success.
+
+    Audit: practice.email.updated with before/after detail. The mutation
+    and audit log write are atomic in a single transaction.
     """
     try:
         body = await request.json()
@@ -451,10 +516,40 @@ async def put_practice_email(
     if not isinstance(email, str):
         raise INVALID_FIELD_TYPE("email", "a string")
 
+    # Validate format before opening a transaction.
     try:
-        practice_repo.update_email(admin.practice_id, email)
+        practice_repo._validate_email(email)
     except InvalidEmailError as e:
         raise INVALID_PAYLOAD(str(e))
+
+    # Read "before" state outside the transaction.
+    before_email = practice_repo.get_email(admin.practice_id)
+
+    ip_address = extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
+    )
+
+    try:
+        with get_conn(practice_repo.database_url) as conn:
+            practice_repo.update_email(admin.practice_id, email, conn=conn)
+            audit_repo.log_event(
+                practice_id=admin.practice_id,
+                actor_email=admin.actor_email,
+                action="practice.email.updated",
+                ip_address=ip_address,
+                session_id=admin.session_id,
+                detail={"before": before_email, "after": email},
+                conn=conn,
+            )
+    except InvalidEmailError as e:
+        raise INVALID_PAYLOAD(str(e))
+    except Exception:
+        logger.exception("Transaction failed for practice.email.updated")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update practice email. Please try again.",
+        )
 
     practice = practice_repo.get_practice(admin.practice_id)
     return {
@@ -497,29 +592,28 @@ async def put_signposting(
     admin: AdminContext = Depends(require_admin),
     registry=Depends(get_registry),
     practice_repo=Depends(get_practice_repo),
+    audit_repo=Depends(get_audit_repo),
 ):
     """
-    Set or clear signposting for a condition.
+    Set or replace signposting for a condition.
 
-    Accepts: {"signposting": "<p>html string</p>"}
+    Accepts: {"signposting": "<html>..."}
 
-    The signposting value is always a string. Empty or whitespace-only
-    content is treated as an instruction to clear signposting — the
-    repository will delete any existing row rather than write empty content.
+    If content is empty after sanitisation, the row is deleted (same
+    as DELETE). The response reflects whatever row was written.
 
-    Validation (in order):
-    1. Body must be valid JSON
-    2. signposting key must be present and must be a string
-    3. Length must not exceed MAX_SIGNPOSTING_LENGTH characters
+    Validation:
+    - condition_id must exist in the registry
+    - signposting key must be present and must be a string
+    - content must not exceed MAX_SIGNPOSTING_LENGTH characters before
+      sanitisation (the repository enforces this too, but checking early
+      gives a cleaner error message)
 
-    The router catches InvalidSignpostingData from the repository and
-    converts it to an INVALID_PAYLOAD error. This should only arise from
-    the length check (the sanitiser raises it before nh3 runs). It never
-    produces a 500 from sanitisation failures.
+    Returns {"condition_id": ..., "signposting": <html or null>} reflecting
+    whatever row was written.
 
-    Returns {"condition_id": ..., "signposting": <sanitised html or null>}.
-    A null response means the content was empty after sanitisation and no
-    row was written.
+    Audit: conditions.signposting.updated with before/after detail.
+    The mutation and audit log write are atomic in a single transaction.
     """
     if not registry.has_condition(condition_id):
         raise ConditionNotFound(condition_id)
@@ -540,10 +634,43 @@ async def put_signposting(
     if len(raw) > MAX_SIGNPOSTING_LENGTH:
         raise INVALID_PAYLOAD(f"Signposting must not exceed {MAX_SIGNPOSTING_LENGTH} characters")
 
+    # Read "before" state outside the transaction.
+    before_html = practice_repo.get_signposting(admin.practice_id, condition_id)
+
+    ip_address = extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
+    )
+
     try:
-        practice_repo.set_signposting(admin.practice_id, condition_id, raw)
+        with get_conn(practice_repo.database_url) as conn:
+            practice_repo.set_signposting(admin.practice_id, condition_id, raw, conn=conn)
+            # Compute "after" from the input rather than reading back inside
+            # the transaction — get_signposting opens its own connection and
+            # would not see uncommitted rows. sanitise_signposting_html is
+            # deterministic so the result here matches what was written.
+            after_html = _normalise_signposting(sanitise_signposting_html(raw))
+            audit_repo.log_event(
+                practice_id=admin.practice_id,
+                actor_email=admin.actor_email,
+                action="conditions.signposting.updated",
+                resource=condition_id,
+                ip_address=ip_address,
+                session_id=admin.session_id,
+                detail={
+                    "before": {"signposting": _normalise_signposting(before_html)},
+                    "after": {"signposting": after_html},
+                },
+                conn=conn,
+            )
     except InvalidSignpostingData as e:
         raise INVALID_PAYLOAD(str(e))
+    except Exception:
+        logger.exception("Transaction failed for conditions.signposting.updated")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update signposting. Please try again.",
+        )
 
     saved = practice_repo.get_signposting(admin.practice_id, condition_id)
 
@@ -556,19 +683,52 @@ async def put_signposting(
 @router.delete("/conditions/{condition_id}/signposting", status_code=204)
 async def delete_signposting(
     condition_id: str,
+    request: Request,
     admin: AdminContext = Depends(require_admin),
     registry=Depends(get_registry),
     practice_repo=Depends(get_practice_repo),
+    audit_repo=Depends(get_audit_repo),
 ):
     """
     Remove all signposting for a condition.
     Idempotent: no error if nothing was configured.
     Returns 204 No Content.
+
+    Audit: conditions.signposting.deleted with before detail.
+    If nothing was configured (before is null), the audit event is still
+    written — the admin's intent is recorded regardless.
+    The mutation and audit log write are atomic in a single transaction.
     """
     if not registry.has_condition(condition_id):
         raise ConditionNotFound(condition_id)
 
-    practice_repo.delete_signposting(admin.practice_id, condition_id)
+    # Read "before" state outside the transaction.
+    before_html = practice_repo.get_signposting(admin.practice_id, condition_id)
+
+    ip_address = extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
+    )
+
+    try:
+        with get_conn(practice_repo.database_url) as conn:
+            practice_repo.delete_signposting(admin.practice_id, condition_id, conn=conn)
+            audit_repo.log_event(
+                practice_id=admin.practice_id,
+                actor_email=admin.actor_email,
+                action="conditions.signposting.deleted",
+                resource=condition_id,
+                ip_address=ip_address,
+                session_id=admin.session_id,
+                detail={"before": {"signposting": _normalise_signposting(before_html)}},
+                conn=conn,
+            )
+    except Exception:
+        logger.exception("Transaction failed for conditions.signposting.deleted")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete signposting. Please try again.",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -596,6 +756,7 @@ async def put_availability(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
+    audit_repo=Depends(get_audit_repo),
 ):
     """
     Update the availability configuration.
@@ -614,10 +775,15 @@ async def put_availability(
     - weekly_open_days must contain only valid day abbreviations.
     - open_time and close_time must not be equal.
 
-    If is_active is set to false, any existing override is auto-cleared.
+    If is_active is set to false, any existing override is auto-cleared
+    within the same transaction.
     Logs a warning if is_active is true and weekly_open_days is empty.
     Returns the updated config by fetching it back from the repository.
     Returns an error with a descriptive message if validation fails.
+
+    Audit: availability.config.updated with before/after detail.
+    The mutation, optional override clear, and audit log write are all
+    atomic in a single transaction.
     """
     try:
         body = await request.json()
@@ -670,21 +836,70 @@ async def put_availability(
     except ValueError as e:
         raise INVALID_PAYLOAD(str(e))
 
-    # --- Persist ---
+    # --- Read "before" state outside the transaction ---
 
-    availability_repo.set_availability(
-        practice_id=admin.practice_id,
-        is_active=is_active,
-        weekly_open_days=weekly_open_days,
-        open_time=open_time,
-        close_time=close_time,
-        closed_message=closed_message,
+    before_config = availability_repo.get_availability(admin.practice_id)
+
+    ip_address = extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
     )
 
-    # --- Auto-clear override on deactivation ---
+    # --- Persist (mutation + optional override clear + audit log, all atomic) ---
 
-    if deactivation_clears_override(is_active):
-        availability_repo.clear_override(admin.practice_id)
+    try:
+        with get_conn(availability_repo.database_url) as conn:
+            availability_repo.set_availability(
+                practice_id=admin.practice_id,
+                is_active=is_active,
+                weekly_open_days=weekly_open_days,
+                open_time=open_time,
+                close_time=close_time,
+                closed_message=closed_message,
+                conn=conn,
+            )
+
+            if deactivation_clears_override(is_active):
+                availability_repo.clear_override(admin.practice_id, conn=conn)
+
+            # Build "after" from the validated input values — we cannot
+            # read back from the DB inside this transaction because
+            # get_availability opens its own connection and will not see
+            # uncommitted rows. Using the known inputs is accurate and avoids
+            # a second connection.
+            after_for_audit = {
+                "is_active": is_active,
+                "weekly_open_days": weekly_open_days,
+                "open_time": open_time,
+                "close_time": close_time,
+                "closed_message": closed_message,
+                # Override fields: preserve from before_config since
+                # set_availability does not touch them. If is_active is
+                # False, clear_override has nulled them within this
+                # transaction, so reflect that explicitly.
+                "override_status": None if deactivation_clears_override(is_active) else before_config.get("override_status"),
+                "override_expires_at": None if deactivation_clears_override(is_active) else before_config.get("override_expires_at"),
+                "override_message": None if deactivation_clears_override(is_active) else before_config.get("override_message"),
+            }
+
+            audit_repo.log_event(
+                practice_id=admin.practice_id,
+                actor_email=admin.actor_email,
+                action="availability.config.updated",
+                ip_address=ip_address,
+                session_id=admin.session_id,
+                detail={
+                    "before": _serialise_availability_for_audit(before_config),
+                    "after": _serialise_availability_for_audit(after_for_audit),
+                },
+                conn=conn,
+            )
+    except Exception:
+        logger.exception("Transaction failed for availability.config.updated")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update availability configuration. Please try again.",
+        )
 
     # --- Log warning for empty-days misconfiguration ---
 
@@ -695,7 +910,7 @@ async def put_availability(
             admin.practice_id,
         )
 
-    # --- Return updated config ---
+    # --- Return updated config (read after commit) ---
 
     updated = availability_repo.get_availability(admin.practice_id)
     return _format_availability_response(updated)
@@ -710,6 +925,7 @@ async def post_override(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
+    audit_repo=Depends(get_audit_repo),
 ):
     """
     Set a manual override (force-open or force-closed).
@@ -726,6 +942,9 @@ async def post_override(
     The valid window is: now < expires_at <= now + 24 hours.
 
     Returns the updated raw config.
+
+    Audit: availability.override.updated with before/after detail.
+    The mutation and audit log write are atomic in a single transaction.
     """
     try:
         body = await request.json()
@@ -775,16 +994,55 @@ async def post_override(
     except ValueError as e:
         raise INVALID_PAYLOAD(str(e))
 
-    # --- Persist ---
+    # --- Read "before" state outside the transaction ---
 
-    availability_repo.set_override(
-        practice_id=admin.practice_id,
-        override_status=status,
-        override_expires_at=expires_at,
-        override_message=message,
+    before_config = availability_repo.get_availability(admin.practice_id)
+
+    ip_address = extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
     )
 
-    # --- Return updated config ---
+    # --- Persist ---
+
+    try:
+        with get_conn(availability_repo.database_url) as conn:
+            availability_repo.set_override(
+                practice_id=admin.practice_id,
+                override_status=status,
+                override_expires_at=expires_at,
+                override_message=message,
+                conn=conn,
+            )
+
+            audit_repo.log_event(
+                practice_id=admin.practice_id,
+                actor_email=admin.actor_email,
+                action="availability.override.updated",
+                ip_address=ip_address,
+                session_id=admin.session_id,
+                detail={
+                    "before": {
+                        "override_status": before_config.get("override_status"),
+                        "override_expires_at": before_config["override_expires_at"].isoformat() if before_config.get("override_expires_at") else None,
+                        "override_message": before_config.get("override_message"),
+                    },
+                    "after": {
+                        "override_status": status,
+                        "override_expires_at": expires_at.isoformat(),
+                        "override_message": message,
+                    },
+                },
+                conn=conn,
+            )
+    except Exception:
+        logger.exception("Transaction failed for availability.override.updated")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to set availability override. Please try again.",
+        )
+
+    # --- Return updated config (read after commit) ---
 
     updated = availability_repo.get_availability(admin.practice_id)
     return _format_availability_response(updated)
@@ -792,16 +1050,52 @@ async def post_override(
 
 @router.delete("/availability/override")
 async def delete_override(
+    request: Request,
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
+    audit_repo=Depends(get_audit_repo),
 ):
     """
     Clear any active override.
 
     Idempotent — no error if no override was active.
     Returns the updated raw config.
+
+    Audit: availability.override.deleted with before detail.
+    The mutation and audit log write are atomic in a single transaction.
     """
-    availability_repo.clear_override(admin.practice_id)
+    # Read "before" state outside the transaction.
+    before_config = availability_repo.get_availability(admin.practice_id)
+
+    ip_address = extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
+    )
+
+    try:
+        with get_conn(availability_repo.database_url) as conn:
+            availability_repo.clear_override(admin.practice_id, conn=conn)
+            audit_repo.log_event(
+                practice_id=admin.practice_id,
+                actor_email=admin.actor_email,
+                action="availability.override.deleted",
+                ip_address=ip_address,
+                session_id=admin.session_id,
+                detail={
+                    "before": {
+                        "override_status": before_config.get("override_status"),
+                        "override_expires_at": before_config["override_expires_at"].isoformat() if before_config.get("override_expires_at") else None,
+                        "override_message": before_config.get("override_message"),
+                    },
+                },
+                conn=conn,
+            )
+    except Exception:
+        logger.exception("Transaction failed for availability.override.deleted")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to clear availability override. Please try again.",
+        )
 
     updated = availability_repo.get_availability(admin.practice_id)
     return _format_availability_response(updated)
@@ -835,6 +1129,7 @@ async def put_exception(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
+    audit_repo=Depends(get_audit_repo),
 ):
     """
     Create or update an exception for a specific date.
@@ -851,6 +1146,11 @@ async def put_exception(
     For "custom_hours" exceptions, both open_time and close_time are required.
 
     Returns the exception as stored.
+
+    Audit: availability.exception.created if no row existed for this date,
+    or availability.exception.updated if one did. Both include before/after
+    detail (before is absent for created). The mutation and audit log write
+    are atomic in a single transaction.
     """
     # --- Parse date from URL path ---
     try:
@@ -910,46 +1210,120 @@ async def put_exception(
     except ValueError as e:
         raise INVALID_PAYLOAD(str(e))
 
-    # --- Persist ---
+    # --- Read "before" state outside the transaction ---
 
-    availability_repo.set_exception(
-        practice_id=admin.practice_id,
-        exception_date=exception_date,
-        exception_type=exception_type,
-        open_time=open_time,
-        close_time=close_time,
-        note=note,
+    before_exc = availability_repo.get_exception(admin.practice_id, exception_date)
+    is_create = before_exc is None
+    action = "availability.exception.created" if is_create else "availability.exception.updated"
+
+    ip_address = extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
     )
 
-    # --- Return the stored exception ---
-
-    return _format_exception_response({
+    after_exc = {
         "exception_date": exception_date,
         "exception_type": exception_type,
         "open_time": open_time,
         "close_time": close_time,
         "note": note,
-    })
+    }
+
+    # Build detail outside the transaction — no DB reads needed.
+    if is_create:
+        audit_detail = {"after": _serialise_exception_for_audit(after_exc)}
+    else:
+        audit_detail = {
+            "before": _serialise_exception_for_audit(before_exc),
+            "after": _serialise_exception_for_audit(after_exc),
+        }
+
+    # --- Persist ---
+
+    try:
+        with get_conn(availability_repo.database_url) as conn:
+            availability_repo.set_exception(
+                practice_id=admin.practice_id,
+                exception_date=exception_date,
+                exception_type=exception_type,
+                open_time=open_time,
+                close_time=close_time,
+                note=note,
+                conn=conn,
+            )
+            audit_repo.log_event(
+                practice_id=admin.practice_id,
+                actor_email=admin.actor_email,
+                action=action,
+                resource=exception_date.isoformat(),
+                ip_address=ip_address,
+                session_id=admin.session_id,
+                detail=audit_detail,
+                conn=conn,
+            )
+    except Exception:
+        logger.exception("Transaction failed for %s", action)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save availability exception. Please try again.",
+        )
+
+    # --- Return the stored exception ---
+
+    return _format_exception_response(after_exc)
 
 
 @router.delete("/availability/exceptions/{date}", status_code=204)
 async def delete_exception(
     date: str,
+    request: Request,
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
+    audit_repo=Depends(get_audit_repo),
 ):
     """
     Delete an exception for a specific date.
 
     Idempotent — no error if no exception existed for this date.
     Returns 204 No Content.
+
+    Audit: availability.exception.deleted with before detail.
+    If no row existed, the audit event is still written — the admin's
+    intent is recorded regardless. The mutation and audit log write are
+    atomic in a single transaction.
     """
     try:
         exception_date = datetime.date.fromisoformat(date)
     except ValueError:
         raise INVALID_DATE_FORMAT("date", date)
 
-    availability_repo.delete_exception(admin.practice_id, exception_date)
+    # Read "before" state outside the transaction.
+    before_exc = availability_repo.get_exception(admin.practice_id, exception_date)
+
+    ip_address = extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
+    )
+
+    try:
+        with get_conn(availability_repo.database_url) as conn:
+            availability_repo.delete_exception(admin.practice_id, exception_date, conn=conn)
+            audit_repo.log_event(
+                practice_id=admin.practice_id,
+                actor_email=admin.actor_email,
+                action="availability.exception.deleted",
+                resource=exception_date.isoformat(),
+                ip_address=ip_address,
+                session_id=admin.session_id,
+                detail={"before": _serialise_exception_for_audit(before_exc) if before_exc else None},
+                conn=conn,
+            )
+    except Exception:
+        logger.exception("Transaction failed for availability.exception.deleted")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete availability exception. Please try again.",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -976,6 +1350,7 @@ async def put_doctors(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     practice_repo=Depends(get_practice_repo),
+    audit_repo=Depends(get_audit_repo),
 ):
     """
     Replace the doctor list for the practice.
@@ -995,6 +1370,9 @@ async def put_doctors(
     at startup.
 
     Returns {"doctors": [...]} reflecting the saved list.
+
+    Audit: doctors.updated with before/after detail.
+    The mutation and audit log write are atomic in a single transaction.
     """
     try:
         body = await request.json()
@@ -1009,10 +1387,41 @@ async def put_doctors(
     if not isinstance(doctors, list):
         raise INVALID_FIELD_TYPE("doctors", "a list")
 
+    # Validate before opening a transaction so format errors return 422,
+    # not 500.
     try:
-        practice_repo.set_doctors(admin.practice_id, doctors)
+        practice_repo._validate_doctor_list(doctors)
     except InvalidDoctorListError as e:
         raise INVALID_PAYLOAD(str(e))
+
+    # Read "before" state outside the transaction.
+    before_doctors = practice_repo.get_doctors(admin.practice_id)
+
+    ip_address = extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
+    )
+
+    try:
+        with get_conn(practice_repo.database_url) as conn:
+            practice_repo.set_doctors(admin.practice_id, doctors, conn=conn)
+            audit_repo.log_event(
+                practice_id=admin.practice_id,
+                actor_email=admin.actor_email,
+                action="doctors.updated",
+                ip_address=ip_address,
+                session_id=admin.session_id,
+                detail={"before": before_doctors, "after": doctors},
+                conn=conn,
+            )
+    except InvalidDoctorListError as e:
+        raise INVALID_PAYLOAD(str(e))
+    except Exception:
+        logger.exception("Transaction failed for doctors.updated")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update doctor list. Please try again.",
+        )
 
     saved = practice_repo.get_doctors(admin.practice_id)
     return {"doctors": saved}
