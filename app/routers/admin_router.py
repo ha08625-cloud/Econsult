@@ -26,7 +26,7 @@ import logging
 import os
 from datetime import timezone
 
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
 
 from app.core.admin_context import (
@@ -53,6 +53,7 @@ from app.services.availability_service import (
 from app.models.availability_models import AvailabilityException, LONDON_TZ
 from app.core.condition_registry import ConditionNotFound
 from app.core.errors import (
+    APIError,
     INVALID_PAYLOAD,
     INVALID_DATE_FORMAT,
     INVALID_FIELD_TYPE,
@@ -62,10 +63,12 @@ from app.core.dependencies import (
     get_practice_repo,
     get_availability_repo,
     get_auth_repo,
+    get_audit_repo,
     get_admin_delivery_service,
     get_allowed_admin_domains,
     get_practice_id,
 )
+from app.repositories.audit_repository import _extract_ip
 from app.services import auth_service
 
 logger = logging.getLogger(__name__)
@@ -132,6 +135,7 @@ def _format_exception_response(exc: dict) -> dict:
 async def request_mfa_code(
     request: Request,
     auth_repo=Depends(get_auth_repo),
+    audit_repo=Depends(get_audit_repo),
     delivery_service=Depends(get_admin_delivery_service),
     allowed_domains: str = Depends(get_allowed_admin_domains),
     practice_id: str = Depends(get_practice_id),
@@ -146,6 +150,11 @@ async def request_mfa_code(
 
     Returns 422 if the email domain is not in ALLOWED_ADMIN_DOMAINS.
     Returns 429 if a code was requested within the last 60 seconds.
+
+    Audit: logs auth.code_requested for every attempt that passes body
+    validation, including attempts for unregistered emails. This is
+    intentional — the audit log captures all attempts regardless of
+    whether a code was actually sent.
     """
     try:
         body = await request.json()
@@ -169,6 +178,22 @@ async def request_mfa_code(
         practice_id=practice_id,
     )
 
+    # Standalone insert — no paired mutation to wrap in a transaction.
+    try:
+        audit_repo.log_event(
+            practice_id=practice_id,
+            actor_email=email,
+            action="auth.code_requested",
+            ip_address=_extract_ip(request.headers, request.client.host if request.client else None),
+            detail={"email": email},
+        )
+    except Exception:
+        logger.exception("Audit log write failed for action auth.code_requested")
+        raise HTTPException(
+            status_code=500,
+            detail="Action succeeded but audit logging failed. Please report this.",
+        )
+
     return {"ok": True}
 
 
@@ -176,6 +201,8 @@ async def request_mfa_code(
 async def verify_mfa_code(
     request: Request,
     auth_repo=Depends(get_auth_repo),
+    audit_repo=Depends(get_audit_repo),
+    practice_id: str = Depends(get_practice_id),
 ):
     """
     Verify a 6-digit MFA code and issue a session cookie on success.
@@ -190,6 +217,10 @@ async def verify_mfa_code(
     - Secure: HTTPS only (set False in DEV_MODE to work over HTTP locally)
     - SameSite=Strict: no cross-site requests
     - Max-Age: SESSION_COOKIE_MAX_AGE seconds
+
+    Audit: logs auth.login.succeeded on success; auth.login.failed on any
+    INVALID_AUTH_CODE. The failed event is logged before re-raising so the
+    422 response to the client is unchanged.
     """
     try:
         body = await request.json()
@@ -214,12 +245,55 @@ async def verify_mfa_code(
     if not code.isdigit() or len(code) != 6:
         raise INVALID_PAYLOAD("code must be a 6-digit number")
 
-    session_id = auth_service.verify_mfa_code(
-        email=email,
-        code=code,
-        auth_repo=auth_repo,
-        session_ttl_minutes=SESSION_TTL_MINUTES,
+    ip_address = _extract_ip(
+        request.headers,
+        request.client.host if request.client else None,
     )
+
+    try:
+        session_id = auth_service.verify_mfa_code(
+            email=email,
+            code=code,
+            auth_repo=auth_repo,
+            session_ttl_minutes=SESSION_TTL_MINUTES,
+        )
+    except APIError as exc:
+        if exc.code == "INVALID_AUTH_CODE":
+            # Log the failed attempt before re-raising.
+            # Standalone insert — no mutation to pair with.
+            try:
+                audit_repo.log_event(
+                    practice_id=practice_id,
+                    actor_email=email,
+                    action="auth.login.failed",
+                    ip_address=ip_address,
+                    detail={"email": email, "reason": "verification_failed"},
+                )
+            except Exception:
+                logger.exception("Audit log write failed for action auth.login.failed")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Action succeeded but audit logging failed. Please report this.",
+                )
+        raise
+
+    # Success path: log before building the response.
+    # Standalone insert — session creation already committed inside auth_service.
+    try:
+        audit_repo.log_event(
+            practice_id=practice_id,
+            actor_email=email,
+            action="auth.login.succeeded",
+            ip_address=ip_address,
+            session_id=session_id,
+            detail={"email": email},
+        )
+    except Exception:
+        logger.exception("Audit log write failed for action auth.login.succeeded")
+        raise HTTPException(
+            status_code=500,
+            detail="Action succeeded but audit logging failed. Please report this.",
+        )
 
     is_dev = os.environ.get("DEV_MODE", "").lower() in ("1", "true")
 
@@ -239,6 +313,8 @@ async def verify_mfa_code(
 async def logout(
     request: Request,
     auth_repo=Depends(get_auth_repo),
+    audit_repo=Depends(get_audit_repo),
+    practice_id: str = Depends(get_practice_id),
 ):
     """
     Log out by deleting the session and clearing the cookie.
@@ -247,12 +323,38 @@ async def logout(
     a session has already expired, or the cookie may have been cleared
     already. Both cases must succeed cleanly.
 
-    If no session cookie is present, skip the DB call entirely.
+    If no session cookie is present, skip the DB call and audit log entirely.
     Always returns an expired cookie to clear any browser state.
+
+    Audit: session_id is captured from the cookie BEFORE delete_session is
+    called. This ordering is intentional — once the session is deleted the
+    ID is no longer available from the database.
     """
+    # Capture session_id before any DB call so it is available for the audit log.
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
+
     if session_id:
         auth_repo.delete_session(session_id)
+
+        # Standalone insert — no mutation to wrap in a transaction.
+        try:
+            audit_repo.log_event(
+                practice_id=practice_id,
+                actor_email="unknown",  # session deleted; email not available here
+                action="auth.logout",
+                ip_address=_extract_ip(
+                    request.headers,
+                    request.client.host if request.client else None,
+                ),
+                session_id=session_id,
+                detail={"session_id": session_id},
+            )
+        except Exception:
+            logger.exception("Audit log write failed for action auth.logout")
+            raise HTTPException(
+                status_code=500,
+                detail="Action succeeded but audit logging failed. Please report this.",
+            )
 
     is_dev = os.environ.get("DEV_MODE", "").lower() in ("1", "true")
 
