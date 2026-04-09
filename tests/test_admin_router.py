@@ -114,6 +114,34 @@ class StubAuthRepo:
         pass
 
 
+class StubAuditRepo:
+    """
+    No-op audit repo stub for unit tests.
+
+    Records calls to log_event so tests can assert it was called if needed,
+    but never touches the database. The conn parameter is accepted and
+    ignored to match the real AuditRepository.log_event signature.
+    """
+    def __init__(self):
+        self.logged = []
+
+    def log_event(self, *, practice_id, actor_email, action, resource=None,
+                  detail=None, ip_address=None, session_id=None, conn=None):
+        self.logged.append({
+            "practice_id": practice_id,
+            "actor_email": actor_email,
+            "action": action,
+            "resource": resource,
+            "detail": detail,
+            "ip_address": ip_address,
+            "session_id": session_id,
+        })
+
+    def list_events(self, *, practice_id, cursor=None, from_date=None,
+                    to_date=None, actor=None, action_prefix=None, limit=50):
+        return {"events": [], "next_cursor": None}
+
+
 class StubAdminDeliveryService:
     """Captures send_mfa_code calls without sending email."""
     def __init__(self):
@@ -127,7 +155,8 @@ class StubAdminDeliveryService:
 # App factory for tests
 # ---------------------------------------------------------------------------
 
-def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None):
+def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
+                  audit_repo=None):
     """
     Build a bare FastAPI app with the admin router registered and
     app.state populated. Does not run the normal startup validation.
@@ -151,6 +180,7 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None):
     app.state.registry = StubRegistry(condition_ids or ["urinary_symptoms"])
     app.state.practice_repo = StubPracticeRepo()
     app.state.auth_repo = auth_repo or StubAuthRepo()
+    app.state.audit_repo = audit_repo or StubAuditRepo()
     app.state.allowed_admin_domains = "nhs.net"
     app.state.admin_delivery_service = delivery_service or StubAdminDeliveryService()
 
