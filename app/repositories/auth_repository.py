@@ -217,17 +217,25 @@ class AuthRepository:
         Return session context for the given session_id, or None if the
         session does not exist or has expired.
 
-        Joins admin_sessions to admin_users on user_id to resolve role
-        and practice_id in a single query. The expiry check is done in SQL
-        so there is no clock-skew risk from comparing DB timestamps in Python.
+        Joins admin_sessions to admin_users on user_id to resolve role,
+        practice_id, and email in a single query. The expiry check is done
+        in SQL so there is no clock-skew risk from comparing DB timestamps
+        in Python.
 
-        Returned dict keys: user_id (str), role (str), practice_id (str).
+        Returned dict keys: user_id (str), role (str), practice_id (str),
+                            email (str), session_id (str).
+        session_id is returned so that the caller (require_admin) can
+        populate AdminContext without needing to pass it separately.
         """
         with get_conn(self.database_url) as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT u.id::text AS user_id, u.role, u.practice_id
+                    SELECT u.id::text AS user_id,
+                           u.role,
+                           u.practice_id,
+                           u.email,
+                           s.session_id::text
                     FROM admin_sessions s
                     JOIN admin_users u ON s.user_id = u.id
                     WHERE s.session_id = %s::uuid
