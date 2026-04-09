@@ -3,16 +3,12 @@ Admin authentication boundary.
 
 Defines AdminContext and the require_admin FastAPI dependency.
 
-Phase 1B: session-cookie MFA. The bearer-token path is retained as a
-DEV_MODE fallback so existing tests continue to pass unchanged during
-the transition period. It will be removed in a later cleanup pass.
-
 Session-based auth rules:
 - Reads session_id from the HttpOnly cookie set by POST /admin/auth/verify.
 - Calls auth_repo.get_session_context(session_id) to validate and resolve
-  practice_id and role.
-- Returns HTTP 401 (SESSION_EXPIRED) if the cookie is absent or the session
-  is not found / has expired.
+  practice_id, role, email, and session_id.
+- Returns HTTP 401 if the cookie is absent or the session is not found
+  or has expired.
 
 DEV_MODE bearer-token fallback rules:
 - Active only when DEV_MODE=1 AND no session cookie is present.
@@ -61,17 +57,30 @@ class AdminContext:
     """
     Resolved authentication context for an admin request.
 
-    practice_id: the practice this user belongs to.
-    role: "admin" or "staff" (from admin_users.role).
-    auth_method: "session_cookie" | "bearer_token" | "dev_any".
-                 bearer_token and dev_any are DEV_MODE fallback paths only.
+    practice_id:  the practice this user belongs to.
+    role:         "admin" or "staff" (from admin_users.role).
+    auth_method:  "session_cookie" | "bearer_token" | "dev_any".
+                  bearer_token and dev_any are DEV_MODE fallback paths only.
+    actor_email:  email address of the authenticated user, used for audit
+                  logging. Set to "dev@local" on the DEV_MODE bearer path.
+    session_id:   the raw session UUID string from the cookie, used for
+                  audit logging. None on the DEV_MODE bearer path.
     """
-    __slots__ = ("practice_id", "role", "auth_method")
+    __slots__ = ("practice_id", "role", "auth_method", "actor_email", "session_id")
 
-    def __init__(self, practice_id: str, role: str, auth_method: str):
+    def __init__(
+        self,
+        practice_id: str,
+        role: str,
+        auth_method: str,
+        actor_email: str,
+        session_id: Optional[str],
+    ):
         self.practice_id = practice_id
         self.role = role
         self.auth_method = auth_method
+        self.actor_email = actor_email
+        self.session_id = session_id
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +98,8 @@ class AuthProvider(Protocol):
     satisfies this protocol.
 
     get_session_context return value keys (when not None):
-        user_id (str), role (str), practice_id (str)
+        user_id (str), role (str), practice_id (str), email (str),
+        session_id (str).
     """
 
     def get_session_context(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -118,13 +128,15 @@ async def require_admin(request: Request) -> AdminContext:
     1. Read session_id from the HttpOnly cookie.
     2. Call auth_repo.get_session_context(session_id).
     3. If context is None (session not found or expired), raise HTTP 401.
-    4. Return AdminContext with auth_method="session_cookie".
+    4. Return AdminContext populated with practice_id, role, email, and
+       session_id from the context dict.
 
     DEV_MODE fallback (only when no session cookie is present):
     5. Attempt bearer-token auth using ADMIN_TOKEN env var.
     6. If ADMIN_TOKEN is set: require exact match.
     7. If ADMIN_TOKEN is not set in DEV_MODE: accept any non-empty token.
-    8. Return AdminContext with auth_method="bearer_token" or "dev_any".
+    8. Return AdminContext with auth_method="bearer_token" or "dev_any",
+       actor_email="dev@local", and session_id=None.
 
     Raises:
         HTTP 401 if no valid session and no valid DEV_MODE token.
@@ -145,6 +157,8 @@ async def require_admin(request: Request) -> AdminContext:
             practice_id=context["practice_id"],
             role=context["role"],
             auth_method="session_cookie",
+            actor_email=context["email"],
+            session_id=context["session_id"],
         )
 
     # --- DEV_MODE bearer-token fallback ---
@@ -159,13 +173,15 @@ async def require_admin(request: Request) -> AdminContext:
                 auth_method = "bearer_token"
             else:
                 auth_method = "dev_any"
-            # DEV_MODE fallback returns a synthetic role of "admin" because
-            # there is no real user record to look up. The practice_id comes
-            # from app.state (same as the old implementation).
+            # DEV_MODE fallback: no real user record to look up.
+            # practice_id comes from app.state. actor_email is synthetic.
+            # session_id is None — there is no session cookie on this path.
             return AdminContext(
                 practice_id=practice_id,
                 role="admin",
                 auth_method=auth_method,
+                actor_email="dev@local",
+                session_id=None,
             )
 
     raise HTTPException(
