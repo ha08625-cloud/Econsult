@@ -42,7 +42,7 @@ Tests that do not require a database connection. Covers two suites that run toge
 - Runner: pytest
 
 **Frontend component tests** — screen component rendering and interaction behaviour.
-- Files: `*.test.tsx` in `frontend/src/screens/`
+- Files: `*.test.tsx` in `frontend/src/screens/`and `frontend/admin-ui/src/screens/`
 - Runner: Vitest (jsdom environment, configured in `frontend/vitest.config.ts`)
 
 **Run both together with:**

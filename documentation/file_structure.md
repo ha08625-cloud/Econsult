@@ -176,6 +176,7 @@ Screen components (frontend/src/screens/):
 - frontend/src/screens/PatientDetailsScreen.tsx
 - frontend/src/screens/PatientDetailsScreen.test.tsx
 - frontend/src/screens/OutcomeScreen.tsx
+- frontend/src/screens/OutcomeScreen.test.tsx
 - frontend/src/screens/SelectConditionScreen.tsx
 - frontend/src/screens/SelectConditionScreen.test.tsx
 - frontend/src/screens/FreeTextScreen.tsx
@@ -197,18 +198,18 @@ Config files (frontend/):
 
 Admin UI source files (frontend/admin-ui/src/):
 - frontend/admin-ui/src/App.tsx — root; probes session on mount by calling GET /admin/conditions; routes to LoginView (401) or EditorView (success). No token state.
-- frontend/admin-ui/src/LoginView.tsx — two-step MFA login component. Step 1: email input, calls POST /admin/auth/request-code. Step 2: 6-digit code input, calls POST /admin/auth/verify. On success calls onSuccess() so App re-fetches conditions and transitions to EditorView.
-- frontend/admin-ui/src/EditorView.tsx — condition selector + tab container; owns unsaved-change tracking via refs; passes onAuthError down to all children. No token prop.
-- frontend/admin-ui/src/SignpostingEditor.tsx — Quill-based rich text editor for one condition; calls onAuthError on AuthError. No token prop.
-- frontend/admin-ui/src/AvailabilityEditor.tsx — schedule, override, and exceptions card; calls onAuthError on AuthError. No token prop.
-- frontend/admin-ui/src/PracticeSettingsTab.tsx — practice email and doctor list editor; calls onAuthError on AuthError. No token prop.
 - frontend/admin-ui/src/api.ts — admin API helpers. No token parameter on any function — cookie-based auth. Exports AuthError class (thrown by apiFetch on any 401). Adds X-Requested-With: XMLHttpRequest and credentials: same-origin to all requests. Exports requestMfaCode, verifyMfaCode, logout alongside all existing admin API functions.
 - frontend/admin-ui/src/main.tsx — React entry point.
 - frontend/admin-ui/src/types.ts — admin portal type definitions.
 - frontend/admin-ui/src/index.css — admin portal styles.
 - frontend/admin-ui/index.html — admin UI entry point.
 
-Note: frontend/admin-ui/src/TokenView.tsx has been deleted. It was replaced by LoginView.tsx.
+Admin UI screen components (frontend/admin-ui/src/screens/):
+- frontend/admin-ui/src/LoginView.tsx — two-step MFA login component. Step 1: email input, calls POST /admin/auth/request-code. Step 2: 6-digit code input, calls POST /admin/auth/verify. On success calls onSuccess() so App re-fetches conditions and transitions to EditorView.
+- frontend/admin-ui/src/EditorView.tsx — condition selector + tab container; owns unsaved-change tracking via refs; passes onAuthError down to all children. No token prop.
+- frontend/admin-ui/src/SignpostingEditor.tsx — Quill-based rich text editor for one condition; calls onAuthError on AuthError. No token prop.
+- frontend/admin-ui/src/AvailabilityEditor.tsx — schedule, override, and exceptions card; calls onAuthError on AuthError. No token prop.
+- frontend/admin-ui/src/PracticeSettingsTab.tsx — practice email and doctor list editor; calls onAuthError on AuthError. No token prop.
 
 Vite builds two entry points served by the StaticFiles mount at / in main.py:
 - frontend/dist/index.html — patient form.
