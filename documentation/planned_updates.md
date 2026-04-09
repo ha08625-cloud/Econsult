@@ -3,6 +3,10 @@ Architecture updates:
 
 Updates
 - add alerting 
+- merge all migrations before production
+- add testing for admin ui components and combobox 
+- remove submissions after 30 days
+- add new end object DebugOutput with no confidential info
 - non blocking advisory messages
 - Admin portal audit trails
 - Patient facing audit trails
