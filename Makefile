@@ -16,9 +16,11 @@
 # Notes on ignored files in make test:
 #   test_form_routes.py                    — integration, requires TEST_DATABASE_URL
 #   test_public_routes.py                  — integration, imports main.py (triggers alembic_upgrade)
-#   test_repositories.py                   — integration, calls alembic_upgrade() at module level;
+#   test_repositories.py                   — integration, non-pytest harness;
 #                                            run directly as: python -m tests.test_repositories
 #   test_pipeline_repositories.py          — integration, requires TEST_DATABASE_URL
+#   test_delivery_retry.py                 — integration, requires TEST_DATABASE_URL
+#   test_delivery_worker_integration.py    — integration, requires TEST_DATABASE_URL
 # ---------------------------------------------------------------------------
 
 include .env
@@ -32,6 +34,8 @@ test:
 		--ignore=tests/test_public_routes.py \
 		--ignore=tests/test_repositories.py \
 		--ignore=tests/test_pipeline_repositories.py \
+		--ignore=tests/test_delivery_retry.py \
+		--ignore=tests/test_delivery_worker_integration.py \
 		-v
 	cd frontend && npx vitest run
 
@@ -40,6 +44,8 @@ test-integration:
 		tests/test_form_routes.py \
 		tests/test_public_routes.py \
 		tests/test_pipeline_repositories.py \
+		tests/test_delivery_retry.py \
+		tests/test_delivery_worker_integration.py \
 		-v
 
 test-all:
@@ -48,12 +54,16 @@ test-all:
 		--ignore=tests/test_public_routes.py \
 		--ignore=tests/test_repositories.py \
 		--ignore=tests/test_pipeline_repositories.py \
+		--ignore=tests/test_delivery_retry.py \
+		--ignore=tests/test_delivery_worker_integration.py \
 		-v
 	cd frontend && npx vitest run
 	python -m pytest \
 		tests/test_form_routes.py \
 		tests/test_public_routes.py \
 		tests/test_pipeline_repositories.py \
+		tests/test_delivery_retry.py \
+		tests/test_delivery_worker_integration.py \
 		-v
 
 migrate-test:
