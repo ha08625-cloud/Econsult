@@ -21,6 +21,8 @@ Run from project root:
 
 import os
 import unittest
+from contextlib import contextmanager
+from unittest.mock import patch
 
 from app.repositories.practice_repository import (
     MAX_SIGNPOSTING_LENGTH,
@@ -54,21 +56,31 @@ class StubPracticeRepo:
     Calls the real sanitise_signposting_html so that sanitisation
     side-effects (stripping unsafe content, treating empty HTML as None,
     rejecting overlength input) are exercised through the router in tests.
+
+    database_url is present because the router accesses
+    practice_repo.database_url when opening a shared transaction via
+    get_conn. In unit tests get_conn is patched (see _dummy_conn below)
+    so this value is never used to open a real connection.
+
+    Mutating methods accept conn=None to match the real repository
+    signatures after Step 5 added optional conn parameters. The conn
+    value is ignored — the stub operates on in-memory state only.
     """
     def __init__(self):
+        self.database_url = "stub://not-a-real-db"
         self._store = {}  # (practice_id, condition_id) -> str | None
 
     def get_signposting(self, practice_id, condition_id):
         return self._store.get((practice_id, condition_id))
 
-    def set_signposting(self, practice_id, condition_id, value: str):
+    def set_signposting(self, practice_id, condition_id, value: str, conn=None):
         sanitised = sanitise_signposting_html(value)
         if sanitised is not None:
             self._store[(practice_id, condition_id)] = sanitised
         else:
             self._store.pop((practice_id, condition_id), None)
 
-    def delete_signposting(self, practice_id, condition_id):
+    def delete_signposting(self, practice_id, condition_id, conn=None):
         self._store.pop((practice_id, condition_id), None)
 
 
@@ -270,12 +282,33 @@ class TestAuthBehaviour(unittest.TestCase):
 VALID_AUTH = {"Authorization": "Bearer testtoken"}
 
 
+@contextmanager
+def _dummy_conn(_database_url):
+    """
+    Stand-in for app.core.db.get_conn in unit tests.
+
+    Yields a sentinel string instead of a real psycopg2 connection.
+    The stub repositories accept conn=None and ignore it, so the
+    sentinel is never used for actual database operations. It only
+    needs to exist so that the ``with get_conn(...) as conn:`` block
+    in the router succeeds without opening a real Postgres connection.
+    """
+    yield "stub-conn"
+
+
 class TestEndpointBehaviour(unittest.TestCase):
 
     def setUp(self):
         os.environ["DEV_MODE"] = "1"
         os.environ.pop("ADMIN_TOKEN", None)
         from fastapi.testclient import TestClient
+        # Patch get_conn where the router imports it so that the shared-
+        # transaction blocks in mutating endpoints do not attempt to open
+        # a real Postgres connection.
+        self._conn_patcher = patch(
+            "app.routers.admin_router.get_conn", _dummy_conn
+        )
+        self._conn_patcher.start()
         self.app = make_test_app(condition_ids=["urinary_symptoms"])
         self.client = TestClient(self.app, raise_server_exceptions=True)
         self.practice_id = "test_practice"
@@ -283,6 +316,7 @@ class TestEndpointBehaviour(unittest.TestCase):
         self.unknown_id = "nonexistent_condition"
 
     def tearDown(self):
+        self._conn_patcher.stop()
         os.environ.pop("DEV_MODE", None)
 
     # --- GET /admin/conditions ---
