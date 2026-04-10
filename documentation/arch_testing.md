@@ -14,16 +14,16 @@ Testing conventions, database separation, test categories, and the obligations t
 
 The system has two Postgres databases on Railway:
 
-| Database | Purpose | `DATABASE_URL` variable |
+| Database | Purpose | Variable |
 |---|---|---|
-| Production | Real patient data (`summertown_health_centre`) | `DATABASE_URL` |
+| Production | Live application data | `DATABASE_URL` |
 | Test | Integration tests only (`test-practice`) | `TEST_DATABASE_URL` |
 
-These must never be the same URL locally. The integration test module (`test_form_routes.py`) enforces this with a hard guardrail at the top of the file: if `TEST_DATABASE_URL` is not set, the entire module is skipped. This guardrail must never be removed, even during development.
+These must never be the same URL locally. All integration test modules enforce this with a hard guardrail at the top of the file: if `TEST_DATABASE_URL` is not set, the entire module is skipped. This guardrail must never be removed, even during development.
 
 **CI exception:** In GitHub Actions, `DATABASE_URL` and `TEST_DATABASE_URL` intentionally point at the same ephemeral Postgres container. This is safe because the container is created fresh for each run, contains no real data, and is destroyed when the job completes. The two-database rule exists to protect production data locally — it does not apply to a throwaway CI container.
 
-The test database was provisioned separately on Railway and seeded with a practice record:
+The test database is provisioned separately on Railway and seeded with a practice record:
 - `practice_id`: `test-practice`
 - `name`: `Test Practice`
 - `email`: `test@example.com`
@@ -38,11 +38,11 @@ Both URLs live in `.env`. `.env` is never committed to version control.
 Tests that do not require a database connection. Covers two suites that run together under `make test`:
 
 **Python unit tests** — routers, validation, serialisation, sanitisation, engine logic, and worker loop. Use stubs and in-memory state.
-- Files: everything in `tests/` except `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_delivery_retry.py`, and `test_delivery_worker_integration.py`
+- Files: everything in `tests/` except the integration files listed below
 - Runner: pytest
 
 **Frontend component tests** — screen component rendering and interaction behaviour.
-- Files: `*.test.tsx` in `frontend/src/screens/`and `frontend/admin-ui/src/screens/`
+- Files: `*.test.tsx` in `frontend/src/screens/`
 - Runner: Vitest (jsdom environment, configured in `frontend/vitest.config.ts`)
 
 **Run both together with:**
@@ -61,7 +61,9 @@ Tests that exercise the full request pipeline or repository layer against a live
 
 **`tests/test_public_routes.py`** — public endpoint tests via FastAPI TestClient. Imports `main.py` directly, which triggers `alembic_upgrade()` at import time. Requires `DATABASE_URL` to be reachable. Must not be collected by `make test` or it will fail offline.
 
-**`tests/test_repositories.py`** — repository layer tests for `RuntimeStateRepository`, `PracticeRepository`, `AttachmentRepository` and `SubmissionRepository`. Uses pytest fixtures for setup and teardown. Requires `TEST_DATABASE_URL`. Each test generates a unique ID and cleans up its own rows in a `finally` block.
+**`tests/test_repositories.py`** — repository layer tests for `RuntimeStateRepository`, `PracticeRepository`, `SubmissionRepository`, and `AttachmentRepository`. Uses pytest. Requires `TEST_DATABASE_URL`. Each test generates a unique ID and cleans up its own rows in a `finally` block.
+
+**`tests/test_pipeline_repositories.py`** — integration tests for `PDFRepository`, `DeliveryRepository`, and `PhotoRepository`. Exercises the `pdf_jobs`, `delivery_jobs`, and `submission_photos` tables directly against a live database. Requires `TEST_DATABASE_URL`. Each test generates unique IDs and cleans up in a `finally` block.
 
 **`tests/test_delivery_retry.py`** — integration tests for the delivery retry pipeline. Exercises `attempt_delivery`, `list_retryable`, and `record_attempt_outcome` directly against the database without going through the HTTP layer. Uses `FailingDeliveryService` and `SucceedingDeliveryService` stubs defined in the file. Requires `TEST_DATABASE_URL`. Each test generates unique IDs and cleans up in a `finally` block.
 
@@ -85,20 +87,21 @@ Runs Python unit tests, then frontend Vitest, then Python integration tests, in 
 
 ## Schema Migration Obligation
 
-Alembic migrations run automatically at app startup via `alembic_upgrade()` in `db.py`. This means the production database is migrated when the app deploys. The test database is never deployed to, so it must be migrated manually.
+With a single consolidated migration (`0001_initial_schema.py`), schema changes now mean updating that file directly (at prototype stage, while no real data exists). Once real data is in play, new Alembic migrations will be added as before.
 
-**Every time you add a new Alembic migration, you must also run:**
+When the schema changes, the test database on Railway must be updated to match. Because the test database is not deployed to automatically, run:
+
 ```
 make migrate-test
 ```
 
-If you forget, integration tests will fail against a stale schema. Add `make migrate-test` to your mental checklist alongside writing the migration file and committing it.
+If you forget, integration tests will fail against a stale schema.
 
 ---
 
 ## Stale Files
 
-`seed_db.py` in the project root is stale. It references SQLite and outdated import paths and will not work with the current Postgres setup. Do not use it. The test database was seeded using a direct one-liner against `PracticeRepository`. If the test database ever needs to be re-provisioned from scratch:
+`seed_db.py` in the project root is stale. It references SQLite and outdated import paths and will not work with the current Postgres setup. Do not use it. If the test database ever needs to be re-provisioned from scratch:
 
 1. Run `make migrate-test` to apply all migrations
 2. Run the following from the project root:
