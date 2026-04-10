@@ -90,7 +90,8 @@ Database access for persistent records. No business logic.
 
 Files:
 - app/repositories/attachment_repository.py — PDF attachment storage. Owns the submission_attachments table. save_attachment is a UPSERT (ON CONFLICT DO UPDATE) — safe on PDF worker retry. get_attachment raises AttachmentNotFound if absent (always an error — ordering invariant guarantees presence under normal operation). delete_attachment is idempotent; called exclusively by deletion_job.py.
-- app/repositories/auth_repository.py — admin MFA auth. Handles three tables: admin_users, admin_auth_codes, admin_sessions. Methods: get_user_by_email, count_users_for_practice, insert_user, upsert_auth_code (resets attempts_count on upsert — ON CONFLICT DO UPDATE), get_auth_code_record, increment_code_attempts (atomic UPDATE, no read-modify-write), delete_auth_code (idempotent), create_session (deletes ALL existing sessions for user_id in the same transaction — single-session enforcement), get_session_context (JOIN to admin_users, expiry checked in SQL via expires_at > NOW()), delete_session (idempotent). UUID columns cast to str on read via ::text. Must never contain business logic.
+- app/repositories/audit_repository.py — admin audit log read/write. Owns the admin_audit_log table (migration 0015). Two public methods: log_event (insert one event; accepts optional conn for caller-owned transactions) and list_events (cursor-paginated read for GET /admin/audit-log). Per-action detail shapes documented in the module docstring. Must never contain business logic, import service modules, or be called from the patient-facing request path.
+- app/repositories/auth_repository.py — admin MFA auth. Handles three tables: admin_users, admin_auth_codes, admin_sessions. Methods: get_user_by_email, count_users_for_practice, insert_user, upsert_auth_code (resets attempts_count on upsert — ON CONFLICT DO UPDATE), get_auth_code_record, increment_code_attempts (atomic UPDATE, no read-modify-write), delete_auth_code (idempotent), create_session (deletes ALL existing sessions for user_id in the same transaction — single-session enforcement), get_session_context (JOIN to admin_users, returns email for actor_email population in AdminContext, expiry checked in SQL via expires_at > NOW()), delete_session (idempotent). UUID columns cast to str on read via ::text. Must never contain business logic.
 - app/repositories/availability_repository.py — weekly hours, overrides, and per-date exceptions.
 - app/repositories/delivery_repository.py — owns the delivery_jobs table. create_job uses ON CONFLICT DO NOTHING (idempotent). claim_next_pending uses SELECT ... FOR UPDATE SKIP LOCKED. mark_sent, mark_failed (with attempt_count increment and permanent failure at MAX_ATTEMPTS).
 - app/repositories/pdf_repository.py — owns the pdf_jobs table. create_job, claim_next_pending (SKIP LOCKED), mark_done, mark_failed, get, list_orphaned_submissions (LEFT JOIN against submission_records).
@@ -104,12 +105,13 @@ Files:
 Infrastructure concerns only. No clinical logic.
 
 Files:
-- app/core/admin_context.py — admin authentication context and FastAPI dependency. Implements session-cookie MFA auth (primary path) with DEV_MODE bearer-token fallback. Defines AdminContext class, AuthProvider Protocol (structural — avoids direct AuthRepository import), SESSION_COOKIE_NAME, SESSION_TTL_MINUTES, SESSION_COOKIE_MAX_AGE. Must never import any project module other than stdlib and FastAPI.
+- app/core/admin_context.py — admin authentication context and FastAPI dependency. Implements session-cookie MFA auth (primary path) with DEV_MODE bearer-token fallback. Defines AdminContext class (with `actor_email: str` and `session_id: str | None` fields), AuthProvider Protocol (structural — avoids direct AuthRepository import), SESSION_COOKIE_NAME, SESSION_TTL_MINUTES, SESSION_COOKIE_MAX_AGE. Must never import any project module other than stdlib and FastAPI.
 - app/core/condition_registry.py — loads and indexes condition rulesets at startup; immutable after init.
 - app/core/consultation_outcomes.py — exposes CONSULTATION_OUTCOMES and VALID_OUTCOME_VALUES loaded from consultation_outcomes.json at import time.
 - app/core/db.py — shared Postgres connection module. Provides get_conn() context manager and alembic_upgrade().
-- app/core/dependencies.py — shared FastAPI dependency provider functions. Provides get_auth_repo (returns app.state.auth_repo) in addition to all pre-existing providers.
+- app/core/dependencies.py — shared FastAPI dependency provider functions. Provides get_auth_repo (returns app.state.auth_repo) and get_audit_repo (returns app.state.audit_repo) in addition to all pre-existing providers.
 - app/core/errors.py — APIError, named error constants. Also defines: INVALID_AUTH_CODE (APIError -> 422, single generic error for all MFA verification failures), SESSION_EXPIRED_MESSAGE (string constant for HTTPException(401) raised in admin_context.py), RateLimitError (separate Exception subclass -> 429 via dedicated handler in main.py, cannot be APIError because that hardcodes 422), RATE_LIMIT_EXCEEDED (lambda returning RateLimitError).
+- app/core/http_utils.py — shared HTTP utility helpers. Provides extract_ip(headers, client_host) which reads X-Forwarded-For (first value), then X-Real-IP, then falls back to client_host. Used by admin_router.py at audit log call sites. Must not import any application module.
 - app/core/request_validation.py — validates incoming HTTP payloads.
 - app/core/upload_constants.py — exposes named constants loaded from upload_constants.json.
 
@@ -146,6 +148,7 @@ Files:
 - alembic/versions/0012_submission_photos.py — creates submission_photos table with composite PK (submission_id, photo_index).
 - alembic/versions/0013_drop_delivery_columns.py — drops delivery_status, delivery_email, delivered_at, delivery_error, delivery_attempts, last_attempt_at, next_retry_after, attachment_count from submission_records. Point of no return for the pipeline migration.
 - alembic/versions/0014_admin_auth_tables.py — creates admin_users (UUID PK gen_random_uuid(), email UNIQUE, practice_id FK to practices, role TEXT, created_at), admin_auth_codes (email PK, hashed_code, expires_at, attempts_count DEFAULT 0, last_requested_at), admin_sessions (session_id UUID PK, user_id FK to admin_users, expires_at, created_at). Revises 0013.
+- alembic/versions/0015_admin_audit_log.py — creates admin_audit_log (BIGSERIAL PK, occurred_at TIMESTAMPTZ DEFAULT NOW(), practice_id, actor_email, action, resource, detail JSONB, ip_address, session_id). No foreign keys — append-only, remains readable after user/practice deletion. Four indexes: occurred_at DESC, actor_email, (practice_id, occurred_at DESC), action.
 
 ---
 
@@ -198,18 +201,19 @@ Config files (frontend/):
 
 Admin UI source files (frontend/admin-ui/src/):
 - frontend/admin-ui/src/App.tsx — root; probes session on mount by calling GET /admin/conditions; routes to LoginView (401) or EditorView (success). No token state.
-- frontend/admin-ui/src/api.ts — admin API helpers. No token parameter on any function — cookie-based auth. Exports AuthError class (thrown by apiFetch on any 401). Adds X-Requested-With: XMLHttpRequest and credentials: same-origin to all requests. Exports requestMfaCode, verifyMfaCode, logout alongside all existing admin API functions.
+- frontend/admin-ui/src/api.ts — admin API helpers. No token parameter on any function — cookie-based auth. Exports AuthError class (thrown by apiFetch on any 401). Adds X-Requested-With: XMLHttpRequest and credentials: same-origin to all requests. Exports requestMfaCode, verifyMfaCode, logout, and fetchAuditLog (cursor-paginated GET /admin/audit-log with optional filter params) alongside all existing admin API functions.
 - frontend/admin-ui/src/main.tsx — React entry point.
-- frontend/admin-ui/src/types.ts — admin portal type definitions.
+- frontend/admin-ui/src/types.ts — admin portal type definitions. Includes AuditEvent and AuditLogPage interfaces in addition to pre-existing types.
 - frontend/admin-ui/src/index.css — admin portal styles.
 - frontend/admin-ui/index.html — admin UI entry point.
 
 Admin UI screen components (frontend/admin-ui/src/screens/):
 - frontend/admin-ui/src/LoginView.tsx — two-step MFA login component. Step 1: email input, calls POST /admin/auth/request-code. Step 2: 6-digit code input, calls POST /admin/auth/verify. On success calls onSuccess() so App re-fetches conditions and transitions to EditorView.
-- frontend/admin-ui/src/EditorView.tsx — condition selector + tab container; owns unsaved-change tracking via refs; passes onAuthError down to all children. No token prop.
+- frontend/admin-ui/src/EditorView.tsx — four-tab container (Signposting, Availability, Practice settings, Audit log); owns unsaved-change tracking via refs; passes onAuthError down to all children. AvailabilityEditor always mounted (display:none when inactive). All other tabs conditionally rendered, fresh fetch on each mount. No token prop.
 - frontend/admin-ui/src/SignpostingEditor.tsx — Quill-based rich text editor for one condition; calls onAuthError on AuthError. No token prop.
 - frontend/admin-ui/src/AvailabilityEditor.tsx — schedule, override, and exceptions card; calls onAuthError on AuthError. No token prop.
 - frontend/admin-ui/src/PracticeSettingsTab.tsx — practice email and doctor list editor; calls onAuthError on AuthError. No token prop.
+- frontend/admin-ui/src/AuditLogTab.tsx — read-only audit event viewer. Filter inputs (date range, actor, action prefix) with 400 ms debounce on text inputs. Cursor-paginated table via GET /admin/audit-log. Collapsible detail cell: object before/after shows changed keys side-by-side; string/list before/after shows labelled blocks; flat objects show key-value pairs. Values as plain text — HTML not rendered.
 
 Vite builds two entry points served by the StaticFiles mount at / in main.py:
 - frontend/dist/index.html — patient form.
@@ -223,7 +227,7 @@ Python test suite. For test categories, run commands, and the two-database rule,
 see arch_testing.md. This section covers file locations only.
 
 Unit tests (no database required):
-- tests/test_admin_router.py — router and auth behaviour for admin endpoints. Includes Section 4: MFA endpoint tests (TestRequestMfaCode, TestVerifyMfaCode, TestLogout) using SpyAuthRepo with configurable return values and call recording. make_test_app now populates app.state.auth_repo, app.state.allowed_admin_domains, app.state.admin_delivery_service, and registers the RateLimitError handler alongside the existing APIError and ConditionNotFound handlers.
+- tests/test_admin_router.py — router and auth behaviour for admin endpoints. Section 4: MFA endpoint tests (TestRequestMfaCode, TestVerifyMfaCode, TestLogout) using SpyAuthRepo with configurable return values and call recording. Section 5: TestAuditLogEndpoint covering auth, happy path, parameter forwarding, limit clamping, and error paths. make_test_app populates app.state.auth_repo, app.state.audit_repo, app.state.allowed_admin_domains, app.state.admin_delivery_service, and registers the RateLimitError handler alongside the existing APIError and ConditionNotFound handlers.
 - tests/test_delivery_service.py
 - tests/test_delivery_worker.py — unit tests for the rewritten delivery worker loop. Patches delivery_repo.claim_next_pending, time.sleep, and the delivery service via MagicMock. Covers: successful path, SMTP failure with backoff, AttachmentNotFound propagation, DB failure exit, sleep-only-on-empty-queue.
 - tests/test_pdf_worker.py — unit tests for the PDF worker loop. Patches pdf_repo.claim_next_pending, generate_pdf, and time.sleep. Covers: successful path and ordering invariant, photo count mismatch failure, empty queue sleep, backoff computation, orphan detection CRITICAL log with rate limiting.
@@ -276,11 +280,13 @@ Each service module lists which other modules it is permitted to import.
 - app/core/consultation_outcomes.py: standalone; imports json and os only.
 - app/core/admin_context.py: imports stdlib and FastAPI only. Must not import any project module.
 - app/repositories/auth_repository.py: imports db, psycopg2, uuid, datetime only. Must not contain business logic.
+- app/repositories/audit_repository.py: imports db, psycopg2, base64, json, re, datetime only. Must not contain business logic or validation; must not import from service modules or routers; must not be called from the patient-facing request path.
 - app/repositories/photo_repository.py: imports db only. No delete method.
 - app/repositories/pdf_repository.py: imports db, pdf_constants only.
 - app/repositories/delivery_repository.py: imports db, delivery_constants only.
 - app/repositories/attachment_repository.py: imports db only.
 - app/repositories/submission_repository.py: imports db, serialisation_contracts only.
+- app/core/http_utils.py: stdlib only (typing). Must not import any application module.
 
 ---
 
@@ -303,6 +309,8 @@ The following imports must never appear in the codebase:
 - delivery/delivery_worker must NOT import clinical engine modules, routers, condition_registry, pdf_formatter, serialisation, or submission_repository.
 - delivery/pdf_worker must NOT import admin_router, form_router, public_router, or any admin/presentation module.
 - delivery/delivery_constants and pdf/pdf_constants must NOT import any application module.
+- audit_repository must NOT import from service modules, routers, or the patient-facing request path.
+- http_utils must NOT import any application module — stdlib only.
 - pdf_formatter must NOT import delivery modules, repositories, routers, or any engine module.
 - image_sanitizer must NOT import any service, repository, router, engine, or core module.
 - consultation_outcomes.py must NOT import any application module.
