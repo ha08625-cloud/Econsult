@@ -11,16 +11,13 @@ The project root contains the following items:
 - main.py — FastAPI entry point. HTTP layer only.
 - worker_main.py — Delivery worker entry point. Validates env vars, instantiates DeliveryRepository, AttachmentRepository, and delivery service, calls run_worker. No HTTP server, no migrations.
 - pdf_worker_main.py — PDF worker entry point. Validates env vars, instantiates repositories, looks up practice name from the database, calls run_worker. No HTTP server, no migrations.
-- deletion_job.py — Nightly cron one-shot script. Deletes submission_photos and submission_attachments rows for fully delivered submissions. Invoked by Railway cron at midnight. No HTTP server, no migrations.
-- seed_db.py — database seed script, safe to run multiple times.
+- deletion_job.py — Nightly cron one-shot script. 
 - .env — local environment variables, not committed.
 - Dockerfile — container build definition.
 - build.sh — build script used by the container.
 - railway.toml — Railway deployment config. Contains only `builder = "DOCKERFILE"`.
 - requirements.txt — Python dependencies. Includes bcrypt for MFA code hashing.
 - alembic.ini — Alembic configuration. Placeholder database URL; the real URL is injected at runtime from DATABASE_URL. No secrets; safe to commit.
-- consultation_outcomes.json — canonical source of truth for consultation outcome values and labels. Read by consultation_outcomes.py at import time and imported directly by OutcomeScreen.tsx via resolveJsonModule. Value strings are immutable once deployed.
-- upload_constants.json — canonical source of truth for photo upload limits. Read by upload_constants.py at import time.
 - app/ — all Python application code.
 - alembic/ — Alembic migration scripts.
 - frontend/ — patient-facing React app.
@@ -113,6 +110,8 @@ Files:
 - app/core/errors.py — APIError, named error constants. Also defines: INVALID_AUTH_CODE (APIError -> 422, single generic error for all MFA verification failures), SESSION_EXPIRED_MESSAGE (string constant for HTTPException(401) raised in admin_context.py), RateLimitError (separate Exception subclass -> 429 via dedicated handler in main.py, cannot be APIError because that hardcodes 422), RATE_LIMIT_EXCEEDED (lambda returning RateLimitError).
 - app/core/http_utils.py — shared HTTP utility helpers. Provides extract_ip(headers, client_host) which reads X-Forwarded-For (first value), then X-Real-IP, then falls back to client_host. Used by admin_router.py at audit log call sites. Must not import any application module.
 - app/core/request_validation.py — validates incoming HTTP payloads.
+- app/core/consultation_outcomes.json — canonical source of truth for consultation outcome values and labels. Read by consultation_outcomes.py at import time and imported directly by OutcomeScreen.tsx via resolveJsonModule. Value strings are immutable once deployed.
+- app/core/upload_constants.json — canonical source of truth for photo upload limits. Read by upload_constants.py at import time.
 - app/core/upload_constants.py — exposes named constants loaded from upload_constants.json.
 
 ### 2.5 app/utils/
