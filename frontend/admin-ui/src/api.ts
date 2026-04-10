@@ -14,7 +14,7 @@
  * redirect to the login view.
  */
 
-import type { ConditionSummary, AvailabilityConfig, AvailabilityException } from "./types";
+import type { ConditionSummary, AvailabilityConfig, AvailabilityException, AuditLogPage } from "./types";
 
 // ---------------------------------------------------------------------------
 // AuthError — thrown by apiFetch on any 401 response.
@@ -384,4 +384,42 @@ export async function deleteException(date: string): Promise<void> {
   if (!res.ok) {
     throw new Error(await extractErrorDetail(res));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+export interface FetchAuditLogParams {
+  cursor?: string;
+  from_date?: string;
+  to_date?: string;
+  actor?: string;
+  action?: string;
+  limit?: number;
+}
+
+/**
+ * Fetch a page of audit log events.
+ *
+ * All parameters are optional. Omitting cursor starts from the most recent
+ * event. Pass the next_cursor from a previous response to load the next page.
+ *
+ * Throws AuthError on 401. Throws a descriptive Error on other failures.
+ */
+export async function fetchAuditLog(
+  params: FetchAuditLogParams = {}
+): Promise<AuditLogPage> {
+  const qs = new URLSearchParams();
+  if (params.cursor   !== undefined) qs.set("cursor",    params.cursor);
+  if (params.from_date !== undefined) qs.set("from_date", params.from_date);
+  if (params.to_date   !== undefined) qs.set("to_date",   params.to_date);
+  if (params.actor     !== undefined) qs.set("actor",     params.actor);
+  if (params.action    !== undefined) qs.set("action",    params.action);
+  if (params.limit     !== undefined) qs.set("limit",     String(params.limit));
+
+  const path = `/admin/audit-log${qs.toString() ? `?${qs.toString()}` : ""}`;
+  const res = await apiFetch(path);
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
+  return (await res.json()) as AuditLogPage;
 }
