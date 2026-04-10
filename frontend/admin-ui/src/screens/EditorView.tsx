@@ -3,21 +3,22 @@
  *
  * Rendered by App once a valid session is confirmed.
  *
- * Layout: three-tab interface
+ * Layout: four-tab interface
  * - "Signposting"       — condition selector + SignpostingEditor
  * - "Availability"      — AvailabilityEditor
  * - "Practice settings" — email/contact configuration via PracticeSettingsTab
+ * - "Audit log"         — read-only audit event viewer via AuditLogTab
  *
  * Mounting strategy:
  * - AvailabilityEditor is always mounted, shown/hidden via display:none.
  *   This preserves its internal state across tab switches and allows
  *   availabilityUnsavedRef to be read synchronously at any time.
- * - Signposting content and Practice settings are conditionally rendered.
- *   SignpostingEditor (and its Quill instance) is destroyed when leaving
- *   the signposting tab and recreated on return. On recreation, Quill
+ * - Signposting content, Practice settings, and Audit log are conditionally
+ *   rendered. SignpostingEditor (and its Quill instance) is destroyed when
+ *   leaving the signposting tab and recreated on return. On recreation, Quill
  *   performs a fresh server fetch. This is intentional.
- * - PracticeSettingsTab is conditionally rendered and performs a fresh
- *   fetch on each mount. This is intentional.
+ * - PracticeSettingsTab and AuditLogTab are conditionally rendered and each
+ *   performs a fresh fetch on mount. This is intentional.
  *
  * Unsaved change tracking:
  * - signpostingUnsavedRef: set by SignpostingEditor via onUnsavedChange
@@ -35,9 +36,10 @@ import { useRef, useState } from "react";
 import SignpostingEditor from "./SignpostingEditor";
 import AvailabilityEditor from "./AvailabilityEditor";
 import PracticeSettingsTab from "./PracticeSettingsTab";
+import AuditLogTab from "./AuditLogTab";
 import type { ConditionSummary } from "../types";
 
-type Tab = "signposting" | "availability" | "practice_settings";
+type Tab = "signposting" | "availability" | "practice_settings" | "audit_log";
 
 interface Props {
   conditions: ConditionSummary[];
@@ -110,6 +112,12 @@ export default function EditorView({ conditions, onAuthError }: Props) {
         >
           Practice settings
         </button>
+        <button
+          className={`tab-btn${activeTab === "audit_log" ? " active" : ""}`}
+          onClick={() => handleTabChange("audit_log")}
+        >
+          Audit log
+        </button>
       </div>
 
       {/* Availability tab — always mounted, shown/hidden to preserve state */}
@@ -162,6 +170,11 @@ export default function EditorView({ conditions, onAuthError }: Props) {
       {/* Practice settings tab — conditionally rendered, fetches on mount */}
       {activeTab === "practice_settings" && (
         <PracticeSettingsTab onAuthError={onAuthError} />
+      )}
+
+      {/* Audit log tab — conditionally rendered, fetches on mount */}
+      {activeTab === "audit_log" && (
+        <AuditLogTab onAuthError={onAuthError} />
       )}
     </>
   );
