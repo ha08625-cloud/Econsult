@@ -100,6 +100,7 @@ jobs:
           python -m pytest \
             tests/test_form_routes.py \
             tests/test_public_routes.py \
+            tests/test_repositories.py \
             tests/test_pipeline_repositories.py \
             tests/test_delivery_retry.py \
             tests/test_delivery_worker_integration.py \
