@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout, structural purpose, and import mapping
-# Last updated: 2026-04-09
+# Last updated: 2026-04-10
 
 ---
 
@@ -103,7 +103,7 @@ Pure utility functions. No IO, no database access.
 Schema migration scripts. See code files directly for exact table definitions.
 
 - `alembic/env.py` — Alembic environment configuration.
-- `alembic/versions/` — Ordered migration scripts tracking schema evolution (e.g., initial schema, availability, attachments, auth tables, audit logs).
+- `alembic/versions/0001_initial_schema.py` — Single migration that creates the complete schema from scratch.
 
 ---
 
@@ -136,7 +136,7 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `test_admin_router.py`, `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`.
 
 **Integration tests (Live `TEST_DATABASE_URL`)**
-- `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`, `test_delivery_retry.py`, `test_delivery_worker_integration.py`, `test_migration_0014.py`.
+- `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`, `test_delivery_retry.py`, `test_delivery_worker_integration.py`.
 
 ---
 
