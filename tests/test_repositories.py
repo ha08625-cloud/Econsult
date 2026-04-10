@@ -1,109 +1,80 @@
 """
 tests/test_repositories.py
 
-Integration tests for all four Postgres repositories.
+Integration tests for RuntimeStateRepository, PracticeRepository,
+SubmissionRepository, and AttachmentRepository.
 
-Requires TEST_DATABASE_URL in the environment (pointing to the Railway
-Postgres instance via DATABASE_PUBLIC_URL).
+Requires TEST_DATABASE_URL in the environment.
+Run via: make test-integration
 
-WARNING: These tests run against the same Postgres instance as the deployed
-application. There is no dedicated test database. Each test generates unique
-IDs and cleans up in a finally block. This is acceptable for a single-developer
-project at this stage but must be resolved before any real patient data is
-stored. See architecture.md Section 15.4.
-
-Run from project root:
-    python -m tests.test_repositories
+Each test generates a unique ID and cleans up its own rows in a finally
+block. No test depends on another test's data.
 """
 
 import os
-import sys
-import traceback
-from uuid import uuid4
-from datetime import datetime, timezone, timedelta
+import pytest
 
 # ---------------------------------------------------------------------------
-# Minimal test harness (no pytest on server)
+# Database guardrail — must be first, before any app imports.
 # ---------------------------------------------------------------------------
 
-_passed = 0
-_failed = 0
-_errors = []
+if "TEST_DATABASE_URL" not in os.environ:
+    pytest.skip(
+        "TEST_DATABASE_URL not set — skipping integration tests to protect production data",
+        allow_module_level=True,
+    )
 
+os.environ.setdefault("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
+os.environ.setdefault("DEV_MODE", "1")
+os.environ.setdefault("PRACTICE_ID", "test-practice")
 
-def run_test(name: str, fn):
-    global _passed, _failed
-    try:
-        fn()
-        print(f"  PASS  {name}")
-        _passed += 1
-    except AssertionError as e:
-        print(f"  FAIL  {name}: {e}")
-        _failed += 1
-        _errors.append((name, traceback.format_exc()))
-    except Exception as e:
-        print(f"  ERROR {name}: {e}")
-        _failed += 1
-        _errors.append((name, traceback.format_exc()))
+from uuid import uuid4  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
 
-
-def _uid() -> str:
-    return f"test_{uuid4().hex[:8]}"
-
-
-# ---------------------------------------------------------------------------
-# Load DATABASE_URL
-# ---------------------------------------------------------------------------
-
-DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
-    print("ERROR: TEST_DATABASE_URL or DATABASE_URL must be set to run these tests.")
-    sys.exit(1)
-
-# ---------------------------------------------------------------------------
-# Ensure tables exist
-# ---------------------------------------------------------------------------
-
-from app.core.db import alembic_upgrade, get_conn
-alembic_upgrade()
-
-# ---------------------------------------------------------------------------
-# Repository imports
-# ---------------------------------------------------------------------------
-
-from app.repositories.runtime_state_repository import (
+from app.core.db import get_conn  # noqa: E402
+from app.repositories.runtime_state_repository import (  # noqa: E402
     RuntimeStateRepository,
     RuntimeStateNotFound,
     VersionConflict,
     SessionClosed,
 )
-from app.repositories.practice_repository import (
+from app.repositories.practice_repository import (  # noqa: E402
     PracticeRepository,
     PracticeNotFound,
     InvalidEmailError,
     InvalidSignpostingData,
     InvalidDoctorListError,
 )
-from app.repositories.submission_repository import (
+from app.repositories.submission_repository import (  # noqa: E402
     SubmissionRepository,
     SubmissionNotFound,
 )
-from app.repositories.attachment_repository import (
+from app.repositories.attachment_repository import (  # noqa: E402
     AttachmentRepository,
     AttachmentNotFound,
 )
-from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails
+from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails  # noqa: E402
+
+DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 
 
 # ---------------------------------------------------------------------------
-# RuntimeStateRepository tests
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+def _uid() -> str:
+    return f"test_{uuid4().hex[:8]}"
+
+
+# ---------------------------------------------------------------------------
+# RuntimeStateRepository
 # ---------------------------------------------------------------------------
 
 def _make_state_repo() -> RuntimeStateRepository:
     return RuntimeStateRepository(DATABASE_URL)
 
 
-def _cleanup_runtime(rid: str):
+def _cleanup_runtime(rid: str) -> None:
     with get_conn(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -151,12 +122,8 @@ def test_runtime_version_conflict():
     try:
         repo.create_initial(rid, "hash_abc", {})
         repo.insert_new_version(rid, 1, "hash_abc", {})
-        raised = False
-        try:
+        with pytest.raises(VersionConflict):
             repo.insert_new_version(rid, 1, "hash_abc", {})
-        except VersionConflict:
-            raised = True
-        assert raised, "Expected VersionConflict was not raised"
     finally:
         _cleanup_runtime(rid)
 
@@ -168,39 +135,29 @@ def test_runtime_session_closed():
     try:
         repo.create_initial(rid, "hash_abc", {})
         repo.close_session(rid, 1)
-        raised = False
-        try:
+        with pytest.raises(SessionClosed):
             repo.get_latest(rid)
-        except SessionClosed:
-            raised = True
-        assert raised, "Expected SessionClosed was not raised"
     finally:
         _cleanup_runtime(rid)
 
 
 def test_runtime_not_found():
     repo = _make_state_repo()
-    raised = False
-    try:
+    with pytest.raises(RuntimeStateNotFound):
         repo.get_latest("nonexistent_id_that_will_never_exist_xyz")
-    except RuntimeStateNotFound:
-        raised = True
-    assert raised, "Expected RuntimeStateNotFound was not raised"
 
 
 # ---------------------------------------------------------------------------
-# PracticeRepository tests
+# PracticeRepository
 # ---------------------------------------------------------------------------
 
 def _make_practice_repo() -> PracticeRepository:
     return PracticeRepository(DATABASE_URL)
 
 
-def _cleanup_practice(pid: str):
+def _cleanup_practice(pid: str) -> None:
     with get_conn(DATABASE_URL) as conn:
         with conn.cursor() as cur:
-            # Delete child rows before the parent practice row.
-            # practice_doctors and practice_signposting both FK to practices.
             cur.execute(
                 "DELETE FROM practice_doctors WHERE practice_id = %s", (pid,)
             )
@@ -239,12 +196,8 @@ def test_practice_exists():
 
 def test_practice_invalid_email():
     repo = _make_practice_repo()
-    raised = False
-    try:
+    with pytest.raises(InvalidEmailError):
         repo.create_practice(_uid(), "Test", "not-an-email")
-    except InvalidEmailError:
-        raised = True
-    assert raised, "Expected InvalidEmailError was not raised"
 
 
 def test_practice_get_email():
@@ -253,20 +206,15 @@ def test_practice_get_email():
 
     try:
         repo.create_practice(pid, "Test", "addr@example.com")
-        email = repo.get_email(pid)
-        assert email == "addr@example.com"
+        assert repo.get_email(pid) == "addr@example.com"
     finally:
         _cleanup_practice(pid)
 
 
 def test_practice_not_found():
     repo = _make_practice_repo()
-    raised = False
-    try:
+    with pytest.raises(PracticeNotFound):
         repo.get_email("nonexistent_practice_that_will_never_exist_xyz")
-    except PracticeNotFound:
-        raised = True
-    assert raised, "Expected PracticeNotFound was not raised"
 
 
 def test_practice_update_email():
@@ -276,8 +224,7 @@ def test_practice_update_email():
     try:
         repo.create_practice(pid, "Test", "original@example.com")
         repo.update_email(pid, "updated@example.com")
-        email = repo.get_email(pid)
-        assert email == "updated@example.com", f"Expected updated@example.com, got {email}"
+        assert repo.get_email(pid) == "updated@example.com"
     finally:
         _cleanup_practice(pid)
 
@@ -288,12 +235,8 @@ def test_practice_update_email_invalid_format():
 
     try:
         repo.create_practice(pid, "Test", "valid@example.com")
-        raised = False
-        try:
+        with pytest.raises(InvalidEmailError):
             repo.update_email(pid, "not-an-email")
-        except InvalidEmailError:
-            raised = True
-        assert raised, "Expected InvalidEmailError was not raised"
     finally:
         _cleanup_practice(pid)
 
@@ -320,8 +263,7 @@ def test_signposting_delete():
         repo.create_practice(pid, "Test", "a@b.com")
         repo.set_signposting(pid, "uti", "<p>Some info</p>")
         repo.delete_signposting(pid, "uti")
-        result = repo.get_signposting(pid, "uti")
-        assert result is None
+        assert repo.get_signposting(pid, "uti") is None
     finally:
         _cleanup_practice(pid)
 
@@ -333,16 +275,14 @@ def test_signposting_empty_html_deletes_row():
     try:
         repo.create_practice(pid, "Test", "a@b.com")
         repo.set_signposting(pid, "uti", "<p>Some info</p>")
-        # Quill empty output should result in deletion
         repo.set_signposting(pid, "uti", "<p></p>")
-        result = repo.get_signposting(pid, "uti")
-        assert result is None
+        assert repo.get_signposting(pid, "uti") is None
     finally:
         _cleanup_practice(pid)
 
 
 # ---------------------------------------------------------------------------
-# PracticeRepository — doctor list tests
+# PracticeRepository — doctor list
 # ---------------------------------------------------------------------------
 
 def test_doctors_get_returns_empty_list_when_none_configured():
@@ -351,8 +291,7 @@ def test_doctors_get_returns_empty_list_when_none_configured():
 
     try:
         repo.create_practice(pid, "Test", "a@b.com")
-        doctors = repo.get_doctors(pid)
-        assert doctors == [], f"Expected empty list, got {doctors}"
+        assert repo.get_doctors(pid) == []
     finally:
         _cleanup_practice(pid)
 
@@ -365,8 +304,7 @@ def test_doctors_set_and_get_round_trip():
     try:
         repo.create_practice(pid, "Test", "a@b.com")
         repo.set_doctors(pid, names)
-        result = repo.get_doctors(pid)
-        assert result == names, f"Expected {names}, got {result}"
+        assert repo.get_doctors(pid) == names
     finally:
         _cleanup_practice(pid)
 
@@ -379,8 +317,7 @@ def test_doctors_set_replaces_existing_list():
         repo.create_practice(pid, "Test", "a@b.com")
         repo.set_doctors(pid, ["Dr Smith", "Dr Jones"])
         repo.set_doctors(pid, ["Dr Brown"])
-        result = repo.get_doctors(pid)
-        assert result == ["Dr Brown"], f"Expected ['Dr Brown'], got {result}"
+        assert repo.get_doctors(pid) == ["Dr Brown"]
     finally:
         _cleanup_practice(pid)
 
@@ -393,8 +330,7 @@ def test_doctors_set_empty_list_clears_doctors():
         repo.create_practice(pid, "Test", "a@b.com")
         repo.set_doctors(pid, ["Dr Smith", "Dr Jones"])
         repo.set_doctors(pid, [])
-        result = repo.get_doctors(pid)
-        assert result == [], f"Expected empty list after clearing, got {result}"
+        assert repo.get_doctors(pid) == []
     finally:
         _cleanup_practice(pid)
 
@@ -402,28 +338,22 @@ def test_doctors_set_empty_list_clears_doctors():
 def test_doctors_order_is_preserved():
     repo = _make_practice_repo()
     pid = _uid()
-    # Deliberately non-alphabetical to confirm display_order not alphabetical sort
+    # Deliberately non-alphabetical to confirm ordering is by display_order,
+    # not alphabetical sort.
     names = ["Dr Zebra", "Dr Apple", "Dr Mango"]
 
     try:
         repo.create_practice(pid, "Test", "a@b.com")
         repo.set_doctors(pid, names)
-        result = repo.get_doctors(pid)
-        assert result == names, (
-            f"Expected order {names}, got {result}"
-        )
+        assert repo.get_doctors(pid) == names
     finally:
         _cleanup_practice(pid)
 
 
 def test_doctors_set_raises_for_missing_practice():
     repo = _make_practice_repo()
-    raised = False
-    try:
+    with pytest.raises(PracticeNotFound):
         repo.set_doctors("nonexistent_practice_that_will_never_exist_xyz", ["Dr Smith"])
-    except PracticeNotFound:
-        raised = True
-    assert raised, "Expected PracticeNotFound was not raised"
 
 
 def test_doctors_set_raises_for_empty_name():
@@ -432,12 +362,8 @@ def test_doctors_set_raises_for_empty_name():
 
     try:
         repo.create_practice(pid, "Test", "a@b.com")
-        raised = False
-        try:
+        with pytest.raises(InvalidDoctorListError):
             repo.set_doctors(pid, ["Dr Smith", "  ", "Dr Jones"])
-        except InvalidDoctorListError:
-            raised = True
-        assert raised, "Expected InvalidDoctorListError for empty/whitespace name"
     finally:
         _cleanup_practice(pid)
 
@@ -449,12 +375,8 @@ def test_doctors_set_raises_for_name_too_long():
     try:
         repo.create_practice(pid, "Test", "a@b.com")
         long_name = "Dr " + "A" * 100  # 103 chars, over limit of 100
-        raised = False
-        try:
+        with pytest.raises(InvalidDoctorListError):
             repo.set_doctors(pid, [long_name])
-        except InvalidDoctorListError:
-            raised = True
-        assert raised, "Expected InvalidDoctorListError for name exceeding 100 characters"
     finally:
         _cleanup_practice(pid)
 
@@ -466,18 +388,14 @@ def test_doctors_set_raises_for_list_too_long():
     try:
         repo.create_practice(pid, "Test", "a@b.com")
         too_many = [f"Dr Doctor{i}" for i in range(51)]  # 51 items, over limit of 50
-        raised = False
-        try:
+        with pytest.raises(InvalidDoctorListError):
             repo.set_doctors(pid, too_many)
-        except InvalidDoctorListError:
-            raised = True
-        assert raised, "Expected InvalidDoctorListError for list exceeding 50 items"
     finally:
         _cleanup_practice(pid)
 
 
 # ---------------------------------------------------------------------------
-# SubmissionRepository tests
+# SubmissionRepository
 # ---------------------------------------------------------------------------
 
 def _make_submission_repo() -> SubmissionRepository:
@@ -485,7 +403,6 @@ def _make_submission_repo() -> SubmissionRepository:
 
 
 def _make_dummy_patient_details() -> PatientDetails:
-    """Minimal PatientDetails fixture for repository tests."""
     return PatientDetails(
         patient_for="me",
         first_name="Test",
@@ -516,11 +433,9 @@ def _make_dummy_outputs():
     return clinical, audit
 
 
-def _cleanup_submission(sid: str):
-    """Delete submission and all child rows in dependency order."""
+def _cleanup_submission(sid: str) -> None:
     with get_conn(DATABASE_URL) as conn:
         with conn.cursor() as cur:
-            # delivery_jobs and pdf_jobs FK to submission_records
             cur.execute(
                 "DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,)
             )
@@ -536,18 +451,15 @@ def _cleanup_submission(sid: str):
 
 
 def _create_test_submission(repo: SubmissionRepository, sid: str) -> None:
-    """Helper: create a submission with all required fields for reuse across tests."""
     clinical, audit = _make_dummy_outputs()
     repo.create_submission(
         submission_id=sid,
-        practice_id="test_practice",
+        practice_id="test-practice",
         condition_id="uti",
         condition_label="Urinary Tract Infection",
         clinical_output=clinical,
         audit_output=audit,
-        delivery_email="test@example.com",
         submitted_at=datetime.now(timezone.utc),
-        attachment_count=0,
     )
 
 
@@ -559,12 +471,11 @@ def test_submission_create_and_get():
         _create_test_submission(repo, sid)
         row = repo.get_submission(sid)
         assert row["submission_id"] == sid
-        assert row["delivery_status"] == "pending"
+        assert row["condition_id"] == "uti"
         assert row["condition_label"] == "Urinary Tract Infection"
         # JSONB columns come back as dicts, not strings
         assert isinstance(row["clinical_output_json"], dict)
         assert isinstance(row["audit_output_json"], dict)
-        # patient_details should be persisted inside clinical_output_json
         assert row["clinical_output_json"]["patient_details"]["first_name"] == "Test"
     finally:
         _cleanup_submission(sid)
@@ -572,16 +483,12 @@ def test_submission_create_and_get():
 
 def test_submission_not_found():
     repo = _make_submission_repo()
-    raised = False
-    try:
+    with pytest.raises(SubmissionNotFound):
         repo.get_submission("nonexistent_submission_that_will_never_exist_xyz")
-    except SubmissionNotFound:
-        raised = True
-    assert raised, "Expected SubmissionNotFound was not raised"
 
 
 # ---------------------------------------------------------------------------
-# AttachmentRepository tests
+# AttachmentRepository
 # ---------------------------------------------------------------------------
 
 def _make_attachment_repo() -> AttachmentRepository:
@@ -599,8 +506,7 @@ def test_attachment_save_and_get():
     try:
         _create_test_submission(sub_repo, sid)
         att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
-        retrieved = att_repo.get_attachment(sid)
-        assert retrieved == _DUMMY_PDF_BYTES
+        assert att_repo.get_attachment(sid) == _DUMMY_PDF_BYTES
     finally:
         _cleanup_submission(sid)
 
@@ -613,25 +519,17 @@ def test_attachment_duplicate_save_raises():
     try:
         _create_test_submission(sub_repo, sid)
         att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
-        raised = False
-        try:
-            att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
-        except Exception:
+        with pytest.raises(Exception):
             # psycopg2.errors.UniqueViolation
-            raised = True
-        assert raised, "Expected UniqueViolation on duplicate save_attachment"
+            att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
     finally:
         _cleanup_submission(sid)
 
 
 def test_attachment_get_missing_raises():
     att_repo = _make_attachment_repo()
-    raised = False
-    try:
+    with pytest.raises(AttachmentNotFound):
         att_repo.get_attachment("nonexistent_submission_that_will_never_exist_xyz")
-    except AttachmentNotFound:
-        raised = True
-    assert raised, "Expected AttachmentNotFound was not raised"
 
 
 def test_attachment_delete():
@@ -643,13 +541,8 @@ def test_attachment_delete():
         _create_test_submission(sub_repo, sid)
         att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
         att_repo.delete_attachment(sid)
-        # After deletion, get should raise AttachmentNotFound
-        raised = False
-        try:
+        with pytest.raises(AttachmentNotFound):
             att_repo.get_attachment(sid)
-        except AttachmentNotFound:
-            raised = True
-        assert raised, "Expected AttachmentNotFound after delete"
     finally:
         _cleanup_submission(sid)
 
@@ -663,65 +556,6 @@ def test_attachment_delete_idempotent():
         _create_test_submission(sub_repo, sid)
         att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
         att_repo.delete_attachment(sid)
-        # Second delete should not raise
-        att_repo.delete_attachment(sid)
+        att_repo.delete_attachment(sid)  # must not raise
     finally:
         _cleanup_submission(sid)
-
-
-# ---------------------------------------------------------------------------
-# Run all tests
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    print("\n--- RuntimeStateRepository ---")
-    run_test("create_initial and get_latest", test_runtime_create_and_get)
-    run_test("insert_new_version increments correctly", test_runtime_insert_new_version)
-    run_test("version_conflict on stale base_version", test_runtime_version_conflict)
-    run_test("session_closed blocks get_latest", test_runtime_session_closed)
-    run_test("get_latest raises RuntimeStateNotFound for missing id", test_runtime_not_found)
-
-    print("\n--- PracticeRepository ---")
-    run_test("create_practice and get_practice", test_practice_create_and_get)
-    run_test("practice_exists before and after create", test_practice_exists)
-    run_test("invalid_email raises InvalidEmailError", test_practice_invalid_email)
-    run_test("get_email returns correct address", test_practice_get_email)
-    run_test("get_email raises PracticeNotFound for missing practice", test_practice_not_found)
-    run_test("update_email changes the stored address", test_practice_update_email)
-    run_test("update_email raises InvalidEmailError for bad format", test_practice_update_email_invalid_format)
-    run_test("set_signposting and get_signposting", test_signposting_set_and_get)
-    run_test("delete_signposting removes row", test_signposting_delete)
-    run_test("set_signposting with empty html deletes row", test_signposting_empty_html_deletes_row)
-
-    print("\n--- PracticeRepository — doctor list ---")
-    run_test("get_doctors returns empty list when none configured", test_doctors_get_returns_empty_list_when_none_configured)
-    run_test("set_doctors and get_doctors round-trip", test_doctors_set_and_get_round_trip)
-    run_test("set_doctors replaces existing list", test_doctors_set_replaces_existing_list)
-    run_test("set_doctors with empty list clears doctors", test_doctors_set_empty_list_clears_doctors)
-    run_test("get_doctors preserves insertion order", test_doctors_order_is_preserved)
-    run_test("set_doctors raises PracticeNotFound for missing practice", test_doctors_set_raises_for_missing_practice)
-    run_test("set_doctors raises InvalidDoctorListError for empty name", test_doctors_set_raises_for_empty_name)
-    run_test("set_doctors raises InvalidDoctorListError for name too long", test_doctors_set_raises_for_name_too_long)
-    run_test("set_doctors raises InvalidDoctorListError for list too long", test_doctors_set_raises_for_list_too_long)
-
-    print("\n--- SubmissionRepository ---")
-    run_test("create_submission and get_submission", test_submission_create_and_get)
-    run_test("get_submission raises SubmissionNotFound for missing id", test_submission_not_found)
-
-    print("\n--- AttachmentRepository ---")
-    run_test("save_attachment and get_attachment round-trip", test_attachment_save_and_get)
-    run_test("duplicate save_attachment raises", test_attachment_duplicate_save_raises)
-    run_test("get_attachment raises AttachmentNotFound for missing id", test_attachment_get_missing_raises)
-    run_test("delete_attachment removes the row", test_attachment_delete)
-    run_test("delete_attachment is idempotent", test_attachment_delete_idempotent)
-
-    print(f"\n{'='*40}")
-    print(f"Results: {_passed} passed, {_failed} failed")
-
-    if _errors:
-        print("\nFailed test details:")
-        for name, tb in _errors:
-            print(f"\n--- {name} ---")
-            print(tb)
-
-    sys.exit(0 if _failed == 0 else 1)
