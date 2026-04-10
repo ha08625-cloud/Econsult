@@ -42,17 +42,17 @@ Railway deployment, multi-stage Docker build, static file serving, Postgres + ps
 
 - `alembic_upgrade()` in `db.py` runs `alembic upgrade head` at application startup. A migration failure must halt startup — this is correct behaviour.
 - **No automated rollback.** Rollbacks are manual: `alembic downgrade -1` against the live database.
-- Migration files live in `alembic/versions/`. Check these files directly for the current schema.
+- Migration files live in `alembic/versions/`. There is a single migration (`0001_initial_schema.py`) that creates the complete schema from scratch. Read that file directly for the current schema.
 
-### Migration history
+### Resetting the database (prototype stage only)
 
-| Revision | Description |
-|---|---|
-| 0001 | Initial schema: `practices`, `runtime_state_versions`, `practice_signposting`, `submission_records`. Uses `IF NOT EXISTS` as a one-time concession. |
-| 0002 | Availability table (`practice_availability`). |
-| 0003 | Availability override column. |
-| 0004 | Per-date availability exceptions table (`practice_availability_exceptions`). |
-| 0005 | Remove `DEFAULT NOW()` from `submission_records.submitted_at`. Column remains `NOT NULL`; the application must supply the value explicitly. Rationale: enforces a single authoritative timestamp captured in `form_router.py`, preventing any divergence between the DB record and the delivered PDF. |
+Because no real data exists, the database can be reset cleanly by dropping the `alembic_version` table and restarting the application:
+
+```sql
+DROP TABLE IF EXISTS alembic_version;
+```
+
+On next startup, Alembic will see no version stamp, run `0001`, and stamp it as head. Alternatively, drop and recreate the Railway database entirely via the Railway dashboard.
 
 ---
 
@@ -67,14 +67,6 @@ Railway deployment, multi-stage Docker build, static file serving, Postgres + ps
 - `ADMIN_TOKEN` is missing and `DEV_MODE` is not set
 
 If the practice record does not exist, startup **seeds it** using `PRACTICE_NAME` and `PRACTICE_EMAIL` env vars (defaulting to `demo@demo.net`). This handles Railway deployments where the database starts empty on each container restart.
-
-After `_validate_startup` completes, `main.py` fetches the practice record a second time to extract `practice_name` for use in generated PDFs. This is a known redundant query — a future refactor could have `_validate_startup` return the full practice record.
-
----
-
-## Testing Constraint
-
-Repository tests currently run against a live Postgres instance via the `TEST_DATABASE_URL` env var in `.env`. There is no test isolation from the deployed database. A dedicated test database must be provisioned before any real patient data is stored or before a second developer joins.
 
 ---
 
