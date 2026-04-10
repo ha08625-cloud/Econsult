@@ -1484,14 +1484,14 @@ async def get_audit_log(
         try:
             parsed_from_date = datetime.date.fromisoformat(from_date)
         except ValueError:
-            raise INVALID_DATE_FORMAT(f"from_date must be YYYY-MM-DD, got: {from_date!r}")
+            raise INVALID_DATE_FORMAT("from_date", from_date)
 
     parsed_to_date = None
     if to_date is not None:
         try:
             parsed_to_date = datetime.date.fromisoformat(to_date)
         except ValueError:
-            raise INVALID_DATE_FORMAT(f"to_date must be YYYY-MM-DD, got: {to_date!r}")
+            raise INVALID_DATE_FORMAT("to_date", to_date)
 
     # Clamp limit. Do not reject out-of-range values — just apply the bounds
     # silently. This avoids a class of client breakage if limits drift over time.
