@@ -27,3 +27,30 @@ export interface AvailabilityException {
   close_time: string | null; // HH:MM or null
   note: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Audit log
+// ---------------------------------------------------------------------------
+
+/**
+ * A single audit log event as returned by GET /admin/audit-log.
+ *
+ * detail shape varies by action type — see AuditRepository module docstring
+ * for the per-action contract. The frontend treats detail as an opaque object
+ * and renders it structurally without interpreting action-specific semantics.
+ */
+export interface AuditEvent {
+  id: number;
+  occurred_at: string;                        // ISO 8601 string
+  actor_email: string;
+  action: string;
+  resource: string | null;
+  detail: Record<string, unknown> | null;
+  ip_address: string | null;
+  session_id: string | null;
+}
+
+export interface AuditLogPage {
+  events: AuditEvent[];
+  next_cursor: string | null;
+}
