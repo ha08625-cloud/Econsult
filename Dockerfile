@@ -18,6 +18,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Apply OS-level security patches. This ensures that Debian system packages
+# (including OpenSSL) are upgraded to their latest patched versions at build
+# time, rather than relying on whatever was baked into the base image.
+# --no-install-recommends keeps the image lean.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Python dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
