@@ -57,9 +57,9 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Key Files:** `App.tsx`, `api.ts`, `types.ts`, `search.ts`, `ConditionCombobox.tsx`
 
 ### 3.7 Admin Portal & Configuration
-* **Scope:** Admin authentication, editing signposting, configuring availability.
+* **Scope:** Admin authentication, editing signposting, configuring availability, managing practice settings, and the admin audit trail (recording all mutating admin actions and auth events).
 * **Domain Doc:** `docs/arch_admin.md`
-* **Key Files:** `admin_router.py`, `admin_context.py`, `practice_repository.py`, `frontend/admin-ui/src/*`
+* **Key Files:** `admin_router.py`, `admin_context.py`, `practice_repository.py`, `audit_repository.py`, `http_utils.py`, `frontend/admin-ui/src/*`
 
 ### 3.8 HTTP Orchestration & App Entry
 * **Scope:** FastAPI application, startup fail-fast validation, routing, error translation.
