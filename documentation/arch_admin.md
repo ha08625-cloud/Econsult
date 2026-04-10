@@ -8,7 +8,7 @@
 
 Admin authentication, editing per-condition signposting, configuring availability (schedule, overrides, per-date exceptions), managing practice email and doctor list, and the admin-portal frontend.
 
-**Key files:** `admin_router.py`, `admin_context.py`, `app/services/auth_service.py`, `app/repositories/auth_repository.py`, `app/services/delivery/admin_delivery_service.py`, `practice_repository.py`, `availability_repository.py`, `availability_service.py`, `frontend/admin-ui/src/*`
+**Key files:** `admin_router.py`, `admin_context.py`, `app/services/auth_service.py`, `app/repositories/auth_repository.py`, `app/repositories/audit_repository.py`, `app/services/delivery/admin_delivery_service.py`, `practice_repository.py`, `availability_repository.py`, `availability_service.py`, `app/core/http_utils.py`, `frontend/admin-ui/src/*`
 
 ---
 
@@ -77,6 +77,35 @@ HTTP `401 Unauthorized` is the primary contract for session expiry. The JSON bod
 
 ---
 
+### Audit Trail (`admin_router.py`, `audit_repository.py`, `http_utils.py`)
+
+Every mutating admin action and all authentication events are recorded in the `admin_audit_log` table (created by migration 0015). The audit log is append-only and has no foreign keys — it remains readable even if a user or practice record is later deleted.
+
+**What is recorded:**
+- Auth events: `auth.code_requested`, `auth.login.succeeded`, `auth.login.failed`, `auth.logout`
+- Mutating admin endpoints: practice email, signposting (per condition), doctor list, availability config, override, and per-date exceptions
+
+Each event records: `practice_id`, `actor_email`, `action`, `resource` (optional), `detail` (JSONB, action-specific shape), `ip_address`, `session_id`, `occurred_at`. The per-action `detail` shapes are documented in `audit_repository.py`.
+
+**Transaction pattern for mutating endpoints:**
+Each mutating endpoint reads the "before" state, then wraps both the repository mutation and the `audit_repo.log_event` call in a single shared `get_conn` transaction. If either operation fails, both roll back. The before state is read outside the transaction (clean read, no lock held). This pattern is documented in `admin_router.py`.
+
+**Auth events** (which have no paired mutation) use standalone inserts — `log_event` opens and commits its own connection when `conn=None`.
+
+**IP address extraction** is centralised in `app/core/http_utils.py` (`extract_ip`). It reads `X-Forwarded-For` first (taking the first value, the original client), then `X-Real-IP`, then `request.client.host`. This logic lives in one place only — not repeated at each call site.
+
+**`AdminContext` fields:** `actor_email` and `session_id` are populated by `require_admin` from the session record. For the DEV_MODE bearer fallback, `session_id` is `None` and `actor_email` is `"dev@local"`.
+
+**Read endpoint:** `GET /admin/audit-log` accepts query parameters `cursor`, `from_date`, `to_date`, `actor`, `action` (prefix match), `limit` (default 50, max 200). Pagination uses an opaque base64 cursor encoding `last_id` and `last_occurred_at`. The cursor and filters are independent — discarding the cursor and re-querying when a filter changes is correct behaviour.
+
+**`AuditRepository` design decisions:**
+- `list_events` fetches `limit + 1` rows to detect whether a next page exists, avoiding a separate `COUNT(*)` query.
+- The `action_prefix` parameter is validated against `^[a-z0-9_.]+$` before building the `LIKE` clause — this prevents wildcard injection.
+- Date boundaries are converted to midnight-start and end-of-day datetimes in Python before being passed to the query, making the boundary logic explicit and testable.
+- Cursor decoding raises `ValueError` on malformed input; the endpoint converts this to HTTP 400.
+
+---
+
 ### Admin Frontend (`frontend/admin-ui/src/`)
 
 The admin UI is a Vite + React app (TypeScript). It is **not** the no-build CDN/Babel frontend — see `frontend_admin-ui_index.html` for the entry point.
@@ -84,10 +113,11 @@ The admin UI is a Vite + React app (TypeScript). It is **not** the no-build CDN/
 **Component structure:**
 - `App.tsx` — root; probes session on mount by calling `GET /admin/conditions`; shows `LoginView` on 401, `EditorView` on success. No token state. Owns `conditions` state and `handleAuthError` callback.
 - `LoginView.tsx` — two-step MFA login: step 1 email input calls `POST /admin/auth/request-code`; step 2 code input calls `POST /admin/auth/verify`. On success calls `onSuccess()` so App re-fetches conditions and transitions to `EditorView`.
-- `EditorView.tsx` — condition selector + editor container; owns unsaved-change tracking via refs; passes `onAuthError` down to all children.
+- `EditorView.tsx` — four-tab container (Signposting, Availability, Practice settings, Audit log); owns unsaved-change tracking via refs; passes `onAuthError` down to all children. `AvailabilityEditor` is always mounted (display:none when inactive) to preserve state. All other tabs are conditionally rendered and perform a fresh fetch on mount.
 - `SignpostingEditor.tsx` — rich text editor for one condition; calls `onAuthError` on `AuthError`.
 - `AvailabilityEditor.tsx` — schedule, override, and exceptions card; calls `onAuthError` on `AuthError`.
 - `PracticeSettingsTab.tsx` — practice email and doctor list; calls `onAuthError` on `AuthError`.
+- `AuditLogTab.tsx` — read-only audit event viewer. Filter inputs (date range, actor, action prefix) with 400 ms debounce on text fields. Paginated table with "Load more" cursor-based pagination. Each row has a collapsible detail cell showing a structured diff: changed keys side-by-side for object before/after, labelled blocks for string/list/single-side values, key-value pairs for flat auth events. Values rendered as plain text — HTML is never rendered.
 - `TokenView.tsx` — **deleted**. Replaced by `LoginView.tsx`.
 
 **Key boundaries:**
@@ -112,4 +142,6 @@ The admin UI is a Vite + React app (TypeScript). It is **not** the no-build CDN/
 - `auth_repository.py`: contain business logic (cooldown checks, code generation, hashing)
 - `admin_delivery_service.py`: check cooldowns or access any repository — it is a pure transport layer
 - `practice_repository.py`: access clinical data, perform composition logic, or handle authentication
-- Admin frontend: store session data in `localStorage` or `sessionStorage`; contain clinical logic; call non-`/admin/*` endpoints; bypass `onAuthError` on 401
+- `audit_repository.py`: contain business logic or validation; import from service modules or routers; be called from the patient-facing request path
+- `http_utils.py`: import any application module — stdlib only
+- Admin frontend: store session data in `localStorage` or `sessionStorage`; contain clinical logic; call non-`/admin/*` endpoints; bypass `onAuthError` on 401; render HTML content from `detail` fields
