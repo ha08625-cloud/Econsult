@@ -33,7 +33,6 @@ jobs:
             --ignore=tests/test_public_routes.py \
             --ignore=tests/test_repositories.py \
             --ignore=tests/test_pipeline_repositories.py \
-            --ignore=tests/test_delivery_worker_integration.py \
             -v
 
       - name: Set up Node
@@ -101,5 +100,4 @@ jobs:
             tests/test_public_routes.py \
             tests/test_repositories.py \
             tests/test_pipeline_repositories.py \
-            tests/test_delivery_worker_integration.py \
             -v
