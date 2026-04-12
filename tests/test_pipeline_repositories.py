@@ -37,6 +37,8 @@ os.environ.setdefault("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
 os.environ.setdefault("DEV_MODE", "1")
 os.environ.setdefault("PRACTICE_ID", "test-practice")
 
+pytestmark = pytest.mark.integration
+
 from datetime import datetime, timedelta, timezone  # noqa: E402
 from uuid import uuid4  # noqa: E402
 

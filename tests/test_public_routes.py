@@ -40,6 +40,8 @@ if not os.environ.get("DATABASE_URL"):
 
 from main import app  # noqa: E402 — import after skip guard
 
+pytestmark = pytest.mark.integration
+
 client = TestClient(app, raise_server_exceptions=True)
 
 # ---------------------------------------------------------------------------

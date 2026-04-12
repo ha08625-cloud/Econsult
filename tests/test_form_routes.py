@@ -46,6 +46,8 @@ os.environ.setdefault("DEV_MODE", "1")
 os.environ.setdefault("PRACTICE_ID", "test-practice")
 os.environ.setdefault("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data"))
 
+pytestmark = pytest.mark.integration
+
 from datetime import datetime  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from PIL import Image  # noqa: E402
