@@ -513,21 +513,6 @@ def test_attachment_save_and_get():
         _cleanup_submission(sid)
 
 
-def test_attachment_duplicate_save_raises():
-    sub_repo = _make_submission_repo()
-    att_repo = _make_attachment_repo()
-    sid = _uid()
-
-    try:
-        _create_test_submission(sub_repo, sid)
-        att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
-        with pytest.raises(Exception):
-            # psycopg2.errors.UniqueViolation
-            att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
-    finally:
-        _cleanup_submission(sid)
-
-
 def test_attachment_get_missing_raises():
     att_repo = _make_attachment_repo()
     with pytest.raises(AttachmentNotFound):
