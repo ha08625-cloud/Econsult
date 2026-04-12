@@ -1,4 +1,4 @@
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi, beforeEach, afterEach } from "vitest";
 import AuditLogTab from "./AuditLogTab";
@@ -268,10 +268,9 @@ describe("AuditLogTab — debounced text filter inputs", () => {
     const callsAfterMount = mockFetchAuditLog.mock.calls.length;
 
     const actorInput = document.getElementById("audit-actor") as HTMLInputElement;
-    // Type without advancing timers
-    await act(async () => {
-      actorInput.value = "doc";
-      actorInput.dispatchEvent(new Event("input", { bubbles: true }));
+    // Fire the change without advancing the debounce timer
+    act(() => {
+      fireEvent.change(actorInput, { target: { value: "doc" } });
     });
 
     expect(mockFetchAuditLog.mock.calls.length).toBe(callsAfterMount);
@@ -284,8 +283,7 @@ describe("AuditLogTab — debounced text filter inputs", () => {
 
     const actorInput = document.getElementById("audit-actor") as HTMLInputElement;
     await act(async () => {
-      actorInput.value = "doctor@example.com";
-      actorInput.dispatchEvent(new Event("input", { bubbles: true }));
+      fireEvent.change(actorInput, { target: { value: "doctor@example.com" } });
       vi.advanceTimersByTime(400);
     });
 
@@ -299,8 +297,7 @@ describe("AuditLogTab — debounced text filter inputs", () => {
 
     const actionInput = document.getElementById("audit-action") as HTMLInputElement;
     await act(async () => {
-      actionInput.value = "availability";
-      actionInput.dispatchEvent(new Event("input", { bubbles: true }));
+      fireEvent.change(actionInput, { target: { value: "availability" } });
       vi.advanceTimersByTime(400);
     });
 

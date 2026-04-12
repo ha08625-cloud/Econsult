@@ -16,6 +16,9 @@
 - `railway.toml` — Railway deployment config.
 - `requirements.txt` — Python dependencies.
 - `alembic.ini` — Alembic configuration.
+- `pytest.ini` — Pytest configuration.
+- `Makefile` — Test targets.
+- `.github/` — github actions configuration.
 - `app/` — All Python application code.
 - `alembic/` — Alembic migration scripts.
 - `frontend/` — Patient-facing React app and Admin UI.
