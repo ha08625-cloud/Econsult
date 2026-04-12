@@ -38,8 +38,8 @@ Both URLs live in `.env`. `.env` is never committed to version control.
 Tests that do not require a database connection. Covers two suites that run together under `make test`:
 
 **Python unit tests** — routers, validation, serialisation, sanitisation, engine logic, and worker loop. Use stubs and in-memory state.
-- Files: everything in `tests/` except the integration files listed below
-- Runner: pytest
+- Files: any `test_*.py` file in `tests/` that does NOT carry `pytestmark = pytest.mark.integration`
+- Runner: pytest via `pytest tests/ -m "not integration"`
 
 **Frontend component tests** — screen component rendering and interaction behaviour.
 - Files: `*.test.tsx` in `frontend/src/screens/`
@@ -55,21 +55,31 @@ No database environment variables required. Vitest is invoked via `npx vitest ru
 ---
 
 ### Integration tests
-Tests that exercise the full request pipeline or repository layer against a live Postgres database.
+Tests that exercise the full request pipeline or repository layer against a live Postgres database. Identified by the module-level marker:
 
-**`tests/test_form_routes.py`** — full request pipeline via FastAPI TestClient. Requires `TEST_DATABASE_URL`. Writes real rows to the test database. The delivery service is overridden with `MockDeliveryService` so no SMTP configuration is needed. Covers: happy-path end-to-end flow, delivery failure behaviour, availability fail-open, photo upload validation (no photos, one photo with `attachment_count` assertion, file count limit, single file size limit, combined size limit).
+```python
+pytestmark = pytest.mark.integration
+```
 
-**`tests/test_public_routes.py`** — public endpoint tests via FastAPI TestClient. Imports `main.py` directly, which triggers `alembic_upgrade()` at import time. Requires `DATABASE_URL` to be reachable. Must not be collected by `make test` or it will fail offline.
+This line must appear in every integration test file, after the `TEST_DATABASE_URL` guardrail block. pytest discovers all integration tests automatically via `-m integration`. No changes to `Makefile` or `ci.yml` are needed when adding a new integration test file — only the marker is required.
 
-**`tests/test_repositories.py`** — repository layer tests for `RuntimeStateRepository`, `PracticeRepository`, `SubmissionRepository`, and `AttachmentRepository`. Uses pytest. Requires `TEST_DATABASE_URL`. Each test generates a unique ID and cleans up its own rows in a `finally` block.
+The marker is registered in `pytest.ini` at the project root.
 
-**`tests/test_pipeline_repositories.py`** — integration tests for `PDFRepository`, `DeliveryRepository`, and `PhotoRepository`. Exercises the `pdf_jobs`, `delivery_jobs`, and `submission_photos` tables directly against a live database. Requires `TEST_DATABASE_URL`. Each test generates unique IDs and cleans up in a `finally` block.
+Current integration test files:
 
-**`tests/test_delivery_retry.py`** — integration tests for the delivery retry pipeline. Exercises `attempt_delivery`, `list_retryable`, and `record_attempt_outcome` directly against the database without going through the HTTP layer. Uses `FailingDeliveryService` and `SucceedingDeliveryService` stubs defined in the file. Requires `TEST_DATABASE_URL`. Each test generates unique IDs and cleans up in a `finally` block.
+**`tests/test_form_routes.py`** — full request pipeline via FastAPI TestClient. Covers: happy-path end-to-end flow, delivery failure behaviour, availability fail-open, photo upload validation.
 
-**`tests/test_delivery_worker_integration.py`** — integration tests for the worker loop. Exercises `run_worker` against a live database using real delivery service stubs. Patches `time.sleep` to halt the loop after a controlled number of iterations. Requires `TEST_DATABASE_URL`. Each test generates unique IDs and cleans up in a `finally` block. Covers: batch drain (three failed submissions delivered in one iteration), backoff enforcement (future `next_retry_after` not retried), retry schedule progression across multiple iterations, orphan detection CRITICAL log with submission ID present.
+**`tests/test_public_routes.py`** — public endpoint tests via FastAPI TestClient. Imports `main.py` directly, which triggers `alembic_upgrade()` at import time. Uses `DATABASE_URL` rather than `TEST_DATABASE_URL` (it tests the full app startup path).
 
-**Run all together with:**
+**`tests/test_repositories.py`** — repository layer tests for `RuntimeStateRepository`, `PracticeRepository`, `SubmissionRepository`, and `AttachmentRepository`.
+
+**`tests/test_pipeline_repositories.py`** — repository layer tests for `PDFRepository`, `DeliveryRepository`, and `PhotoRepository`. Exercises the `pdf_jobs`, `delivery_jobs`, and `submission_photos` tables.
+
+**`tests/test_delivery_retry.py`** — delivery retry pipeline. Exercises `attempt_delivery`, `list_retryable`, and `record_attempt_outcome` directly against the database without going through the HTTP layer.
+
+**`tests/test_delivery_worker_integration.py`** — worker loop integration. Exercises `run_worker` against a live database using real delivery service stubs. Patches `time.sleep` to halt the loop after a controlled number of iterations.
+
+**Run all integration tests with:**
 ```
 make test-integration
 ```
@@ -125,6 +135,9 @@ else:
 
 ### Why not load .env automatically in tests?
 The `TEST_DATABASE_URL` must be set explicitly as an environment variable rather than loaded automatically from `.env`. This is deliberate: it forces an opt-in decision when running integration tests, preventing accidental writes to the wrong database. The Makefile uses `include .env` / `export` to load it when you run `make test-integration`, which provides convenience without removing the guardrail.
+
+### Why does the CI integration job assert TEST_DATABASE_URL before running pytest?
+The per-module `pytest.skip()` guardrail is correct locally but produces a silent pass in CI if the variable is accidentally dropped — all integration tests skip with no failure signal. The explicit shell assertion in the CI integration job catches this at the environment check step, before pytest even runs, producing a clear error message. Both defences are kept: the guardrail protects local runs, the assertion protects CI.
 
 ### Why does MockDeliveryService exist?
 Integration tests must not require SMTP configuration. `MockDeliveryService` captures send calls in memory so tests can assert on delivery behaviour without network dependencies. It is defined in `test_form_routes.py` and is not shared — if other test files need delivery assertions in future, extract it to a shared `tests/fixtures.py`.

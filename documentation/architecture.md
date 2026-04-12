@@ -14,6 +14,7 @@ These rules apply universally and MUST NOT be violated by any new feature or ref
 * **Fail-Open Availability:** Any failure in the availability check (database, network, logic) MUST fail-open and allow the patient to proceed.
 * **State & Session Constraints:** The system is session-backed and server-owned. There is NO conversational memory, NO cross-session state, and NO per-user identity. State is never round-tripped through the client or mutated in place.
 * **Fail-Fast Configuration:** A misconfigured deployment (missing env vars, invalid rulesets, database state violations) MUST abort at startup. It must never silently degrade into a state where forms are sent to the wrong destination or safety rules are skipped.
+* **Test Maintenance Obligation:** Whenever a test file is created or modified, prompt the user to: (1) add `pytestmark = pytest.mark.integration` if it is an integration test, (2) verify `arch_testing.md` is up to date. No changes to `ci.yml` or `Makefile` are needed if the marker is present — pytest discovers integration tests automatically via the marker.
 
 ## 2. High-Level Data Flow
 

@@ -13,13 +13,9 @@
 # Migrations against test database:
 #     make migrate-test
 #
-# Notes on ignored files in make test:
-#   test_form_routes.py                    — integration, requires TEST_DATABASE_URL
-#   test_public_routes.py                  — integration, imports main.py (triggers alembic_upgrade)
-#   test_repositories.py                   — integration, requires TEST_DATABASE_URL
-#   test_pipeline_repositories.py          — integration, requires TEST_DATABASE_URL
-#   test_delivery_retry.py                 — integration, requires TEST_DATABASE_URL
-#   test_delivery_worker_integration.py    — integration, requires TEST_DATABASE_URL
+# Integration test files are identified by @pytest.mark.integration.
+# When adding a new integration test file, add the pytestmark line —
+# no changes to this Makefile or ci.yml are needed.
 # ---------------------------------------------------------------------------
 
 include .env
@@ -28,44 +24,16 @@ export
 .PHONY: test test-integration test-all migrate-test
 
 test:
-	python -m pytest tests/ \
-		--ignore=tests/test_form_routes.py \
-		--ignore=tests/test_public_routes.py \
-		--ignore=tests/test_repositories.py \
-		--ignore=tests/test_pipeline_repositories.py \
-		--ignore=tests/test_delivery_retry.py \
-		--ignore=tests/test_delivery_worker_integration.py \
-		-v
+	python -m pytest tests/ -m "not integration" -v
 	cd frontend && npx vitest run
 
 test-integration:
-	python -m pytest \
-		tests/test_form_routes.py \
-		tests/test_public_routes.py \
-		tests/test_repositories.py \
-		tests/test_pipeline_repositories.py \
-		tests/test_delivery_retry.py \
-		tests/test_delivery_worker_integration.py \
-		-v
+	python -m pytest tests/ -m integration -v
 
 test-all:
-	python -m pytest tests/ \
-		--ignore=tests/test_form_routes.py \
-		--ignore=tests/test_public_routes.py \
-		--ignore=tests/test_repositories.py \
-		--ignore=tests/test_pipeline_repositories.py \
-		--ignore=tests/test_delivery_retry.py \
-		--ignore=tests/test_delivery_worker_integration.py \
-		-v
+	python -m pytest tests/ -m "not integration" -v
 	cd frontend && npx vitest run
-	python -m pytest \
-		tests/test_form_routes.py \
-		tests/test_public_routes.py \
-		tests/test_repositories.py \
-		tests/test_pipeline_repositories.py \
-		tests/test_delivery_retry.py \
-		tests/test_delivery_worker_integration.py \
-		-v
+	python -m pytest tests/ -m integration -v
 
 migrate-test:
 	DATABASE_URL=$(TEST_DATABASE_URL) python -m alembic upgrade head
