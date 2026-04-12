@@ -103,7 +103,7 @@ Pure utility functions. No IO, no database access.
 Schema migration scripts. See code files directly for exact table definitions.
 
 - `alembic/env.py` — Alembic environment configuration.
-- `alembic/versions/0001_initial_schema.py` — Single migration that creates the complete schema from scratch.
+- `alembic/versions/0001_initial_schema.py` — Single migration that creates the complete schema from scratch
 
 ---
 
@@ -119,21 +119,21 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `main.tsx` — React entry point.
 - `search.ts` — Condition filtering.
 - `types.ts` (wire contracts) & `uiTypes.ts` (UI-only types).
-- `screens/` — Patient flow views (`SafetyWarningScreen`, `PatientDetailsScreen`, `OutcomeScreen`, `SelectConditionScreen`, `FreeTextScreen`, `EditScreen`, `ReviewScreen`, `ContactScreen`).
+- `screens/` — Patient flow views (`SafetyWarningScreen`, `PatientDetailsScreen`, `OutcomeScreen`, `SelectConditionScreen`, `FreeTextScreen`, `EditScreen`, `ReviewScreen`, `ContactScreen`) and corresponding test files e.g. SafetyWarningScreen.test.tsx
 
 **Admin UI (`frontend/admin-ui/src/`)**
 - `App.tsx` — Admin root component and routing.
 - `api.ts` — Admin API clients (cookie-auth based).
 - `main.tsx` — React entry point.
 - `types.ts` — Admin-specific contracts.
-- `screens/` — Admin views (`LoginView`, `EditorView`, `SignpostingEditor`, `AvailabilityEditor`, `PracticeSettingsTab`, `AuditLogTab`).
+- `screens/` — Admin views (`LoginView`, `EditorView`, `SignpostingEditor`, `AvailabilityEditor`, `PracticeSettingsTab`, `AuditLogTab`) and corresponding test files e.g. LoginView.test.tsx
 
 ---
 
 ## 5. Tests (`tests/`)
 
 **Unit tests (Mocked/In-memory)**
-- `test_admin_router.py`, `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`.
+- `test_admin_router.py`, `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`.
 
 **Integration tests (Live `TEST_DATABASE_URL`)**
 - `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`, `test_delivery_retry.py`, `test_delivery_worker_integration.py`.
