@@ -186,9 +186,6 @@ def generate_pdf(
     Generate a PDF representation of a clinical submission.
     Returns raw PDF bytes. The caller is responsible for attaching or saving them.
     """
-    pdf = _EConsultPDF()
-    pdf.set_alias_nb_pages() # Enables the {nb} total pages feature in the footer
-    pdf.set_margins(_MARGIN, _MARGIN, _MARGIN)
     pdf.set_auto_page_break(auto=True, margin=_MARGIN)
     pdf.add_page()
 
