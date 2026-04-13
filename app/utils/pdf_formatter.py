@@ -95,6 +95,7 @@ class _EConsultPDF(FPDF):
         column rather than overflowing. multi_cell advances the cursor to the
         next line after rendering.
         """
+        self.set_x(self.l_margin)
         self.set_font("Helvetica", style="B", size=9)
         self.cell(_LABEL_W, _LINE_H, label, new_x=XPos.RIGHT, new_y=YPos.TOP)
         self.set_font("Helvetica", size=9)
