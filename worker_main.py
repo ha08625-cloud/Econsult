@@ -20,6 +20,14 @@ Environment variables:
     DATABASE_URL                   -- Postgres connection string (required)
     WORKER_POLL_INTERVAL_SECONDS   -- seconds to sleep when queue is empty (required)
     DEV_MODE                       -- set to "1" or "true" for ConsoleDeliveryService
+    MAILGUN_API_KEY                -- if set, uses Mailgun HTTP delivery
+    MAILGUN_DOMAIN                 -- required when MAILGUN_API_KEY is set
+    EMAIL_FROM                     -- required in production
+
+Service selection:
+    DEV_MODE=1       -> ConsoleDeliveryService (no email sent)
+    MAILGUN_API_KEY  -> MailgunHttpDeliveryService
+    otherwise        -> EmailDeliveryService (SMTP)
 """
 
 import logging
@@ -73,6 +81,7 @@ def main() -> None:
     from app.services.delivery.delivery_service import (
         ConsoleDeliveryService,
         EmailDeliveryService,
+        MailgunHttpDeliveryService,
     )
     from app.services.delivery.delivery_worker import run_worker
 
@@ -82,8 +91,12 @@ def main() -> None:
     if _is_dev_mode():
         delivery_service = ConsoleDeliveryService()
         logger.info("Delivery worker running in DEV_MODE — email delivery disabled")
+    elif os.environ.get("MAILGUN_API_KEY"):
+        delivery_service = MailgunHttpDeliveryService()
+        logger.info("Delivery worker: Mailgun HTTP API selected")
     else:
         delivery_service = EmailDeliveryService()
+        logger.info("Delivery worker: SMTP selected")
 
     logger.info(
         "Delivery worker configuration: poll_interval=%ds dev_mode=%s",
