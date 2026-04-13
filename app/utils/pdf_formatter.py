@@ -49,12 +49,21 @@ def _dob_display(dob_iso: str) -> str:
 # ---------------------------------------------------------------------------
 
 _MARGIN = 15        # mm left/right margin
-_LINE_H = 6         # mm standard line height
-_SECTION_GAP = 4    # mm gap before a new section heading
+_LINE_H = 7         # mm standard line height (increased from 6 for readability)
+_SECTION_GAP = 5    # mm gap before a new section heading
 _PAGE_W = 210       # A4 width in mm
 _USABLE_W = _PAGE_W - 2 * _MARGIN   # 180mm
-_LABEL_W = 55       # mm — label column width in two-column rows
-_VALUE_W = _USABLE_W - _LABEL_W     # 125mm — value column width
+_LABEL_W = 65       # mm — label column width in two-column rows (increased from 55)
+_VALUE_W = _USABLE_W - _LABEL_W     # 115mm — value column width
+_LEFT_INDENT = 5    # mm — indent for free text body blocks
+
+# Colours
+_HEADING_BG    = (240, 240, 240)   # light grey fill for section headings
+_ROW_ALT       = (248, 248, 248)   # very light grey for alternating answer rows
+_SAFETY_BG     = (255, 248, 230)   # light amber for safety flag rows
+_RULE_COLOUR   = (180, 180, 180)   # grey for horizontal rules
+_FOOTER_COLOUR = (120, 120, 120)   # grey for footer text
+_INDENT_BAR    = (200, 200, 200)   # grey for free text left-border bar
 
 # Maximum height an embedded photo may occupy on the page.
 # Images taller than this at _USABLE_W wide are scaled down to fit.
@@ -79,31 +88,93 @@ class _EConsultPDF(FPDF):
         pass
 
     def section_heading(self, title: str) -> None:
+        """
+        Render a section heading with a light grey filled background rectangle.
+        The fill spans the full usable width. Text is rendered on top in bold.
+        """
         self.ln(_SECTION_GAP)
-        self.set_font("Helvetica", style="B", size=10)
-        self.cell(0, _LINE_H, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_draw_color(180, 180, 180)
-        self.line(self.get_x(), self.get_y(), self.get_x() + _USABLE_W, self.get_y())
+        # Draw filled background rectangle
+        self.set_fill_color(*_HEADING_BG)
+        self.set_x(self.l_margin)
+        self.set_font("Helvetica", style="B", size=11)
+        self.cell(
+            _USABLE_W, _LINE_H, title,
+            fill=True,
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
+        )
         self.ln(1)
-        self.set_font("Helvetica", size=9)
+        self.set_font("Helvetica", size=10)
 
-    def row(self, label: str, value: str) -> None:
+    def row(self, label: str, value: str, bg_colour: Optional[tuple] = None) -> None:
         """
         Render a two-column label/value row.
 
         Both widths are explicit so fpdf2 wraps the value within the remaining
         column rather than overflowing. multi_cell advances the cursor to the
         next line after rendering.
+
+        If bg_colour is provided, a filled rectangle is drawn behind the row
+        before the text is rendered. This is used for alternating row shading
+        and safety flag highlighting.
         """
         self.set_x(self.l_margin)
-        self.set_font("Helvetica", style="B", size=9)
+
+        if bg_colour is not None:
+            # Draw background rectangle. Height is one line height; multi_cell
+            # may wrap, but background shading for a single row height is
+            # sufficient and avoids needing to pre-calculate wrapped height.
+            self.set_fill_color(*bg_colour)
+            x = self.get_x()
+            y = self.get_y()
+            self.rect(x, y, _USABLE_W, _LINE_H, style="F")
+            self.set_xy(x, y)
+
+        self.set_font("Helvetica", style="B", size=10)
         self.cell(_LABEL_W, _LINE_H, label, new_x=XPos.RIGHT, new_y=YPos.TOP)
-        self.set_font("Helvetica", size=9)
+        self.set_font("Helvetica", size=10)
+        self.multi_cell(_VALUE_W, _LINE_H, value)
+
+    def safety_row(self, label: str, value: str) -> None:
+        """
+        Render a safety flag row with amber background and bold value text.
+        """
+        self.set_x(self.l_margin)
+        self.set_fill_color(*_SAFETY_BG)
+        x = self.get_x()
+        y = self.get_y()
+        self.rect(x, y, _USABLE_W, _LINE_H, style="F")
+        self.set_xy(x, y)
+
+        self.set_font("Helvetica", style="B", size=10)
+        self.cell(_LABEL_W, _LINE_H, label, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        self.set_font("Helvetica", style="B", size=10)
         self.multi_cell(_VALUE_W, _LINE_H, value)
 
     def body_text(self, text: str) -> None:
-        self.set_font("Helvetica", size=9)
+        self.set_font("Helvetica", size=10)
         self.multi_cell(_USABLE_W, _LINE_H, text)
+
+    def body_text_indented(self, text: str) -> None:
+        """
+        Render free text with a left indent and a grey vertical bar on the
+        left edge to visually distinguish it from structured rows.
+        """
+        x = self.l_margin
+        y = self.get_y()
+
+        # Render text first so we can measure the height afterwards
+        self.set_x(x + _LEFT_INDENT)
+        self.set_font("Helvetica", size=10)
+        self.multi_cell(_USABLE_W - _LEFT_INDENT, _LINE_H, text)
+
+        # Draw vertical bar from start Y to current Y
+        end_y = self.get_y()
+        self.set_draw_color(*_INDENT_BAR)
+        self.set_line_width(0.8)
+        self.line(x + 1, y, x + 1, end_y)
+        # Reset line width to default
+        self.set_line_width(0.2)
 
 
 # ---------------------------------------------------------------------------
@@ -145,12 +216,16 @@ def generate_pdf(
 
     # --- Document title ---
     pdf.set_font("Helvetica", style="B", size=14)
-    pdf.cell(0, 10, "E-Consultation Submission", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.cell(0, 10, "Online Consultation Form", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     if practice_name:
         pdf.set_font("Helvetica", size=10)
         pdf.cell(0, 6, practice_name, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
+    # Horizontal rule beneath title block
+    pdf.ln(2)
+    pdf.set_draw_color(*_RULE_COLOUR)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + _USABLE_W, pdf.get_y())
     pdf.ln(2)
 
     # --- Submission metadata ---
@@ -174,18 +249,19 @@ def generate_pdf(
 
     # --- Patient description (free text) ---
     pdf.section_heading("PATIENT DESCRIPTION")
-    pdf.body_text(clinical_output.free_text or "(none provided)")
+    pdf.body_text_indented(clinical_output.free_text or "(none provided)")
 
     # --- Answers ---
     pdf.section_heading("ANSWERS")
-    for key, value in clinical_output.answers.items():
+    for i, (key, value) in enumerate(clinical_output.answers.items()):
         label = clinical_output.question_labels.get(key, key)
-        pdf.row(f"{label}:", _format_answer(value))
+        bg = _ROW_ALT if i % 2 == 1 else None
+        pdf.row(f"{label}:", _format_answer(value), bg_colour=bg)
 
     # --- Additional information ---
     if clinical_output.additional_text:
         pdf.section_heading("ADDITIONAL INFORMATION")
-        pdf.body_text(clinical_output.additional_text)
+        pdf.body_text_indented(clinical_output.additional_text)
 
     # --- Safety flags ---
     if clinical_output.safety_messages:
@@ -193,7 +269,7 @@ def generate_pdf(
         for msg in clinical_output.safety_messages:
             flag_id = msg.get("id", "")
             flag_text = msg.get("text", "")
-            pdf.row(f"[{flag_id}]", flag_text)
+            pdf.safety_row(f"[{flag_id}]", flag_text)
 
     # --- Contact preferences ---
     cp = clinical_output.contact_preferences
@@ -228,11 +304,14 @@ def generate_pdf(
 
     # --- Footer ---
     pdf.ln(_SECTION_GAP)
+    pdf.set_draw_color(*_RULE_COLOUR)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + _USABLE_W, pdf.get_y())
+    pdf.ln(3)
     pdf.set_font("Helvetica", style="I", size=8)
-    pdf.set_text_color(120, 120, 120)
+    pdf.set_text_color(*_FOOTER_COLOUR)
     pdf.cell(
         0, 5,
-        "Generated automatically by the e-consultation system. Do not reply to this document.",
+        "Online Consultation Form",
         new_x=XPos.LMARGIN,
         new_y=YPos.NEXT,
         align="C",
@@ -248,6 +327,7 @@ def generate_pdf(
         pdf.section_heading("PHOTOS")
         total = len(photo_bytes)
         for i, img_bytes in enumerate(photo_bytes):
+            pdf.set_font("Helvetica", style="I", size=9)
             pdf.body_text(f"Photo {i + 1} of {total}")
             pdf.ln(2)
             pdf.image(io.BytesIO(img_bytes), w=_USABLE_W, h=_MAX_IMAGE_H, keep_aspect_ratio=True)
