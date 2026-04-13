@@ -8,10 +8,15 @@ Single-tenant deployment:
 - PRACTICE_ID environment variable is required at startup
 - The practice must exist in the database with a valid email
 - The database must contain exactly one practice
-- SMTP configuration is required unless DEV_MODE is set
+- In production, either MAILGUN_API_KEY or all four SMTP variables must be set
 - ADMIN_TOKEN is now optional; MFA replaces it. If ADMIN_TOKEN is set in
   production alongside MFA, a warning is logged (both auth methods active).
 - INITIAL_ADMIN_EMAIL and ALLOWED_ADMIN_DOMAINS are required in production.
+
+Delivery service selection:
+- DEV_MODE=1: ConsoleDeliveryService / ConsoleAdminDeliveryService (no email sent)
+- MAILGUN_API_KEY set: MailgunHttpDeliveryService / MailgunHttpAdminDeliveryService
+- Otherwise: EmailDeliveryService / AdminDeliveryService (SMTP)
 """
 
 from fastapi import FastAPI, HTTPException
@@ -34,10 +39,15 @@ from app.repositories.auth_repository import AuthRepository
 from app.repositories.audit_repository import AuditRepository
 from app.services.presentation_service import PresentationService
 from app.core.errors import APIError, RateLimitError
-from app.services.delivery.delivery_service import ConsoleDeliveryService, EmailDeliveryService
+from app.services.delivery.delivery_service import (
+    ConsoleDeliveryService,
+    EmailDeliveryService,
+    MailgunHttpDeliveryService,
+)
 from app.services.delivery.admin_delivery_service import (
     AdminDeliveryService,
     ConsoleAdminDeliveryService,
+    MailgunHttpAdminDeliveryService,
 )
 from app.services.auth_service import validate_admin_domain
 from app.routers.admin_router import router as admin_router
@@ -106,12 +116,7 @@ def _validate_startup(
         )
 
     if not _is_dev_mode():
-        for var in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"):
-            if not os.environ.get(var):
-                raise RuntimeError(
-                    f"Required SMTP environment variable not set: {var}. "
-                    "Set DEV_MODE=1 to skip email sending during development."
-                )
+        _validate_email_config()
 
     # --- ADMIN_TOKEN: optional with MFA, warn if both are active ---
     if not _is_dev_mode():
@@ -175,6 +180,44 @@ def _validate_startup(
     return practice_id
 
 
+def _validate_email_config() -> None:
+    """
+    Validate that a complete email delivery configuration is present.
+
+    Accepts either:
+      - Mailgun HTTP: MAILGUN_API_KEY + MAILGUN_DOMAIN + EMAIL_FROM
+      - SMTP: SMTP_HOST + SMTP_USER + SMTP_PASSWORD + EMAIL_FROM
+
+    Raises RuntimeError if neither complete configuration is present.
+    EMAIL_FROM is required in both cases.
+    """
+    if not os.environ.get("EMAIL_FROM"):
+        raise RuntimeError(
+            "Required environment variable not set: EMAIL_FROM. "
+            "Set DEV_MODE=1 to skip email sending during development."
+        )
+
+    if os.environ.get("MAILGUN_API_KEY"):
+        # Mailgun HTTP path — check the Mailgun-specific variable.
+        if not os.environ.get("MAILGUN_DOMAIN"):
+            raise RuntimeError(
+                "MAILGUN_API_KEY is set but MAILGUN_DOMAIN is missing. "
+                "Both are required for Mailgun HTTP delivery."
+            )
+        logger.info("Email delivery: Mailgun HTTP API selected.")
+    else:
+        # SMTP path — check all four SMTP variables.
+        for var in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"):
+            if not os.environ.get(var):
+                raise RuntimeError(
+                    f"Required email environment variable not set: {var}. "
+                    "Either set MAILGUN_API_KEY + MAILGUN_DOMAIN for Mailgun HTTP, "
+                    "or set SMTP_HOST + SMTP_USER + SMTP_PASSWORD for SMTP. "
+                    "Set DEV_MODE=1 to skip email sending during development."
+                )
+        logger.info("Email delivery: SMTP selected.")
+
+
 # ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
@@ -236,9 +279,19 @@ _practice_record = practice_repo.get_practice(app.state.practice_id)
 _practice_name = _practice_record.get("name") if _practice_record else None
 app.state.practice_name = _practice_name
 
+# ---------------------------------------------------------------------------
+# Delivery service selection
+# DEV_MODE=1       -> Console (no email sent)
+# MAILGUN_API_KEY  -> Mailgun HTTP API
+# otherwise        -> SMTP
+# ---------------------------------------------------------------------------
+
 if _is_dev_mode():
     app.state.delivery_service = ConsoleDeliveryService()
     app.state.admin_delivery_service = ConsoleAdminDeliveryService()
+elif os.environ.get("MAILGUN_API_KEY"):
+    app.state.delivery_service = MailgunHttpDeliveryService()
+    app.state.admin_delivery_service = MailgunHttpAdminDeliveryService()
 else:
     app.state.delivery_service = EmailDeliveryService()
     app.state.admin_delivery_service = AdminDeliveryService()

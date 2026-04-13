@@ -4,21 +4,26 @@ app/services/delivery/admin_delivery_service.py
 Transport layer for admin MFA emails.
 
 Responsibilities:
-- Send a single plain-text MFA code email over SMTP.
+- Send a single plain-text MFA code email.
+
+This module defines:
+  - AdminDeliveryService: production SMTP implementation
+  - MailgunHttpAdminDeliveryService: production Mailgun HTTP API implementation
+  - ConsoleAdminDeliveryService: local development only — logs to stdout, never sends email
 
 Strict boundaries:
 - This service has no knowledge of admin_auth_codes, AuthRepository,
   or any cooldown/rate-limit logic.
 - The decision of whether to send is made entirely by auth_service.py.
   This service is called only after that decision has been made.
-- Uses the same SMTP environment variables as EmailDeliveryService but
-  opens a completely separate SMTP connection on every call. No shared
-  state or connection pool with the clinical delivery path.
+
+Service selection (main.py):
+    If MAILGUN_API_KEY is set, MailgunHttpAdminDeliveryService is used.
+    Otherwise AdminDeliveryService (SMTP) is used.
 
 SMTP configuration is read from environment variables at instantiation
 time. A missing variable raises RuntimeError at startup rather than
-silently failing at send time. This matches the pattern used by
-EmailDeliveryService.
+silently failing at send time.
 """
 
 import logging
@@ -26,10 +31,25 @@ import os
 import smtplib
 from email.message import EmailMessage
 
+import requests
+
 logger = logging.getLogger(__name__)
 
+_MAILGUN_EU_API_BASE = "https://api.eu.mailgun.net/v3"
+
+
+# ---------------------------------------------------------------------------
+# SMTP implementation
+# ---------------------------------------------------------------------------
 
 class AdminDeliveryService:
+    """
+    Sends admin MFA codes via SMTP.
+
+    Uses the same SMTP environment variables as EmailDeliveryService but
+    opens a completely separate SMTP connection on every call. No shared
+    state or connection pool with the clinical delivery path.
+    """
 
     def __init__(self) -> None:
         self._smtp_host = self._require_env("SMTP_HOST")
@@ -80,6 +100,72 @@ class AdminDeliveryService:
         logger.info("MFA code sent to %s", email)
 
 
+# ---------------------------------------------------------------------------
+# Mailgun HTTP API implementation
+# ---------------------------------------------------------------------------
+
+class MailgunHttpAdminDeliveryService:
+    """
+    Sends admin MFA codes via the Mailgun HTTP API.
+
+    Uses the EU regional endpoint. Configuration is read from environment
+    variables at instantiation time. A missing variable raises RuntimeError
+    at startup, not silently at send time.
+
+    This implementation exists because Railway's free and hobby plans block
+    outbound SMTP connections. The HTTP API is the recommended alternative.
+    """
+
+    def __init__(self) -> None:
+        self._api_key = self._require_env("MAILGUN_API_KEY")
+        self._domain = self._require_env("MAILGUN_DOMAIN")
+        self._email_from = self._require_env("EMAIL_FROM")
+
+    @staticmethod
+    def _require_env(name: str) -> str:
+        value = os.environ.get(name)
+        if not value:
+            raise RuntimeError(
+                f"MailgunHttpAdminDeliveryService requires environment variable: {name}"
+            )
+        return value
+
+    def send_mfa_code(self, email: str, code: str) -> None:
+        """
+        Send a plain-text MFA code email via the Mailgun HTTP API.
+
+        Raises requests.RequestException if the HTTP call fails.
+        The caller (auth_service.request_mfa_code) should let this
+        propagate — a failed send is a genuine error.
+        """
+        body = (
+            f"Your Econsult admin security code is: {code}. "
+            "It expires in 10 minutes."
+        )
+
+        url = f"{_MAILGUN_EU_API_BASE}/{self._domain}/messages"
+
+        response = requests.post(
+            url,
+            auth=("api", self._api_key),
+            data={
+                "from": self._email_from,
+                "to": email,
+                "subject": "Your Econsult admin security code",
+                "text": body,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+
+        logger.info("MFA code sent to %s", email)
+
+
+# ---------------------------------------------------------------------------
+# Development implementation
+# ConsoleAdminDeliveryService is for local development only. Never instantiate in production.
+# ---------------------------------------------------------------------------
+
 class ConsoleAdminDeliveryService:
     """
     Logs the MFA code to stdout instead of sending email.
@@ -92,7 +178,8 @@ class ConsoleAdminDeliveryService:
         if os.environ.get("DEV_MODE", "").lower() not in ("1", "true"):
             raise RuntimeError(
                 "ConsoleAdminDeliveryService may only be instantiated when "
-                "DEV_MODE=1. Use AdminDeliveryService in production."
+                "DEV_MODE=1. Use MailgunHttpAdminDeliveryService or "
+                "AdminDeliveryService in production."
             )
 
     def send_mfa_code(self, email: str, code: str) -> None:
