@@ -1,3 +1,192 @@
+"""
+PDF formatter.
+
+Pure utility: takes clinical submission data and returns raw PDF bytes.
+No database access. No imports from routers or delivery service.
+"""
+
+import io
+from datetime import datetime
+from typing import Optional
+
+from fpdf import FPDF
+from fpdf.enums import XPos, YPos
+
+from app.models.serialisation_contracts import ClinicalOutput
+from app.core.consultation_outcomes import CONSULTATION_OUTCOMES
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _format_answer(value) -> str:
+    if value is True:
+        return "Yes"
+    if value is False:
+        return "No"
+    if value is None:
+        return "(not answered)"
+    return str(value)
+
+
+def _dob_display(dob_iso: str) -> str:
+    """
+    Convert ISO date string "YYYY-MM-DD" to "15 March 1990".
+    Falls back to the raw string if parsing fails.
+    """
+    try:
+        return datetime.strptime(dob_iso, "%Y-%m-%d").strftime("%-d %B %Y")
+    except ValueError:
+        return dob_iso
+
+
+# ---------------------------------------------------------------------------
+# PDF layout constants (NHS Palette)
+# ---------------------------------------------------------------------------
+
+_MARGIN = 15        # mm left/right margin
+_LINE_H = 7         # mm standard line height
+_PAGE_W = 210       # A4 width in mm
+_USABLE_W = _PAGE_W - 2 * _MARGIN   # 180mm
+_LABEL_W = 65       # mm — label column width in two-column rows
+_VALUE_W = _USABLE_W - _LABEL_W     # 115mm — value column width
+_LEFT_INDENT = 5    # mm — indent for free text body blocks
+
+# Colours - NHS Palette
+_NHS_BLUE      = (0, 94, 184)      # Primary NHS Blue
+_NHS_DARK_GREY = (66, 85, 99)      # NHS Dark Grey for standard text/labels
+_NHS_MID_GREY  = (118, 134, 146)   # Footer text
+_SAFETY_BG     = (255, 241, 241)   # Very pale NHS Red tint
+_SAFETY_TEXT   = (218, 41, 28)     # NHS Red
+_RULE_COLOUR   = (232, 237, 238)   # NHS Pale Grey for separators
+_INDENT_BAR    = (0, 94, 184)      # NHS Blue for free-text accent bars
+
+# Maximum height an embedded photo may occupy on the page.
+_MAX_IMAGE_H = 200  # mm
+
+# Lookup dict from outcome value to human-readable label.
+_OUTCOME_LABELS: dict[str, str] = {
+    entry["value"]: entry["label"] for entry in CONSULTATION_OUTCOMES
+}
+
+
+class _EConsultPDF(FPDF):
+    """FPDF subclass with convenience methods for this document style."""
+
+    def header(self):
+        """
+        Draw an NHS Blue accent bar at the very top edge of every page.
+        """
+        self.set_fill_color(*_NHS_BLUE)
+        self.rect(0, 0, _PAGE_W, 5, style="F")
+
+    def footer(self):
+        """
+        Render a consistent footer with page numbers at the bottom of every page.
+        """
+        self.set_y(-15)
+        self.set_font("Helvetica", style="I", size=8)
+        self.set_text_color(*_NHS_MID_GREY)
+        self.cell(
+            0, 5, 
+            f"Online Consultation Form  |  Page {self.page_no()} of {{nb}}", 
+            align="C"
+        )
+        self.set_text_color(0, 0, 0) # Reset text color for safety
+
+    def section_heading(self, title: str) -> None:
+        """
+        Render a clean section heading in NHS Blue with a crisp bottom underline.
+        """
+        self.ln(8)
+        
+        self.set_font("Helvetica", style="B", size=11)
+        self.set_text_color(*_NHS_BLUE)
+        
+        self.cell(_USABLE_W, _LINE_H, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        
+        y_line = self.get_y()
+        self.set_draw_color(*_RULE_COLOUR)
+        self.set_line_width(0.4)
+        self.line(self.l_margin, y_line, self.l_margin + _USABLE_W, y_line)
+        self.set_line_width(0.2)
+        
+        self.ln(3) 
+        self.set_text_color(0, 0, 0)
+
+    def row(self, label: str, value: str, draw_separator: bool = True) -> None:
+        """
+        Render a two-column label/value row.
+        """
+        self.set_x(self.l_margin)
+
+        # Label in NHS Dark Grey
+        self.set_font("Helvetica", style="B", size=10)
+        self.set_text_color(*_NHS_DARK_GREY) 
+        self.cell(_LABEL_W, _LINE_H, label, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        
+        # Value in pure Black
+        self.set_font("Helvetica", size=10)
+        self.set_text_color(0, 0, 0) 
+        self.multi_cell(_VALUE_W, _LINE_H, value)
+
+        if draw_separator:
+            y = self.get_y()
+            self.set_draw_color(*_RULE_COLOUR) 
+            self.line(self.l_margin, y, self.l_margin + _USABLE_W, y)
+            self.ln(1)
+
+    def safety_row(self, label: str, value: str) -> None:
+        """
+        Render a safety flag row with pale red background and red text.
+        """
+        self.set_x(self.l_margin)
+        self.set_fill_color(*_SAFETY_BG)
+        
+        x = self.get_x()
+        y = self.get_y()
+        req_height = self.font_size * len(self.multi_cell(_VALUE_W, _LINE_H, value, dry_run=True, output="LINES"))
+        box_height = max(_LINE_H, req_height + 2)
+
+        self.rect(x, y, _USABLE_W, box_height, style="F")
+        self.set_xy(x, y + 1)
+
+        self.set_font("Helvetica", style="B", size=10)
+        self.set_text_color(*_SAFETY_TEXT)
+        self.cell(_LABEL_W, _LINE_H, label, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        self.multi_cell(_VALUE_W, _LINE_H, value)
+        
+        self.set_text_color(0, 0, 0)
+        self.ln(1)
+
+    def body_text(self, text: str) -> None:
+        self.set_font("Helvetica", size=10)
+        self.multi_cell(_USABLE_W, _LINE_H, text)
+
+    def body_text_indented(self, text: str) -> None:
+        """
+        Render free text with a left indent and a vertical bar on the left edge.
+        """
+        x = self.l_margin
+        y = self.get_y()
+
+        self.set_x(x + _LEFT_INDENT)
+        self.set_font("Helvetica", size=10)
+        self.multi_cell(_USABLE_W - _LEFT_INDENT, _LINE_H, text)
+
+        end_y = self.get_y()
+        self.set_draw_color(*_INDENT_BAR)
+        self.set_line_width(0.8)
+        self.line(x + 1, y, x + 1, end_y)
+        self.set_line_width(0.2)
+        self.ln(2)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def generate_pdf(
     condition_label: str,
     clinical_output: ClinicalOutput,
@@ -15,8 +204,8 @@ def generate_pdf(
     pdf.set_auto_page_break(auto=True, margin=_MARGIN)
     pdf.add_page()
 
-    # --- Document header (NHS Styled) ---
-    pdf.ln(5) # Push down to accommodate the top accent bar
+    # --- Document header ---
+    pdf.ln(5)
     pdf.set_font("Helvetica", style="B", size=16)
     pdf.set_text_color(*_NHS_BLUE)
     pdf.cell(0, 8, "Online Consultation Form", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
@@ -26,10 +215,8 @@ def generate_pdf(
         pdf.set_text_color(*_NHS_DARK_GREY)
         pdf.cell(0, 6, practice_name, new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="L")
 
-    pdf.set_text_color(0, 0, 0) # Reset to black
+    pdf.set_text_color(0, 0, 0)
     pdf.ln(4)
-
-    # Note: SUBMISSION DETAILS section was removed from here and moved to the end.
 
     # --- Patient details ---
     pd = clinical_output.patient_details
@@ -109,7 +296,7 @@ def generate_pdf(
             pdf.ln(2)
             pdf.image(io.BytesIO(img_bytes), w=_USABLE_W, h=_MAX_IMAGE_H, keep_aspect_ratio=True)
 
-    # --- Submission metadata (MOVED TO END) ---
+    # --- Session metadata ---
     pdf.section_heading("SESSION DETAILS")
     pdf.row("Condition:", condition_label)
     pdf.row("Submission ID:", submission_id)
