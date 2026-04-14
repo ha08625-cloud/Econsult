@@ -85,6 +85,7 @@ const PATIENT_DETAILS: PatientDetails = {
   last_name: "Smith",
   date_of_birth: { day: "01", month: "01", year: "1980" },
   postcode: "SW1A 1AA",
+  gender: "female",
 };
 
 describe("finishForm", () => {
