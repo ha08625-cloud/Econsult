@@ -115,7 +115,7 @@ class _EConsultPDF(FPDF):
         self.ln(3) 
         self.set_text_color(0, 0, 0)
 
-def row(self, label: str, value: str, draw_separator: bool = True) -> None:
+    def row(self, label: str, value: str, draw_separator: bool = True) -> None:
         """
         Render a two-column label/value row that properly wraps text in both columns.
         """
