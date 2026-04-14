@@ -76,7 +76,6 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
 
     Uses only stdlib (zlib, re) — no third-party PDF library required.
     """
-    # Match every stream...endstream block (handles both \n and \r\n line endings)
     stream_pattern = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.DOTALL)
     parts = []
     for match in stream_pattern.finditer(pdf_bytes):
@@ -84,7 +83,6 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
         try:
             parts.append(zlib.decompress(raw).decode("latin-1"))
         except zlib.error:
-            # Non-compressed stream (e.g. image data) — skip
             pass
     return "\n".join(parts)
 
@@ -93,15 +91,26 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
 # Shared test fixtures
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
-def minimal_clinical_output() -> ClinicalOutput:
-    patient = PatientDetails(
+def _make_patient(
+    gender: str = "female",
+    preferred_name: str | None = None,
+    nhs_number: str | None = None,
+    dob: str = "1985-06-15",
+) -> PatientDetails:
+    return PatientDetails(
         patient_for="me",
         first_name="Jane",
         last_name="Smith",
-        date_of_birth="1985-06-15",
+        date_of_birth=dob,
         postcode="OX1 1AA",
+        gender=gender,
+        preferred_name=preferred_name,
+        nhs_number=nhs_number,
     )
+
+
+@pytest.fixture
+def minimal_clinical_output() -> ClinicalOutput:
     return ClinicalOutput(
         condition_id="test_condition",
         free_text="Some symptoms",
@@ -113,7 +122,7 @@ def minimal_clinical_output() -> ClinicalOutput:
             "q2": "Any chest pain?",
             "q3": "Shortness of breath?",
         },
-        patient_details=patient,
+        patient_details=_make_patient(),
         contact_preferences={"contact_methods": ["phone"], "phone_number": "07700900000"},
     )
 
@@ -218,13 +227,6 @@ def test_generate_pdf_no_photos_and_empty_list_same_size(
 # ---------------------------------------------------------------------------
 
 def _make_output_with_outcome(outcome: str | None) -> ClinicalOutput:
-    patient = PatientDetails(
-        patient_for="me",
-        first_name="Jane",
-        last_name="Smith",
-        date_of_birth="1985-06-15",
-        postcode="OX1 1AA",
-    )
     cp: dict = {
         "contact_methods": ["email"],
         "email_address": "patient@example.com",
@@ -240,7 +242,7 @@ def _make_output_with_outcome(outcome: str | None) -> ClinicalOutput:
         answers={},
         safety_messages=[],
         question_labels={},
-        patient_details=patient,
+        patient_details=_make_patient(),
         contact_preferences=cp,
     )
 
@@ -283,13 +285,6 @@ def test_absent_outcome_produces_no_outcome_row(submission_kwargs):
 
 def test_null_outcome_produces_no_outcome_row(submission_kwargs):
     """When consultation_outcome is explicitly None, no outcome row is rendered."""
-    patient = PatientDetails(
-        patient_for="me",
-        first_name="Jane",
-        last_name="Smith",
-        date_of_birth="1985-06-15",
-        postcode="OX1 1AA",
-    )
     output = ClinicalOutput(
         condition_id="test_condition",
         free_text="Some symptoms",
@@ -297,7 +292,7 @@ def test_null_outcome_produces_no_outcome_row(submission_kwargs):
         answers={},
         safety_messages=[],
         question_labels={},
-        patient_details=patient,
+        patient_details=_make_patient(),
         contact_preferences={
             "contact_methods": ["email"],
             "email_address": "patient@example.com",
@@ -308,3 +303,130 @@ def test_null_outcome_produces_no_outcome_row(submission_kwargs):
     result = generate_pdf(clinical_output=output, **submission_kwargs)
     pdf_text = extract_pdf_text(result)
     assert "Consultation outcome:" not in pdf_text
+
+
+# ---------------------------------------------------------------------------
+# New patient detail field tests
+# ---------------------------------------------------------------------------
+
+def test_gender_label_appears_in_patient_summary(submission_kwargs):
+    """Gender must appear as a human-readable label in the patient summary line."""
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=_make_patient(gender="male"),
+        contact_preferences=None,
+    )
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = extract_pdf_text(result)
+    assert "Male" in pdf_text
+
+
+def test_prefer_not_to_say_renders_human_readable(submission_kwargs):
+    """prefer_not_to_say must render as 'Prefer not to say', not the raw value."""
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=_make_patient(gender="prefer_not_to_say"),
+        contact_preferences=None,
+    )
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = extract_pdf_text(result)
+    assert "Prefer not to say" in pdf_text
+    assert "prefer_not_to_say" not in pdf_text
+
+
+def test_age_appears_in_patient_summary(submission_kwargs):
+    """Age in whole years must appear in the patient summary line."""
+    # DOB 1985-06-15. Submitted at 2026-03-23. Age = 40 (birthday not yet reached in 2026).
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=_make_patient(dob="1985-06-15"),
+        contact_preferences=None,
+    )
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = extract_pdf_text(result)
+    assert "40" in pdf_text
+
+
+def test_preferred_name_appears_when_set(submission_kwargs):
+    """Preferred name row must appear in the PDF when a preferred name is provided."""
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=_make_patient(preferred_name="Jo"),
+        contact_preferences=None,
+    )
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = extract_pdf_text(result)
+    assert "Preferred name:" in pdf_text
+    assert "Jo" in pdf_text
+
+
+def test_preferred_name_absent_when_not_set(submission_kwargs):
+    """Preferred name row must not appear when preferred_name is None."""
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=_make_patient(preferred_name=None),
+        contact_preferences=None,
+    )
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = extract_pdf_text(result)
+    assert "Preferred name:" not in pdf_text
+
+
+def test_nhs_number_appears_with_standard_spacing(submission_kwargs):
+    """NHS number must appear formatted as 'NNN NNN NNNN'."""
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=_make_patient(nhs_number="4857773456"),
+        contact_preferences=None,
+    )
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = extract_pdf_text(result)
+    assert "NHS number:" in pdf_text
+    assert "485 777 3456" in pdf_text
+
+
+def test_nhs_number_absent_when_not_set(submission_kwargs):
+    """NHS number row must not appear when nhs_number is None."""
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="symptoms",
+        additional_text=None,
+        answers={},
+        safety_messages=[],
+        question_labels={},
+        patient_details=_make_patient(nhs_number=None),
+        contact_preferences=None,
+    )
+    result = generate_pdf(clinical_output=output, **submission_kwargs)
+    pdf_text = extract_pdf_text(result)
+    assert "NHS number:" not in pdf_text

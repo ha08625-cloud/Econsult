@@ -6,7 +6,7 @@ No database access. No imports from routers or delivery service.
 """
 
 import io
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from fpdf import FPDF
@@ -39,6 +39,35 @@ def _dob_display(dob_iso: str) -> str:
         return datetime.strptime(dob_iso, "%Y-%m-%d").strftime("%-d %B %Y")
     except ValueError:
         return dob_iso
+
+
+def _age_from_dob(dob_iso: str) -> Optional[int]:
+    """
+    Calculate age in whole years from an ISO date string "YYYY-MM-DD".
+    Returns None if the string cannot be parsed.
+
+    Age is calculated as of today. A birthday that has not yet occurred
+    this calendar year means the patient has not yet reached their next
+    birthday, so one year is subtracted.
+    """
+    try:
+        dob = datetime.strptime(dob_iso, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    today = date.today()
+    age = today.year - dob.year
+    # Subtract 1 if the birthday hasn't occurred yet this year
+    if (today.month, today.day) < (dob.month, dob.day):
+        age -= 1
+    return age
+
+
+_GENDER_LABELS: dict[str, str] = {
+    "male": "Male",
+    "female": "Female",
+    "other": "Other",
+    "prefer_not_to_say": "Prefer not to say",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -89,65 +118,60 @@ class _EConsultPDF(FPDF):
         self.set_font("Helvetica", style="I", size=8)
         self.set_text_color(*_NHS_MID_GREY)
         self.cell(
-            0, 5, 
-            f"Online Consultation Form  |  Page {self.page_no()} of {{nb}}", 
+            0, 5,
+            f"Online Consultation Form  |  Page {self.page_no()} of {{nb}}",
             align="C"
         )
-        self.set_text_color(0, 0, 0) # Reset text color for safety
+        self.set_text_color(0, 0, 0)  # Reset text color for safety
 
     def section_heading(self, title: str) -> None:
         """
         Render a clean section heading in NHS Blue with a crisp bottom underline.
         """
         self.ln(8)
-        
+
         self.set_font("Helvetica", style="B", size=11)
         self.set_text_color(*_NHS_BLUE)
-        
+
         self.cell(_USABLE_W, _LINE_H, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        
+
         y_line = self.get_y()
         self.set_draw_color(*_RULE_COLOUR)
         self.set_line_width(0.4)
         self.line(self.l_margin, y_line, self.l_margin + _USABLE_W, y_line)
         self.set_line_width(0.2)
-        
-        self.ln(3) 
+
+        self.ln(3)
         self.set_text_color(0, 0, 0)
 
     def row(self, label: str, value: str, draw_separator: bool = True) -> None:
         """
         Render a two-column label/value row that properly wraps text in both columns.
         """
-        # Calculate the required number of lines for both the label and the value
         self.set_font("Helvetica", style="B", size=10)
         label_lines = len(self.multi_cell(_LABEL_W, _LINE_H, label, dry_run=True, output="LINES"))
-        
+
         self.set_font("Helvetica", size=10)
         value_lines = len(self.multi_cell(_VALUE_W, _LINE_H, value, dry_run=True, output="LINES"))
-        
+
         row_height = max(label_lines, value_lines) * _LINE_H
-        
-        # Manually trigger a page break if this wrapped row will run off the page
+
         if self.get_y() + row_height > self.page_break_trigger:
             self.add_page()
-            
+
         start_x = self.l_margin
         start_y = self.get_y()
 
-        # Print Label (NHS Dark Grey, Bold)
         self.set_font("Helvetica", style="B", size=10)
         self.set_text_color(*_NHS_DARK_GREY)
         self.set_xy(start_x, start_y)
         self.multi_cell(_LABEL_W, _LINE_H, label)
 
-        # Print Value (Black, Normal)
         self.set_font("Helvetica", size=10)
         self.set_text_color(0, 0, 0)
         self.set_xy(start_x + _LABEL_W, start_y)
         self.multi_cell(_VALUE_W, _LINE_H, value)
 
-        # Move the cursor below the tallest of the two columns
         self.set_y(start_y + row_height)
 
         if draw_separator:
@@ -159,34 +183,30 @@ class _EConsultPDF(FPDF):
         """
         Render a safety flag row with pale red background, handling text wrap in both columns.
         """
-        # Calculate heights
         self.set_font("Helvetica", style="B", size=10)
         label_lines = len(self.multi_cell(_LABEL_W, _LINE_H, label, dry_run=True, output="LINES"))
         value_lines = len(self.multi_cell(_VALUE_W, _LINE_H, value, dry_run=True, output="LINES"))
-        
+
         row_height = max(label_lines, value_lines) * _LINE_H
-        box_height = row_height + 2  # slight padding for the background box
-        
+        box_height = row_height + 2
+
         if self.get_y() + box_height > self.page_break_trigger:
             self.add_page()
 
         start_x = self.l_margin
         start_y = self.get_y()
 
-        # Draw the NHS Red tinted background box
         self.set_fill_color(*_SAFETY_BG)
         self.rect(start_x, start_y, _USABLE_W, box_height, style="F")
 
-        # Print Label (NHS Red)
         self.set_text_color(*_SAFETY_TEXT)
         self.set_xy(start_x, start_y + 1)
         self.multi_cell(_LABEL_W, _LINE_H, label)
 
-        # Print Value (NHS Red)
         self.set_xy(start_x + _LABEL_W, start_y + 1)
         self.multi_cell(_VALUE_W, _LINE_H, value)
-        
-        self.set_text_color(0, 0, 0) # Reset to black
+
+        self.set_text_color(0, 0, 0)
         self.set_y(start_y + box_height + 1)
 
     def body_text(self, text: str) -> None:
@@ -250,11 +270,33 @@ def generate_pdf(
     # --- Patient details ---
     pd = clinical_output.patient_details
     pdf.section_heading("PATIENT DETAILS")
-    pdf.row("Patient for:", pd.patient_for or "")
-    pdf.row("Name:", f"{pd.first_name} {pd.last_name}")
+
+    # Combined summary line: "Joe Bloggs, Male, 34"
+    # Gender and age are always included here — gender is required and age derives
+    # from DOB which is always present. The name used here is the registered name;
+    # preferred name appears as a separate row below if provided.
+    gender_label = _GENDER_LABELS.get(pd.gender, pd.gender) if pd.gender else ""
+    age = _age_from_dob(pd.date_of_birth) if pd.date_of_birth else None
+    summary_parts = [f"{pd.first_name} {pd.last_name}"]
+    if gender_label:
+        summary_parts.append(gender_label)
+    if age is not None:
+        summary_parts.append(str(age))
+    pdf.row("Patient:", ", ".join(summary_parts))
+
+    if pd.preferred_name:
+        pdf.row("Preferred name:", pd.preferred_name)
+
     if pd.date_of_birth:
         pdf.row("Date of birth:", _dob_display(pd.date_of_birth))
+
     pdf.row("Postcode:", pd.postcode or "")
+
+    if pd.nhs_number:
+        # Display with standard NHS spacing: 3 digits, space, 3 digits, space, 4 digits
+        n = pd.nhs_number
+        pdf.row("NHS number:", f"{n[:3]} {n[3:6]} {n[6:]}")
+
     if pd.submitter_name:
         pdf.row("Submitted by:", pd.submitter_name)
     if pd.submitter_relationship:

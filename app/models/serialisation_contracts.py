@@ -9,6 +9,9 @@ class PatientDetails:
     last_name: str
     date_of_birth: str        # ISO 8601: "1990-03-15"
     postcode: str
+    gender: str               # "male" | "female" | "other" | "prefer_not_to_say"
+    preferred_name: Optional[str] = field(default=None)
+    nhs_number: Optional[str] = field(default=None)
     submitter_name: Optional[str] = field(default=None)
     submitter_relationship: Optional[str] = field(default=None)
 
@@ -45,6 +48,9 @@ class ClinicalOutput:
             last_name=patient_details_raw["last_name"],
             date_of_birth=patient_details_raw["date_of_birth"],
             postcode=patient_details_raw["postcode"],
+            gender=patient_details_raw["gender"],
+            preferred_name=patient_details_raw.get("preferred_name"),
+            nhs_number=patient_details_raw.get("nhs_number"),
             submitter_name=patient_details_raw.get("submitter_name"),
             submitter_relationship=patient_details_raw.get("submitter_relationship"),
         )

@@ -3,7 +3,8 @@ Unit tests for request_validation.py.
 
 Tests validate_patient_details — all validation paths including DOB numeric
 checks, calendar date assembly, future date rejection, postcode format,
-and submitter field conditionals.
+submitter field conditionals, and the new gender, nhs_number, and
+preferred_name fields.
 
 These are pure unit tests. No database, no HTTP, no app startup required.
 
@@ -33,6 +34,9 @@ def _valid_pd(**overrides) -> dict:
         "last_name": "Smith",
         "date_of_birth": {"day": "15", "month": "3", "year": "1990"},
         "postcode": "SW1A 1AA",
+        "gender": "female",
+        "preferred_name": None,
+        "nhs_number": None,
         "submitter_name": None,
         "submitter_relationship": None,
     }
@@ -124,6 +128,24 @@ class TestValidatePatientDetailsHappyPath(unittest.TestCase):
         pd = _valid_pd()
         pd["date_of_birth"] = {"day": "1", "month": "1", "year": "2000"}
         validate_patient_details(pd)
+
+    def test_all_gender_values_pass(self):
+        for gender in ("male", "female", "other", "prefer_not_to_say"):
+            with self.subTest(gender=gender):
+                validate_patient_details(_valid_pd(gender=gender))
+
+    def test_preferred_name_present_passes(self):
+        validate_patient_details(_valid_pd(preferred_name="Jo"))
+
+    def test_preferred_name_absent_passes(self):
+        # None is acceptable for optional fields
+        validate_patient_details(_valid_pd(preferred_name=None))
+
+    def test_nhs_number_ten_digits_no_spaces_passes(self):
+        validate_patient_details(_valid_pd(nhs_number="4857773456"))
+
+    def test_nhs_number_absent_passes(self):
+        validate_patient_details(_valid_pd(nhs_number=None))
 
 
 class TestValidatePatientDetailsTopLevel(unittest.TestCase):
@@ -263,6 +285,68 @@ class TestValidatePatientDetailsPostcode(unittest.TestCase):
                 validate_patient_details(_valid_pd(postcode=postcode))
 
 
+class TestValidatePatientDetailsGender(unittest.TestCase):
+
+    def test_missing_gender_raises(self):
+        pd = _valid_pd()
+        del pd["gender"]
+        try:
+            validate_patient_details(pd)
+            self.fail("Expected APIError")
+        except APIError:
+            pass
+
+    def test_null_gender_raises(self):
+        _raises_with(_valid_pd(gender=None), "gender")
+
+    def test_invalid_gender_string_raises(self):
+        _raises_with(_valid_pd(gender="nonbinary"), "gender")
+
+    def test_empty_string_gender_raises(self):
+        _raises_with(_valid_pd(gender=""), "gender")
+
+
+class TestValidatePatientDetailsNhsNumber(unittest.TestCase):
+
+    def test_ten_digit_string_passes(self):
+        validate_patient_details(_valid_pd(nhs_number="4857773456"))
+
+    def test_nine_digits_raises(self):
+        _raises_with(_valid_pd(nhs_number="485777345"), "nhs_number")
+
+    def test_eleven_digits_raises(self):
+        _raises_with(_valid_pd(nhs_number="48577734560"), "nhs_number")
+
+    def test_digits_with_spaces_raises(self):
+        # The frontend strips spaces before sending — backend expects no spaces
+        _raises_with(_valid_pd(nhs_number="485 777 3456"), "nhs_number")
+
+    def test_non_digit_characters_raises(self):
+        _raises_with(_valid_pd(nhs_number="485X773456"), "nhs_number")
+
+    def test_empty_string_raises(self):
+        # Empty string is not valid — frontend should send null, not empty string
+        _raises_with(_valid_pd(nhs_number=""), "nhs_number")
+
+    def test_null_nhs_number_passes(self):
+        validate_patient_details(_valid_pd(nhs_number=None))
+
+    def test_non_string_nhs_number_raises(self):
+        _raises_with(_valid_pd(nhs_number=4857773456), "nhs_number")
+
+
+class TestValidatePatientDetailsPreferredName(unittest.TestCase):
+
+    def test_preferred_name_string_passes(self):
+        validate_patient_details(_valid_pd(preferred_name="Jo"))
+
+    def test_preferred_name_null_passes(self):
+        validate_patient_details(_valid_pd(preferred_name=None))
+
+    def test_preferred_name_non_string_raises(self):
+        _raises_with(_valid_pd(preferred_name=123), "preferred_name")
+
+
 class TestValidatePatientDetailsSubmitterFields(unittest.TestCase):
 
     def test_someone_else_missing_submitter_name_raises(self):
@@ -336,9 +420,6 @@ class TestValidateContactPreferencesOutcomeRejection(unittest.TestCase):
     def test_missing_outcome_field_raises(self):
         cp = _valid_cp()
         del cp["consultation_outcome"]
-        # Missing field is caught by require_keys as an illegal-fields check
-        # would not trigger — but the outcome is absent so .get() returns None,
-        # which the required check rejects.
         try:
             validate_contact_preferences(cp)
             raise AssertionError("Expected APIError but no exception was raised")

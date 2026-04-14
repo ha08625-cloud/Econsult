@@ -147,12 +147,19 @@ export interface DateOfBirth {
   year: string;
 }
 
+// SYNC OBLIGATION: Gender values must exactly match VALID_GENDER_VALUES in
+// request_validation.py. If values are added or renamed, update both.
+export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
+
 export interface PatientDetails {
   patient_for: "me" | "someone_else";
   first_name: string;
   last_name: string;
   date_of_birth: DateOfBirth;
   postcode: string;
-  submitter_name?: string;       // required when patient_for === "someone_else"
+  gender: Gender;                  // required
+  preferred_name?: string;         // optional — only sent if non-empty
+  nhs_number?: string;             // optional — only sent if non-empty; digits only, spaces stripped
+  submitter_name?: string;         // required when patient_for === "someone_else"
   submitter_relationship?: string; // required when patient_for === "someone_else"
 }

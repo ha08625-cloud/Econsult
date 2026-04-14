@@ -8,6 +8,10 @@ VALID_CONTACT_METHODS = {"email", "text", "phone"}
 VALID_DOCTOR_PREFERENCES = {"any", "usual"}
 VALID_PATIENT_FOR_VALUES = {"me", "someone_else"}
 
+# SYNC OBLIGATION: These values must exactly match the Gender type in
+# frontend/src/types.ts. If values are added or renamed, update both.
+VALID_GENDER_VALUES = {"male", "female", "other", "prefer_not_to_say"}
+
 # Validates UK postcode format only.
 # Accepts most standard outward + inward code combinations.
 # Does NOT verify the postcode exists or is currently in use.
@@ -17,6 +21,10 @@ _UK_POSTCODE_RE = re.compile(
     r"^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$",
     re.IGNORECASE,
 )
+
+# NHS number validation: strip all whitespace, then check exactly 10 digits.
+# Relaxed validation — checks digit count only, not the check digit algorithm.
+_NHS_DIGITS_RE = re.compile(r"^\d{10}$")
 
 
 def require_keys(obj: dict, allowed: set):
@@ -140,6 +148,9 @@ def validate_patient_details(pd: dict) -> None:
             "last_name",
             "date_of_birth",
             "postcode",
+            "gender",
+            "preferred_name",
+            "nhs_number",
             "submitter_name",
             "submitter_relationship",
         },
@@ -194,6 +205,29 @@ def validate_patient_details(pd: dict) -> None:
         raise INVALID_PAYLOAD(
             "postcode does not match a recognised UK postcode format"
         )
+
+    # gender — required, must be a known value
+    gender = pd.get("gender")
+    if gender not in VALID_GENDER_VALUES:
+        raise INVALID_PAYLOAD(
+            f"gender must be one of: {sorted(VALID_GENDER_VALUES)}"
+        )
+
+    # preferred_name — optional, must be a string or null if present
+    preferred_name = pd.get("preferred_name")
+    if preferred_name is not None and not isinstance(preferred_name, str):
+        raise INVALID_PAYLOAD("preferred_name must be a string or null")
+
+    # nhs_number — optional, but if present must be exactly 10 digits (spaces already
+    # stripped by the frontend before sending)
+    nhs_number = pd.get("nhs_number")
+    if nhs_number is not None:
+        if not isinstance(nhs_number, str):
+            raise INVALID_PAYLOAD("nhs_number must be a string or null")
+        if not _NHS_DIGITS_RE.match(nhs_number):
+            raise INVALID_PAYLOAD(
+                "nhs_number must be exactly 10 digits with no spaces"
+            )
 
     # Submitter fields — required when patient_for is "someone_else"
     if patient_for == "someone_else":
