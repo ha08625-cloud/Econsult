@@ -32,7 +32,7 @@ Delivery worker (delivery_worker.py)
   -> delivery_jobs (claim)
   -> submission_attachments (read pdf bytes)
   -> email send (Mailgun HTTP or SMTP)
-  -> delivery_jobs (mark sent/failed)
+  -> delivery_jobs (mark sent/failed — returns bool on failure path)
 
 Deletion cron (deletion_job.py)
   -> submission_photos (delete where sent)
@@ -238,5 +238,5 @@ Must never: access the database, update delivery status, import engine modules, 
 4. **BYTEA storage for photos.** Acceptable at current scale. Revisit at multi-practice volume.
 5. **Nightly deletion timing.** Minimum retention is ~5.25 hours; maximum ~24 hours. Both are within acceptable data protection bounds.
 6. **`pdf_jobs` and `delivery_jobs` accumulate indefinitely.** They serve as an operational audit trail. Storage cost is trivial. Periodic cleanup can be added later.
-7. **CRITICAL-level logging is the sole alerting mechanism.** Structured error reporting should be revisited in a future ticket.
+7. **Exhaustion is logged but not actively alerted.** `DeliveryRepository.mark_failed` returns `True` when a job is permanently exhausted (status transitions to `failed`). `run_worker` captures this and emits a dedicated `ERROR`-level log including `submission_id`, `job_id`, and `MAX_ATTEMPTS`. Structured alerting (e.g. Sentry) is planned as a separate ticket, before collecting real patient data.
 8. **Alternative delivery backup and admin portal notification for delivery failures** are planned as a separate ticket, before collecting real patient data.

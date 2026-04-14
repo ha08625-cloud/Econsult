@@ -4,6 +4,7 @@
 ### Updates
 - add alerting via Sentry
 - papertrail logging
+- background worker heartbeat
 - remove submissions after 7 days
 - add new end object DebugOutput with no confidential info
 - Add backup alternative SMTP provider 
