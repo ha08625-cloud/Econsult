@@ -74,12 +74,12 @@ from app.services.availability_service import (
     deactivation_clears_override,
 )
 from app.models.availability_models import AvailabilityException, LONDON_TZ
-from app.core.condition_registry import ConditionNotFound
 from app.core.errors import (
     APIError,
     INVALID_PAYLOAD,
     INVALID_DATE_FORMAT,
     INVALID_FIELD_TYPE,
+    ConditionNotFound,
 )
 from app.core.dependencies import (
     get_registry,

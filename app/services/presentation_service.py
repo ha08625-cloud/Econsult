@@ -28,7 +28,8 @@ and passed in explicitly. There is no concept of a missing or optional
 practice in this deployment model.
 """
 
-from app.core.condition_registry import ConditionRegistry, ConditionNotFound
+from app.core.condition_registry import ConditionRegistry
+from app.core.errors import ConditionNotFound
 from app.repositories.practice_repository import PracticeRepository
 
 

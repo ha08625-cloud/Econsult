@@ -27,15 +27,13 @@ import os
 import json
 from typing import Dict, List, Optional
 
+from app.core.errors import ConditionNotFound
+
 logger = logging.getLogger(__name__)
 
 # Limits for search_tags validation. Named constants so they are easy to adjust.
 SEARCH_TAGS_MAX_COUNT = 20
 SEARCH_TAGS_MAX_TAG_LENGTH = 60
-
-
-class ConditionNotFound(Exception):
-    pass
 
 
 class RegistryValidationError(Exception):

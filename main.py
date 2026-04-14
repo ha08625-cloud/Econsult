@@ -26,7 +26,7 @@ import os
 import logging
 
 from app.core.db import alembic_upgrade
-from app.core.condition_registry import ConditionRegistry, ConditionNotFound
+from app.core.condition_registry import ConditionRegistry
 from app.repositories.practice_repository import PracticeRepository
 from app.repositories.availability_repository import AvailabilityRepository
 from app.repositories.runtime_state_repository import RuntimeStateRepository
@@ -38,7 +38,7 @@ from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.audit_repository import AuditRepository
 from app.services.presentation_service import PresentationService
-from app.core.errors import APIError, RateLimitError
+from app.core.errors import APIError, RateLimitError, ConditionNotFound
 from app.services.delivery.delivery_service import (
     ConsoleDeliveryService,
     EmailDeliveryService,

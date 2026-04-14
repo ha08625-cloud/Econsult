@@ -182,8 +182,7 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
     from app.routers.admin_router import router as admin_router
-    from app.core.errors import APIError, RateLimitError
-    from app.core.condition_registry import ConditionNotFound
+    from app.core.errors import APIError, RateLimitError, ConditionNotFound
 
     app = FastAPI()
     app.include_router(admin_router, prefix="/admin", tags=["admin"])

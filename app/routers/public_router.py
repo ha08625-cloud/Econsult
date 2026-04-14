@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.core.condition_registry import ConditionNotFound
+from app.core.errors import ConditionNotFound
 from app.core.dependencies import (
     get_availability_repo,
     get_practice_id,

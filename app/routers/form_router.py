@@ -26,7 +26,6 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
 
-from app.core.condition_registry import ConditionNotFound
 from app.core.dependencies import (
     get_availability_repo,
     get_pdf_repo,
@@ -42,6 +41,7 @@ from app.core.errors import (
     SESSION_CLOSED,
     UNKNOWN_RUNTIME_ID,
     VERSION_CONFLICT,
+    ConditionNotFound,
 )
 from app.core.request_validation import (
     validate_finish_payload,

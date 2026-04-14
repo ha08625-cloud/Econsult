@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 
 
+class ConditionNotFound(Exception):
+    pass
+
+
 @dataclass
 class APIError(Exception):
     code: str
