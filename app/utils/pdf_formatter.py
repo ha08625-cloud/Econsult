@@ -115,50 +115,79 @@ class _EConsultPDF(FPDF):
         self.ln(3) 
         self.set_text_color(0, 0, 0)
 
-    def row(self, label: str, value: str, draw_separator: bool = True) -> None:
+def row(self, label: str, value: str, draw_separator: bool = True) -> None:
         """
-        Render a two-column label/value row.
+        Render a two-column label/value row that properly wraps text in both columns.
         """
-        self.set_x(self.l_margin)
-
-        # Label in NHS Dark Grey
+        # Calculate the required number of lines for both the label and the value
         self.set_font("Helvetica", style="B", size=10)
-        self.set_text_color(*_NHS_DARK_GREY) 
-        self.cell(_LABEL_W, _LINE_H, label, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        label_lines = len(self.multi_cell(_LABEL_W, _LINE_H, label, dry_run=True, output="LINES"))
         
-        # Value in pure Black
         self.set_font("Helvetica", size=10)
-        self.set_text_color(0, 0, 0) 
+        value_lines = len(self.multi_cell(_VALUE_W, _LINE_H, value, dry_run=True, output="LINES"))
+        
+        row_height = max(label_lines, value_lines) * _LINE_H
+        
+        # Manually trigger a page break if this wrapped row will run off the page
+        if self.get_y() + row_height > self.page_break_trigger:
+            self.add_page()
+            
+        start_x = self.l_margin
+        start_y = self.get_y()
+
+        # Print Label (NHS Dark Grey, Bold)
+        self.set_font("Helvetica", style="B", size=10)
+        self.set_text_color(*_NHS_DARK_GREY)
+        self.set_xy(start_x, start_y)
+        self.multi_cell(_LABEL_W, _LINE_H, label)
+
+        # Print Value (Black, Normal)
+        self.set_font("Helvetica", size=10)
+        self.set_text_color(0, 0, 0)
+        self.set_xy(start_x + _LABEL_W, start_y)
         self.multi_cell(_VALUE_W, _LINE_H, value)
 
+        # Move the cursor below the tallest of the two columns
+        self.set_y(start_y + row_height)
+
         if draw_separator:
-            y = self.get_y()
-            self.set_draw_color(*_RULE_COLOUR) 
-            self.line(self.l_margin, y, self.l_margin + _USABLE_W, y)
+            self.set_draw_color(*_RULE_COLOUR)
+            self.line(self.l_margin, self.get_y(), self.l_margin + _USABLE_W, self.get_y())
             self.ln(1)
 
     def safety_row(self, label: str, value: str) -> None:
         """
-        Render a safety flag row with pale red background and red text.
+        Render a safety flag row with pale red background, handling text wrap in both columns.
         """
-        self.set_x(self.l_margin)
-        self.set_fill_color(*_SAFETY_BG)
-        
-        x = self.get_x()
-        y = self.get_y()
-        req_height = self.font_size * len(self.multi_cell(_VALUE_W, _LINE_H, value, dry_run=True, output="LINES"))
-        box_height = max(_LINE_H, req_height + 2)
-
-        self.rect(x, y, _USABLE_W, box_height, style="F")
-        self.set_xy(x, y + 1)
-
+        # Calculate heights
         self.set_font("Helvetica", style="B", size=10)
+        label_lines = len(self.multi_cell(_LABEL_W, _LINE_H, label, dry_run=True, output="LINES"))
+        value_lines = len(self.multi_cell(_VALUE_W, _LINE_H, value, dry_run=True, output="LINES"))
+        
+        row_height = max(label_lines, value_lines) * _LINE_H
+        box_height = row_height + 2  # slight padding for the background box
+        
+        if self.get_y() + box_height > self.page_break_trigger:
+            self.add_page()
+
+        start_x = self.l_margin
+        start_y = self.get_y()
+
+        # Draw the NHS Red tinted background box
+        self.set_fill_color(*_SAFETY_BG)
+        self.rect(start_x, start_y, _USABLE_W, box_height, style="F")
+
+        # Print Label (NHS Red)
         self.set_text_color(*_SAFETY_TEXT)
-        self.cell(_LABEL_W, _LINE_H, label, new_x=XPos.RIGHT, new_y=YPos.TOP)
+        self.set_xy(start_x, start_y + 1)
+        self.multi_cell(_LABEL_W, _LINE_H, label)
+
+        # Print Value (NHS Red)
+        self.set_xy(start_x + _LABEL_W, start_y + 1)
         self.multi_cell(_VALUE_W, _LINE_H, value)
         
-        self.set_text_color(0, 0, 0)
-        self.ln(1)
+        self.set_text_color(0, 0, 0) # Reset to black
+        self.set_y(start_y + box_height + 1)
 
     def body_text(self, text: str) -> None:
         self.set_font("Helvetica", size=10)
