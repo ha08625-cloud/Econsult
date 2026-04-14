@@ -37,7 +37,7 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 - If the practice record does not exist, it is **seeded automatically** from `PRACTICE_NAME` and `PRACTICE_EMAIL` env vars. This handles cloud deployments where the DB starts empty on container restart. It is safe to run on every startup — skips if the row already exists.
 - The database must contain **exactly one practice**. Multiple practices is a clinically unsafe configuration (cross-contamination risk) and aborts startup.
 - The practice must have a non-empty email address.
-- Unless `DEV_MODE=1`: `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_FROM` must all be set.
+- Unless DEV_MODE=1: either MAILGUN_API_KEY+MAILGUN_DOMAIN(Mailgun HTTP) orSMTP_HOST+SMTP_USER+SMTP_PASSWORD(SMTP) must be set, plusEMAIL_FROMin both cases. Validation is handled by_validate_email_config().
 - Unless `DEV_MODE=1`: `INITIAL_ADMIN_EMAIL` and `ALLOWED_ADMIN_DOMAINS` must be set.
 - `INITIAL_ADMIN_EMAIL` domain is validated against `ALLOWED_ADMIN_DOMAINS` on **every startup** (not just first run). If the domain is not in the allowed list, startup aborts. This catches the case where domains are changed without updating the seed email.
 - If `admin_users` is empty for the practice, `INITIAL_ADMIN_EMAIL` is inserted as the first admin user with `role="admin"`. This seeding is idempotent — if the user already exists (unique constraint on email), the startup would crash; the count check guards against this.
@@ -59,8 +59,8 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 | `photo_repo` | PhotoRepository | Patient photo storage |
 | `delivery_repo` | DeliveryRepository | Delivery job queue |
 | `auth_repo` | AuthRepository | Admin MFA auth — users, codes, sessions |
-| `delivery_service` | DeliveryService | Clinical email delivery (Console or SMTP) |
-| `admin_delivery_service` | AdminDeliveryService | MFA code email delivery (Console or SMTP) |
+| delivery_service | DeliveryService | Clinical email delivery (Console, Mailgun HTTP, or SMTP) |
+| admin_delivery_service | AdminDeliveryService | MFA code email delivery (Console, Mailgun HTTP, or SMTP) |
 | `practice_name` | str \| None | Captured once for PDF generation |
 | `allowed_admin_domains` | str | Comma-separated permitted admin email domains |
 
@@ -72,11 +72,15 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 
 **Clinical delivery** (`app.state.delivery_service`):
 - `DEV_MODE=1`: `ConsoleDeliveryService` — logs the email body to stdout, never sends.
-- Production: `EmailDeliveryService` — reads SMTP config from environment at instantiation.
+- `MAILGUN_API_KEY` set: `MailgunHttpDeliveryService` — sends via Mailgun EU HTTP API.
+- Otherwise: `EmailDeliveryService` — sends via SMTP.
 
 **Admin MFA delivery** (`app.state.admin_delivery_service`):
 - `DEV_MODE=1`: `ConsoleAdminDeliveryService` — logs the MFA code to stdout, never sends.
-- Production: `AdminDeliveryService` — reads the same SMTP environment variables but opens a separate SMTP connection per send. No shared state with the clinical delivery path.
+- `MAILGUN_API_KEY` set: `MailgunHttpAdminDeliveryService` — sends via Mailgun EU HTTP API.
+- Otherwise: `AdminDeliveryService` — sends via SMTP, separate connection from clinical path.
+
+Both console implementations raise `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental production use. Selection logic is mirrored in `worker_main.py` for the delivery worker process.
 
 Both console implementations raise `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental production use.
 
