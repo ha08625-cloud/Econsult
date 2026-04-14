@@ -268,9 +268,11 @@ def test_worker_records_failed_backoff_on_smtp_error():
     """
     When send_clinical_output raises EmailDeliveryError, run_worker calls
     delivery_repo.mark_failed with the job id and a future next_retry_after.
+    mark_failed returns False (not exhausted) in the normal retry case.
     """
     job = _make_job(attempt_count=0)
     delivery_repo = _make_delivery_repo(job_sequence=[job, None])
+    delivery_repo.mark_failed.return_value = False
     delivery_service = _make_delivery_service()
     delivery_service.send_clinical_output.side_effect = EmailDeliveryError("SMTP down")
 
@@ -295,6 +297,44 @@ def test_worker_records_failed_backoff_on_smtp_error():
     # next_retry_after should be a future datetime (not None at attempt 0)
     assert call_args.kwargs.get("next_retry_after") is not None or \
            len(call_args.args) >= 3 and call_args.args[2] is not None
+
+
+def test_worker_logs_error_on_exhaustion(caplog):
+    """
+    When mark_failed returns True (job permanently exhausted), run_worker must
+    log an additional error message containing the submission_id, job_id, and
+    MAX_ATTEMPTS.
+    """
+    job = _make_job(attempt_count=MAX_ATTEMPTS - 1)
+    delivery_repo = _make_delivery_repo(job_sequence=[job, None])
+    delivery_repo.mark_failed.return_value = True
+    delivery_service = _make_delivery_service()
+    delivery_service.send_clinical_output.side_effect = EmailDeliveryError("SMTP down")
+
+    with caplog.at_level(logging.ERROR):
+        with patch(
+            "app.services.delivery.delivery_worker.time.sleep",
+            side_effect=[None, StopIteration],
+        ):
+            try:
+                run_worker(
+                    delivery_repo=delivery_repo,
+                    attachment_repo=_make_attachment_repo(),
+                    delivery_service=delivery_service,
+                    poll_interval=10,
+                )
+            except StopIteration:
+                pass
+
+    exhaustion_messages = [
+        r.message for r in caplog.records
+        if "permanently failed" in r.message
+    ]
+    assert len(exhaustion_messages) == 1
+    msg = exhaustion_messages[0]
+    assert "sub-aaa" in msg
+    assert "job-aaa" in msg
+    assert str(MAX_ATTEMPTS) in msg
 
 
 def test_worker_logs_critical_on_attachment_not_found():

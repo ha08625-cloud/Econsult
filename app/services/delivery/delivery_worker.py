@@ -26,6 +26,8 @@ Concurrency:
 
 Failure handling:
 - EmailDeliveryError is caught per-job and recorded via mark_failed.
+- mark_failed returns True when the job is permanently exhausted; an
+  additional error log is emitted in that case.
 - All other exceptions per-job are caught, logged at CRITICAL, and skipped
   so the worker continues processing other jobs.
 - psycopg2.OperationalError from claim_next_pending propagates uncaught
@@ -94,7 +96,7 @@ def run_worker(
             )
         except EmailDeliveryError as exc:
             next_retry = _compute_backoff(job["attempt_count"])
-            delivery_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
+            is_exhausted = delivery_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
             logger.error(
                 "Delivery worker: SMTP failure submission_id=%s job_id=%s "
                 "attempt=%d next_retry_after=%s error=%s",
@@ -104,6 +106,14 @@ def run_worker(
                 next_retry.isoformat() if next_retry else "None (exhausted)",
                 exc,
             )
+            if is_exhausted:
+                logger.error(
+                    "Delivery worker: job permanently failed after %d attempts "
+                    "submission_id=%s job_id=%s",
+                    MAX_ATTEMPTS,
+                    submission_id,
+                    job_id,
+                )
         except Exception as exc:
             # Unexpected error (e.g. AttachmentNotFound — ordering invariant broken,
             # or a repository bug). Log at CRITICAL and skip — do not swallow silently.

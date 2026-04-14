@@ -186,7 +186,7 @@ class DeliveryRepository:
         job_id: str,
         error: str,
         next_retry_after: Optional[datetime],
-    ) -> None:
+    ) -> bool:
         """
         Record a failed delivery attempt.
 
@@ -195,10 +195,13 @@ class DeliveryRepository:
         status remains 'pending' and next_retry_after is set to the
         supplied value.
 
+        Returns True if the job has been permanently exhausted (status is
+        now 'failed'), False if it remains pending for a future retry.
+
         Raises DeliveryJobNotFound if the job_id does not exist.
         """
         with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
                     UPDATE delivery_jobs
@@ -211,7 +214,7 @@ class DeliveryRepository:
                         END,
                         updated_at       = NOW()
                     WHERE id = %(job_id)s
-                    RETURNING id
+                    RETURNING id, status
                     """,
                     {
                         "job_id": job_id,
@@ -223,6 +226,7 @@ class DeliveryRepository:
                 result = cur.fetchone()
                 if result is None:
                     raise DeliveryJobNotFound(job_id)
+                return result["status"] == "failed"
 
     # ------------------------------------------------------------------
     # Lookup

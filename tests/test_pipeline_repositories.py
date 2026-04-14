@@ -660,7 +660,8 @@ class TestDeliveryRepositoryMarkFailed:
                 condition_label="Urinary Tract Infection",
                 submitted_at=submitted_at,
             )
-            repo.mark_failed(job_id, "SMTP timeout", next_retry_after=future)
+            result = repo.mark_failed(job_id, "SMTP timeout", next_retry_after=future)
+            assert result is False
             row = _read_delivery_job(job_id)
             assert row["status"] == "pending"
             assert row["attempt_count"] == 1
@@ -684,12 +685,14 @@ class TestDeliveryRepositoryMarkFailed:
 
             for i in range(MAX_ATTEMPTS - 1):
                 _backdate_delivery_job_retry(job_id)
-                repo.mark_failed(job_id, f"failure {i + 1}", next_retry_after=future)
+                result = repo.mark_failed(job_id, f"failure {i + 1}", next_retry_after=future)
+                assert result is False
                 row = _read_delivery_job(job_id)
                 assert row["status"] == "pending"
 
             _backdate_delivery_job_retry(job_id)
-            repo.mark_failed(job_id, f"failure {MAX_ATTEMPTS}", next_retry_after=future)
+            result = repo.mark_failed(job_id, f"failure {MAX_ATTEMPTS}", next_retry_after=future)
+            assert result is True
             row = _read_delivery_job(job_id)
             assert row["status"] == "failed"
             assert row["attempt_count"] == MAX_ATTEMPTS
