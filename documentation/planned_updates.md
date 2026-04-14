@@ -3,7 +3,6 @@
 
 ### Updates
 - add alerting via Sentry
-- admin portal: 1. allow adding of other admin users 2. Logout button 3. Warning: you will be logged out in X minutes 4. Change logout window to 30 minutes 5. Add passwords
 - papertrail logging
 - remove submissions after 7 days
 - add new end object DebugOutput with no confidential info
@@ -15,7 +14,14 @@
 - Notification architecture
 - safety rules implemented on clicking yes/no, rather than on submit form (defer - big feature change and we need to know if blocking safety rules are desired or not)
 
-### Late prototype updates
+### Admin portal updates
+- IP-based rate limiting via `slowapi` — separate ticket
+- Multiple admin users or role-based access control beyond the `role` field in the schema
+- Staff vs admin role enforcement in router handlers (schema supports it, enforcement is not implemented)
+- Session refresh / sliding expiry
+- Passowrds for true MFA
+
+### Encoder updates
 - Deterministic data augmentation
 - Full question sets
 - Encoder/head training

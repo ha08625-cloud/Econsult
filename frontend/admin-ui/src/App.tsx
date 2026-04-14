@@ -18,7 +18,7 @@ import { useState, useEffect } from "react";
 import LoginView from "./screens/LoginView";
 import EditorView from "./screens/EditorView";
 import type { ConditionSummary } from "./types";
-import { fetchConditions, AuthError } from "./api";
+import { fetchConditions, AuthError, logout } from "./api";
 
 type AuthState = "checking" | "login" | "editor";
 
@@ -68,12 +68,31 @@ export default function App() {
     setAuthState("login");
   }
 
+  // Called when the user clicks the explicit "Log out" button.
+  // Fires the backend request and immediately clears local state.
+  async function handleLogout() {
+    await logout();
+    setConditions([]);
+    setAuthState("login");
+  }
+
   return (
     <div>
-      <header className="page-header">
+      <header className="page-header" style={{ display: "flex", alignItems: "center" }}>
         <span className="wordmark">econsult</span>
         <span className="separator" />
         <span className="title">Practice admin</span>
+        
+        {/* Render the logout button only when authenticated */}
+        {authState === "editor" && (
+          <button 
+            className="tab-btn" 
+            onClick={handleLogout} 
+            style={{ marginLeft: "auto", cursor: "pointer" }}
+          >
+            Log out
+          </button>
+        )}
       </header>
 
       <main className="main">
