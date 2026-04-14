@@ -101,6 +101,8 @@ def _valid_patient_details() -> dict:
         "gender": "female",
         "submitter_name": None,
         "submitter_relationship": None,
+        "preferred_name": None,
+        "nhs_number": None,
     }
 
 

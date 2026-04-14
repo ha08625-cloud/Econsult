@@ -411,6 +411,7 @@ def _make_dummy_patient_details() -> PatientDetails:
         last_name="Patient",
         date_of_birth="1990-01-15",
         postcode="SW1A 1AA",
+        gender="female",
     )
 
 
