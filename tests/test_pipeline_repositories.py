@@ -400,7 +400,8 @@ class TestPDFRepositoryMarkFailed:
         try:
             _create_submission(sid)
             job_id = repo.create_job(sid, attachment_count=2, delivery_email="gp@example.com")
-            repo.mark_failed(job_id, "PDF generation failed", next_retry_after=future)
+            result = repo.mark_failed(job_id, "PDF generation failed", next_retry_after=future)
+            assert result is False
             row = _read_pdf_job(job_id)
             assert row["status"] == "pending"
             assert row["attempt_count"] == 1
@@ -419,14 +420,18 @@ class TestPDFRepositoryMarkFailed:
 
             for i in range(MAX_PDF_ATTEMPTS - 1):
                 _backdate_pdf_job_retry(job_id)
-                repo.mark_failed(job_id, f"failure {i + 1}", next_retry_after=future)
+                result = repo.mark_failed(job_id, f"failure {i + 1}", next_retry_after=future)
+                assert result is False, (
+                    f"Expected False (pending) after failure {i + 1}, got True"
+                )
                 row = _read_pdf_job(job_id)
                 assert row["status"] == "pending", (
                     f"Expected pending after failure {i + 1}, got {row['status']}"
                 )
 
             _backdate_pdf_job_retry(job_id)
-            repo.mark_failed(job_id, f"failure {MAX_PDF_ATTEMPTS}", next_retry_after=future)
+            result = repo.mark_failed(job_id, f"failure {MAX_PDF_ATTEMPTS}", next_retry_after=future)
+            assert result is True
             row = _read_pdf_job(job_id)
             assert row["status"] == "failed"
             assert row["attempt_count"] == MAX_PDF_ATTEMPTS

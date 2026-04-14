@@ -127,7 +127,15 @@ def run_worker(
             )
         except Exception as exc:
             next_retry = _compute_backoff(job["attempt_count"])
-            pdf_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
+            is_exhausted = pdf_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
+            if is_exhausted:
+                logger.error(
+                    "PDF worker: job permanently failed after %d attempts "
+                    "submission_id=%s job_id=%s",
+                    MAX_PDF_ATTEMPTS,
+                    submission_id,
+                    job_id,
+                )
             logger.critical(
                 "PDF worker: job failed submission_id=%s job_id=%s attempt=%d error=%s",
                 submission_id,

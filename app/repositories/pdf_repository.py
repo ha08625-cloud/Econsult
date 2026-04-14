@@ -168,7 +168,7 @@ class PDFRepository:
         job_id: str,
         error: str,
         next_retry_after: Optional[datetime],
-    ) -> None:
+    ) -> bool:
         """
         Record a failed PDF generation attempt.
 
@@ -178,6 +178,9 @@ class PDFRepository:
         supplied value so the job is not re-claimed before the backoff
         window elapses.
 
+        Returns True if the job has been permanently exhausted (status is
+        now 'failed'), False if it remains pending for a future retry.
+
         next_retry_after must be supplied by the caller (typically the
         PDF worker, which reads PDF_RETRY_BACKOFF_MINUTES). Passing None
         leaves the job immediately eligible for re-claim, which is only
@@ -186,7 +189,7 @@ class PDFRepository:
         Raises PDFJobNotFound if the job_id does not exist.
         """
         with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
                     UPDATE pdf_jobs
@@ -199,7 +202,7 @@ class PDFRepository:
                         END,
                         updated_at       = NOW()
                     WHERE id = %(job_id)s
-                    RETURNING id
+                    RETURNING id, status
                     """,
                     {
                         "job_id": job_id,
@@ -211,6 +214,7 @@ class PDFRepository:
                 result = cur.fetchone()
                 if result is None:
                     raise PDFJobNotFound(job_id)
+                return result["status"] == "failed"
 
     # ------------------------------------------------------------------
     # Lookup
