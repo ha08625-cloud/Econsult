@@ -2,12 +2,9 @@
 - Pydantic request model migration: Replace all hand-written isinstance/type-check validation in both admin_router.py and request_validation.py with Pydantic BaseModel definitions, letting FastAPI handle JSON parsing, type coercion, and missing-field errors automatically. This also requires adding a RequestValidationError exception handler in main.py to convert Pydantic's error format into the existing {"error": {"code": ..., "message": ...}} shape, updating the frontend extractErrorDetail functions to handle any new edge cases, and retiring the unused api_models.py dataclasses.
 
 ### Updates
-- add alerting 
-- seed one admin email
+- add alerting via Sentry
+- admin portal: 1. allow adding of other admin users 2. Logout button 3. Warning: you will be logged out in X minutes 4. Change logout window to 30 minutes 5. Add passwords
 - papertrail logging
-- separate dev and main and multi tenancy branches
-- merge all migrations before production
-- add testing for admin ui components and combobox 
 - remove submissions after 7 days
 - add new end object DebugOutput with no confidential info
 - Add backup alternative SMTP provider 
@@ -24,6 +21,7 @@
 - Encoder/head training
 
 ### production readiness updates
+- MHRA registration - econsult health is registered as a class I medical device (technically anything that acts as patient triage is class 2a but we want to avoid that)
 - Encryption and cybersecurity
 - Data protection
 - Digital clinical safety

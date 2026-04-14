@@ -98,6 +98,7 @@ def _valid_patient_details() -> dict:
         "last_name": "Smith",
         "date_of_birth": {"day": "15", "month": "3", "year": "1990"},
         "postcode": "SW1A 1AA",
+        "gender": "female",
         "submitter_name": None,
         "submitter_relationship": None,
     }

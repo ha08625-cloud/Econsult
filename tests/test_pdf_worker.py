@@ -107,6 +107,7 @@ def _make_submission_repo(condition_label="UTI", submitted_at=None):
                 "last_name": "Smith",
                 "date_of_birth": "1990-01-01",
                 "postcode": "SW1A 1AA",
+                "gender": "female",
                 "submitter_name": None,
                 "submitter_relationship": None,
             },
