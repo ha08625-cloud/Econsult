@@ -299,6 +299,9 @@ async def form_finish(
         last_name=pd_raw["last_name"].strip(),
         date_of_birth=dob_iso,
         postcode=pd_raw["postcode"].strip(),
+        gender=pd_raw["gender"],
+        preferred_name=pd_raw.get("preferred_name") or None,
+        nhs_number=pd_raw.get("nhs_number") or None,
         submitter_name=pd_raw.get("submitter_name") or None,
         submitter_relationship=pd_raw.get("submitter_relationship") or None,
     )
