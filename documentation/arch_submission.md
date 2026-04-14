@@ -31,7 +31,7 @@ PDF worker (pdf_worker.py)
 Delivery worker (delivery_worker.py)
   -> delivery_jobs (claim)
   -> submission_attachments (read pdf bytes)
-  -> SMTP send
+  -> email send (Mailgun HTTP or SMTP)
   -> delivery_jobs (mark sent/failed)
 
 Deletion cron (deletion_job.py)
@@ -118,27 +118,9 @@ Both `PDFRepository.claim_next_pending` and `DeliveryRepository.claim_next_pendi
 
 ---
 
-## Orphan Detection
+## Data Retention & Deletion
 
-`PDFRepository.list_orphaned_submissions(older_than_minutes)` uses a LEFT JOIN between `submission_records` and `pdf_jobs` to find submissions that have no corresponding PDF job and are older than the threshold:
-
-```sql
-SELECT sr.submission_id
-FROM submission_records sr
-LEFT JOIN pdf_jobs pj ON sr.submission_id = pj.submission_id
-WHERE pj.submission_id IS NULL
-  AND sr.submitted_at < NOW() - INTERVAL '1 minute' * %(threshold)s
-```
-
-This catches the case where `form_router.py` crashed after `create_submission` but before `pdf_repo.create_job`. No mutation is performed — the PDF worker logs at CRITICAL (rate-limited to once per 60 seconds) and continues. Recovery requires operator intervention.
-
-**Manual recovery:** Inspect whether `submission_photos` rows exist for the orphaned submission. If photos are present and the count can be determined from a manual inspection, an operator can manually insert a `pdf_jobs` row. If photos are missing or incomplete, the submission is unrecoverable via automation and must be communicated to the practice for re-collection.
-
----
-
-## Photo Retention
-
-Raw photos (`submission_photos`) and generated PDFs (`submission_attachments`) are deleted by a nightly Railway cron job (`deletion_job.py`) for submissions where `delivery_jobs.status = 'sent'`. The cron runs at midnight.
+Photos (`submission_photos`) and PDF attachments (`submission_attachments`) are deleted nightly by `deletion_job.py` for all submissions where `delivery_jobs.status = 'sent'`.
 
 - Minimum retention: ~5.25 hours (submission at 6:45pm grace window close, deletion at midnight).
 - Maximum retention: ~24 hours (submission at practice open, deletion next midnight).
@@ -223,10 +205,13 @@ Owns the `submission_photos` table. `save_photos` inserts one row per photo with
 
 ### Delivery Service (`delivery_service.py`)
 
-Abstract base class (`DeliveryService`) with two concrete implementations:
+Abstract base class (`DeliveryService`) with three concrete implementations:
 
-- **`EmailDeliveryService`** — production. SMTP configuration read from environment variables at instantiation time (not at send time), so a misconfigured deployment fails at startup rather than at the first submission.
+- **`MailgunHttpDeliveryService`** — production (current deployment). Sends via the Mailgun EU HTTP API (`https://api.eu.mailgun.net/v3/{domain}/messages`). Requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `EMAIL_FROM`. Used because Railway's free and hobby plans block outbound SMTP.
+- **`EmailDeliveryService`** — production alternative. SMTP configuration read from environment variables at instantiation time. Available for deployments where SMTP is not blocked.
 - **`ConsoleDeliveryService`** — development only. Raises `RuntimeError` at instantiation if `DEV_MODE` is not set.
+
+Service selection in `main.py` and `worker_main.py`: `DEV_MODE=1` -> Console; `MAILGUN_API_KEY` set -> Mailgun HTTP; otherwise -> SMTP.
 
 `send_clinical_output` accepts `to_email`, `condition_label`, `pdf_bytes`, `submission_id`, and `submitted_at`. The delivery service has no knowledge of clinical contracts. The email body is a static message; all clinical detail is carried exclusively in the PDF attachment.
 
@@ -247,7 +232,7 @@ Must never: access the database, update delivery status, import engine modules, 
 
 ## Known Limitations
 
-1. **Duplicate delivery on crash.** A process crash after a successful SMTP send but before `mark_sent` results in a re-send on the next retry. Duplicate delivery is safer than silently dropping a submission.
+1. **Duplicate delivery on crash.** A process crash after a successful send but before `mark_sent` results in a re-send on the next retry. Duplicate delivery is safer than silently dropping a submission.
 2. **No health check or liveness probe for workers.** Railway process restart is the only recovery mechanism for a stuck worker. Explicitly deferred. Revisit before scaling to multiple practices.
 3. **Orphan submissions require operator intervention.** If the router crashes between `create_submission` and `pdf_repo.create_job`, the orphan detection query finds the submission but automation cannot determine whether photos were fully saved. Manual inspection is required.
 4. **BYTEA storage for photos.** Acceptable at current scale. Revisit at multi-practice volume.
