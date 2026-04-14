@@ -91,6 +91,7 @@ def _create_submission(sid: str) -> None:
         last_name="Patient",
         date_of_birth="1990-01-15",
         postcode="SW1A 1AA",
+        gender= "female",
     )
     clinical = ClinicalOutput(
         condition_id="uti",
