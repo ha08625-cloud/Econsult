@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import * as Sentry from "@sentry/react";
 import {
   getSafetyWarning,
   getPractice,
@@ -69,6 +70,16 @@ export default function App() {
 
   // Shared UI state
   const [fatalError, setFatalError] = useState<string | null>(null);
+
+  // Imperative fatal error handler. Always use this instead of calling
+  // setFatalError directly. It reports to Sentry before updating UI state,
+  // which ensures the event is captured even if the component subsequently
+  // unmounts. Safety messages must never be passed here — triggered safety
+  // rules are successful clinical operations, not system failures.
+  function triggerFatalError(errorMsg: string) {
+    Sentry.captureMessage(`Fatal UI Error: ${errorMsg}`, "fatal");
+    setFatalError(errorMsg);
+  }
 
   // Warning dialog shown when patient navigates back from EDIT to FREE_TEXT.
   // Renders as an overlay on top of the EDIT screen so answers are not lost.
@@ -316,7 +327,10 @@ export default function App() {
   // ---------------------------------
   // State checklist
   // ---------------------------------
-  // Every useState in this file must appear in this list AND in the reset block.
+  // Every useState in this file must appear in this list.
+  // The fatalError reset path uses window.location.reload() — a hard reload
+  // guarantees object URL cleanup and a clean memory slate without requiring
+  // a manual enumeration of every state setter.
   //
   // screen
   // runtimeId
@@ -357,35 +371,7 @@ export default function App() {
         <div className="btn-row">
           <button
             className="btn btn-primary"
-            onClick={() => {
-              // Revoke photo object URLs before clearing state.
-              photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
-              setFatalError(null);
-              setScreen("SAFETY_WARNING");
-              setSafetyWarningFetchState({ status: "loading" });
-              setPracticeNameFetchState({ status: "loading" });
-              setSafetyConfirmed(false);
-              setRuntimeId(null);
-              setVersion(null);
-              setClientState(null);
-              setEditableAnswers(null);
-              setAdditionalText("");
-              setSafetyMessages([]);
-              setPatientDetails(null);
-              setConsultationOutcome(null);
-              setPhotos([]);
-              setShowBackWarning(false);
-              setConditions(null);
-              setSelectedConditionId(null);
-              setPresentationState({ status: "loading" });
-              setPresentationFetchTrigger(0);
-              setFreeText("");
-              setPracticeIsOpen(null);
-              setAvailabilityClosedMessage(null);
-              setAfterHoursNotice(null);
-              setDoctors([]);
-              setDoctorsFetched(false);
-            }}
+            onClick={() => window.location.reload()}
           >
             Try again
           </button>
@@ -471,7 +457,7 @@ export default function App() {
 
   if (screen === "FREE_TEXT") {
     if (selectedConditionId === null) {
-      setFatalError("No condition selected");
+      triggerFatalError("No condition selected");
       return null;
     }
 
@@ -498,7 +484,7 @@ export default function App() {
 
   if (screen === "EDIT") {
     if (!clientState || !editableAnswers || runtimeId === null || version === null) {
-      setFatalError("Invalid EDIT state");
+      triggerFatalError("Invalid EDIT state");
       return null;
     }
 
@@ -579,7 +565,7 @@ export default function App() {
 
   if (screen === "REVIEW") {
     if (!clientState || runtimeId === null || version === null) {
-      setFatalError("Invalid REVIEW state");
+      triggerFatalError("Invalid REVIEW state");
       return null;
     }
 
@@ -600,15 +586,15 @@ export default function App() {
 
   if (screen === "CONTACT") {
     if (runtimeId === null || version === null) {
-      setFatalError("Invalid CONTACT state");
+      triggerFatalError("Invalid CONTACT state");
       return null;
     }
     if (patientDetails === null) {
-      setFatalError("Patient details missing at submission");
+      triggerFatalError("Patient details missing at submission");
       return null;
     }
     if (consultationOutcome === null) {
-      setFatalError("Consultation outcome missing at submission");
+      triggerFatalError("Consultation outcome missing at submission");
       return null;
     }
 

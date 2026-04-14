@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/react";
 import type {
   ClientAnswerReturn,
   ClientStateView,
@@ -73,10 +74,22 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
       body: JSON.stringify(body),
     });
   } catch {
+    if (!navigator.onLine) {
+      throw new ApiError("Network failure", null);
+    }
+    Sentry.captureMessage(`Network/CORS failure: POST ${url}`, "warning");
     throw new ApiError("Network failure", null);
   }
 
   if (!res.ok) {
+    if (res.status >= 500) {
+      Sentry.withScope((scope) => {
+        scope.setTag("http.status_code", res.status);
+        scope.setTag("http.method", "POST");
+        scope.setExtra("request_url", url);
+        Sentry.captureException(new Error(`API 500: POST ${url}`));
+      });
+    }
     // For 503 responses, extract the detail field for the closed message.
     if (res.status === 503) {
       let detail: string | null = null;
@@ -104,10 +117,22 @@ async function getJson<T>(url: string): Promise<T> {
       },
     });
   } catch {
+    if (!navigator.onLine) {
+      throw new ApiError("Network failure", null);
+    }
+    Sentry.captureMessage(`Network/CORS failure: GET ${url}`, "warning");
     throw new ApiError("Network failure", null);
   }
 
   if (!res.ok) {
+    if (res.status >= 500) {
+      Sentry.withScope((scope) => {
+        scope.setTag("http.status_code", res.status);
+        scope.setTag("http.method", "GET");
+        scope.setExtra("request_url", url);
+        Sentry.captureException(new Error(`API 500: GET ${url}`));
+      });
+    }
     throw new ApiError(`HTTP ${res.status}`, res.status);
   }
 
@@ -232,10 +257,22 @@ export async function finishForm(
       // correct multipart boundary when a FormData object is passed as body.
     });
   } catch {
+    if (!navigator.onLine) {
+      throw new ApiError("Network failure", null);
+    }
+    Sentry.captureMessage("Network/CORS failure: POST /form/finish", "warning");
     throw new ApiError("Network failure", null);
   }
 
   if (!res.ok) {
+    if (res.status >= 500) {
+      Sentry.withScope((scope) => {
+        scope.setTag("http.status_code", res.status);
+        scope.setTag("http.method", "POST");
+        scope.setExtra("request_url", "/form/finish");
+        Sentry.captureException(new Error(`API 500: POST /form/finish`));
+      });
+    }
     // For 422 responses, extract the detail field so friendlyErrorMessage can
     // convert photo validation errors into patient-friendly instructions.
     if (res.status === 422) {
@@ -245,6 +282,11 @@ export async function finishForm(
         detail = body.detail ?? null;
       } catch {
         // If we can't parse the body, proceed with null detail.
+      }
+      if (detail) {
+        // detail strings from form_router.py are generic (e.g. "One of your
+        // photos is too large to send.") and contain no patient-supplied data.
+        Sentry.captureMessage(`Photo upload rejected: ${detail}`, "warning");
       }
       throw new ApiError(`HTTP ${res.status}`, res.status, detail);
     }
