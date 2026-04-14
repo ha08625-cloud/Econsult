@@ -7,7 +7,7 @@ rows and enqueuing the resulting attachment for delivery.
 Architecture rules:
 - This module may import from: pdf_repository, photo_repository,
   submission_repository, attachment_repository, delivery_repository,
-  pdf_formatter, pdf_constants, delivery_constants.
+  pdf_formatter, pdf_constants, delivery_constants, sentry_sdk.
 - This module must never: access the database directly (uses repositories),
   import from routers, or implement delivery policy.
 - The operation ordering within process_job is an invariant that must not
@@ -47,6 +47,8 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+import sentry_sdk
 
 from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.delivery_repository import DeliveryRepository
@@ -115,35 +117,48 @@ def run_worker(
         submission_id = str(job["submission_id"])
         job_id = str(job["id"])
 
-        try:
-            _process_job(
-                job=job,
-                pdf_repo=pdf_repo,
-                photo_repo=photo_repo,
-                submission_repo=submission_repo,
-                attachment_repo=attachment_repo,
-                delivery_repo=delivery_repo,
-                practice_name=practice_name,
-            )
-        except Exception as exc:
-            next_retry = _compute_backoff(job["attempt_count"])
-            is_exhausted = pdf_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
-            if is_exhausted:
-                logger.error(
-                    "PDF worker: job permanently failed after %d attempts "
-                    "submission_id=%s job_id=%s",
-                    MAX_PDF_ATTEMPTS,
+        with sentry_sdk.new_scope() as scope:
+            # Tag every Sentry event from this iteration with the job
+            # identifiers. new_scope() inherits process-level tags (e.g.
+            # server_name set in telemetry.py) while isolating breadcrumbs
+            # so one job's noise cannot contaminate the next.
+            scope.set_tag("job_id", job_id)
+            scope.set_tag("submission_id", submission_id)
+
+            try:
+                _process_job(
+                    job=job,
+                    pdf_repo=pdf_repo,
+                    photo_repo=photo_repo,
+                    submission_repo=submission_repo,
+                    attachment_repo=attachment_repo,
+                    delivery_repo=delivery_repo,
+                    practice_name=practice_name,
+                )
+            except Exception as exc:
+                next_retry = _compute_backoff(job["attempt_count"])
+                is_exhausted = pdf_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
+                if is_exhausted:
+                    sentry_sdk.capture_message(
+                        f"PDF job permanently failed after {MAX_PDF_ATTEMPTS} attempts. "
+                        "Operator intervention required.",
+                        level="error",
+                    )
+                    logger.error(
+                        "PDF worker: job permanently failed after %d attempts "
+                        "submission_id=%s job_id=%s",
+                        MAX_PDF_ATTEMPTS,
+                        submission_id,
+                        job_id,
+                    )
+                logger.critical(
+                    "PDF worker: job failed submission_id=%s job_id=%s attempt=%d error=%s",
                     submission_id,
                     job_id,
+                    job["attempt_count"] + 1,
+                    exc,
+                    exc_info=True,
                 )
-            logger.critical(
-                "PDF worker: job failed submission_id=%s job_id=%s attempt=%d error=%s",
-                submission_id,
-                job_id,
-                job["attempt_count"] + 1,
-                exc,
-                exc_info=True,
-            )
 
 
 def _process_job(
@@ -277,6 +292,7 @@ def _check_orphans(
             "submission_ids=%s",
             ORPHAN_THRESHOLD_MINUTES,
             orphan_ids,
+            extra={"orphan_submission_ids": orphan_ids},
         )
         return now
 

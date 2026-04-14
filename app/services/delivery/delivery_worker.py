@@ -6,7 +6,7 @@ sending PDFs to the practice via email.
 
 Architecture rules:
 - This module may import from: delivery_repository, attachment_repository,
-  delivery_service, delivery_constants.
+  delivery_service, delivery_constants, sentry_sdk.
 - This module must never: implement clinical logic, access the database
   directly, import from routers, or read submission_records.
 - All delivery metadata (to_email, condition_label, submitted_at) is read
@@ -43,6 +43,8 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+import sentry_sdk
 
 from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.delivery_repository import DeliveryRepository
@@ -87,44 +89,56 @@ def run_worker(
         job_id = str(job["id"])
         submission_id = str(job["submission_id"])
 
-        try:
-            _process_job(
-                job=job,
-                delivery_repo=delivery_repo,
-                attachment_repo=attachment_repo,
-                delivery_service=delivery_service,
-            )
-        except EmailDeliveryError as exc:
-            next_retry = _compute_backoff(job["attempt_count"])
-            is_exhausted = delivery_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
-            logger.error(
-                "Delivery worker: SMTP failure submission_id=%s job_id=%s "
-                "attempt=%d next_retry_after=%s error=%s",
-                submission_id,
-                job_id,
-                job["attempt_count"] + 1,
-                next_retry.isoformat() if next_retry else "None (exhausted)",
-                exc,
-            )
-            if is_exhausted:
+        with sentry_sdk.new_scope() as scope:
+            # Tag every Sentry event from this iteration with the job
+            # identifiers. new_scope() inherits process-level tags while
+            # isolating breadcrumbs between jobs.
+            scope.set_tag("job_id", job_id)
+            scope.set_tag("submission_id", submission_id)
+
+            try:
+                _process_job(
+                    job=job,
+                    delivery_repo=delivery_repo,
+                    attachment_repo=attachment_repo,
+                    delivery_service=delivery_service,
+                )
+            except EmailDeliveryError as exc:
+                next_retry = _compute_backoff(job["attempt_count"])
+                is_exhausted = delivery_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
                 logger.error(
-                    "Delivery worker: job permanently failed after %d attempts "
-                    "submission_id=%s job_id=%s",
-                    MAX_ATTEMPTS,
+                    "Delivery worker: SMTP failure submission_id=%s job_id=%s "
+                    "attempt=%d next_retry_after=%s error=%s",
                     submission_id,
                     job_id,
+                    job["attempt_count"] + 1,
+                    next_retry.isoformat() if next_retry else "None (exhausted)",
+                    exc,
                 )
-        except Exception as exc:
-            # Unexpected error (e.g. AttachmentNotFound — ordering invariant broken,
-            # or a repository bug). Log at CRITICAL and skip — do not swallow silently.
-            logger.critical(
-                "Delivery worker: unhandled exception submission_id=%s job_id=%s "
-                "error=%s",
-                submission_id,
-                job_id,
-                exc,
-                exc_info=True,
-            )
+                if is_exhausted:
+                    sentry_sdk.capture_message(
+                        f"Delivery job permanently failed after {MAX_ATTEMPTS} attempts. "
+                        "Operator intervention required.",
+                        level="error",
+                    )
+                    logger.error(
+                        "Delivery worker: job permanently failed after %d attempts "
+                        "submission_id=%s job_id=%s",
+                        MAX_ATTEMPTS,
+                        submission_id,
+                        job_id,
+                    )
+            except Exception as exc:
+                # Unexpected error (e.g. AttachmentNotFound — ordering invariant broken,
+                # or a repository bug). Log at CRITICAL and skip — do not swallow silently.
+                logger.critical(
+                    "Delivery worker: unhandled exception submission_id=%s job_id=%s "
+                    "error=%s",
+                    submission_id,
+                    job_id,
+                    exc,
+                    exc_info=True,
+                )
 
 
 def _process_job(
