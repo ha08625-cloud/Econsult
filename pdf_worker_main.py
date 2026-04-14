@@ -35,6 +35,10 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 
+from app.core.telemetry import init_telemetry  # noqa: E402
+
+init_telemetry("pdf-worker")
+
 logger = logging.getLogger(__name__)
 
 

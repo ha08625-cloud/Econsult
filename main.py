@@ -19,14 +19,22 @@ Delivery service selection:
 - Otherwise: EmailDeliveryService / AdminDeliveryService (SMTP)
 """
 
-from fastapi import FastAPI, HTTPException
-from fastapi.exception_handlers import http_exception_handler as _default_http_handler
-from fastapi.responses import JSONResponse
 import os
 import logging
 
-from app.core.db import alembic_upgrade
-from app.core.condition_registry import ConditionRegistry
+from app.core.telemetry import init_telemetry
+
+# Initialise Sentry before any other internal import. This ensures that
+# exceptions raised during module-level startup (e.g. a failed Alembic
+# migration in db.py) are captured by Sentry's default sys.excepthook.
+init_telemetry("http-api")
+
+from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi.exception_handlers import http_exception_handler as _default_http_handler  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+
+from app.core.db import alembic_upgrade  # noqa: E402
+from app.core.condition_registry import ConditionRegistry  # noqa: E402
 from app.repositories.practice_repository import PracticeRepository
 from app.repositories.availability_repository import AvailabilityRepository
 from app.repositories.runtime_state_repository import RuntimeStateRepository
@@ -54,6 +62,8 @@ from app.routers.admin_router import router as admin_router
 from app.routers.public_router import router as public_router
 from app.routers.form_router import router as form_router
 from starlette.staticfiles import StaticFiles
+
+import sentry_sdk  # noqa: E402 — safe: no-op if Sentry not initialised
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +264,11 @@ presentation_service = PresentationService(registry, practice_repo)
 # Startup validation -- runs at import time (when FastAPI loads the module).
 # Any failure here prevents the application from starting.
 # Also seeds the practice record and initial admin user if they do not exist.
+# The "startup" tag is set unconditionally — sentry_sdk.set_tag is a no-op
+# when Sentry is not initialised, so no guard is needed.
+sentry_sdk.set_tag("phase", "startup")
 app.state.practice_id = _validate_startup(practice_repo, auth_repo)
+sentry_sdk.set_tag("phase", "running")
 app.state.registry = registry
 app.state.practice_repo = practice_repo
 app.state.availability_repo = availability_repo

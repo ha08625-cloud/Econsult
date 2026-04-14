@@ -16,9 +16,6 @@
 - `railway.toml` — Railway deployment config.
 - `requirements.txt` — Python dependencies.
 - `alembic.ini` — Alembic configuration.
-- `pytest.ini` — Pytest configuration.
-- `Makefile` — Test targets.
-- `.github/` — github actions configuration.
 - `app/` — All Python application code.
 - `alembic/` — Alembic migration scripts.
 - `frontend/` — Patient-facing React app and Admin UI.
@@ -56,8 +53,8 @@ Business logic and orchestration.
 - `admin_delivery_service.py` — Admin MFA delivery. *Imports: stdlib only.*
 - `delivery_constants.py` — Retry thresholds. *Imports: standalone; no application modules.*
 - `pdf_constants.py` — PDF retry thresholds. *Imports: standalone; no application modules.*
-- `delivery_worker.py` — Delivery worker loop. *Imports: delivery_repository, attachment_repository, delivery_service, delivery_constants only.*
-- `pdf_worker.py` — PDF generation worker loop. *Imports: pdf_repository, photo_repository, submission_repository, attachment_repository, delivery_repository, pdf_formatter, pdf_constants only.*
+- `delivery_worker.py` — Delivery worker loop. *Imports: delivery_repository, attachment_repository, delivery_service, delivery_constants, sentry_sdk only.*
+- `pdf_worker.py` — PDF generation worker loop. *Imports: pdf_repository, photo_repository, submission_repository, attachment_repository, delivery_repository, pdf_formatter, pdf_constants, sentry_sdk only.*
 
 **`app/services/` (flat)**
 - `auth_service.py` — MFA auth business logic. *Imports: bcrypt, secrets, time, datetime, errors. DB/delivery via interfaces only.*
@@ -87,9 +84,10 @@ Infrastructure concerns only. No clinical logic.
 - `consultation_outcomes.py` — Python interface for outcome constants. *Imports: json and os only.*
 - `db.py` — Shared Postgres connection module.
 - `dependencies.py` — Shared FastAPI dependency provider functions.
-- `errors.py` — Shared API and rate limit errors.
+- `errors.py` — Shared API, rate limit, and condition-not-found errors.
 - `http_utils.py` — HTTP utility helpers (IP extraction). *Imports: stdlib only.*
 - `request_validation.py` — HTTP payload validation.
+- `telemetry.py` — Sentry initialisation. Called once at the top of each process entry point. *Imports: stdlib only at module level; sentry_sdk and app.core.errors imported lazily inside the function body. Must NOT import repositories, registries, or db.*
 - `consultation_outcomes.json` — Canonical source for outcome values.
 - `upload_constants.json` — Canonical source for photo upload limits.
 - `upload_constants.py` — Python interface for upload constants.
@@ -167,3 +165,4 @@ These structural boundaries MUST NOT be crossed:
 * `image_sanitizer` **must NOT** import any service, repository, router, engine, or core module.
 * `consultation_outcomes.py` **must NOT** import any application module.
 * `photo_repository` **must NOT** implement a delete method (handled strictly by `deletion_job.py`).
+* `telemetry.py` **must NOT** import any repository, registry, database module, or service module at module level. Only `app.core.errors` is permitted, and only as a deferred import inside `init_telemetry()`.
