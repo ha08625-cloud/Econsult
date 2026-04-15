@@ -32,6 +32,9 @@ init_telemetry("http-api")
 from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.exception_handlers import http_exception_handler as _default_http_handler  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
+from app.core.rate_limit import limiter  # noqa: E402
 
 from app.core.db import alembic_upgrade  # noqa: E402
 from app.core.condition_registry import ConditionRegistry  # noqa: E402
@@ -242,6 +245,11 @@ if not DATABASE_URL:
 
 app = FastAPI()
 
+# Rate limiting — must be attached before any requests are handled.
+# SlowAPIMiddleware reads app.state.limiter to locate the Limiter instance.
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
 # Run all pending Alembic migrations at startup.
 # If a migration fails, the application will fail to start — this is correct
 # behaviour. A failed migration must prevent startup.
@@ -353,6 +361,22 @@ async def rate_limit_handler(_, exc: RateLimitError):
     return JSONResponse(
         status_code=429,
         content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": str(exc)}},
+    )
+
+
+@app.exception_handler(RateLimitExceeded)
+async def slowapi_rate_limit_handler(_, exc: RateLimitExceeded):
+    # Catches requests rejected by @limiter.limit() decorators (slowapi).
+    # Returns the same error envelope as the service-layer RateLimitError handler
+    # above so the frontend always receives a consistent 429 response shape.
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": {
+                "code": "RATE_LIMIT_EXCEEDED",
+                "message": "Too many requests. Please try again later.",
+            }
+        },
     )
 
 

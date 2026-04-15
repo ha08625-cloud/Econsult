@@ -41,6 +41,8 @@ Tests that do not require a database connection. Covers two suites that run toge
 - Files: any `test_*.py` file in `tests/` that does NOT carry `pytestmark = pytest.mark.integration`
 - Runner: pytest via `pytest tests/ -m "not integration"`
 
+**Shared fixtures (`tests/conftest.py`)** — contains a single `autouse=True` fixture that resets the SlowAPI in-memory rate limit storage before and after every test. This prevents the module-level `Limiter` instance from leaking counter state across test boundaries. Any test that fires multiple requests to a rate-limited endpoint would cause spurious 429 failures in subsequent tests without this reset. The fixture is always active; no opt-in is required.
+
 **Frontend component tests** — screen component rendering and interaction behaviour.
 - Files: `*.test.tsx` in `frontend/src/screens/`
 - Runner: Vitest (jsdom environment, configured in `frontend/vitest.config.ts`)
@@ -156,3 +158,12 @@ When `delivery_worker.py` imports `attempt_delivery` at the top of the file, Pyt
 
 ### MINIMAL_JPEG shared fixture
 `MINIMAL_JPEG` is a module-level constant in `tests/test_pdf_generation.py`. Any test that needs a valid JPEG — for PDF generation tests or for multipart upload tests — should import it from there rather than duplicating the bytes. Do not define it in more than one place.
+
+### Why does conftest.py reset the rate limiter before every test?
+The SlowAPI `Limiter` instance in `app/core/rate_limit.py` is module-level and uses in-memory storage. Its counters persist across test boundaries within a single pytest session. Any test class that fires multiple requests to a rate-limited endpoint (such as `TestMFARateLimiting`) would contaminate later tests that simulate normal single-request traffic, causing spurious 429 failures. The `autouse=True` fixture in `conftest.py` resets the storage before and after every test, making each test independent of request history from previous tests.
+
+### Why does TestMFARateLimiting use with_rate_limiting=True rather than the default make_test_app?
+The standard `make_test_app` factory does not wire `SlowAPIMiddleware` or the `RateLimitExceeded` handler, keeping existing tests isolated from the rate limiting machinery. The `with_rate_limiting=True` flag mirrors the production `main.py` setup precisely: it attaches `app.state.limiter`, adds the middleware, and registers the 429 handler. This flag should only be passed in tests that specifically need to exercise the slowapi counter behaviour.
+
+### Why are auth_service functions patched in TestMFARateLimiting?
+The service-layer per-email cooldown in `auth_service.request_mfa_code` raises `RateLimitError` (HTTP 429) from the second request onward — before the slowapi IP counter reaches its limit. Without patching, the service-layer 429 would fire first and make it impossible to observe the slowapi counter reaching 5. Patching the service functions to no-ops isolates the two independent rate limiting mechanisms so each can be tested on its own terms.

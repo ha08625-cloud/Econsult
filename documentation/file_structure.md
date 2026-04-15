@@ -86,6 +86,7 @@ Infrastructure concerns only. No clinical logic.
 - `dependencies.py` — Shared FastAPI dependency provider functions.
 - `errors.py` — Shared API, rate limit, and condition-not-found errors.
 - `http_utils.py` — HTTP utility helpers (IP extraction). *Imports: stdlib only.*
+- `rate_limit.py` — SlowAPI Limiter instantiation. *Imports: slowapi, app.core.http_utils only.*
 - `request_validation.py` — HTTP payload validation.
 - `telemetry.py` — Sentry initialisation. Called once at the top of each process entry point. *Imports: stdlib only at module level; sentry_sdk and app.core.errors imported lazily inside the function body. Must NOT import repositories, registries, or db.*
 - `consultation_outcomes.json` — Canonical source for outcome values.
@@ -132,6 +133,9 @@ Schema migration scripts. See code files directly for exact table definitions.
 ---
 
 ## 5. Tests (`tests/`)
+
+**Shared fixtures**
+- `conftest.py` — Autouse pytest fixture that resets the SlowAPI in-memory rate limit storage before and after every test. Prevents counter state leaking across test boundaries.
 
 **Unit tests (Mocked/In-memory)**
 - `test_admin_router.py`, `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`.

@@ -2,7 +2,6 @@
 - Pydantic request model migration: Replace all hand-written isinstance/type-check validation in both admin_router.py and request_validation.py with Pydantic BaseModel definitions, letting FastAPI handle JSON parsing, type coercion, and missing-field errors automatically. This also requires adding a RequestValidationError exception handler in main.py to convert Pydantic's error format into the existing {"error": {"code": ..., "message": ...}} shape, updating the frontend extractErrorDetail functions to handle any new edge cases, and retiring the unused api_models.py dataclasses.
 
 ### Updates
-- add alerting via Sentry
 - papertrail logging
 - background worker heartbeat
 - remove submissions after 7 days
@@ -16,7 +15,6 @@
 - safety rules implemented on clicking yes/no, rather than on submit form (defer - big feature change and we need to know if blocking safety rules are desired or not)
 
 ### Admin portal updates
-- IP-based rate limiting via `slowapi` — separate ticket
 - Multiple admin users or role-based access control beyond the `role` field in the schema
 - Staff vs admin role enforcement in router handlers (schema supports it, enforcement is not implemented)
 - Session refresh / sliding expiry

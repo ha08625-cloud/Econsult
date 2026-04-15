@@ -34,7 +34,7 @@ This router is registered with no prefix in main.py so all routes sit at root.
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.errors import ConditionNotFound
 from app.core.dependencies import (
@@ -44,6 +44,7 @@ from app.core.dependencies import (
     get_presentation_service,
     get_registry,
 )
+from app.core.rate_limit import limiter
 from app.services.availability_orchestration import check_availability
 
 logger = logging.getLogger(__name__)
@@ -52,21 +53,27 @@ router = APIRouter()
 
 
 @router.get("/safety-warning")
+@limiter.limit("30/minute")
 async def get_safety_warning(
+    request: Request,
     presentation_service=Depends(get_presentation_service),
 ):
     return {"universal_safety_warning": presentation_service.get_universal_safety_warning()}
 
 
 @router.get("/conditions")
+@limiter.limit("30/minute")
 async def list_conditions(
+    request: Request,
     registry=Depends(get_registry),
 ):
     return {"conditions": registry.list_conditions()}
 
 
 @router.get("/conditions/{condition_id}/presentation")
+@limiter.limit("30/minute")
 async def get_presentation(
+    request: Request,
     condition_id: str,
     presentation_service=Depends(get_presentation_service),
     practice_id: str = Depends(get_practice_id),
@@ -76,7 +83,9 @@ async def get_presentation(
 
 
 @router.get("/availability")
+@limiter.limit("30/minute")
 async def get_availability(
+    request: Request,
     availability_repo=Depends(get_availability_repo),
     practice_id: str = Depends(get_practice_id),
 ):
@@ -97,7 +106,9 @@ async def get_availability(
 
 
 @router.get("/practice")
+@limiter.limit("30/minute")
 async def get_practice(
+    request: Request,
     practice_repo=Depends(get_practice_repo),
     practice_id: str = Depends(get_practice_id),
 ):
@@ -119,7 +130,9 @@ async def get_practice(
 
 
 @router.get("/doctors")
+@limiter.limit("30/minute")
 async def get_doctors(
+    request: Request,
     practice_repo=Depends(get_practice_repo),
     practice_id: str = Depends(get_practice_id),
 ):

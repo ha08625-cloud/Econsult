@@ -1,27 +1,29 @@
 """
-conftest.py — pytest configuration for the test suite.
+conftest.py
 
-Loads .env from the project root before any test module is imported.
-This ensures DATABASE_URL and other required env vars are available
-when test modules check for them at import time.
+Pytest configuration and shared fixtures.
 
-dotenv is a dev dependency only. If python-dotenv is not installed,
-tests will still run — they will just rely on env vars being set manually.
+Fixtures:
+    reset_rate_limiter — autouse fixture that resets slowapi's in-memory
+    storage before every test. Without this, the module-level Limiter
+    instance retains its counters across test boundaries, causing spurious
+    429 failures in tests that simulate legitimate traffic after any test
+    that fires multiple requests.
+
+    NOTE: The reset call uses limiter._storage.reset(). This is the correct
+    API for slowapi 0.1.x with limits.storage.MemoryStorage. If you upgrade
+    either library and see AttributeError here, inspect type(limiter._storage)
+    and its available methods to find the replacement.
 """
 
-import os
-from pathlib import Path
+import pytest
+
+from app.core.rate_limit import limiter
 
 
-def _load_dotenv():
-    try:
-        from dotenv import load_dotenv
-    except ImportError:
-        return
-
-    env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path, override=False)
-
-
-_load_dotenv()
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset slowapi in-memory counters before every test."""
+    limiter._storage.reset()
+    yield
+    limiter._storage.reset()

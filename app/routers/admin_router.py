@@ -93,6 +93,7 @@ from app.core.dependencies import (
 )
 from app.core.db import get_conn
 from app.core.http_utils import extract_ip
+from app.core.rate_limit import limiter
 from app.services import auth_service
 
 logger = logging.getLogger(__name__)
@@ -193,6 +194,7 @@ def _serialise_exception_for_audit(exc: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.post("/auth/request-code", status_code=200)
+@limiter.limit("5/minute")
 async def request_mfa_code(
     request: Request,
     auth_repo=Depends(get_auth_repo),
@@ -262,6 +264,7 @@ async def request_mfa_code(
 
 
 @router.post("/auth/verify", status_code=200)
+@limiter.limit("5/minute")
 async def verify_mfa_code(
     request: Request,
     auth_repo=Depends(get_auth_repo),

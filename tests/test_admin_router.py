@@ -168,7 +168,7 @@ class StubAdminDeliveryService:
 # ---------------------------------------------------------------------------
 
 def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
-                  audit_repo=None):
+                  audit_repo=None, with_rate_limiting=False):
     """
     Build a bare FastAPI app with the admin router registered and
     app.state populated. Does not run the normal startup validation.
@@ -177,7 +177,11 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
       - ConditionNotFound  → 404
       - APIError           → 422
       - RateLimitError     → 429
-    All three are required so that error-path tests reflect production behaviour.
+
+    with_rate_limiting=True additionally wires SlowAPIMiddleware and the
+    RateLimitExceeded handler, mirroring the production main.py setup.
+    Pass this flag only in tests that specifically exercise slowapi limits.
+    Leaving it False keeps all existing tests unaffected.
     """
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
@@ -185,6 +189,14 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
     from app.core.errors import APIError, RateLimitError, ConditionNotFound
 
     app = FastAPI()
+
+    if with_rate_limiting:
+        from slowapi.errors import RateLimitExceeded
+        from slowapi.middleware import SlowAPIMiddleware
+        from app.core.rate_limit import limiter
+        app.state.limiter = limiter
+        app.add_middleware(SlowAPIMiddleware)
+
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
     app.state.practice_id = "test_practice"
@@ -215,6 +227,19 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
             status_code=429,
             content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": str(exc)}},
         )
+
+    if with_rate_limiting:
+        @app.exception_handler(RateLimitExceeded)
+        async def slowapi_rate_limit_handler(_, exc: RateLimitExceeded):
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": {
+                        "code": "RATE_LIMIT_EXCEEDED",
+                        "message": "Too many requests. Please try again later.",
+                    }
+                },
+            )
 
     return app
 
@@ -1074,6 +1099,114 @@ class TestAuditLogEndpoint(unittest.TestCase):
             params={"action": "UPPERCASE_INVALID"},
         )
         self.assertEqual(res.status_code, 400)
+
+
+# ---------------------------------------------------------------------------
+# Section 6: SlowAPI rate limiting
+# ---------------------------------------------------------------------------
+
+class TestMFARateLimiting(unittest.TestCase):
+    """
+    Integration tests for the @limiter.limit("5/minute") decorators on the
+    two unauthenticated MFA endpoints.
+
+    These tests use with_rate_limiting=True on make_test_app, which wires
+    SlowAPIMiddleware and the RateLimitExceeded handler to mirror production.
+
+    auth_service.request_mfa_code is patched to a no-op so the service-layer
+    60-second per-email cooldown (which also raises 429 via RateLimitError)
+    does not fire and interfere with the slowapi counter being tested here.
+
+    The limiter storage is reset in setUp and tearDown to prevent in-memory
+    state from leaking across tests.
+
+    NOTE: The reset call uses limiter._storage.reset(). This is the correct
+    API for slowapi 0.1.x with limits.storage.MemoryStorage. If you upgrade
+    either library and see AttributeError here, check the new API by
+    inspecting type(limiter._storage) and its available methods.
+    """
+
+    def _reset_limiter(self):
+        from app.core.rate_limit import limiter
+        limiter._storage.reset()
+
+    def setUp(self):
+        self._reset_limiter()
+        os.environ["DEV_MODE"] = "1"
+
+    def tearDown(self):
+        self._reset_limiter()
+        os.environ.pop("DEV_MODE", None)
+
+    def _make_client(self):
+        from fastapi.testclient import TestClient
+        app = make_test_app(with_rate_limiting=True)
+        # raise_server_exceptions=False so that slowapi's 429 is returned as
+        # a response rather than re-raised as an exception in the test process.
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_request_code_blocked_after_five_requests(self):
+        """
+        The 6th POST to /admin/auth/request-code from the same IP within one
+        minute must return 429 with the standard error envelope.
+
+        auth_service.request_mfa_code is patched to a no-op so only the
+        slowapi IP counter is exercised, not the service-layer cooldown.
+        """
+        client = self._make_client()
+        payload = {"email": "admin@nhs.net"}
+
+        with patch(
+            "app.services.auth_service.request_mfa_code"
+        ):
+            for i in range(5):
+                res = client.post("/admin/auth/request-code", json=payload)
+                self.assertNotEqual(
+                    res.status_code, 429,
+                    msg=f"Request {i + 1} was unexpectedly rate-limited before the 6th call",
+                )
+
+            res = client.post("/admin/auth/request-code", json=payload)
+
+        self.assertEqual(res.status_code, 429)
+        body = res.json()
+        self.assertEqual(body["error"]["code"], "RATE_LIMIT_EXCEEDED")
+        self.assertEqual(
+            body["error"]["message"],
+            "Too many requests. Please try again later.",
+        )
+
+    def test_verify_blocked_after_five_requests(self):
+        """
+        The 6th POST to /admin/auth/verify from the same IP within one
+        minute must return 429 with the standard error envelope.
+
+        auth_service.verify_mfa_code is patched to a no-op returning a
+        stub session_id so only the slowapi counter is exercised.
+        """
+        client = self._make_client()
+        payload = {"email": "admin@nhs.net", "code": "123456"}
+
+        with patch(
+            "app.services.auth_service.verify_mfa_code",
+            return_value="stub-session-id",
+        ):
+            for i in range(5):
+                res = client.post("/admin/auth/verify", json=payload)
+                self.assertNotEqual(
+                    res.status_code, 429,
+                    msg=f"Request {i + 1} was unexpectedly rate-limited before the 6th call",
+                )
+
+            res = client.post("/admin/auth/verify", json=payload)
+
+        self.assertEqual(res.status_code, 429)
+        body = res.json()
+        self.assertEqual(body["error"]["code"], "RATE_LIMIT_EXCEEDED")
+        self.assertEqual(
+            body["error"]["message"],
+            "Too many requests. Please try again later.",
+        )
 
 
 # ---------------------------------------------------------------------------

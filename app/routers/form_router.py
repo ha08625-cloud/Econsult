@@ -66,6 +66,7 @@ from app.services.engine.pipeline import (
     finish_runtime_state,
     init_runtime_state,
 )
+from app.core.rate_limit import limiter
 from app.utils.image_sanitizer import sanitize_image
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 @router.post("/form/init")
+@limiter.limit("30/minute")
 async def form_init(
     request: Request,
     registry=Depends(get_registry),
@@ -142,6 +144,7 @@ async def form_init(
 # ---------------------------------------------------------------------------
 
 @router.post("/form/update")
+@limiter.limit("30/minute")
 async def form_update(
     request: Request,
     registry=Depends(get_registry),
@@ -205,7 +208,9 @@ async def form_update(
 # ---------------------------------------------------------------------------
 
 @router.post("/form/finish")
+@limiter.limit("30/minute")
 async def form_finish(
+    request: Request,
     payload: str = Form(...),
     photos: list[UploadFile] = File(default=[]),
     registry=Depends(get_registry),

@@ -63,9 +63,9 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Key Files:** `admin_router.py`, `admin_context.py`, `practice_repository.py`, `audit_repository.py`, `http_utils.py`, `frontend/admin-ui/src/*`
 
 ### 3.8 HTTP Orchestration & App Entry
-* **Scope:** FastAPI application, startup fail-fast validation, routing, error translation.
+* **Scope:** FastAPI application, startup fail-fast validation, routing, error translation, rate limiting middleware.
 * **Domain Doc:** Domain Doc: docs/arch_http_boundary.md
-* **Key Files:** `main.py`, `request_validation.py`, `public_router.py`, `admin_router.py`, `form_router.py`, `dependencies.py`
+* **Key Files:** `main.py`, `request_validation.py`, `public_router.py`, `admin_router.py`, `form_router.py`, `dependencies.py`, `rate_limit.py`
 
 ### 3.9 API Boundary & Presentation
 * **Scope:** Composing pre-session presentation data.
@@ -88,6 +88,6 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Key Files:** `tests/test_form_routes.py`, `tests/test_admin_router.py`, `Makefile`
 
 ### 3.13 Security & Compliance
-* **Scope:** Access control, MFA, fail-fast configuration boundaries, data retention, file upload security (CDR), input sanitization, and dependency patching. Maps technical controls to Cyber Essentials Plus audit requirements.
+* **Scope:** Access control, MFA, fail-fast configuration boundaries, data retention, file upload security (CDR), input sanitization, rate limiting, and dependency patching. Maps technical controls to Cyber Essentials Plus audit requirements.
 * **Domain Doc:** `docs/arch_security.md`
-* **Key Files:** `dependencies.py`, `admin_router.py`, `auth_repository.py`, `auth_service.py`, `deletion_job.py`, `request_validation.py`, `image_sanitizer.py`, `form_router.py`
+* **Key Files:** `dependencies.py`, `admin_router.py`, `auth_repository.py`, `auth_service.py`, `deletion_job.py`, `request_validation.py`, `image_sanitizer.py`, `form_router.py`, `rate_limit.py`

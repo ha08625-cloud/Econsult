@@ -6,9 +6,9 @@
 
 ## Scope
 
-User access control, multi-factor authentication, input sanitization, malware mitigation, data retention, and secure configuration enforcement.
+User access control, multi-factor authentication, rate limiting, input sanitization, malware mitigation, data retention, and secure configuration enforcement.
 
-**Key files:** `dependencies.py`, `admin_router.py`, `auth_repository.py`, `auth_service.py`, `deletion_job.py`, `request_validation.py`, `image_sanitizer.py`, `form_router.py`
+**Key files:** `dependencies.py`, `admin_router.py`, `auth_repository.py`, `auth_service.py`, `deletion_job.py`, `request_validation.py`, `image_sanitizer.py`, `form_router.py`, `rate_limit.py`
 
 ---
 
@@ -31,6 +31,11 @@ The system refuses to run in an insecure or partially configured state.
 - **Startup Validation.** The application entry point (`main.py`) validates the presence of all required security, database, and email environment variables before accepting any HTTP requests. Missing critical variables cause the process to abort rather than silently degrade.
 - **The Two-Database Rule.** Testing is strictly fenced from production. A hardcoded guardrail at the top of every integration test module prevents tests from running unless a dedicated `TEST_DATABASE_URL` environment variable is set. This structurally prevents accidental test data writes or deletions against the production patient database.
 - **Network Boundaries.** The application is a single-container deployment hosted on Railway. The database is isolated within the cloud provider's internal network and is not directly exposed to the public internet.
+- **Third-Party Observability (Sentry) — PII Lockdown.** Sentry is an external service. Its initialisation enforces strict data minimisation controls to prevent clinical data from leaving the system boundary:
+  - **Backend (`telemetry.py`):** `send_default_pii=False`, `request_bodies="never"`, `with_locals=False`. The `request_bodies="never"` setting is the critical control — it drops multipart payloads containing raw clinical JSON and patient photos at the ASGI layer before Sentry can capture them. Worker processes additionally set `traces_sample_rate=0.0` to prevent infinite worker loops from being instrumented as transactions.
+  - **Frontend (`main.tsx`):** Performance tracing is disabled (`tracesSampleRate: 0`). The `BrowserTracing`, `Breadcrumbs`, `GlobalHandlers`, `LinkedErrors`, `HttpContext`, and `Dedupe` integrations are explicitly removed from the SDK defaults, preventing DOM interaction tracking, SPA navigation recording, and URL parameter capture. A `beforeBreadcrumb` hook drops the request body size field for POST requests to `/form/update` and `/form/finish`. The `ErrorBoundary`'s `beforeCapture` hook strips React component props and state from error events, preventing patient answers held in transient UI state from being serialised and transmitted.
+  - **Test isolation.** Sentry initialisation is bypassed entirely in all test environments (pytest presence, `TEST_DATABASE_URL` set, `DEV_MODE=1` on the backend; `import.meta.env.DEV` or `MODE === 'test'` on the frontend). This prevents test suite HTTP requests to Sentry's ingestion endpoints and eliminates the possibility of test data reaching Sentry's servers.
+  - **Safety isolation invariant.** Triggered safety rules are successful, deterministic clinical operations. They are explicitly excluded from Sentry reporting. The backend `ignore_errors` list includes `APIError`, `ConditionNotFound`, `RateLimitError`, and `slowapi.errors.RateLimitExceeded` to suppress expected 4xx responses. Both rate limit exception types must be present: `RateLimitError` covers the service-layer per-email cooldown; `RateLimitExceeded` covers requests rejected by the SlowAPI IP-based limiter. The frontend `triggerFatalError` function must never be called from safety message handling paths.
 
 ---
 
@@ -71,7 +76,44 @@ Because the system accepts files and free text from the public, strict validatio
 
 ---
 
-## 5. Security Update Management
+## 5. Rate Limiting
+
+Brute-force and enumeration attacks are mitigated at the HTTP boundary using SlowAPI (`app/core/rate_limit.py`), wired into the application via `SlowAPIMiddleware` in `main.py`.
+
+**Key file:** `rate_limit.py`
+
+### Admin MFA endpoints — 5 requests/minute per IP
+
+`POST /admin/auth/request-code` and `POST /admin/auth/verify` are both decorated with `@limiter.limit("5/minute")`. These are the only unauthenticated endpoints that interact with credentials, making them the primary brute-force surface.
+
+The IP limit is one layer of a defence-in-depth stack. Two independent service-layer controls also apply:
+
+- `auth_service.request_mfa_code` enforces a **60-second per-email cooldown** backed by the database (`last_requested_at`). This survives process restarts and fires before the slowapi counter is relevant for single-machine attacks.
+- `auth_service.verify_mfa_code` enforces a **3-attempt per-email lockout** backed by the database (`attempts_count`). Exceeding this deletes the code and requires a fresh request cycle.
+
+The IP limit adds protection against a distributed attack cycling through different email addresses faster than the per-email cooldowns can engage.
+
+**Audit evasion accepted:** SlowAPI rejects excess requests before they reach the `audit_repo.log_event` call. This is intentional — the database audit log is for clinical admin staff monitoring business actions. Brute-force traffic is visible in stdout logs and Sentry for the technical team.
+
+### Patient-facing endpoints — 30 requests/minute per IP
+
+All endpoints in `public_router.py` and `form_router.py` are decorated with `@limiter.limit("30/minute")`. This provides baseline protection against automated scraping or submission flooding. The limit is intentionally generous to accommodate scenarios where multiple patients share a single NAT IP (care home, public library) without violating the Fail-Open Availability invariant.
+
+### IP extraction
+
+The limiter uses `extract_ip` from `app/core/http_utils.py` as its key function rather than SlowAPI's built-in `get_remote_address`. This is necessary because Railway sits behind a reverse proxy — `request.client.host` always resolves to the proxy IP. `extract_ip` correctly reads `X-Forwarded-For` and `X-Real-IP` headers to obtain the real client IP.
+
+### Storage
+
+In-memory storage (`limits.storage.MemoryStorage`) is used deliberately. The deployment is a single web worker. Redis would add operational overhead with no benefit at this scale. Counters reset on process restart, which is acceptable — a restart clears a brief window of protection, but the service-layer database-backed controls remain active throughout.
+
+### Error envelope
+
+When SlowAPI rejects a request it raises `slowapi.errors.RateLimitExceeded`. A custom handler in `main.py` catches this and returns the standard error envelope: `{"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many requests. Please try again later."}}` with HTTP 429. This is consistent with the existing `RateLimitError` handler so the frontend always receives the same shape regardless of which layer fired the limit.
+
+---
+
+## 6. Security Update Management
 
 Vulnerability patching is automated and enforced via CI/CD pipelines.
 
