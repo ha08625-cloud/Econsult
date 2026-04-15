@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout, structural purpose, and import mapping
-# Last updated: 2026-04-10
+# Last updated: 2026-04-15
 
 ---
 
@@ -85,8 +85,7 @@ Infrastructure concerns only. No clinical logic.
 - `db.py` — Shared Postgres connection module.
 - `dependencies.py` — Shared FastAPI dependency provider functions.
 - `errors.py` — Shared API, rate limit, and condition-not-found errors.
-- `http_utils.py` — HTTP utility helpers (IP extraction). *Imports: stdlib only.*
-- `rate_limit.py` — SlowAPI Limiter instantiation. *Imports: slowapi, app.core.http_utils only.*
+- `rate_limit.py` — SlowAPI Limiter instantiation. *Imports: slowapi, app.utils.http_utils only.*
 - `request_validation.py` — HTTP payload validation.
 - `telemetry.py` — Sentry initialisation. Called once at the top of each process entry point. *Imports: stdlib only at module level; sentry_sdk and app.core.errors imported lazily inside the function body. Must NOT import repositories, registries, or db.*
 - `consultation_outcomes.json` — Canonical source for outcome values.
@@ -96,8 +95,23 @@ Infrastructure concerns only. No clinical logic.
 ### 2.5 `app/utils/`
 Pure utility functions. No IO, no database access.
 
+- `http_utils.py` — HTTP utility helpers (IP extraction). *Imports: stdlib only.*
 - `pdf_formatter.py` — Pure PDF generation function. *Imports: ClinicalOutput and consultation_outcomes.*
 - `image_sanitizer.py` — Content Disarm and Reconstruction (CDR) logic. *Imports: Pillow (PIL.Image) and io only.*
+
+### 2.6 `app/routers/`
+HTTP route handlers. No business logic; orchestration only.
+
+- `public_router.py` — Patient-facing public endpoints (conditions list, availability check).
+- `form_router.py` — Patient form session endpoints (start, answer, finish).
+- `admin_router.py` — Thin orchestrator. Registers the four admin sub-routers. Contains no route handlers.
+
+**`app/routers/admin/`** (Admin sub-router package)
+- `__init__.py` — Package marker.
+- `admin_auth_router.py` — MFA request, verify, logout. Unauthenticated by design.
+- `admin_practice_router.py` — Conditions list, practice settings, signposting, doctor list.
+- `admin_availability_router.py` — Weekly config, manual overrides, per-date exceptions.
+- `admin_audit_router.py` — Audit log read endpoint.
 
 ---
 
@@ -154,14 +168,15 @@ These structural boundaries MUST NOT be crossed:
 * `engine/serialisation` **must NOT** mutate `RuntimeState`.
 * `practice_repository` **must NOT** import any service module.
 * `presentation_service` **must NOT** import `RuntimeState`, `safety_engine`, `encoder_*`, or `form_logic`.
-* `admin_router` **must NOT** import engine modules, `presentation_service`, `serialisation`, `projection`, or `runtime_state`.
-* `admin_context` **must NOT** import any project module other than stdlib and FastAPI.
-* `auth_service` **must NOT** access any repository or database module directly.
-* `auth_repository` **must NOT** import `auth_service`, `admin_delivery_service`, or any service module.
-* `admin_delivery_service` **must NOT** import any repository, `auth_service`, or clinical module.
+* Any file in `app/routers/admin/` **must NOT** import engine modules, `presentation_service`, `serialisation`, `projection`, or `runtime_state`.
+* `admin_router.py` (orchestrator) **must NOT** import anything other than FastAPI and the four admin sub-routers.
+* `admin_context.py` **must NOT** import any project module other than stdlib and FastAPI.
+* `auth_service.py` **must NOT** access any repository or database module directly.
+* `auth_repository.py` **must NOT** import `auth_service`, `admin_delivery_service`, or any service module.
+* `admin_delivery_service.py` **must NOT** import any repository, `auth_service`, or clinical module.
 * `delivery/delivery_service` **must NOT** import engine modules, repositories, `condition_registry`, or `pdf_formatter`.
 * `delivery/delivery_worker` **must NOT** import clinical engine modules, routers, `condition_registry`, `pdf_formatter`, `serialisation`, or `submission_repository`.
-* `delivery/pdf_worker` **must NOT** import `admin_router`, `form_router`, `public_router`, or any admin/presentation module.
+* `delivery/pdf_worker` **must NOT** import any admin router, `form_router`, `public_router`, or any admin/presentation module.
 * `delivery/delivery_constants` and `pdf/pdf_constants` **must NOT** import any application module.
 * `audit_repository` **must NOT** import from service modules, routers, or the patient-facing request path.
 * `http_utils` **must NOT** import any application module.
