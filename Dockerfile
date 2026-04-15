@@ -1,5 +1,5 @@
 # Build stage: install Node and build the frontend
-FROM node:22-slim AS frontend-build
+FROM node:25-slim AS frontend-build
 
 WORKDIR /frontend
 COPY frontend/package*.json ./
