@@ -65,7 +65,9 @@ It is consumed by:
 
 **Exception — `ContactScreen`:** Its `onSubmit` is `() => void` with no result parameter. `POST /form/finish` returns only a `submission_id` which `App.tsx` does not need, so nothing is passed up. This is the only screen where the callback carries no data.
 
-The reset function in `App.tsx` manually clears every `useState` in the file. A checklist comment directly above the reset block names every variable. If a new `useState` is added to `App.tsx`, it must appear in the checklist.
+The `triggerFatalError` function in `App.tsx` is the single entry point for fatal errors. It fires `Sentry.captureMessage` before calling `setFatalError`, ensuring the event is captured even if the component subsequently unmounts. Direct calls to `setFatalError` from the render path are banned — all five render-guard fatal paths use `triggerFatalError`. The conditions fetch failure in the `useEffect` is the one exception: it calls `setFatalError` directly because the underlying server error has already been captured by `api.ts`, and double-reporting must be avoided.
+
+The fatal error reset button uses `window.location.reload()` rather than a manual enumeration of state setters. This guarantees object URL revocation (the browser destroys the JS context), eliminates the need to keep a reset list in sync with new `useState` declarations, and provides the cleanest possible slate after a React tree collapse. The state checklist comment in `App.tsx` no longer requires a parallel reset block entry — it is a record of state variables only.
 
 **Dedicated error variable:** `App.tsx` uses `safetyWarningFetchState` for safety warning fetch failures. This is the only fetch that lives in `App.tsx` rather than inside a screen component, so it needs its own error variable. All other fetch errors are owned locally by the screen component that makes the call.
 
@@ -79,7 +81,7 @@ The reset function in `App.tsx` manually clears every `useState` in the file. A 
 
 - **On remove:** revoke the URL immediately in the remove handler before updating state. Implemented in `EditScreen`.
 - **On back navigation from EDIT to FREE_TEXT:** `App.tsx` revokes all URLs and clears `photos` before navigating. Photos do not persist across a condition change.
-- **On fatal error reset:** `App.tsx` revokes all URLs before calling `setPhotos([])`. Revocation must happen before the state clear, while references are still available.
+- **On fatal error:** `App.tsx` renders the fatal error screen and the reset button triggers `window.location.reload()`. The browser destroys the JS context on reload, which revokes all object URLs automatically. No manual revocation is needed in this path.
 - **On unmount:** a `useEffect` with an empty dependency array in `App.tsx` revokes all remaining URLs via a `photosRef`. A ref is required here because the cleanup closure would otherwise capture the initial empty array.
 
 **Client-side validation in EditScreen:** The `onChange` handler on the file input performs synchronous checks using the constants from `upload_constants.ts`: MIME type against `ALLOWED_MIME_TYPES`, per-file size against `MAX_FILE_SIZE_BYTES`, total count against `MAX_FILE_COUNT`, and combined size against `MAX_TOTAL_SIZE_BYTES`. These checks run against the existing `photos` prop plus the newly selected files, so the total size and count limits account for photos already in state. The server enforces the same limits independently — the client checks are a usability guard, not a security boundary. No magic bytes validation is performed; MIME type is checked via `file.type` (browser-supplied, not cryptographically verified).
@@ -144,3 +146,22 @@ The input `id` is generated dynamically via React's `useId()` — do not target 
 - Hardcode error messages in component logic
 - Destroy patient input on a recoverable error
 - Lock patients out due to an availability fetch failure
+
+---
+
+## Observability
+
+`@sentry/react` is initialised in `main.tsx` before `<App />` mounts.
+
+**Test and dev isolation.** Sentry is only initialised when `!import.meta.env.DEV && import.meta.env.MODE !== 'test'`. The `DEV` guard covers the Vite dev server. The `MODE !== 'test'` guard covers Vitest, which sets `MODE="test"` in jsdom. Without both guards Sentry would intercept console errors and attempt outbound network requests during CI.
+
+**PII lockdown.** The following integrations are explicitly removed from the defaults: `BrowserTracing` (would leak sensitive URL parameters into transaction names), `Breadcrumbs` (tracks DOM clicks and navigation), `GlobalHandlers`, `LinkedErrors`, `HttpContext`, `Dedupe`. Performance tracing is disabled (`tracesSampleRate: 0`). A `beforeBreadcrumb` hook drops the request body size field for POST requests to `/form/update` and `/form/finish`, which carry raw clinical JSON and `FormData` payloads.
+
+**Error capture strategy.** Errors are captured at two layers:
+
+- `api.ts` captures 5xx responses and online network failures before throwing `ApiError`. This is the correct interception point because `ApiError` stores only the status code and a generic message — the request body is never retained. The `ErrorBoundary` in `main.tsx` catches synchronous render-phase crashes that `App.tsx`'s `fatalError` state cannot reach.
+- `App.tsx`'s `triggerFatalError` captures unrecoverable state invariant violations (missing runtime IDs, invalid screen transitions). These are bugs, not server errors, and are reported at `"fatal"` level.
+
+**Safety isolation invariant.** Triggered safety rules are successful, deterministic clinical operations. They must never be reported to Sentry. `triggerFatalError` must never be called from safety message handling paths. This invariant is enforced by convention — there is no runtime guard.
+
+**DSN configuration.** The frontend DSN is supplied via `VITE_SENTRY_DSN` (a Vite build-time environment variable). If absent, `Sentry.init` receives `undefined` as the DSN and initialises silently without sending events. No error is thrown.

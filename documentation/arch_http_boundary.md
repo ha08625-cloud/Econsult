@@ -27,10 +27,11 @@ The FastAPI application entry point, startup validation, resource initialisation
 Any failure in startup validation raises a `RuntimeError` and aborts. A misconfigured deployment must never silently degrade.
 
 **Startup sequence:**
-1. `DATABASE_URL` checked at module load time — failure prevents the app object from being created
-2. Alembic migrations run (`alembic_upgrade()`) — a failed migration aborts startup
-3. `_validate_startup()` runs and stores `practice_id` in `app.state`
-4. `availability_repo.init_availability()` seeds a default availability row if absent — must run after step 3 so the practice row exists
+1. `import os`, `import logging`, and `init_telemetry("http-api")` execute — Sentry is initialised before any other internal import so that module-load failures (e.g. a failed Alembic migration) are captured by Sentry's default `sys.excepthook`
+2. `DATABASE_URL` checked at module load time — failure prevents the app object from being created
+3. Alembic migrations run (`alembic_upgrade()`) — a failed migration aborts startup
+4. `_validate_startup()` runs and stores `practice_id` in `app.state` — wrapped in `sentry_sdk.set_tag("phase", "startup")` / `"running"` so any `RuntimeError` raised here is tagged in Sentry
+5. `availability_repo.init_availability()` seeds a default availability row if absent — must run after step 4 so the practice row exists
 
 **Validation rules enforced by `_validate_startup()`:**
 - `PRACTICE_ID` env var must be set.
@@ -97,6 +98,10 @@ Three exception handlers are registered in `main.py`:
 | `RateLimitError` | 429 | `{"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "..."}}` |
 
 `RateLimitError` is a separate exception class (not an `APIError` subclass) because the `APIError` handler hardcodes status 422. `SESSION_EXPIRED` is raised directly as `HTTPException(status_code=401)` in `admin_context.py` and does not require a registered handler.
+
+`ConditionNotFound` is defined in `app/core/errors.py` (not `condition_registry.py`). This separation is required so `telemetry.py` can reference it in `ignore_errors` without importing `condition_registry`, which has transitive service dependencies.
+
+`APIError`, `ConditionNotFound`, and `RateLimitError` are all passed to Sentry's `ignore_errors` list in `telemetry.py`. This prevents expected 4xx responses from generating false-positive alerts while still allowing unhandled 5xx exceptions to reach Sentry via FastAPI's default exception hook.
 
 The test factory in `test_admin_router.py` registers the same three handlers so that error-path tests reflect production behaviour.
 
