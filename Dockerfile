@@ -11,6 +11,12 @@ COPY frontend/ ./
 # The import in OutcomeScreen.tsx resolves two levels up from src/screens/
 # to the /frontend workdir root, which is where this file lands.
 COPY app/core/consultation_outcomes.json ./
+# VITE_SENTRY_DSN is passed as a build argument so Vite can bake it into the
+# compiled bundle. It is not a secret — the DSN is visible in browser network
+# traffic regardless. Railway passes service variables as build args automatically
+# when using the Dockerfile builder, so no railway.toml change is needed.
+ARG VITE_SENTRY_DSN
+ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
 RUN npm run build
 
 # Final stage: Python runtime with built frontend
