@@ -1,5 +1,11 @@
 """
 Admin Audit Log API router.
+
+Exposes a single paginated read-only endpoint for querying the audit trail.
+All mutating admin actions and auth events are written to this log by the
+other sub-routers; this router only reads.
+
+All endpoints require a valid session cookie via require_admin.
 """
 import datetime
 
@@ -10,6 +16,7 @@ from app.core.dependencies import get_audit_repo
 from app.core.errors import INVALID_DATE_FORMAT
 
 router = APIRouter()
+
 
 @router.get("/audit-log")
 async def get_audit_log(
