@@ -8,11 +8,26 @@
 
 Admin authentication, editing per-condition signposting, configuring availability (schedule, overrides, per-date exceptions), managing practice email and doctor list, and the admin-portal frontend.
 
-**Key files:** `admin_router.py`, `admin_context.py`, `app/services/auth_service.py`, `app/repositories/auth_repository.py`, `app/repositories/audit_repository.py`, `app/services/delivery/admin_delivery_service.py`, `practice_repository.py`, `availability_repository.py`, `availability_service.py`, `app/core/http_utils.py`, `frontend/admin-ui/src/*`
+**Key files:** `app/routers/admin_router.py` (orchestrator), `app/routers/admin/admin_auth_router.py`, `app/routers/admin/admin_practice_router.py`, `app/routers/admin/admin_availability_router.py`, `app/routers/admin/admin_audit_router.py`, `admin_context.py`, `app/services/auth_service.py`, `app/repositories/auth_repository.py`, `app/repositories/audit_repository.py`, `app/services/delivery/admin_delivery_service.py`, `practice_repository.py`, `availability_repository.py`, `availability_service.py`, `app/utils/http_utils.py`, `frontend/admin-ui/src/*`
 
 ---
 
 ## Design Decisions & Invariants
+
+### Router Structure
+
+The admin domain uses a thin orchestrator (`admin_router.py`) that registers four sub-routers from the `app/routers/admin/` package. Each sub-router owns a single domain boundary and mirrors its corresponding repository:
+
+- `admin_auth_router.py` — MFA request, verify, logout (all unauthenticated)
+- `admin_practice_router.py` — conditions list, practice settings, signposting, doctor list
+- `admin_availability_router.py` — weekly config, manual overrides, per-date exceptions
+- `admin_audit_router.py` — audit log read endpoint
+
+The `require_admin` dependency is applied within each sub-router's route definitions, not in the orchestrator. Auth endpoints are deliberately excluded.
+
+The domain boundary invariant from the original router is inherited by all sub-routers: **no sub-router may import clinical engine modules, `presentation_service`, `serialisation`, `projection`, or `runtime_state`.**
+
+---
 
 ### Authentication (`admin_context.py`, `auth_service.py`, `auth_repository.py`)
 
@@ -56,7 +71,7 @@ HTTP `401 Unauthorized` is the primary contract for session expiry. The JSON bod
 
 ---
 
-### Signposting (`admin_router.py`, `practice_repository.py`)
+### Signposting (`admin_practice_router.py`, `practice_repository.py`)
 
 - The admin `GET /admin/conditions` endpoint is a **raw administrative view** deliberately separate from the patient-facing `GET /conditions`. A change to one cannot accidentally affect the other.
 - `GET /admin/conditions/{id}/signposting` returns `null` (not 404) when no signposting is configured. Absence of signposting is a valid configured state, not an error.
@@ -68,7 +83,7 @@ HTTP `401 Unauthorized` is the primary contract for session expiry. The JSON bod
 
 ---
 
-### Availability (`admin_router.py`, `availability_service.py`, `availability_repository.py`)
+### Availability (`admin_availability_router.py`, `availability_service.py`, `availability_repository.py`)
 
 - `GET /admin/availability` returns the raw config. It does **not** call `evaluate_availability` — that is the patient-facing logic. Admin reads and writes raw config only.
 - Setting `is_active = false` auto-clears any existing override. This is handled in the router before persisting.
@@ -77,7 +92,7 @@ HTTP `401 Unauthorized` is the primary contract for session expiry. The JSON bod
 
 ---
 
-### Audit Trail (`admin_router.py`, `audit_repository.py`, `http_utils.py`)
+### Audit Trail (`admin_audit_router.py`, `audit_repository.py`, `http_utils.py`)
 
 Every mutating admin action and all authentication events are recorded in the `admin_audit_log` table (created by migration 0015). The audit log is append-only and has no foreign keys — it remains readable even if a user or practice record is later deleted.
 
@@ -88,11 +103,11 @@ Every mutating admin action and all authentication events are recorded in the `a
 Each event records: `practice_id`, `actor_email`, `action`, `resource` (optional), `detail` (JSONB, action-specific shape), `ip_address`, `session_id`, `occurred_at`. The per-action `detail` shapes are documented in `audit_repository.py`.
 
 **Transaction pattern for mutating endpoints:**
-Each mutating endpoint reads the "before" state, then wraps both the repository mutation and the `audit_repo.log_event` call in a single shared `get_conn` transaction. If either operation fails, both roll back. The before state is read outside the transaction (clean read, no lock held). This pattern is documented in `admin_router.py`.
+Each mutating endpoint reads the "before" state, then wraps both the repository mutation and the `audit_repo.log_event` call in a single shared `get_conn` transaction. If either operation fails, both roll back. The before state is read outside the transaction (clean read, no lock held). This pattern applies uniformly across all three mutating sub-routers.
 
 **Auth events** (which have no paired mutation) use standalone inserts — `log_event` opens and commits its own connection when `conn=None`.
 
-**IP address extraction** is centralised in `app/core/http_utils.py` (`extract_ip`). It reads `X-Forwarded-For` first (taking the first value, the original client), then `X-Real-IP`, then `request.client.host`. This logic lives in one place only — not repeated at each call site.
+**IP address extraction** is centralised in `app/utils/http_utils.py` (`extract_ip`). It reads `X-Forwarded-For` first (taking the first value, the original client), then `X-Real-IP`, then `request.client.host`. This logic lives in one place only — not repeated at each call site.
 
 **`AdminContext` fields:** `actor_email` and `session_id` are populated by `require_admin` from the session record. For the DEV_MODE bearer fallback, `session_id` is `None` and `actor_email` is `"dev@local"`.
 
@@ -137,7 +152,7 @@ The admin UI is a Vite + React app (TypeScript). It is **not** the no-build CDN/
 ## What Admin Must Never Do
 
 - `admin_context.py`: import any project module other than `app.core.db`
-- `admin_router.py`: import clinical engine modules, `presentation_service`, `serialisation`, `projection`, or `runtime_state`
+- Any admin sub-router: import clinical engine modules, `presentation_service`, `serialisation`, `projection`, or `runtime_state`
 - `auth_service.py`: access the database directly — all DB access goes through `AuthRepository`
 - `auth_repository.py`: contain business logic (cooldown checks, code generation, hashing)
 - `admin_delivery_service.py`: check cooldowns or access any repository — it is a pure transport layer
