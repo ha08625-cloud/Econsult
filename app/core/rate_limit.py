@@ -24,7 +24,7 @@ from starlette.requests import Request
 
 from slowapi import Limiter
 
-from app.core.http_utils import extract_ip
+from app.utils.http_utils import extract_ip
 
 
 def _ip_key(request: Request) -> str:
