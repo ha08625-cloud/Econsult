@@ -8,7 +8,7 @@
 
 The FastAPI application entry point, startup validation, resource initialisation, router registration, error handling, and static file serving.
 
-**Key files:** `main.py`, `request_validation.py`, `app/routers/public_router.py`, `app/routers/admin_router.py`, `app/routers/form_router.py`, `app/core/dependencies.py`, `app/services/delivery/delivery_service.py`
+**Key files:** `main.py`, `request_validation.py`, `app/routers/public_router.py`, `app/routers/admin_router.py`, `app/routers/admin/` (sub-package), `app/routers/form_router.py`, `app/core/dependencies.py`, `app/services/delivery/delivery_service.py`
 
 ---
 
@@ -18,6 +18,7 @@ The FastAPI application entry point, startup validation, resource initialisation
 - Clinical presentation metadata (e.g. `condition_label`) is resolved from the registry in the router handler and passed explicitly to engine adapters. It never enters the core engine.
 - Repositories and registries are initialised **once at startup** and stored in `app.state`. Routers access them exclusively via dependency provider functions in `app/core/dependencies.py` — never via direct `request.app.state` access inside handler bodies, and never via direct imports from `main.py`. This prevents circular imports and keeps handler signatures self-documenting.
 - The `/admin` prefix and `"admin"` tag are applied when the admin router is registered in `main.py`, not inside `admin_router.py`. This keeps the router decoupled from its mount point.
+- `admin_router.py` is a thin orchestrator only. It registers four sub-routers from `app/routers/admin/` and contains no route handlers itself. Per-domain tags (`admin-auth`, `admin-practice`, `admin-availability`, `admin-audit`) are applied at include time.
 - **All API routes must be registered before the static file mount block.** The catch-all static mount must come last or it will intercept API requests.
 
 ---
