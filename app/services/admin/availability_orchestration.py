@@ -29,7 +29,7 @@ from app.models.availability_models import (
     LONDON_TZ,
 )
 from app.repositories.availability_repository import AvailabilityRepository
-from app.services import availability_service
+from app.services.admin import availability_service
 
 
 def check_availability(
