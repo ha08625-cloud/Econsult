@@ -45,7 +45,7 @@ from app.core.dependencies import (
     get_registry,
 )
 from app.core.rate_limit import limiter
-from app.services.availability_orchestration import check_availability
+from app.services.admin.availability_orchestration import check_availability
 
 logger = logging.getLogger(__name__)
 

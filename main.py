@@ -60,7 +60,7 @@ from app.services.delivery.admin_delivery_service import (
     ConsoleAdminDeliveryService,
     MailgunHttpAdminDeliveryService,
 )
-from app.services.auth_service import validate_admin_domain
+from app.services.admin.auth_service import validate_admin_domain
 from app.routers.admin_router import router as admin_router
 from app.routers.public_router import router as public_router
 from app.routers.form_router import router as form_router

@@ -60,7 +60,7 @@ from app.repositories.runtime_state_repository import (
     SessionClosed,
     VersionConflict,
 )
-from app.services.availability_orchestration import check_availability
+from app.services.admin.availability_orchestration import check_availability
 from app.services.engine.pipeline import (
     apply_update_and_evaluate,
     finish_runtime_state,

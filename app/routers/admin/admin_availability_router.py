@@ -39,7 +39,7 @@ from datetime import timezone
 from fastapi import APIRouter, Request, Depends, HTTPException
 
 from app.core.admin_context import AdminContext, require_admin
-from app.services.availability_service import (
+from app.services.admin.availability_service import (
     validate_availability_config,
     validate_override,
     validate_exception,
