@@ -429,9 +429,13 @@ class TestMFARateLimiting(unittest.TestCase):
     """
 
     def setUp(self):
+        from app.core.rate_limit import limiter
+        limiter._storage.reset()
         os.environ["DEV_MODE"] = "1"
 
     def tearDown(self):
+        from app.core.rate_limit import limiter
+        limiter._storage.reset()
         os.environ.pop("DEV_MODE", None)
 
     def _make_client(self):

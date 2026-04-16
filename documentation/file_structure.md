@@ -152,10 +152,13 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `conftest.py` — Autouse pytest fixture that resets the SlowAPI in-memory rate limit storage before and after every test. Prevents counter state leaking across test boundaries.
 
 **Unit tests (Mocked/In-memory)**
-- `test_admin_router.py`, `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`.
+- `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`.
 
-**Integration tests (Live `TEST_DATABASE_URL`)**
-- `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`, `test_delivery_retry.py`, `test_delivery_worker_integration.py`.
+**Admin Router unit tests (placed in tests/routers/ subfolder)**
+- `test_admin_auth_router.py`, `test_admin_availability_router.py`, `test_admin_practice_router.py`, `test_admin_audit_router.py`, 
+
+**Integration tests (Live `TEST_DATABASE_URL`, placed in tests/integration/ subfolder)**
+- `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`.
 
 ---
 
