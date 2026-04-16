@@ -150,11 +150,12 @@ Schema migration scripts. See code files directly for exact table definitions.
 
 **Shared fixtures**
 - `conftest.py` — Autouse pytest fixture that resets the SlowAPI in-memory rate limit storage before and after every test. Prevents counter state leaking across test boundaries.
+- `helpers/admin_test_helpers.py` — Shared helpers for the admin sub-router tests
 
 **Unit tests (Mocked/In-memory)**
 - `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`.
 
-**Admin Router unit tests (placed in tests/routers/ subfolder)**
+**Admin Sub-Router unit tests (placed in tests/routers/ subfolder)**
 - `test_admin_auth_router.py`, `test_admin_availability_router.py`, `test_admin_practice_router.py`, `test_admin_audit_router.py`, 
 
 **Integration tests (Live `TEST_DATABASE_URL`, placed in tests/integration/ subfolder)**

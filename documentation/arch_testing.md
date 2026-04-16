@@ -44,7 +44,7 @@ Tests that do not require a database connection. Covers two suites that run toge
 **Shared fixtures (`tests/conftest.py`)** — contains a single `autouse=True` fixture that resets the SlowAPI in-memory rate limit storage before and after every test. This prevents the module-level `Limiter` instance from leaking counter state across test boundaries. Any test that fires multiple requests to a rate-limited endpoint would cause spurious 429 failures in subsequent tests without this reset. The fixture is always active; no opt-in is required.
 
 **Frontend component tests** — screen component rendering and interaction behaviour.
-- Files: `*.test.tsx` in `frontend/src/screens/`
+- Files: `*.test.tsx` in `frontend/src/screens/` and `frontend/admin-ui/src/screens/`
 - Runner: Vitest (jsdom environment, configured in `frontend/vitest.config.ts`)
 
 **Run both together with:**
@@ -77,10 +77,6 @@ Current integration test files:
 
 **`tests/test_pipeline_repositories.py`** — repository layer tests for `PDFRepository`, `DeliveryRepository`, and `PhotoRepository`. Exercises the `pdf_jobs`, `delivery_jobs`, and `submission_photos` tables.
 
-**`tests/test_delivery_retry.py`** — delivery retry pipeline. Exercises `attempt_delivery`, `list_retryable`, and `record_attempt_outcome` directly against the database without going through the HTTP layer.
-
-**`tests/test_delivery_worker_integration.py`** — worker loop integration. Exercises `run_worker` against a live database using real delivery service stubs. Patches `time.sleep` to halt the loop after a controlled number of iterations.
-
 **Run all integration tests with:**
 ```
 make test-integration
@@ -111,28 +107,6 @@ If you forget, integration tests will fail against a stale schema.
 
 ---
 
-## Stale Files
-
-`seed_db.py` in the project root is stale. It references SQLite and outdated import paths and will not work with the current Postgres setup. Do not use it. If the test database ever needs to be re-provisioned from scratch:
-
-1. Run `make migrate-test` to apply all migrations
-2. Run the following from the project root:
-
-```bash
-DATABASE_URL=$TEST_DATABASE_URL python -c "
-import os
-from app.repositories.practice_repository import PracticeRepository
-repo = PracticeRepository(os.environ['DATABASE_URL'])
-if repo.practice_exists('test-practice'):
-    print('Already exists.')
-else:
-    repo.create_practice('test-practice', 'Test Practice', 'test@example.com')
-    print('Created.')
-"
-```
-
----
-
 ## Design Decisions
 
 ### Why not load .env automatically in tests?
@@ -143,12 +117,6 @@ The per-module `pytest.skip()` guardrail is correct locally but produces a silen
 
 ### Why does MockDeliveryService exist?
 Integration tests must not require SMTP configuration. `MockDeliveryService` captures send calls in memory so tests can assert on delivery behaviour without network dependencies. It is defined in `test_form_routes.py` and is not shared — if other test files need delivery assertions in future, extract it to a shared `tests/fixtures.py`.
-
-### Why are unit and integration tests separated by file rather than by marker?
-Explicit file separation makes the distinction obvious and avoids the need for pytest marker configuration. The `--ignore` flag in `make test` is unambiguous. If the number of integration test files grows, introduce pytest markers at that point.
-
-### Why does make test-integration not include Vitest?
-Frontend tests have no database dependency and belong in the unit suite. Running Vitest again alongside integration tests would be redundant and slow. The convention is: run `make test` before every commit, run `make test-integration` only when touching the form submission pipeline.
 
 ### Why cd frontend instead of a vitest script in package.json?
 Vitest requires the working directory to be `frontend/` so it resolves `vitest.config.ts` correctly. The Makefile uses `cd frontend && npx vitest run` rather than adding a `test` script to `package.json` to keep the entry point for tests in one place (the Makefile) rather than split across two files.

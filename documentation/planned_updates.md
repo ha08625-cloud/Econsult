@@ -15,10 +15,9 @@
 - safety rules implemented on clicking yes/no, rather than on submit form (defer - big feature change and we need to know if blocking safety rules are desired or not)
 
 ### Admin portal updates
-- Multiple admin users or role-based access control beyond the `role` field in the schema
-- Staff vs admin role enforcement in router handlers (schema supports it, enforcement is not implemented)
+- Multiple admin users and ability to add new admin users in the portal
 - Session refresh / sliding expiry
-- Passowrds for true MFA
+- Passwords for true MFA
 
 ### Encoder updates
 - Deterministic data augmentation
