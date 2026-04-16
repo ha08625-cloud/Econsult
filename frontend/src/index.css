@@ -1,6 +1,5 @@
 /* ============================================================
    Econsult patient frontend — global styles
-   Palette: white surfaces, NHS blue accents, light grey background
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&display=swap');
@@ -22,22 +21,18 @@
   --danger-bg:      #fef2f2;
   --danger-border:  #fca5a5;
 
-  --warning-bg:     #fffbeb;
-  --warning-border: #fcd34d;
-  --warning-text:   #78350f;
-
-  --info-bg:        #eff6ff;
-  --info-border:    #93c5fd;
-
-  --suggested:      #d1fae5;
-  --suggested-border: #6ee7b7;
-  --suggested-text: #065f46;
-
   --radius-sm:      3px;
   --radius:         5px;
   --radius-lg:      8px;
 
   --font: 'Source Sans 3', 'Segoe UI', sans-serif;
+
+  /* Spacing Scale */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
 }
 
 *, *::before, *::after {
@@ -46,95 +41,62 @@
   padding: 0;
 }
 
-html, body {
-  height: 100%;
-}
-
 body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
   font-size: 16px;
   line-height: 1.6;
-  -webkit-font-smoothing: antialiased;
 }
 
-/* ============================================================
-   Page structure
-   ============================================================ */
-
-.page-header {
-  background: var(--nhs-blue);
-  padding: 0 24px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-}
-
-.page-header-title {
-  color: #ffffff;
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
+/* Page Structure */
 .page-container {
   max-width: 580px;
-  margin: 40px auto;
-  padding: 0 20px;
+  margin: var(--space-xl) auto;
+  padding: 0 var(--space-md);
 }
 
 .screen-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 36px 40px;
+  padding: var(--space-xl) 40px;
 }
-
-/* ============================================================
-   Typography
-   ============================================================ */
 
 h1 {
   font-size: 22px;
   font-weight: 600;
-  color: var(--text);
-  margin-bottom: 20px;
-  padding-bottom: 16px;
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-md);
   border-bottom: 2px solid var(--nhs-blue);
 }
 
-h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 12px;
-}
-
-h3 {
-  font-size: 15px;
-  font-weight: 600;
+.screen-description {
+  margin-bottom: var(--space-lg);
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 8px;
+  font-size: 15px;
 }
 
-p {
-  margin-bottom: 12px;
-  color: var(--text);
+/* Form Groups & Layout */
+.form-section {
+  margin-bottom: var(--space-xl);
 }
-
-p:last-child {
-  margin-bottom: 0;
-}
-
-/* ============================================================
-   Form elements
-   ============================================================ */
 
 .field {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-lg);
+}
+
+.field.has-error {
+  border-left: 4px solid var(--danger);
+  padding-left: var(--space-md);
+  margin-left: -20px; /* Pull error border out into the padding area */
+}
+
+.error-message {
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: var(--space-xs);
 }
 
 label {
@@ -142,324 +104,111 @@ label {
   font-size: 15px;
   font-weight: 600;
   color: var(--text-label);
-  margin-bottom: 6px;
+  margin-bottom: var(--space-sm);
 }
 
-input[type="text"],
-textarea,
-select {
+input[type="text"] {
   width: 100%;
   padding: 10px 12px;
   border: 2px solid var(--border);
   border-radius: var(--radius);
-  font-family: var(--font);
   font-size: 15px;
-  color: var(--text);
-  background: var(--surface);
-  outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-input[type="text"]:focus,
-textarea:focus,
-select:focus {
+input[type="text"]:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px rgba(0, 94, 184, 0.15);
+  outline: none;
 }
 
-textarea {
-  resize: vertical;
-  min-height: 100px;
-}
-
-/* ============================================================
-   Radio buttons (Yes / No)
-   ============================================================ */
-
-.radio-group {
+/* Selection Cards (Radio Buttons) */
+.selection-grid {
   display: flex;
-  gap: 12px;
-  margin-top: 4px;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
 }
 
-.radio-option {
+.selection-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 15px;
-  font-weight: 400;
-  color: var(--text);
-  padding: 8px 16px;
+  gap: var(--space-md);
+  padding: var(--space-md);
   border: 2px solid var(--border);
   border-radius: var(--radius);
-  transition: border-color 0.12s, background 0.12s;
-  user-select: none;
+  cursor: pointer;
+  background: var(--surface);
+  transition: all 0.15s ease;
 }
 
-.radio-option:hover {
+.selection-card:hover {
   border-color: var(--nhs-blue);
   background: var(--nhs-blue-light);
 }
 
-.radio-option input[type="radio"] {
-  width: auto;
-  margin: 0;
+.selection-card.selected {
+  border-color: var(--nhs-blue);
+  background: var(--nhs-blue-light);
+  box-shadow: 0 2px 4px rgba(0, 94, 184, 0.1);
+}
+
+.selection-card input[type="radio"] {
+  width: 18px;
+  height: 18px;
   accent-color: var(--nhs-blue);
 }
 
-.radio-option.selected {
-  border-color: var(--nhs-blue);
-  background: var(--nhs-blue-light);
-  font-weight: 600;
+.selection-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
 }
 
-/* ============================================================
-   Buttons
-   ============================================================ */
+/* DOB Layout */
+.dob-inputs {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.dob-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.dob-field label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Buttons */
+.btn-row {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+}
 
 .btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 24px;
+  padding: 12px 24px;
   border-radius: var(--radius);
-  font-family: var(--font);
-  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   border: 2px solid transparent;
-  transition: background 0.12s, border-color 0.12s, opacity 0.12s;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  transition: background 0.15s;
 }
 
 .btn-primary {
   background: var(--nhs-blue);
-  color: #ffffff;
-  border-color: var(--nhs-blue);
+  color: #fff;
 }
 
-.btn-primary:not(:disabled):hover {
+.btn-primary:hover {
   background: var(--nhs-blue-dark);
-  border-color: var(--nhs-blue-dark);
 }
 
 .btn-secondary {
   background: transparent;
   color: var(--nhs-blue);
   border-color: var(--nhs-blue);
-}
-
-.btn-secondary:not(:disabled):hover {
-  background: var(--nhs-blue-light);
-}
-
-.btn-row {
-  display: flex;
-  gap: 12px;
-  margin-top: 24px;
-  align-items: center;
-}
-
-/* ============================================================
-   Alert / info boxes
-   ============================================================ */
-
-.alert {
-  padding: 14px 16px;
-  border-radius: var(--radius);
-  border-left: 4px solid transparent;
-  margin-bottom: 20px;
-  font-size: 15px;
-}
-
-.alert strong {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.alert-danger {
-  background: var(--danger-bg);
-  border-left-color: var(--danger);
-  color: var(--danger);
-}
-
-.alert-info {
-  background: var(--info-bg);
-  border-left-color: var(--nhs-blue);
-  color: var(--text);
-}
-
-.alert-warning {
-  background: var(--warning-bg);
-  border-left-color: var(--warning-border);
-  color: var(--warning-text);
-}
-
-/* ============================================================
-   Question cards (EDIT screen)
-   ============================================================ */
-
-.question-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
-  margin-bottom: 12px;
-}
-
-.question-card.suggested {
-  border-color: var(--suggested-border);
-  background: var(--suggested);
-}
-
-.suggested-badge {
-  display: inline-block;
-  margin-top: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--suggested-text);
-  background: transparent;
-  letter-spacing: 0.03em;
-}
-
-/* ============================================================
-   Review screen answer list
-   ============================================================ */
-
-.review-list {
-  list-style: none;
-  margin-bottom: 20px;
-}
-
-.review-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-  gap: 16px;
-  font-size: 15px;
-}
-
-.review-item:last-child {
-  border-bottom: none;
-}
-
-.review-question {
-  color: var(--text-muted);
-  flex: 1;
-}
-
-.review-answer {
-  font-weight: 600;
-  color: var(--text);
-  text-align: right;
-  flex-shrink: 0;
-}
-
-/* ============================================================
-   Description box (free text display on EDIT/REVIEW)
-   ============================================================ */
-
-.description-box {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  margin-bottom: 20px;
-  font-size: 15px;
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-/* ============================================================
-   Dividers and spacing utilities
-   ============================================================ */
-
-.divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 24px 0;
-}
-
-.mt-sm  { margin-top: 12px; }
-.mt-md  { margin-top: 20px; }
-.mt-lg  { margin-top: 32px; }
-.mb-sm  { margin-bottom: 12px; }
-.mb-md  { margin-bottom: 20px; }
-
-/* ============================================================
-   Loading / status text
-   ============================================================ */
-
-.status-text {
-  color: var(--text-muted);
-  font-size: 15px;
-  padding: 16px 0;
-}
-
-/* ============================================================
-   Done screen
-   ============================================================ */
-
-.done-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--nhs-blue);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 20px;
-}
-
-.done-icon svg {
-  stroke: #ffffff;
-}
-
-/* ============================================================
-   Safety gate (Screen 0)
-   ============================================================ */
-
-.safety-confirm-row {
-  margin-top: 20px;
-  margin-bottom: 8px;
-}
-
-.safety-confirm-label {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text);
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.safety-confirm-label input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  margin-top: 2px;
-  accent-color: var(--nhs-blue);
-  cursor: pointer;
-}
-
-.safety-gate-hint {
-  font-size: 14px;
-  color: var(--danger);
-  margin-top: 10px;
-  margin-bottom: 0;
 }
