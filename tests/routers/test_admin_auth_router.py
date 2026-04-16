@@ -449,7 +449,7 @@ class TestMFARateLimiting(unittest.TestCase):
         client = self._make_client()
         payload = {"email": "admin@nhs.net"}
 
-        with patch("app.services.auth_service.request_mfa_code"):
+        with patch("app.services.admin.auth_service.request_mfa_code"):
             for i in range(5):
                 res = client.post("/admin/auth/request-code", json=payload)
                 self.assertNotEqual(
@@ -472,7 +472,7 @@ class TestMFARateLimiting(unittest.TestCase):
         payload = {"email": "admin@nhs.net", "code": "123456"}
 
         with patch(
-            "app.services.auth_service.verify_mfa_code",
+            "app.services.admin.auth_service.verify_mfa_code",
             return_value="stub-session-id",
         ):
             for i in range(5):
