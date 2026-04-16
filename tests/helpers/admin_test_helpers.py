@@ -12,7 +12,12 @@ from fastapi.responses import JSONResponse
 
 from app.routers.admin_router import router as admin_router
 from app.core.errors import APIError, RateLimitError, ConditionNotFound
-from app.repositories.practice_repository import sanitise_signposting_html
+from app.repositories.practice_repository import (
+    sanitise_signposting_html,
+    InvalidDoctorListError,
+    MAX_DOCTOR_NAME_LENGTH,
+    MAX_DOCTOR_LIST_LENGTH,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -34,22 +39,95 @@ class StubRegistry:
 
 
 class StubPracticeRepo:
+    """
+    In-memory practice repo stub.
+
+    Calls the real sanitise_signposting_html so that sanitisation
+    side-effects (stripping unsafe content, treating empty HTML as None,
+    rejecting overlength input) are exercised through the router in tests.
+
+    database_url is present because the router accesses
+    practice_repo.database_url when opening a shared transaction via
+    get_conn. In unit tests get_conn is patched (see dummy_conn below)
+    so this value is never used to open a real connection.
+
+    Mutating methods accept conn=None to match the real repository
+    signatures. The conn value is ignored — the stub operates on
+    in-memory state only.
+    """
     def __init__(self):
         self.database_url = "stub://not-a-real-db"
-        self._store = {} 
+        self._signposting = {}   # (practice_id, condition_id) -> str | None
+        self._practice = {
+            "practice_id": "test_practice",
+            "name": "Test Practice",
+            "email": "test@nhs.net",
+        }
+        self._doctors = []       # list of str, in display order
+
+    # --- Practice ---
+
+    def get_practice(self, practice_id):
+        return dict(self._practice)
+
+    def get_email(self, practice_id):
+        return self._practice["email"]
+
+    def update_email(self, practice_id, email, conn=None):
+        self._validate_email(email)
+        self._practice["email"] = email
+
+    def _validate_email(self, email):
+        from app.repositories.practice_repository import InvalidEmailError
+        if not isinstance(email, str):
+            raise InvalidEmailError(f"Email must be a string, got {type(email).__name__}")
+        if email != email.strip():
+            raise InvalidEmailError("Email contains leading or trailing whitespace")
+        parts = email.split("@")
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise InvalidEmailError("Email must be in format 'local@domain'")
+
+    # --- Signposting ---
 
     def get_signposting(self, practice_id, condition_id):
-        return self._store.get((practice_id, condition_id))
+        return self._signposting.get((practice_id, condition_id))
 
     def set_signposting(self, practice_id, condition_id, value: str, conn=None):
         sanitised = sanitise_signposting_html(value)
         if sanitised is not None:
-            self._store[(practice_id, condition_id)] = sanitised
+            self._signposting[(practice_id, condition_id)] = sanitised
         else:
-            self._store.pop((practice_id, condition_id), None)
+            self._signposting.pop((practice_id, condition_id), None)
 
     def delete_signposting(self, practice_id, condition_id, conn=None):
-        self._store.pop((practice_id, condition_id), None)
+        self._signposting.pop((practice_id, condition_id), None)
+
+    # --- Doctors ---
+
+    def get_doctors(self, practice_id):
+        return list(self._doctors)
+
+    def set_doctors(self, practice_id, names, conn=None):
+        self._validate_doctor_list(names)
+        self._doctors = list(names)
+
+    def _validate_doctor_list(self, names):
+        if not isinstance(names, list):
+            raise InvalidDoctorListError("Doctor list must be a list")
+        if len(names) > MAX_DOCTOR_LIST_LENGTH:
+            raise InvalidDoctorListError(
+                f"Doctor list must not exceed {MAX_DOCTOR_LIST_LENGTH} items "
+                f"(received {len(names)})"
+            )
+        for i, name in enumerate(names):
+            if not isinstance(name, str) or not name.strip():
+                raise InvalidDoctorListError(
+                    f"Doctor name at index {i} must be a non-empty string"
+                )
+            if len(name) > MAX_DOCTOR_NAME_LENGTH:
+                raise InvalidDoctorListError(
+                    f"Doctor name at index {i} exceeds {MAX_DOCTOR_NAME_LENGTH} characters"
+                )
 
 
 class StubAvailabilityRepo:
@@ -85,7 +163,8 @@ class StubAvailabilityRepo:
             "closed_message": closed_message,
         })
 
-    def set_override(self, practice_id, override_status, override_expires_at, override_message, conn=None):
+    def set_override(self, practice_id, override_status, override_expires_at,
+                     override_message, conn=None):
         self._config.update({
             "override_status": override_status,
             "override_expires_at": override_expires_at,
@@ -120,6 +199,13 @@ class StubAvailabilityRepo:
 
 
 class StubAuthRepo:
+    """
+    In-memory auth repo stub for unit tests.
+
+    No sessions are valid by default — session lookups always return None,
+    which causes require_admin to fall through to the DEV_MODE bearer-token
+    fallback.
+    """
     def get_session_context(self, session_id): return None
     def get_user_by_email(self, email): return None
     def get_auth_code_record(self, email): return None
@@ -133,6 +219,10 @@ class StubAuthRepo:
 
 
 class StubAuditRepo:
+    """
+    No-op audit repo stub. Records calls to log_event so tests can assert
+    it was called if needed, but never touches the database.
+    """
     def __init__(self):
         self.logged = []
 
@@ -140,7 +230,8 @@ class StubAuditRepo:
                   detail=None, ip_address=None, session_id=None, conn=None):
         self.logged.append({
             "practice_id": practice_id, "actor_email": actor_email, "action": action,
-            "resource": resource, "detail": detail, "ip_address": ip_address, "session_id": session_id,
+            "resource": resource, "detail": detail, "ip_address": ip_address,
+            "session_id": session_id,
         })
 
     def list_events(self, *, practice_id, cursor=None, from_date=None,
@@ -149,8 +240,10 @@ class StubAuditRepo:
 
 
 class StubAdminDeliveryService:
+    """Captures send_mfa_code calls without sending email."""
     def __init__(self):
         self.calls = []
+
     def send_mfa_code(self, email, code):
         self.calls.append({"email": email, "code": code})
 
@@ -161,12 +254,33 @@ class StubAdminDeliveryService:
 
 @contextmanager
 def dummy_conn(_database_url):
-    """Stand-in for app.core.db.get_conn in unit tests."""
+    """
+    Stand-in for app.core.db.get_conn in unit tests.
+
+    Yields a sentinel string instead of a real psycopg2 connection.
+    The stub repositories accept conn=None and ignore it, so the
+    sentinel is never used for actual database operations. It only
+    needs to exist so that the `with get_conn(...) as conn:` block
+    in the router succeeds without opening a real Postgres connection.
+    """
     yield "stub-conn"
 
 
 def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
                   audit_repo=None, availability_repo=None, with_rate_limiting=False):
+    """
+    Build a bare FastAPI app with the admin router registered and
+    app.state populated. Does not run the normal startup validation.
+
+    Registers the same exception handlers as main.py:
+      - ConditionNotFound  -> 404
+      - APIError           -> 422
+      - RateLimitError     -> 429
+
+    with_rate_limiting=True additionally wires SlowAPIMiddleware and the
+    RateLimitExceeded handler, mirroring the production main.py setup.
+    Pass this flag only in tests that specifically exercise slowapi limits.
+    """
     app = FastAPI()
 
     if with_rate_limiting:
@@ -176,7 +290,6 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
         app.state.limiter = limiter
         app.add_middleware(SlowAPIMiddleware)
 
-    # Mounts the master admin_router which now delegates to the 4 sub-routers
     app.include_router(admin_router, prefix="/admin", tags=["admin"])
 
     app.state.practice_id = "test_practice"
@@ -190,19 +303,33 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
 
     @app.exception_handler(ConditionNotFound)
     async def condition_not_found_handler(_, exc: ConditionNotFound):
-        return JSONResponse(status_code=404, content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}})
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}},
+        )
 
     @app.exception_handler(APIError)
     async def api_error_handler(_, exc: APIError):
-        return JSONResponse(status_code=422, content={"error": {"code": exc.code, "message": exc.message}})
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"code": exc.code, "message": exc.message}},
+        )
 
     @app.exception_handler(RateLimitError)
     async def rate_limit_handler(_, exc: RateLimitError):
-        return JSONResponse(status_code=429, content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": str(exc)}})
+        return JSONResponse(
+            status_code=429,
+            content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": str(exc)}},
+        )
 
     if with_rate_limiting:
+        from slowapi.errors import RateLimitExceeded
+
         @app.exception_handler(RateLimitExceeded)
         async def slowapi_rate_limit_handler(_, exc: RateLimitExceeded):
-            return JSONResponse(status_code=429, content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many requests. Please try again later."}})
+            return JSONResponse(
+                status_code=429,
+                content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many requests. Please try again later."}},
+            )
 
     return app
