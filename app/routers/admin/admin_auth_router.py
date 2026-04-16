@@ -31,7 +31,7 @@ from app.core.dependencies import (
 )
 from app.utils.http_utils import extract_ip
 from app.core.rate_limit import limiter
-from app.services import auth_service
+from app.services.admin import auth_service
 
 logger = logging.getLogger(__name__)
 
