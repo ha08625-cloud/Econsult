@@ -4,12 +4,8 @@ Integration tests for public (unauthenticated) HTTP endpoints.
 REQUIRES: A running Postgres database with DATABASE_URL set in the environment,
 the schema migrated, and at least one practice and one condition seeded.
 
-Run from the project root with:
-    python -m pytest tests/test_public_routes.py -v
-
 These tests use FastAPI's TestClient against the real application stack.
 They are not mocked — they test the full path from HTTP to database.
-They are worth keeping and re-running after any routing refactor.
 """
 
 import os
@@ -24,7 +20,7 @@ from fastapi.testclient import TestClient
 # ---------------------------------------------------------------------------
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent.parent / ".env", override=False)
+    load_dotenv(Path(__file__).parent.parent.parent / ".env", override=False)
 except ImportError:
     pass
 
