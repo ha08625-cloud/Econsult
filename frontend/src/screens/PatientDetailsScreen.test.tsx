@@ -93,20 +93,20 @@ describe("PatientDetailsScreen", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Validation — existing fields
+  // Validation — required fields
   // ---------------------------------------------------------------------------
 
   it("shows first name error when first name is empty on submit", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/please enter the patient's first name/i)).toBeTruthy();
+    expect(screen.getByText(/enter first name/i)).toBeTruthy();
   });
 
   it("shows last name error when last name is empty on submit", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.type(screen.getByLabelText(/first name/i), "Jane");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/please enter the patient's last name/i)).toBeTruthy();
+    expect(screen.getByText(/enter last name/i)).toBeTruthy();
   });
 
   it("shows DOB error when DOB fields are empty on submit", async () => {
@@ -114,7 +114,7 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/first name/i), "Jane");
     await userEvent.type(screen.getByLabelText(/last name/i), "Smith");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/please enter a complete date of birth/i)).toBeTruthy();
+    expect(screen.getByText(/enter a complete date of birth/i)).toBeTruthy();
   });
 
   it("shows DOB error when DOB is not a real calendar date", async () => {
@@ -125,7 +125,18 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/^month$/i), "02");
     await userEvent.type(screen.getByLabelText(/^year$/i), "1990");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/please enter a valid date of birth/i)).toBeTruthy();
+    expect(screen.getByText(/enter a valid date/i)).toBeTruthy();
+  });
+
+  it("shows DOB error when DOB is in the future", async () => {
+    render(<PatientDetailsScreen {...defaultProps} />);
+    await userEvent.type(screen.getByLabelText(/first name/i), "Jane");
+    await userEvent.type(screen.getByLabelText(/last name/i), "Smith");
+    await userEvent.type(screen.getByLabelText(/^day$/i), "01");
+    await userEvent.type(screen.getByLabelText(/^month$/i), "01");
+    await userEvent.type(screen.getByLabelText(/^year$/i), "2099");
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    expect(screen.getByText(/cannot be in the future/i)).toBeTruthy();
   });
 
   it("shows postcode error when postcode is empty on submit", async () => {
@@ -136,7 +147,7 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/^month$/i), "03");
     await userEvent.type(screen.getByLabelText(/^year$/i), "1990");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/please enter a postcode/i)).toBeTruthy();
+    expect(screen.getByText(/enter a postcode/i)).toBeTruthy();
   });
 
   it("shows postcode format error for an invalid postcode", async () => {
@@ -148,7 +159,7 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/^year$/i), "1990");
     await userEvent.type(screen.getByLabelText(/postcode/i), "NOTAPOSTCODE");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/please enter a valid uk postcode/i)).toBeTruthy();
+    expect(screen.getByText(/enter a valid uk postcode/i)).toBeTruthy();
   });
 
   it("shows submitter name and relationship errors when someone-else fields are empty", async () => {
@@ -156,8 +167,8 @@ describe("PatientDetailsScreen", () => {
     await userEvent.click(screen.getByLabelText(/someone else/i));
     await fillValidMyselfForm();
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/please enter your name/i)).toBeTruthy();
-    expect(screen.getByText(/please enter your relationship to the patient/i)).toBeTruthy();
+    expect(screen.getByText(/enter your name/i)).toBeTruthy();
+    expect(screen.getByText(/enter relationship/i)).toBeTruthy();
   });
 
   // ---------------------------------------------------------------------------
@@ -173,16 +184,15 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/^year$/i), "1990");
     await userEvent.type(screen.getByLabelText(/postcode/i), "SW1A 1AA");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/please select a gender/i)).toBeTruthy();
+    expect(screen.getByText(/select a gender/i)).toBeTruthy();
   });
 
   it("clears gender error once a gender is selected", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    // Error is visible
-    expect(screen.queryByText(/please select a gender/i)).toBeTruthy();
+    expect(screen.queryByText(/select a gender/i)).toBeTruthy();
     await userEvent.click(screen.getByLabelText(/^female$/i));
-    expect(screen.queryByText(/please select a gender/i)).toBeNull();
+    expect(screen.queryByText(/select a gender/i)).toBeNull();
   });
 
   // ---------------------------------------------------------------------------
@@ -196,11 +206,16 @@ describe("PatientDetailsScreen", () => {
     expect(screen.getByText(/valid 10-digit nhs number/i)).toBeTruthy();
   });
 
-  it("shows NHS number error for non-digit characters", async () => {
+  it("input guard silently drops non-digit characters typed into the NHS number field", async () => {
+    // The formatNhsNumber helper strips non-digits on change, so typing letters
+    // results in an empty field rather than an error. An empty NHS number is
+    // valid (the field is optional), so no error should appear.
     render(<PatientDetailsScreen {...defaultProps} />);
-    await userEvent.type(screen.getByLabelText(/nhs number/i), "ABCDEFGHIJ");
+    const nhsInput = screen.getByLabelText(/nhs number/i) as HTMLInputElement;
+    await userEvent.type(nhsInput, "ABCDEFGHIJ");
+    expect(nhsInput.value).toBe("");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/valid 10-digit nhs number/i)).toBeTruthy();
+    expect(screen.queryByText(/valid 10-digit nhs number/i)).toBeNull();
   });
 
   it("accepts a 10-digit NHS number with standard spaces", async () => {
@@ -212,7 +227,6 @@ describe("PatientDetailsScreen", () => {
     expect(screen.queryByText(/valid 10-digit nhs number/i)).toBeNull();
     expect(onContinue).toHaveBeenCalledOnce();
     const payload = onContinue.mock.calls[0][0];
-    // Spaces stripped before sending
     expect(payload.nhs_number).toBe("4857773456");
   });
 
@@ -260,6 +274,24 @@ describe("PatientDetailsScreen", () => {
     expect(onContinue).toHaveBeenCalledOnce();
     const payload = onContinue.mock.calls[0][0];
     expect(payload.preferred_name).toBe("Jo");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Input guards
+  // ---------------------------------------------------------------------------
+
+  it("DOB input guard prevents non-numeric characters from being entered", async () => {
+    render(<PatientDetailsScreen {...defaultProps} />);
+    const dayInput = screen.getByLabelText(/^day$/i) as HTMLInputElement;
+    await userEvent.type(dayInput, "AB");
+    expect(dayInput.value).toBe("");
+  });
+
+  it("postcode field forces input to uppercase", async () => {
+    render(<PatientDetailsScreen {...defaultProps} />);
+    const postcodeInput = screen.getByLabelText(/postcode/i) as HTMLInputElement;
+    await userEvent.type(postcodeInput, "sw1a 1aa");
+    expect(postcodeInput.value).toBe("SW1A 1AA");
   });
 
   // ---------------------------------------------------------------------------
