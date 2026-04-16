@@ -1,4 +1,4 @@
-import { useState, useRef, ChangeEvent } from "react";
+import { useState, useRef } from "react";
 import { PageShell } from "../layout";
 import type { PatientDetails, Gender } from "../types";
 
@@ -19,10 +19,6 @@ function isValidNhsNumber(value: string): boolean {
   return /^\d{10}$/.test(stripped);
 }
 
-/**
- * Strips non-digits and injects spaces after the 3rd and 6th digits
- * to match the standard NHS 3-3-4 format (e.g., 485 777 3456).
- */
 function formatNhsNumber(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 10);
   if (digits.length > 6) {
@@ -68,7 +64,6 @@ export default function PatientDetailsScreen({
   const [details, setDetails] = useState<LocalPatientDetails>(initialiseDetails());
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Refs for auto-tabbing DOB fields
   const monthRef = useRef<HTMLInputElement>(null);
   const yearRef = useRef<HTMLInputElement>(null);
 
@@ -87,33 +82,25 @@ export default function PatientDetailsScreen({
   }
 
   function handleDobChange(part: 'day' | 'month' | 'year', value: string) {
-    // Input Guard: Only allow numbers and limit lengths
     const cleanVal = value.replace(/\D/g, "").slice(0, part === 'year' ? 4 : 2);
-    
     const newDob = { ...details.date_of_birth, [part]: cleanVal };
     setField("date_of_birth", newDob);
 
-    // Auto-tabbing logic
     if (cleanVal.length === 2) {
-      if (part === 'day') {
-        monthRef.current?.focus();
-      } else if (part === 'month') {
-        yearRef.current?.focus();
-      }
+      if (part === 'day') monthRef.current?.focus();
+      else if (part === 'month') yearRef.current?.focus();
     }
   }
 
   function validate(): boolean {
     const next: Record<string, string> = {};
 
-    if (!details.first_name.trim()) next.first_name = "Enter first name.";
-    if (!details.last_name.trim()) next.last_name = "Enter last name.";
+    if (!details.first_name.trim()) next.first_name = "Please enter the patient's first name.";
+    if (!details.last_name.trim()) next.last_name = "Please enter the patient's last name.";
 
     const { day, month, year } = details.date_of_birth;
     if (!day.trim() || !month.trim() || !year.trim()) {
-      next.dob = "Enter a complete date of birth.";
-    } else if (!isDigitsOnly(day) || !isDigitsOnly(month) || !isDigitsOnly(year)) {
-      next.dob = "Use numbers only.";
+      next.dob = "Please enter a complete date of birth.";
     } else {
       const d = parseInt(day, 10);
       const m = parseInt(month, 10);
@@ -121,23 +108,23 @@ export default function PatientDetailsScreen({
       const assembled = new Date(y, m - 1, d);
       const isReal = assembled.getFullYear() === y && assembled.getMonth() === m - 1 && assembled.getDate() === d;
 
-      if (!isReal) next.dob = "Enter a valid date.";
-      else if (assembled > new Date()) next.dob = "Cannot be in the future.";
+      if (!isReal) next.dob = "Please enter a valid date of birth.";
+      else if (assembled > new Date()) next.dob = "Date of birth cannot be in the future.";
     }
 
-    if (!details.postcode.trim()) next.postcode = "Enter a postcode.";
-    else if (!UK_POSTCODE_REGEX.test(details.postcode.trim())) next.postcode = "Enter a valid UK postcode.";
+    if (!details.postcode.trim()) next.postcode = "Please enter a postcode.";
+    else if (!UK_POSTCODE_REGEX.test(details.postcode.trim())) next.postcode = "Please enter a valid UK postcode.";
 
-    if (details.gender === null) next.gender = "Select a gender.";
+    if (details.gender === null) next.gender = "Please select a gender.";
 
     const nhsRaw = details.nhs_number ?? "";
     if (nhsRaw.trim() !== "" && !isValidNhsNumber(nhsRaw)) {
-      next.nhs_number = "Enter a valid 10-digit NHS number.";
+      next.nhs_number = "Please enter a valid 10-digit NHS number.";
     }
 
     if (forSomeoneElse) {
-      if (!details.submitter_name?.trim()) next.submitter_name = "Enter your name.";
-      if (!details.submitter_relationship?.trim()) next.submitter_relationship = "Enter relationship.";
+      if (!details.submitter_name?.trim()) next.submitter_name = "Please enter your name.";
+      if (!details.submitter_relationship?.trim()) next.submitter_relationship = "Please enter your relationship to the patient.";
     }
 
     if (Object.keys(next).length > 0) {
@@ -165,7 +152,6 @@ export default function PatientDetailsScreen({
       <h1>About the patient</h1>
       <p className="screen-description">We need a few details before you continue.</p>
 
-      {/* 1. Ownership Section */}
       <div className={`field ${errors.patient_for ? "has-error" : ""}`}>
         <label>Who is this consultation for?</label>
         <div className="selection-grid">
@@ -183,7 +169,6 @@ export default function PatientDetailsScreen({
         </div>
       </div>
 
-      {/* 2. Identity Section */}
       <div className="form-section">
         <div className={`field ${errors.first_name ? "has-error" : ""}`}>
           <label htmlFor="first-name">{forSomeoneElse ? "Patient's first name" : "First name"}</label>
@@ -205,7 +190,6 @@ export default function PatientDetailsScreen({
         </div>
       </div>
 
-      {/* 3. Biological & Date Info */}
       <div className="form-section">
         <div className={`field ${errors.gender ? "has-error" : ""}`}>
           <label>{forSomeoneElse ? "Patient's gender" : "Gender"}</label>
@@ -225,72 +209,31 @@ export default function PatientDetailsScreen({
           <div className="dob-inputs">
             <div className="dob-field">
               <label htmlFor="dob-day">Day</label>
-              <input
-                id="dob-day"
-                type="text"
-                inputMode="numeric"
-                placeholder="DD"
-                style={{ width: '60px' }}
-                value={details.date_of_birth.day}
-                onChange={(e) => handleDobChange('day', e.target.value)}
-              />
+              <input id="dob-day" type="text" inputMode="numeric" placeholder="DD" style={{ width: '60px' }} value={details.date_of_birth.day} onChange={(e) => handleDobChange('day', e.target.value)} />
             </div>
             <div className="dob-field">
               <label htmlFor="dob-month">Month</label>
-              <input
-                id="dob-month"
-                ref={monthRef}
-                type="text"
-                inputMode="numeric"
-                placeholder="MM"
-                style={{ width: '60px' }}
-                value={details.date_of_birth.month}
-                onChange={(e) => handleDobChange('month', e.target.value)}
-              />
+              <input id="dob-month" ref={monthRef} type="text" inputMode="numeric" placeholder="MM" style={{ width: '60px' }} value={details.date_of_birth.month} onChange={(e) => handleDobChange('month', e.target.value)} />
             </div>
             <div className="dob-field">
               <label htmlFor="dob-year">Year</label>
-              <input
-                id="dob-year"
-                ref={yearRef}
-                type="text"
-                inputMode="numeric"
-                placeholder="YYYY"
-                style={{ width: '80px' }}
-                value={details.date_of_birth.year}
-                onChange={(e) => handleDobChange('year', e.target.value)}
-              />
+              <input id="dob-year" ref={yearRef} type="text" inputMode="numeric" placeholder="YYYY" style={{ width: '80px' }} value={details.date_of_birth.year} onChange={(e) => handleDobChange('year', e.target.value)} />
             </div>
           </div>
           {errors.dob && <p className="error-message">{errors.dob}</p>}
         </div>
       </div>
 
-      {/* 4. Administrative Info */}
       <div className="form-section">
         <div className={`field ${errors.postcode ? "has-error" : ""}`}>
           <label htmlFor="postcode">{forSomeoneElse ? "Patient's postcode" : "Postcode"}</label>
-          <input 
-            id="postcode" 
-            type="text" 
-            style={{ width: '160px', textTransform: 'uppercase' }} 
-            value={details.postcode} 
-            onChange={(e) => setField("postcode", e.target.value.toUpperCase())} 
-          />
+          <input id="postcode" type="text" style={{ width: '160px', textTransform: 'uppercase' }} value={details.postcode} onChange={(e) => setField("postcode", e.target.value.toUpperCase())} />
           {errors.postcode && <p className="error-message">{errors.postcode}</p>}
         </div>
 
         <div className={`field ${errors.nhs_number ? "has-error" : ""}`}>
           <label htmlFor="nhs-number">NHS number <span style={{ fontWeight: 'normal', color: 'var(--text-muted)' }}>(optional)</span></label>
-          <input 
-            id="nhs-number" 
-            type="text" 
-            inputMode="numeric" 
-            placeholder="e.g. 485 777 3456" 
-            style={{ width: '220px' }} 
-            value={details.nhs_number ?? ""} 
-            onChange={(e) => setField("nhs_number", formatNhsNumber(e.target.value))} 
-          />
+          <input id="nhs-number" type="text" inputMode="numeric" placeholder="e.g. 485 777 3456" style={{ width: '220px' }} value={details.nhs_number ?? ""} onChange={(e) => setField("nhs_number", formatNhsNumber(e.target.value))} />
           {errors.nhs_number && <p className="error-message">{errors.nhs_number}</p>}
         </div>
       </div>
@@ -304,7 +247,7 @@ export default function PatientDetailsScreen({
             {errors.submitter_name && <p className="error-message">{errors.submitter_name}</p>}
           </div>
           <div className={`field ${errors.submitter_relationship ? "has-error" : ""}`}>
-            <label htmlFor="sub-rel">Relationship to patient</label>
+            <label htmlFor="sub-rel">Your relationship to the patient</label>
             <input id="sub-rel" type="text" placeholder="e.g. Parent" value={details.submitter_relationship ?? ""} onChange={(e) => setField("submitter_relationship", e.target.value)} />
             {errors.submitter_relationship && <p className="error-message">{errors.submitter_relationship}</p>}
           </div>
