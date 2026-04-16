@@ -8,16 +8,6 @@ This module is responsible for:
 - Creating submission records at the point of form completion
 - Retrieving submissions by ID
 
-Delivery status tracking, retry queries, and orphan detection have been
-moved to DeliveryRepository (delivery_repository.py) and PDFRepository
-(pdf_repository.py) as part of the pipeline refactor (Commit 2).
-
-delivery_email and attachment_count are no longer stored on
-submission_records (dropped by Migration 0013). They live on pdf_jobs,
-captured at job creation time by the form router.
-
-Table creation is handled by Alembic migrations at startup.
-
 This module must never:
 - Access clinical engine modules (form_logic, safety_engine, etc.)
 - Send emails (that belongs in delivery_service)
@@ -38,9 +28,7 @@ from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
 # Must be updated whenever a migration adds or removes a column.
 # Do not use SELECT * — new columns would appear silently in returned dicts
 # and make schema changes harder to track.
-# Delivery columns (delivery_status, delivery_email, delivered_at,
-# delivery_error, delivery_attempts, last_attempt_at, next_retry_after,
-# attachment_count) were removed by Migration 0013.
+
 _SUBMISSION_COLUMNS = """
     submission_id,
     practice_id,
@@ -78,13 +66,6 @@ class SubmissionRepository:
         It is stored denormalised for historical fidelity — if the condition
         label is later changed in the ruleset, historical records retain the
         label that was active when the patient submitted.
-
-        submitted_at must be supplied by the caller (form_router.py captures it
-        immediately before calling this function). The database column has no
-        DEFAULT — this is enforced by migration 0005.
-
-        delivery_email and attachment_count are no longer parameters here.
-        They are captured directly on the pdf_jobs row at job creation time.
 
         clinical_output and audit_output are stored as JSONB. psycopg2 does not
         automatically serialise dataclasses, so we convert to dict with asdict()
