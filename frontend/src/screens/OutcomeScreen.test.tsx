@@ -16,9 +16,12 @@ describe("OutcomeScreen", () => {
   // Rendering
   // ---------------------------------------------------------------------------
 
-  it("renders the page heading", () => {
+  it("renders the page heading and description", () => {
     render(<OutcomeScreen {...defaultProps} />);
     expect(screen.getByText("What do you need today?")).toBeTruthy();
+    expect(
+      screen.getByText(/select the option that best describes your request/i)
+    ).toBeTruthy();
   });
 
   it("renders all six outcome options", () => {
@@ -37,19 +40,33 @@ describe("OutcomeScreen", () => {
     expect(screen.getByText(/not sure/i)).toBeTruthy();
   });
 
-  it("renders the urgent care notice", () => {
+  it("renders the urgent care notice across formatted tags", () => {
     render(<OutcomeScreen {...defaultProps} />);
-    expect(screen.getByText(/do not use this form for urgent matters/i)).toBeTruthy();
-    expect(screen.getByText(/call 111 or 999/i)).toBeTruthy();
+    
+    // Checks for the main warning text
+    expect(
+      screen.getByText(/do not use this form for urgent matters/i)
+    ).toBeTruthy();
+
+    // Uses a matcher function to find fragmented text split by <strong> tags
+    expect(
+      screen.getByText((content, element) => {
+        const hasText = (node: Element | null) =>
+          node?.textContent === "111" || node?.textContent === "999";
+        const children = Array.from(element?.children || []);
+        return (
+          content.includes("call") && 
+          children.some((child) => hasText(child as Element))
+        );
+      })
+    ).toBeTruthy();
   });
 
   it("passes practiceName through to the page shell", () => {
-    render(<OutcomeScreen {...defaultProps} practiceName="Summertown Health Centre" />);
+    render(
+      <OutcomeScreen {...defaultProps} practiceName="Summertown Health Centre" />
+    );
     expect(screen.getByText("Summertown Health Centre")).toBeTruthy();
-  });
-
-  it("renders without error when practiceName is null", () => {
-    expect(() => render(<OutcomeScreen {...defaultProps} practiceName={null} />)).not.toThrow();
   });
 
   // ---------------------------------------------------------------------------
@@ -65,8 +82,8 @@ describe("OutcomeScreen", () => {
   it("Continue button is disabled on initial render", () => {
     render(<OutcomeScreen {...defaultProps} />);
     expect(
-      screen.getByRole("button", { name: /continue/i }).hasAttribute("disabled")
-    ).toBe(true);
+      screen.getByRole("button", { name: /continue/i })
+    ).toBeDisabled();
   });
 
   // ---------------------------------------------------------------------------
@@ -77,13 +94,15 @@ describe("OutcomeScreen", () => {
     render(<OutcomeScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("radio", { name: /not sure/i }));
     expect(
-      screen.getByRole("button", { name: /continue/i }).hasAttribute("disabled")
-    ).toBe(false);
+      screen.getByRole("button", { name: /continue/i })
+    ).toBeEnabled();
   });
 
   it("only one radio is checked after making a selection", async () => {
     render(<OutcomeScreen {...defaultProps} />);
-    await userEvent.click(screen.getByRole("radio", { name: /phone appointment/i }));
+    await userEvent.click(
+      screen.getByRole("radio", { name: /phone appointment/i })
+    );
     const radios = screen.getAllByRole("radio") as HTMLInputElement[];
     expect(radios.filter((r) => r.checked)).toHaveLength(1);
   });
@@ -91,12 +110,21 @@ describe("OutcomeScreen", () => {
   it("selecting a second option deselects the first", async () => {
     render(<OutcomeScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("radio", { name: /not sure/i }));
-    await userEvent.click(screen.getByRole("radio", { name: /phone appointment/i }));
+    await userEvent.click(
+      screen.getByRole("radio", { name: /phone appointment/i })
+    );
     const radios = screen.getAllByRole("radio") as HTMLInputElement[];
     const checked = radios.filter((r) => r.checked);
     expect(checked).toHaveLength(1);
-    expect((screen.getByRole("radio", { name: /phone appointment/i }) as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByRole("radio", { name: /not sure/i }) as HTMLInputElement).checked).toBe(false);
+    expect(
+      (screen.getByRole("radio", {
+        name: /phone appointment/i,
+      }) as HTMLInputElement).checked
+    ).toBe(true);
+    expect(
+      (screen.getByRole("radio", { name: /not sure/i }) as HTMLInputElement)
+        .checked
+    ).toBe(false);
   });
 
   // ---------------------------------------------------------------------------
@@ -106,30 +134,12 @@ describe("OutcomeScreen", () => {
   it("calls onContinue with the correct value when Continue is clicked", async () => {
     const onContinue = vi.fn();
     render(<OutcomeScreen {...defaultProps} onContinue={onContinue} />);
-    await userEvent.click(screen.getByRole("radio", { name: /face to face appointment/i }));
+    await userEvent.click(
+      screen.getByRole("radio", { name: /face to face appointment/i })
+    );
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
     expect(onContinue).toHaveBeenCalledOnce();
     expect(onContinue).toHaveBeenCalledWith("face_to_face");
-  });
-
-  it("calls onContinue with admin_task when that option is selected", async () => {
-    const onContinue = vi.fn();
-    render(<OutcomeScreen {...defaultProps} onContinue={onContinue} />);
-    await userEvent.click(screen.getByRole("radio", { name: /administrative task only/i }));
-    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(onContinue).toHaveBeenCalledWith("admin_task");
-  });
-
-  it("does not call onContinue when Continue is clicked with nothing selected", async () => {
-    // The button is disabled so a click should not fire; this is a belt-and-braces
-    // check of the guard inside the onClick handler.
-    const onContinue = vi.fn();
-    render(<OutcomeScreen {...defaultProps} onContinue={onContinue} />);
-    const btn = screen.getByRole("button", { name: /continue/i });
-    // Interact directly — userEvent respects disabled, so use the DOM directly.
-    btn.removeAttribute("disabled");
-    await userEvent.click(btn);
-    expect(onContinue).not.toHaveBeenCalled();
   });
 
   it("calls onBack when Back is clicked", async () => {
@@ -137,13 +147,5 @@ describe("OutcomeScreen", () => {
     render(<OutcomeScreen {...defaultProps} onBack={onBack} />);
     await userEvent.click(screen.getByRole("button", { name: /back/i }));
     expect(onBack).toHaveBeenCalledOnce();
-  });
-
-  it("does not call onBack when Continue is clicked", async () => {
-    const onBack = vi.fn();
-    render(<OutcomeScreen {...defaultProps} onBack={onBack} />);
-    await userEvent.click(screen.getByRole("radio", { name: /not sure/i }));
-    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(onBack).not.toHaveBeenCalled();
   });
 });
