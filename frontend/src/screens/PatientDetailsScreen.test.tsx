@@ -83,7 +83,7 @@ describe("PatientDetailsScreen", () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.click(screen.getByLabelText(/someone else/i));
     expect(screen.getByLabelText(/your name/i)).toBeTruthy();
-    expect(screen.getByLabelText(/your relationship to the patient/i)).toBeTruthy();
+    expect(screen.getByLabelText(/relationship to patient/i)).toBeTruthy();
   });
 
   it("renders Continue and Back buttons", () => {
@@ -324,7 +324,7 @@ describe("PatientDetailsScreen", () => {
     await userEvent.click(screen.getByLabelText(/someone else/i));
     await fillValidMyselfForm();
     await userEvent.type(screen.getByLabelText(/your name/i), "Bob Smith");
-    await userEvent.type(screen.getByLabelText(/your relationship to the patient/i), "Parent");
+    await userEvent.type(screen.getByLabelText(/relationship to patient/i), "Parent");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
 
     expect(onContinue).toHaveBeenCalledOnce();

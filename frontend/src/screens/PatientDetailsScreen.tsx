@@ -156,6 +156,9 @@ export default function PatientDetailsScreen({
       last_name: details.last_name.trim(),
       gender: details.gender as Gender,
       nhs_number: nhsStripped || undefined,
+      preferred_name: details.preferred_name?.trim() || undefined,
+      submitter_name: forSomeoneElse ? details.submitter_name : undefined,
+      submitter_relationship: forSomeoneElse ? details.submitter_relationship : undefined,
     } as PatientDetails;
     onContinue(clean);
   }
