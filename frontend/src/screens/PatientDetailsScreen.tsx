@@ -1,4 +1,4 @@
-import { useState, useRef, ChangeEvent } from "react";
+import { useState, useRef } from "react";
 import { PageShell } from "../layout";
 import type { PatientDetails, Gender } from "../types";
 
