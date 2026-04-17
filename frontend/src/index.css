@@ -49,10 +49,36 @@ body {
   line-height: 1.6;
 }
 
+/* PageShell Styles */
+.app-header {
+  background: var(--nhs-blue);
+  color: #ffffff;
+  padding: var(--space-md) 0;
+  margin-bottom: var(--space-xl);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.header-container {
+  max-width: 580px;
+  margin: 0 auto;
+  padding: 0 var(--space-md);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.practice-tag {
+  font-size: 14px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+}
+
 /* Page Structure */
 .page-container {
   max-width: 580px;
-  margin: var(--space-xl) auto;
+  margin: 0 auto var(--space-xl) auto;
   padding: 0 var(--space-md);
 }
 
@@ -61,25 +87,29 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--space-xl) 40px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
 h1 {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 600;
   margin-bottom: var(--space-md);
-  padding-bottom: var(--space-md);
-  border-bottom: 2px solid var(--nhs-blue);
+  padding-bottom: var(--space-sm);
+  border-bottom: 4px solid var(--nhs-blue);
+  display: inline-block;
 }
 
 .screen-description {
   margin-bottom: var(--space-lg);
   color: var(--text-muted);
-  font-size: 15px;
+  font-size: 16px;
 }
 
 /* Form Groups & Layout */
 .form-section {
   margin-bottom: var(--space-xl);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
 }
 
 .field {
@@ -89,7 +119,7 @@ h1 {
 .field.has-error {
   border-left: 4px solid var(--danger);
   padding-left: var(--space-md);
-  margin-left: -20px; /* Pull error border out into the padding area */
+  margin-left: -20px;
 }
 
 .error-message {
@@ -101,7 +131,7 @@ h1 {
 
 label {
   display: block;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-label);
   margin-bottom: var(--space-sm);
@@ -109,17 +139,16 @@ label {
 
 input[type="text"] {
   width: 100%;
-  padding: 10px 12px;
+  padding: 12px;
   border: 2px solid var(--border);
   border-radius: var(--radius);
-  font-size: 15px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  font-size: 16px;
+  transition: border-color 0.15s;
 }
 
 input[type="text"]:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(0, 94, 184, 0.15);
-  outline: none;
+  outline: 4px solid var(--nhs-blue-light);
 }
 
 /* Selection Cards (Radio Buttons) */
@@ -139,30 +168,24 @@ input[type="text"]:focus {
   border-radius: var(--radius);
   cursor: pointer;
   background: var(--surface);
-  transition: all 0.15s ease;
+  transition: all 0.1s ease;
 }
 
 .selection-card:hover {
-  border-color: var(--nhs-blue);
   background: var(--nhs-blue-light);
+  border-color: var(--nhs-blue);
 }
 
 .selection-card.selected {
   border-color: var(--nhs-blue);
   background: var(--nhs-blue-light);
-  box-shadow: 0 2px 4px rgba(0, 94, 184, 0.1);
+  outline: 2px solid var(--nhs-blue);
 }
 
 .selection-card input[type="radio"] {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   accent-color: var(--nhs-blue);
-}
-
-.selection-label {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--text);
 }
 
 /* DOB Layout */
@@ -174,41 +197,40 @@ input[type="text"]:focus {
 .dob-field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.dob-field label {
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 /* Buttons */
 .btn-row {
   display: flex;
+  justify-content: space-between;
   gap: var(--space-md);
   margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--border);
 }
 
 .btn {
-  padding: 12px 24px;
+  padding: 12px 32px;
   border-radius: var(--radius);
   font-weight: 600;
+  font-size: 16px;
   cursor: pointer;
-  border: 2px solid transparent;
-  transition: background 0.15s;
+  border: none;
 }
 
 .btn-primary {
   background: var(--nhs-blue);
   color: #fff;
+  box-shadow: 0 4px 0 var(--nhs-blue-dark);
 }
 
-.btn-primary:hover {
-  background: var(--nhs-blue-dark);
+.btn-primary:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 var(--nhs-blue-dark);
 }
 
 .btn-secondary {
-  background: transparent;
-  color: var(--nhs-blue);
-  border-color: var(--nhs-blue);
+  background: #f0f4f7;
+  color: var(--text-label);
+  border: 1px solid var(--border);
 }
