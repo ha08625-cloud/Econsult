@@ -16,50 +16,60 @@ export default function OutcomeScreen({
 }: OutcomeScreenProps) {
   const [selected, setSelected] = useState<ConsultationOutcome | null>(null);
 
+  /**
+   * Type Guard helper to safely cast string values from JSON to the 
+   * ConsultationOutcome union defined in types.ts.
+   */
+  const handleSelection = (value: string) => {
+    setSelected(value as ConsultationOutcome);
+  };
+
   return (
     <PageShell practiceName={practiceName}>
       <h1>What do you need today?</h1>
+      <p className="screen-description">
+        Please select the option that best describes your request.
+      </p>
 
+      {/* Urgent Care Notice: Standardized with Design Tokens */}
       <div
+        className="alert alert-info"
         style={{
-          background: "var(--surface-alt, #f0f4fa)",
-          border: "1px solid var(--border, #d0d7e3)",
-          borderRadius: "6px",
-          padding: "12px 16px",
-          marginBottom: "24px",
-          fontSize: "14px",
-          color: "var(--text-muted)",
+          background: "var(--nhs-blue-light)",
+          border: "1px solid var(--nhs-blue)",
+          borderRadius: "var(--radius)",
+          padding: "var(--space-md)",
+          marginBottom: "var(--space-lg)",
+          fontSize: "15px",
+          color: "var(--text-label)",
         }}
       >
-        Do not use this form for urgent matters. If you need urgent medical
-        attention, call 111 or 999.
+        <strong>Do not use this form for urgent matters.</strong> If you need
+        urgent medical attention, call <strong>111</strong> or <strong>999</strong>.
       </div>
 
-      <div className="field">
-        <label>Please select the option that best describes your request</label>
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "8px" }}>
-          {outcomes.map((outcome) => (
-            <label
-              key={outcome.value}
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: "10px",
-                cursor: "pointer",
-                fontSize: "15px",
-              }}
-            >
-              <input
-                type="radio"
-                name="consultation_outcome"
-                value={outcome.value}
-                checked={selected === outcome.value}
-                onChange={() => setSelected(outcome.value as ConsultationOutcome)}
-                style={{ marginTop: "3px", flexShrink: 0 }}
-              />
-              {outcome.label}
-            </label>
-          ))}
+      <div className="form-section">
+        <div className="field">
+          <label>Request type</label>
+          <div className="selection-grid">
+            {outcomes.map((outcome) => (
+              <label
+                key={outcome.value}
+                className={`selection-card ${
+                  selected === outcome.value ? "selected" : ""
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="consultation_outcome"
+                  value={outcome.value}
+                  checked={selected === outcome.value}
+                  onChange={() => handleSelection(outcome.value)}
+                />
+                <span className="selection-label">{outcome.label}</span>
+              </label>
+            ))}
+          </div>
         </div>
       </div>
 
