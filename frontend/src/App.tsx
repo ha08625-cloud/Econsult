@@ -80,6 +80,14 @@ export default function App() {
     };
   }, []);
 
+// ---------------------------------
+// Scroll to top on screen change
+// ---------------------------------
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [screen]);
+
+
   function triggerFatalError(errorMsg: string) {
     Sentry.captureMessage(`Fatal UI Error: ${errorMsg}`, "fatal");
     setFatalError(errorMsg);
