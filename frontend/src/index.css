@@ -188,6 +188,12 @@ input[type="text"]:focus {
   accent-color: var(--nhs-blue);
 }
 
+.selection-label {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text);
+}
+
 /* DOB Layout */
 .dob-inputs {
   display: flex;
@@ -259,7 +265,7 @@ input[type="text"]:focus {
 .alert-info {
   background-color: var(--nhs-blue-light);
   border-color: #bbdefb;
-  color: var(--nhs-blue-dark);
+  color: var(--text-label);
 }
 
 /* Status container for loading states */
