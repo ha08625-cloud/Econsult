@@ -32,18 +32,7 @@ export default function OutcomeScreen({
       </p>
 
       {/* Urgent Care Notice: Standardized with Design Tokens */}
-      <div
-        className="alert alert-info"
-        style={{
-          background: "var(--nhs-blue-light)",
-          border: "1px solid var(--nhs-blue)",
-          borderRadius: "var(--radius)",
-          padding: "var(--space-md)",
-          marginBottom: "var(--space-lg)",
-          fontSize: "15px",
-          color: "var(--text-label)",
-        }}
-      >
+      <div className="alert alert-info" style={{ marginBottom: "var(--space-lg)" }}>
         <strong>Do not use this form for urgent matters.</strong> If you need
         urgent medical attention, call <strong>111</strong> or <strong>999</strong>.
       </div>
