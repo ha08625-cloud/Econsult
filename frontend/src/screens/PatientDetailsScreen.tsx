@@ -213,6 +213,9 @@ export default function PatientDetailsScreen({
         </div>
       )}
 
+      {/* Form fields — wrapped for test scoping via within() */}
+      <div data-testid="form-fields">
+
       {/* 1. Ownership Section */}
       <fieldset className={`field ${errors.patient_for ? "has-error" : ""}`}>
         <legend>Who is this consultation for?</legend>
@@ -461,6 +464,8 @@ export default function PatientDetailsScreen({
           </div>
         </div>
       )}
+
+      </div>{/* end form-fields */}
 
       <div className="btn-row">
         <button className="btn btn-secondary" onClick={onBack}>

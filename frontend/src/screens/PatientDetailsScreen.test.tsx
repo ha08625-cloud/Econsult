@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import PatientDetailsScreen from "./PatientDetailsScreen";
@@ -99,14 +99,16 @@ describe("PatientDetailsScreen", () => {
   it("shows first name error when first name is empty on submit", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/enter first name/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/enter first name/i)).toBeInTheDocument();
   });
 
   it("shows last name error when last name is empty on submit", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.type(screen.getByLabelText(/first name/i), "Jane");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/enter last name/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/enter last name/i)).toBeInTheDocument();
   });
 
   it("shows DOB error when DOB fields are empty on submit", async () => {
@@ -114,7 +116,8 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/first name/i), "Jane");
     await userEvent.type(screen.getByLabelText(/last name/i), "Smith");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/enter a complete date of birth/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/enter a complete date of birth/i)).toBeInTheDocument();
   });
 
   it("shows DOB error when DOB is not a real calendar date", async () => {
@@ -125,7 +128,8 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/^month$/i), "02");
     await userEvent.type(screen.getByLabelText(/^year$/i), "1990");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/enter a valid date/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/enter a valid date/i)).toBeInTheDocument();
   });
 
   it("shows DOB error when DOB is in the future", async () => {
@@ -136,7 +140,8 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/^month$/i), "01");
     await userEvent.type(screen.getByLabelText(/^year$/i), "2099");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/cannot be in the future/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/cannot be in the future/i)).toBeInTheDocument();
   });
 
   it("shows postcode error when postcode is empty on submit", async () => {
@@ -147,7 +152,8 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/^month$/i), "03");
     await userEvent.type(screen.getByLabelText(/^year$/i), "1990");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/enter a postcode/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/enter a postcode/i)).toBeInTheDocument();
   });
 
   it("shows postcode format error for an invalid postcode", async () => {
@@ -159,7 +165,8 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/^year$/i), "1990");
     await userEvent.type(screen.getByLabelText(/postcode/i), "NOTAPOSTCODE");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/enter a valid uk postcode/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/enter a valid uk postcode/i)).toBeInTheDocument();
   });
 
   it("shows submitter name and relationship errors when someone-else fields are empty", async () => {
@@ -167,8 +174,9 @@ describe("PatientDetailsScreen", () => {
     await userEvent.click(screen.getByLabelText(/someone else/i));
     await fillValidMyselfForm();
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/enter your name/i)).toBeTruthy();
-    expect(screen.getByText(/enter relationship/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/enter your name/i)).toBeInTheDocument();
+    expect(within(fields).getByText(/enter relationship/i)).toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------
@@ -184,16 +192,17 @@ describe("PatientDetailsScreen", () => {
     await userEvent.type(screen.getByLabelText(/^year$/i), "1990");
     await userEvent.type(screen.getByLabelText(/postcode/i), "SW1A 1AA");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/select a gender/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/select a gender/i)).toBeInTheDocument();
   });
 
   it("clears gender error once a gender is selected", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    // Use getByText rather than queryByText so a missing element fails clearly
-    expect(screen.getByText(/select a gender/i)).toBeInTheDocument();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/select a gender/i)).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText(/^female$/i));
-    expect(screen.queryByText(/select a gender/i)).toBeNull();
+    expect(within(fields).queryByText(/select a gender/i)).toBeNull();
   });
 
   // ---------------------------------------------------------------------------
@@ -204,7 +213,8 @@ describe("PatientDetailsScreen", () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.type(screen.getByLabelText(/nhs number/i), "12345");
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.getByText(/valid 10-digit nhs number/i)).toBeTruthy();
+    const fields = screen.getByTestId("form-fields");
+    expect(within(fields).getByText(/valid 10-digit nhs number/i)).toBeInTheDocument();
   });
 
   it("input guard silently drops non-digit characters typed into the NHS number field", async () => {
@@ -302,9 +312,8 @@ describe("PatientDetailsScreen", () => {
   it("shows the error summary with 'There is a problem' heading on failed submission", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(
-      screen.getByRole("alert", { name: /there is a problem/i })
-    ).toBeInTheDocument();
+    const summary = screen.getByRole("alert");
+    expect(within(summary).getByRole("heading", { name: /there is a problem/i })).toBeInTheDocument();
   });
 
   it("error summary lists each field error on failed submission", async () => {
