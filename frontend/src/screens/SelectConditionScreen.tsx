@@ -27,7 +27,6 @@ export default function SelectConditionScreen({
 
   return (
     <PageShell practiceName={practiceName}>
-      <div className="screen-card">
         <h1>Start your consultation</h1>
 
         {conditions === null ? (
@@ -81,7 +80,6 @@ export default function SelectConditionScreen({
             </div>
           </>
         )}
-      </div>
     </PageShell>
   );
 }
