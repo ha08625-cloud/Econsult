@@ -41,7 +41,7 @@ test("Practice error block renders with 'Error:' prefix for screen readers", () 
   );
   // textContent check spans the sr-only span and visible message text
   expect(screen.getByText((_, element) => {
-    return element?.textContent === "Error: Could not load practice";
+    return element?.tagName === "P" && element?.textContent === "Error: Could not load practice";
   })).toBeInTheDocument();
 });
 
