@@ -165,3 +165,38 @@ The input `id` is generated dynamically via React's `useId()` — do not target 
 **Safety isolation invariant.** Triggered safety rules are successful, deterministic clinical operations. They must never be reported to Sentry. `triggerFatalError` must never be called from safety message handling paths. This invariant is enforced by convention — there is no runtime guard.
 
 **DSN configuration.** The frontend DSN is supplied via `VITE_SENTRY_DSN` (a Vite build-time environment variable). If absent, `Sentry.init` receives `undefined` as the DSN and initialises silently without sending events. No error is thrown.
+
+---
+
+## Accessibility & NHS Compliance (WCAG 2.1 AA)
+
+All UI development must adhere to the NHS Digital Service Manual. Do not deviate from these patterns for aesthetic reasons.
+
+### Typography & Content Rules
+* **Font Stack:** Use the Arial-based stack defined in `index.css`. Never use custom web fonts.
+* **Sizing:** Body text must be **19px** (1.1875rem) on desktop and **16px** (1rem) on mobile.
+* **Alignment:** All text must be **left-aligned**. Never justify text.
+* **Casing:** Use **sentence case** for all headings, labels, and buttons (e.g., "Check your answers", not "Check Your Answers").
+* **Emphasis:** Avoid italics and underlining. Underlining is strictly reserved for hyperlinks. Bold text should be used sparingly for emphasis.
+
+### Component Patterns
+* **Warning Callouts:** Use the `.nhsuk-warning-callout` pattern for time-critical or safety-critical information. Every warning heading must be prefixed with a visually hidden `<span className="nhsuk-u-visually-hidden">Important: </span>`.
+* **Inline Errors:** Error messages must use the `InlineError` component from `layout.tsx`. These must include a visually hidden "Error:" prefix to ensure screen reader users identify the intent immediately.
+* **Visual Structure:** Use the `.screen-card` container with a 640px max-width to maintain an optimal reading line length of approximately 70–80 characters.
+
+### Interactive Elements & Inputs
+* **Touch Targets:** All interactive elements (buttons, checkboxes, inputs) must have a minimum hit area of **44x44px**. Checkboxes specifically use a 40x40px input size.
+* **Form Labels:** Every input must have a `<label>` explicitly associated via `htmlFor` and a matching `id`. Never rely on placeholders for context.
+* **Button Hierarchy:**
+    * **Primary (`btn-primary`):** Use NHS Green (`#007f3b`) for the main "Continue" or "Submit" action.
+    * **Secondary (`btn-secondary`):** Use for "Back" or "Try again" actions.
+
+### Screen Reader Support
+* **Visually Hidden Text:** Use the `.nhsuk-u-visually-hidden` utility for any context that is visually apparent but requires explicit naming for assistive technology.
+* **Dynamic Content:** When a screen changes (e.g., from `LOADING` to `SUCCESS`), ensure the heading receives focus or use ARIA live regions if the update is partial.
+
+### Implementation Note
+When refactoring the remaining screens (e.g., `PatientDetailsScreen`, `OutcomeScreen`, `SelectConditionScreen`), ensure that:
+1.  **Radio Buttons** in `OutcomeScreen` and `SelectConditionScreen` are updated to the large-format NHS pattern used for checkboxes in `SafetyWarningScreen.tsx`.
+2.  **Date Inputs** in `PatientDetailsScreen` follow the NHS "Date input" pattern (three separate text inputs for Day, Month, and Year).
+3.  **Fatal Errors** in `App.tsx` are updated to use the same visually hidden "Error:" prefixes as the standard `InlineError`.
