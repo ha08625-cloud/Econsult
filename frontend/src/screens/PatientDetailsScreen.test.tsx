@@ -190,7 +190,8 @@ describe("PatientDetailsScreen", () => {
   it("clears gender error once a gender is selected", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(screen.queryByText(/select a gender/i)).toBeTruthy();
+    // Use getByText rather than queryByText so a missing element fails clearly
+    expect(screen.getByText(/select a gender/i)).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText(/^female$/i));
     expect(screen.queryByText(/select a gender/i)).toBeNull();
   });
@@ -292,6 +293,48 @@ describe("PatientDetailsScreen", () => {
     const postcodeInput = screen.getByLabelText(/postcode/i) as HTMLInputElement;
     await userEvent.type(postcodeInput, "sw1a 1aa");
     expect(postcodeInput.value).toBe("SW1A 1AA");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Accessibility — error summary and ARIA attributes
+  // ---------------------------------------------------------------------------
+
+  it("shows the error summary with 'There is a problem' heading on failed submission", async () => {
+    render(<PatientDetailsScreen {...defaultProps} />);
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    expect(
+      screen.getByRole("alert", { name: /there is a problem/i })
+    ).toBeInTheDocument();
+  });
+
+  it("error summary lists each field error on failed submission", async () => {
+    render(<PatientDetailsScreen {...defaultProps} />);
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    const summary = screen.getByRole("alert");
+    // First name and last name errors should appear inside the summary
+    expect(summary).toHaveTextContent(/first name/i);
+    expect(summary).toHaveTextContent(/last name/i);
+  });
+
+  it("error summary is not present before any submission attempt", () => {
+    render(<PatientDetailsScreen {...defaultProps} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("sets aria-invalid on first name input when that field has an error", async () => {
+    render(<PatientDetailsScreen {...defaultProps} />);
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    const firstNameInput = screen.getByLabelText(/first name/i);
+    expect(firstNameInput).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("clears aria-invalid on first name input once a value is entered", async () => {
+    render(<PatientDetailsScreen {...defaultProps} />);
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    const firstNameInput = screen.getByLabelText(/first name/i);
+    expect(firstNameInput).toHaveAttribute("aria-invalid", "true");
+    await userEvent.type(firstNameInput, "Jane");
+    expect(firstNameInput).toHaveAttribute("aria-invalid", "false");
   });
 
   // ---------------------------------------------------------------------------

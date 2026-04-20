@@ -122,11 +122,87 @@ h1 {
   margin-left: -20px;
 }
 
+/* fieldset used as a field — strips browser defaults */
+fieldset.field {
+  border: none;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  margin-bottom: var(--space-lg);
+}
+
+/* legend styled to match label */
+legend {
+  display: block;
+  width: 100%;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-label);
+  margin-bottom: var(--space-sm);
+  padding: 0;
+}
+
 .error-message {
   color: var(--danger);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   margin-top: var(--space-xs);
+}
+
+/* Optional field hint */
+.field-label-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+/* Error summary — shown at top of form on failed submission */
+.error-summary {
+  border-left: 4px solid var(--danger);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+  background-color: var(--surface);
+}
+
+.error-summary:focus {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.error-summary-heading {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--danger);
+  margin-bottom: var(--space-sm);
+}
+
+.error-summary-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.error-summary-list li {
+  font-size: 16px;
+  color: var(--danger);
+  margin-bottom: var(--space-xs);
+}
+
+/* Specific-width inputs */
+.input-dob-day-month {
+  width: 64px;
+}
+
+.input-dob-year {
+  width: 84px;
+}
+
+.input-postcode {
+  width: 160px;
+  text-transform: uppercase;
+}
+
+.input-nhs-number {
+  width: 220px;
 }
 
 label {

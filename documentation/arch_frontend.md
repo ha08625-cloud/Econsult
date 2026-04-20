@@ -139,6 +139,81 @@ The input `id` is generated dynamically via React's `useId()` — do not target 
 
 ---
 
+## Accessibility (WCAG 2.1 AA / NHS Digital)
+
+The patient frontend must comply with WCAG 2.1 Level AA and follow NHS Digital Service Manual patterns. This section records decisions made during the accessibility pass so they are applied consistently across all screens.
+
+---
+
+### Visually Hidden Text (`sr-only`)
+
+The `.sr-only` CSS class is the standard visually hidden pattern (1px clipped box). It must be used — not `display:none` or `visibility:hidden`, both of which hide content from screen readers entirely.
+
+Two mandatory uses established during the accessibility pass, which must be replicated on every equivalent element across all screens:
+
+- **Warning callouts:** A `<span className="sr-only">Important: </span>` must appear immediately before the visible heading text inside any NHS warning callout box. The visible heading should not contain the word "Important" — it belongs only in the hidden span.
+- **Error messages (`InlineError`):** The `InlineError` component in `layout.tsx` already prepends `<span className="sr-only">Error: </span>` to every message. Any new error display component that is not `InlineError` must follow the same pattern. Do not add a second "Error:" prefix on top of `InlineError`.
+
+---
+
+### Alert Colour Semantics
+
+The `.alert-danger` (red) and `.alert-warning` (yellow) CSS classes are not interchangeable. The distinction matters both visually and semantically:
+
+- `.alert-danger` — error states only (fetch failures, validation errors). This is what `InlineError` uses.
+- `.alert-warning` — clinical or contextual warnings that are not errors (the safety warning callout, the practice-closed message). Yellow per the NHS Warning Callout pattern.
+- `.alert-info` — supplementary notices (after-hours notice).
+
+Using red for a clinical warning callout is wrong: it implies the page is in an error state, which confuses both sighted users and screen readers.
+
+---
+
+### `InlineError` — shared component behaviour
+
+`InlineError` in `layout.tsx` carries `role="alert"`. This causes screen readers to announce the content immediately when the element appears in the DOM. Two consequences to be aware of:
+
+- Do not render `InlineError` on page load in a hidden or conditionally pre-rendered state — only mount it when an error has actually occurred, which is the existing pattern.
+- Do not use `InlineError` for non-error content (warnings, hints, instructions). Use a plain `<p>` with the appropriate CSS class instead. The safety gate hint ("If any of the above apply to you...") is a deliberate example of this — it is a `<p className="safety-gate-hint">`, not an `InlineError`.
+
+---
+
+### Form Element Associations
+
+- Checkboxes must have their `<input>` wrapped inside a `<label>` element. Do not use separate `htmlFor`/`id` pairs for checkboxes — the wrapping pattern is simpler and equally valid.
+- Where a checkbox confirms something the patient has just read (as in the safety warning), add `aria-describedby` pointing to the `id` of the content being confirmed. This gives screen reader users the programmatic association between the question and its answer without repeating the content.
+- The `.confirm-checkbox-label` CSS class provides the correct touch target (44px minimum height) and focus ring for confirmation checkboxes. Use this class, not inline styles or `.selection-card`. The `.selection-card` pattern is reserved for radio button option lists.
+
+---
+
+### Font Size
+
+- Body text: 16px minimum on mobile, 19px on desktop. The current base font size in `index.css` is 16px. This is the mobile floor — do not set inline `font-size` below this on any element that carries reading content.
+- 14px is permissible only for truly supplementary text (e.g. `.practice-tag` in the header). It must not be used for instructional text, error messages, or hint text. The `.safety-gate-hint` class enforces 16px for this reason.
+- Do not set font sizes with inline styles on screen components — add or reuse a CSS class so the size is defined in one place.
+
+---
+
+### Text Formatting Rules
+
+These must be observed on all screens; they are not enforced by the CSS and require authorial discipline:
+
+- **Left-align all text.** No `text-align: justify` anywhere.
+- **No italics** in patient-facing content.
+- **No all-caps** (BLOCK CAPITALS). Use sentence case for all headings and labels.
+- **Underlining is reserved for hyperlinks only.** Do not underline text for emphasis.
+
+---
+
+### Testing Accessibility Changes
+
+When writing or updating tests for screens that have been through the accessibility pass:
+
+- Use `getByLabelText` to assert checkbox/input associations — this verifies the label wrapping is working, not just that the element exists.
+- Use a `textContent` matcher function (not `getByText` with a plain string) when asserting on elements that contain both an `sr-only` span and visible text, since the full `textContent` includes the hidden text. Constrain the matcher to a specific `tagName` (e.g. `element?.tagName === "P"`) when multiple ancestor elements share the same `textContent` — this is the common failure mode with `role="alert"` wrappers.
+- Do not test that `sr-only` text is visually hidden — that is a CSS concern, not a component concern. Test only that the text is present in the DOM.
+
+---
+
 ## What the Frontend Must Never Do
 
 - Contain clinical logic, safety rule evaluation, or encoder awareness
@@ -165,38 +240,3 @@ The input `id` is generated dynamically via React's `useId()` — do not target 
 **Safety isolation invariant.** Triggered safety rules are successful, deterministic clinical operations. They must never be reported to Sentry. `triggerFatalError` must never be called from safety message handling paths. This invariant is enforced by convention — there is no runtime guard.
 
 **DSN configuration.** The frontend DSN is supplied via `VITE_SENTRY_DSN` (a Vite build-time environment variable). If absent, `Sentry.init` receives `undefined` as the DSN and initialises silently without sending events. No error is thrown.
-
----
-
-## Accessibility & NHS Compliance (WCAG 2.1 AA)
-
-All UI development must adhere to the NHS Digital Service Manual. Do not deviate from these patterns for aesthetic reasons.
-
-### Typography & Content Rules
-* **Font Stack:** Use the Arial-based stack defined in `index.css`. Never use custom web fonts.
-* **Sizing:** Body text must be **19px** (1.1875rem) on desktop and **16px** (1rem) on mobile.
-* **Alignment:** All text must be **left-aligned**. Never justify text.
-* **Casing:** Use **sentence case** for all headings, labels, and buttons (e.g., "Check your answers", not "Check Your Answers").
-* **Emphasis:** Avoid italics and underlining. Underlining is strictly reserved for hyperlinks. Bold text should be used sparingly for emphasis.
-
-### Component Patterns
-* **Warning Callouts:** Use the `.nhsuk-warning-callout` pattern for time-critical or safety-critical information. Every warning heading must be prefixed with a visually hidden `<span className="nhsuk-u-visually-hidden">Important: </span>`.
-* **Inline Errors:** Error messages must use the `InlineError` component from `layout.tsx`. These must include a visually hidden "Error:" prefix to ensure screen reader users identify the intent immediately.
-* **Visual Structure:** Use the `.screen-card` container with a 640px max-width to maintain an optimal reading line length of approximately 70–80 characters.
-
-### Interactive Elements & Inputs
-* **Touch Targets:** All interactive elements (buttons, checkboxes, inputs) must have a minimum hit area of **44x44px**. Checkboxes specifically use a 40x40px input size.
-* **Form Labels:** Every input must have a `<label>` explicitly associated via `htmlFor` and a matching `id`. Never rely on placeholders for context.
-* **Button Hierarchy:**
-    * **Primary (`btn-primary`):** Use NHS Green (`#007f3b`) for the main "Continue" or "Submit" action.
-    * **Secondary (`btn-secondary`):** Use for "Back" or "Try again" actions.
-
-### Screen Reader Support
-* **Visually Hidden Text:** Use the `.nhsuk-u-visually-hidden` utility for any context that is visually apparent but requires explicit naming for assistive technology.
-* **Dynamic Content:** When a screen changes (e.g., from `LOADING` to `SUCCESS`), ensure the heading receives focus or use ARIA live regions if the update is partial.
-
-### Implementation Note
-When refactoring the remaining screens (e.g., `PatientDetailsScreen`, `OutcomeScreen`, `SelectConditionScreen`), ensure that:
-1.  **Radio Buttons** in `OutcomeScreen` and `SelectConditionScreen` are updated to the large-format NHS pattern used for checkboxes in `SafetyWarningScreen.tsx`.
-2.  **Date Inputs** in `PatientDetailsScreen` follow the NHS "Date input" pattern (three separate text inputs for Day, Month, and Year).
-3.  **Fatal Errors** in `App.tsx` are updated to use the same visually hidden "Error:" prefixes as the standard `InlineError`.

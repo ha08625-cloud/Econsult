@@ -28,6 +28,15 @@ export function PageShell({ children, practiceName }: PageShellProps) {
   );
 }
 
+export function FieldError({ id, message }: { id?: string; message: string }) {
+  return (
+    <p id={id} className="error-message">
+      <span className="sr-only">Error: </span>
+      {message}
+    </p>
+  );
+}
+
 export function InlineError({ message }: { message: string }) {
   return (
     <div className="alert alert-danger" role="alert" style={{ marginTop: "16px", marginBottom: 0 }}>
