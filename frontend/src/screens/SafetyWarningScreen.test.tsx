@@ -14,13 +14,6 @@ const baseProps = {
   onContinue: () => {},
 };
 
-test("Safety warning includes visually hidden 'Important:' prefix", () => {
-  render(<SafetyWarningScreen {...baseProps} />);
-  // Testing-library's getByText finds content even if visually hidden in CSS
-  expect(screen.getByText(/Important:/i)).toBeInTheDocument();
-  expect(screen.getByText(/Read before continuing/i)).toBeInTheDocument();
-});
-
 test("Checkbox is correctly associated with its label for screen readers", () => {
   render(<SafetyWarningScreen {...baseProps} />);
   // getByLabelText verifies the 'for'/'id' association is working
@@ -46,13 +39,30 @@ test("Practice error block renders with 'Error:' prefix for screen readers", () 
       practiceNameFetchState={{ status: "error", message: "Could not load practice" }}
     />
   );
-  // Verifies the accessibility prefix added in InlineError (layout.tsx)
-  expect(screen.getByText(/Error: Could not load practice/i)).toBeInTheDocument();
+  
+  // Use a function matcher to find text across multiple elements
+  expect(screen.getByText((content, element) => {
+    return element?.textContent === "Error: Could not load practice";
+  })).toBeInTheDocument();
 });
 
 test("Safety gate hint renders as an InlineError when not confirmed", () => {
   render(<SafetyWarningScreen {...baseProps} safetyConfirmed={false} />);
-  expect(screen.getByText(/Error: If any of the above apply to you/i)).toBeInTheDocument();
+  
+  const expectedText = "Error: If any of the above apply to you, please call 999 or go to A&E immediately. Do not use this form.";
+  
+  expect(screen.getByText((content, element) => {
+    return element?.textContent === expectedText;
+  })).toBeInTheDocument();
+});
+
+test("Safety warning includes visually hidden 'Important:' prefix", () => {
+  render(<SafetyWarningScreen {...baseProps} />);
+  
+  // Also update this one to be safe
+  expect(screen.getByText((content, element) => {
+    return element?.textContent === "Important: Read before continuing";
+  })).toBeInTheDocument();
 });
 
 test("Renders 'closed' message when practiceIsOpen is false", () => {
