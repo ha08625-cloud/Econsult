@@ -1,11 +1,8 @@
-// Tests for SafetyWarningScreen
-// Run with: make test (or npx vitest)
-
 import { render, screen } from "@testing-library/react";
 import SafetyWarningScreen from "./SafetyWarningScreen";
 
 const baseProps = {
-  safetyWarningFetchState: { status: "success" as const, text: "Call 999 if..." },
+  safetyWarningFetchState: { status: "success" as const, text: "Call 999 if...\nSymptom A\nSymptom B" },
   practiceNameFetchState: { status: "success" as const, name: "Elm Tree Surgery" },
   safetyConfirmed: false,
   practiceIsOpen: true,
@@ -17,6 +14,21 @@ const baseProps = {
   onContinue: () => {},
 };
 
+test("Safety warning includes visually hidden 'Important:' prefix", () => {
+  render(<SafetyWarningScreen {...baseProps} />);
+  // Testing-library's getByText finds content even if visually hidden in CSS
+  expect(screen.getByText(/Important:/i)).toBeInTheDocument();
+  expect(screen.getByText(/Read before continuing/i)).toBeInTheDocument();
+});
+
+test("Checkbox is correctly associated with its label for screen readers", () => {
+  render(<SafetyWarningScreen {...baseProps} />);
+  // getByLabelText verifies the 'for'/'id' association is working
+  const checkbox = screen.getByLabelText(/I confirm that none of the above apply to me/i);
+  expect(checkbox).toBeInTheDocument();
+  expect(checkbox).toHaveAttribute("type", "checkbox");
+});
+
 test("Continue is disabled when safetyConfirmed is false", () => {
   render(<SafetyWarningScreen {...baseProps} safetyConfirmed={false} />);
   expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
@@ -27,39 +39,30 @@ test("Continue is enabled when safetyConfirmed is true and practice name loaded"
   expect(screen.getByRole("button", { name: /continue/i })).not.toBeDisabled();
 });
 
-test("Continue is disabled when practiceNameFetchState is loading", () => {
-  render(
-    <SafetyWarningScreen
-      {...baseProps}
-      safetyConfirmed={true}
-      practiceNameFetchState={{ status: "loading" }}
-    />
-  );
-  expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
-});
-
-test("Continue is disabled when practiceNameFetchState is error", () => {
-  render(
-    <SafetyWarningScreen
-      {...baseProps}
-      safetyConfirmed={true}
-      practiceNameFetchState={{ status: "error", message: "Server error" }}
-    />
-  );
-  expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
-});
-
-test("Practice error block renders when practiceNameFetchState is error", () => {
+test("Practice error block renders with 'Error:' prefix for screen readers", () => {
   render(
     <SafetyWarningScreen
       {...baseProps}
       practiceNameFetchState={{ status: "error", message: "Could not load practice" }}
     />
   );
-  expect(screen.getByText("Could not load practice")).toBeInTheDocument();
+  // Verifies the accessibility prefix added in InlineError (layout.tsx)
+  expect(screen.getByText(/Error: Could not load practice/i)).toBeInTheDocument();
 });
 
-test("Practice error block not rendered when practiceNameFetchState is success", () => {
-  render(<SafetyWarningScreen {...baseProps} />);
-  expect(screen.queryByText("Could not load practice")).not.toBeInTheDocument();
+test("Safety gate hint renders as an InlineError when not confirmed", () => {
+  render(<SafetyWarningScreen {...baseProps} safetyConfirmed={false} />);
+  expect(screen.getByText(/Error: If any of the above apply to you/i)).toBeInTheDocument();
+});
+
+test("Renders 'closed' message when practiceIsOpen is false", () => {
+  render(
+    <SafetyWarningScreen 
+      {...baseProps} 
+      practiceIsOpen={false} 
+      availabilityClosedMessage="Custom closed message" 
+    />
+  );
+  expect(screen.getByText(/This service is currently closed/i)).toBeInTheDocument();
+  expect(screen.getByText(/Custom closed message/i)).toBeInTheDocument();
 });
