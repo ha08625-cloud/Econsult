@@ -1,39 +1,40 @@
-# Updated index.css to meet WCAG 2.1 AA and NHS Digital Service Manual standards.
-
-css_content = """/* ============================================================
-   Econsult patient frontend — Global Styles (WCAG 2.1 AA)
+/* ============================================================
+   Econsult patient frontend — global styles
    ============================================================ */
 
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&display=swap');
+
 :root {
-  /* NHS Digital Colour Palette */
-  --nhsuk-blue:          #005eb8;
-  --nhsuk-white:         #ffffff;
-  --nhsuk-grey-1:        #212b32; /* Primary text */
-  --nhsuk-grey-2:        #4c5862; /* Secondary text */
-  --nhsuk-grey-3:        #768590; /* Borders */
-  --nhsuk-grey-4:        #cbcdd0; /* Light borders */
-  --nhsuk-grey-5:        #f0f4f5; /* Background */
-  
-  --nhsuk-red:           #d81e05; /* Errors */
-  --nhsuk-red-bg:        #fdf2f2;
-  
-  --nhsuk-yellow:        #ffeb3b; /* Warning callout */
-  --nhsuk-focus-color:   #ffeb3b;
-  
-  /* Typography Scale (NHS Standard) */
-  --font-stack: Arial, Helvetica, sans-serif;
-  
+  --bg:             #f0f4f7;
+  --surface:        #ffffff;
+  --border:         #c8d2dc;
+  --border-focus:   #005eb8;
+  --text:           #1a2332;
+  --text-muted:     #5a6a7a;
+  --text-label:     #2c3e50;
+
+  --nhs-blue:       #005eb8;
+  --nhs-blue-dark:  #003d7a;
+  --nhs-blue-light: #e8f0fb;
+
+  --danger:         #b91c1c;
+  --danger-bg:      #fef2f2;
+  --danger-border:  #fca5a5;
+
+  --radius-sm:      3px;
+  --radius:         5px;
+  --radius-lg:      8px;
+
+  --font: 'Source Sans 3', 'Segoe UI', sans-serif;
+
   /* Spacing Scale */
-  --space-unit: 8px;
   --space-xs: 4px;
   --space-sm: 8px;
   --space-md: 16px;
   --space-lg: 24px;
   --space-xl: 32px;
-  --space-xxl: 40px;
 }
 
-/* Base resets for accessibility */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -41,44 +42,24 @@ css_content = """/* ============================================================
 }
 
 body {
-  font-family: var(--font-stack);
-  background: var(--nhsuk-grey-5);
-  color: var(--nhsuk-grey-1);
-  /* NHS Standard: 19px desktop, 16px mobile */
-  font-size: 1.1875rem; 
-  line-height: 1.5;
-  text-align: left; /* Strict requirement: never justify */
-  -webkit-font-smoothing: antialiased;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.6;
 }
 
-@media (max-width: 640px) {
-  body {
-    font-size: 1rem;
-  }
-}
-
-/* Accessibility Utility: Visually Hidden */
-.nhsuk-u-visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  border: 0;
-}
-
-/* Page Structure */
+/* PageShell Styles */
 .app-header {
-  background: var(--nhsuk-blue);
-  color: var(--nhsuk-white);
+  background: var(--nhs-blue);
+  color: #ffffff;
   padding: var(--space-md) 0;
-  border-bottom: 10px solid #003d7a;
+  margin-bottom: var(--space-xl);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .header-container {
-  max-width: 960px;
+  max-width: 580px;
   margin: 0 auto;
   padding: 0 var(--space-md);
   display: flex;
@@ -86,159 +67,268 @@ body {
   align-items: center;
 }
 
+.practice-tag {
+  font-size: 14px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+}
+
+/* Page Structure */
 .page-container {
-  max-width: 640px; /* Optimized line length (~70 chars) */
-  margin: var(--space-xl) auto;
+  max-width: 580px;
+  margin: 0 auto var(--space-xl) auto;
   padding: 0 var(--space-md);
 }
 
 .screen-card {
-  background: var(--nhsuk-white);
-  padding: var(--space-xl);
-  border-bottom: 4px solid var(--nhsuk-grey-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl) 40px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
-/* Headings (Sentence Case Only) */
 h1 {
-  font-size: 2rem;
-  font-weight: 700;
-  margin-bottom: var(--space-lg);
-  color: var(--nhsuk-blue);
-}
-
-h2 {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 600;
   margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 4px solid var(--nhs-blue);
+  display: inline-block;
 }
 
-/* Warning Callout Component (NHS Manual Pattern) */
-.nhsuk-warning-callout {
-  background-color: var(--nhsuk-white);
-  border: 4px solid var(--nhsuk-yellow);
-  padding: var(--space-lg);
+.screen-description {
+  margin-bottom: var(--space-lg);
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+/* Form Groups & Layout */
+.form-section {
+  margin-bottom: var(--space-xl);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
+}
+
+.field {
   margin-bottom: var(--space-lg);
 }
 
-.nhsuk-warning-callout__label {
-  display: block;
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin-bottom: var(--space-sm);
-}
-
-/* Error Message Component */
-.nhsuk-error-message {
-  color: var(--nhsuk-red);
-  font-weight: 700;
-  display: block;
-  margin-bottom: var(--space-sm);
-  padding-top: var(--space-xs);
-}
-
-.field-with-error {
-  border-left: 5px solid var(--nhsuk-red);
+.field.has-error {
+  border-left: 4px solid var(--danger);
   padding-left: var(--space-md);
   margin-left: -20px;
 }
 
-/* Form Controls */
-label {
-  display: block;
-  font-weight: 700;
-  margin-bottom: var(--space-xs);
+.error-message {
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: var(--space-xs);
 }
 
-.nhsuk-hint {
-  color: var(--nhsuk-grey-2);
-  margin-bottom: var(--space-sm);
+label {
   display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-label);
+  margin-bottom: var(--space-sm);
 }
 
 input[type="text"] {
-  height: 44px; /* Minimum touch target */
   width: 100%;
-  padding: 8px;
-  border: 2px solid var(--nhsuk-grey-1);
-  font-size: 1.1875rem;
+  padding: 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 16px;
+  transition: border-color 0.15s;
 }
 
 input[type="text"]:focus {
-  outline: 4px solid var(--nhsuk-focus-color);
-  outline-offset: 0;
-  box-shadow: inset 0 0 0 2px;
+  border-color: var(--border-focus);
+  outline: 4px solid var(--nhs-blue-light);
 }
 
-/* Checkboxes (NHS Pattern) */
-.nhsuk-checkboxes__item {
+/* Selection Cards (Radio Buttons) */
+.selection-grid {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-md);
-  margin-bottom: var(--space-md);
-  cursor: pointer;
-  padding: var(--space-sm);
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
 }
 
-.nhsuk-checkboxes__input {
-  width: 40px; /* Large hit area */
-  height: 40px;
+.selection-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
   cursor: pointer;
+  background: var(--surface);
+  transition: all 0.1s ease;
+}
+
+.selection-card:hover {
+  background: var(--nhs-blue-light);
+  border-color: var(--nhs-blue);
+}
+
+.selection-card.selected {
+  border-color: var(--nhs-blue);
+  background: var(--nhs-blue-light);
+  outline: 2px solid var(--nhs-blue);
+}
+
+.selection-card input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--nhs-blue);
+}
+
+.selection-label {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* DOB Layout */
+.dob-inputs {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.dob-field {
+  display: flex;
+  flex-direction: column;
 }
 
 /* Buttons */
+.btn-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--border);
+}
+
 .btn {
-  display: inline-block;
-  padding: 12px 24px;
-  font-size: 1.1875rem;
-  font-weight: 700;
-  text-decoration: none;
+  padding: 12px 32px;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: 16px;
   cursor: pointer;
   border: none;
-  border-radius: 4px;
-  min-height: 44px;
 }
 
 .btn-primary {
-  background-color: #007f3b; /* NHS Green for "Continue" */
-  color: var(--nhsuk-white);
-  box-shadow: 0 4px 0 #004020;
+  background: var(--nhs-blue);
+  color: #fff;
+  box-shadow: 0 4px 0 var(--nhs-blue-dark);
 }
 
 .btn-primary:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 #004020;
+  box-shadow: 0 2px 0 var(--nhs-blue-dark);
 }
 
 .btn-secondary {
-  background-color: var(--nhsuk-grey-4);
-  color: var(--nhsuk-grey-1);
-  box-shadow: 0 4px 0 var(--nhsuk-grey-3);
+  background: #f0f4f7;
+  color: var(--text-label);
+  border: 1px solid var(--border);
 }
 
-.btn:disabled {
-  background-color: var(--nhsuk-grey-4);
-  box-shadow: none;
-  cursor: not-allowed;
+/* Alert Components */
+.alert {
+  padding: var(--space-md);
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  line-height: 1.5;
 }
 
-/* Typography Overrides */
-em, i {
-  font-style: normal; /* Discourage italics */
+.alert-danger {
+  background-color: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger);
 }
 
-u {
-  text-decoration: none; /* Reserve underlining for links only */
+.alert-warning {
+  /* Adding local warning vars since they weren't in your :root */
+  background-color: #fffbeb; 
+  border-color: #fef3c7;
+  color: #92400e;
 }
 
-ul {
-  padding-left: var(--space-xl);
+.alert-info {
+  background-color: var(--nhs-blue-light);
+  border-color: #bbdefb;
+  color: var(--text-label);
+}
+
+/* Visually hidden utility — readable by screen readers, invisible on screen */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Confirmation checkbox row */
+.confirm-checkbox-row {
   margin-bottom: var(--space-md);
 }
 
-li {
-  margin-bottom: var(--space-sm);
+.confirm-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  min-height: 44px;
+  padding: var(--space-sm) 0;
 }
-"""
 
-with open("index-v2.css", "w") as f:
-    f.write(css_content)
+.confirm-checkbox-label input[type="checkbox"] {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  margin-top: 2px;
+  accent-color: var(--nhs-blue);
+  cursor: pointer;
+}
+
+.confirm-checkbox-label:focus-within {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Safety gate hint — shown when checkbox is unchecked */
+.safety-gate-hint {
+  color: var(--danger);
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: var(--space-md);
+}
+
+/* Status container for loading states */
+.status-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border-radius: var(--radius-lg);
+  border: 2px dashed var(--border);
+}
+
+.status-text {
+  color: var(--text-muted);
+  font-weight: 500;
+}

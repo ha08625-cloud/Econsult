@@ -35,6 +35,7 @@ export default function SafetyWarningScreen({
       ? practiceNameFetchState.name
       : null;
 
+  // Logic to handle string splitting for the safety warning
   const safetyLines = safetyWarningFetchState.status === "success" 
     ? safetyWarningFetchState.text.split("\n") 
     : [];
@@ -42,14 +43,12 @@ export default function SafetyWarningScreen({
   const introLine = safetyLines[0];
   const symptomLines = safetyLines.slice(1);
 
+  // Hard block if practice is closed
   if (isClosed) {
     return (
       <PageShell practiceName={practiceName}>
         <h1>This service is currently closed</h1>
-        <div className="nhsuk-warning-callout">
-           <h2 className="nhsuk-warning-callout__label">
-            Check the practice opening times
-          </h2>
+        <div className="alert alert-warning" style={{ marginBottom: "24px" }}>
           <p style={{ margin: 0 }}>
             {availabilityClosedMessage || "This practice is not currently accepting online forms."}
           </p>
@@ -76,7 +75,7 @@ export default function SafetyWarningScreen({
         <div style={{ marginBottom: "24px" }}>
           <InlineError message={safetyWarningFetchState.message} />
           <div className="btn-row">
-            <button className="btn btn-secondary" onClick={onRetry}>
+            <button className="btn btn-primary" onClick={onRetry}>
               Try again
             </button>
           </div>
@@ -85,17 +84,17 @@ export default function SafetyWarningScreen({
 
       {safetyWarningFetchState.status === "success" && (
         <>
-          <div className="nhsuk-warning-callout">
-            <h2 className="nhsuk-warning-callout__label">
-              <span className="nhsuk-u-visually-hidden">Important: </span>
+          <div className="alert alert-warning" style={{ marginBottom: "24px" }}>
+            <strong style={{ display: "block", marginBottom: "12px", fontSize: "1.1rem" }}>
+              <span className="sr-only">Important: </span>
               Read before continuing
-            </h2>
-            
-            <p style={{ fontWeight: 700, marginBottom: "12px" }}>{introLine}</p>
-            
-            <ul>
+            </strong>
+
+            <p style={{ marginBottom: "12px", fontWeight: 500 }}>{introLine}</p>
+
+            <ul id="safety-warning-list" style={{ paddingLeft: "24px", margin: 0 }}>
               {symptomLines.map((line, i) => (
-                line.trim() && <li key={i}>{line}</li>
+                line.trim() && <li key={i} style={{ marginBottom: "6px" }}>{line}</li>
               ))}
             </ul>
           </div>
@@ -117,21 +116,23 @@ export default function SafetyWarningScreen({
             </div>
           )}
 
-          <div className="nhsuk-checkboxes__item">
-            <input
-              className="nhsuk-checkboxes__input"
-              id="safety-confirm"
-              type="checkbox"
-              checked={safetyConfirmed}
-              onChange={(e) => onConfirmChange(e.target.checked)}
-            />
-            <label className="nhsuk-label nhsuk-checkboxes__label" htmlFor="safety-confirm">
-              I confirm that none of the above apply to me
+          <div className="confirm-checkbox-row">
+            <label className="confirm-checkbox-label">
+              <input
+                type="checkbox"
+                checked={safetyConfirmed}
+                onChange={(e) => onConfirmChange(e.target.checked)}
+                aria-describedby="safety-warning-list"
+              />
+              <span>I confirm that none of the above apply to me</span>
             </label>
           </div>
 
           {!safetyConfirmed && (
-             <InlineError message="If any of the above apply to you, please call 999 or go to A&E immediately. Do not use this form." />
+            <p className="safety-gate-hint">
+              If any of the above apply to you, please call 999 or go to A&amp;E
+              immediately. Do not use this form.
+            </p>
           )}
 
           <div className="btn-row">

@@ -1,4 +1,8 @@
-// layout.tsx
+// Structural layout wrappers only.
+// These components have no knowledge of application state, API calls, or business logic.
+// They may reference global CSS class names from index.css — that coupling is intentional and acceptable.
+// Do not import from api.ts, helpers.ts, or any screen component from this file.
+
 import React from "react";
 
 interface PageShellProps {
@@ -24,15 +28,13 @@ export function PageShell({ children, practiceName }: PageShellProps) {
   );
 }
 
-/**
- * WCAG 2.1 AA Compliant Error Message
- * Includes visually hidden "Error: " prefix for screen readers.
- */
 export function InlineError({ message }: { message: string }) {
   return (
-    <p className="nhsuk-error-message">
-      <span className="nhsuk-u-visually-hidden">Error: </span>
-      {message}
-    </p>
+    <div className="alert alert-danger" role="alert" style={{ marginTop: "16px", marginBottom: 0 }}>
+      <p style={{ margin: 0 }}>
+        <span className="sr-only">Error: </span>
+        {message}
+      </p>
+    </div>
   );
 }
