@@ -13,11 +13,13 @@ interface PageShellProps {
 export function PageShell({ children, practiceName }: PageShellProps) {
   return (
     <>
-      <header className="page-header">
-        <span className="page-header-title">Online Consultation</span>
-        {practiceName && (
-          <span className="page-header-practice">{practiceName}</span>
-        )}
+      <header className="app-header">
+        <div className="header-container">
+          <span>Online Consultation</span>
+          {practiceName && (
+            <span className="practice-tag">{practiceName}</span>
+          )}
+        </div>
       </header>
       <div className="page-container">
         <div className="screen-card">{children}</div>
