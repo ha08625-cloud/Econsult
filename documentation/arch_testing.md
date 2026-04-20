@@ -47,12 +47,17 @@ Tests that do not require a database connection. Covers two suites that run toge
 - Files: `*.test.tsx` in `frontend/src/screens/` and `frontend/admin-ui/src/screens/`
 - Runner: Vitest (jsdom environment, configured in `frontend/vitest.config.ts`)
 
-**Run both together with:**
+**Frontend TypeScript type check** — full type-checking pass across the frontend codebase.
+- Runner: `tsc --noEmit` via the project `tsconfig.json`
+- Runs in CI only (not via `make test`) — see design decision below.
+- Catches type errors that Vitest misses because Vitest transpiles TypeScript without checking types.
+
+**Run Python unit tests and Vitest together with:**
 ```
 make test
 ```
 
-No database environment variables required. Vitest is invoked via `npx vitest run` from the `frontend/` directory.
+The `tsc --noEmit` type check is not included in `make test` — it runs in CI only. No database environment variables required. Vitest is invoked via `npx vitest run` from the `frontend/` directory.
 
 ---
 
@@ -117,6 +122,9 @@ The per-module `pytest.skip()` guardrail is correct locally but produces a silen
 
 ### Why does MockDeliveryService exist?
 Integration tests must not require SMTP configuration. `MockDeliveryService` captures send calls in memory so tests can assert on delivery behaviour without network dependencies. It is defined in `test_form_routes.py` and is not shared — if other test files need delivery assertions in future, extract it to a shared `tests/fixtures.py`.
+
+### Why does the CI unit job run tsc --noEmit separately from Vitest?
+Vitest transpiles TypeScript using esbuild, which deliberately skips type checking for speed. This means Vitest tests can pass while genuine TypeScript type errors exist in the codebase — those errors only surface during the production build (`tsc -b && vite build`). Running `tsc --noEmit` as a distinct CI step catches type errors at the earliest possible point, before Vitest runs and well before any deployment build is attempted. It does not duplicate Vitest — it covers a gap Vitest cannot fill. It is not added to `make test` because `tsc` is slow relative to Vitest and adds friction to the local development loop; CI is the right enforcement point.
 
 ### Why cd frontend instead of a vitest script in package.json?
 Vitest requires the working directory to be `frontend/` so it resolves `vitest.config.ts` correctly. The Makefile uses `cd frontend && npx vitest run` rather than adding a `test` script to `package.json` to keep the entry point for tests in one place (the Makefile) rather than split across two files.
