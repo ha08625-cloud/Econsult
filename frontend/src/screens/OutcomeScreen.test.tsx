@@ -83,7 +83,7 @@ describe("OutcomeScreen", () => {
   it("radio group is wrapped in a fieldset with the correct legend", () => {
     render(<OutcomeScreen {...defaultProps} />);
     // getByRole('group') finds the fieldset; its accessible name comes from the legend
-    expect(screen.getByRole("group", { name: /request type/i })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: /request type/i })).toBeInTheDocument();
   });
 
   it("each radio has aria-required set to true", () => {
