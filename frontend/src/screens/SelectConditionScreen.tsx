@@ -1,4 +1,3 @@
-import { useId } from "react";
 import { PageShell } from "../layout";
 import ConditionCombobox from "../ConditionCombobox";
 import type { ConditionSummary } from "../types";
@@ -23,8 +22,6 @@ export default function SelectConditionScreen({
   onBlankForm,
   onBack,
 }: SelectConditionScreenProps) {
-  const comboboxId = useId();
-
   return (
     <PageShell practiceName={practiceName}>
         <h1>Start your consultation</h1>
@@ -36,11 +33,10 @@ export default function SelectConditionScreen({
         ) : (
           <>
             <div className="field">
-              <label htmlFor={comboboxId}>
+              <label>
                 What is your consultation about?
               </label>
               <ConditionCombobox
-                id={comboboxId}
                 conditions={conditions}
                 selectedId={selectedConditionId}
                 onChange={onConditionChange}
