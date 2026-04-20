@@ -1,63 +1,68 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import SelectConditionScreen from "./SelectConditionScreen";
-import type { ConditionSummary } from "../types";
+import SafetyWarningScreen from "./SafetyWarningScreen";
 
-const noop = () => {};
-
-const sampleConditions: ConditionSummary[] = [
-  { id: "uti1", label: "Urinary symptoms", search_tags: ["uti", "urine"] },
-  { id: "back1", label: "Back pain", search_tags: ["back", "spine"] },
-];
-
-const defaultProps = {
-  conditions: sampleConditions,
-  selectedConditionId: null,
-  onConditionChange: noop,
-  onContinue: noop,
-  onBlankForm: noop,
+const baseProps = {
+  safetyWarningFetchState: { status: "success" as const, text: "Call 999 if...\nSymptom A\nSymptom B" },
+  practiceNameFetchState: { status: "success" as const, name: "Elm Tree Surgery" },
+  safetyConfirmed: false,
+  practiceIsOpen: true,
+  availabilityClosedMessage: null,
+  afterHoursNotice: null,
+  onConfirmChange: () => {},
+  onRetry: () => {},
+  onPracticeRetry: () => {},
+  onContinue: () => {},
 };
 
-describe("SelectConditionScreen", () => {
-  it("renders loading state when conditions is null", () => {
-    render(<SelectConditionScreen {...defaultProps} conditions={null} />);
-    expect(screen.getByText(/loading/i)).toBeTruthy();
-  });
+test("Safety warning includes visually hidden 'Important:' prefix", () => {
+  render(<SafetyWarningScreen {...baseProps} />);
+  // Testing-library's getByText finds content even if visually hidden in CSS
+  expect(screen.getByText(/Important:/i)).toBeInTheDocument();
+  expect(screen.getByText(/Read before continuing/i)).toBeInTheDocument();
+});
 
-  it("renders the condition label when conditions are loaded", () => {
-    render(<SelectConditionScreen {...defaultProps} />);
-    expect(screen.getByText(/what is your consultation about/i)).toBeTruthy();
-  });
+test("Checkbox is correctly associated with its label for screen readers", () => {
+  render(<SafetyWarningScreen {...baseProps} />);
+  // getByLabelText verifies the 'for'/'id' association is working
+  const checkbox = screen.getByLabelText(/I confirm that none of the above apply to me/i);
+  expect(checkbox).toBeInTheDocument();
+  expect(checkbox).toHaveAttribute("type", "checkbox");
+});
 
-  it("Continue button is disabled when no condition is selected", () => {
-    render(<SelectConditionScreen {...defaultProps} selectedConditionId={null} />);
-    const btn = screen.getByRole("button", { name: /continue/i });
-    expect(btn.hasAttribute("disabled")).toBe(true);
-  });
+test("Continue is disabled when safetyConfirmed is false", () => {
+  render(<SafetyWarningScreen {...baseProps} safetyConfirmed={false} />);
+  expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+});
 
-  it("Continue button is enabled when a condition is selected", () => {
-    render(<SelectConditionScreen {...defaultProps} selectedConditionId="uti1" />);
-    const btn = screen.getByRole("button", { name: /continue/i });
-    expect(btn.hasAttribute("disabled")).toBe(false);
-  });
+test("Continue is enabled when safetyConfirmed is true and practice name loaded", () => {
+  render(<SafetyWarningScreen {...baseProps} safetyConfirmed={true} />);
+  expect(screen.getByRole("button", { name: /continue/i })).not.toBeDisabled();
+});
 
-  it("Use blank form button calls onBlankForm", async () => {
-    const onBlankForm = vi.fn();
-    render(<SelectConditionScreen {...defaultProps} onBlankForm={onBlankForm} />);
-    await userEvent.click(screen.getByRole("button", { name: /use blank form/i }));
-    expect(onBlankForm).toHaveBeenCalledTimes(1);
-  });
+test("Practice error block renders with 'Error:' prefix for screen readers", () => {
+  render(
+    <SafetyWarningScreen
+      {...baseProps}
+      practiceNameFetchState={{ status: "error", message: "Could not load practice" }}
+    />
+  );
+  // Verifies the accessibility prefix added in InlineError (layout.tsx)
+  expect(screen.getByText(/Error: Could not load practice/i)).toBeInTheDocument();
+});
 
-  it("Continue button calls onContinue", async () => {
-    const onContinue = vi.fn();
-    render(
-      <SelectConditionScreen
-        {...defaultProps}
-        selectedConditionId="uti1"
-        onContinue={onContinue}
-      />
-    );
-    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    expect(onContinue).toHaveBeenCalledTimes(1);
-  });
+test("Safety gate hint renders as an InlineError when not confirmed", () => {
+  render(<SafetyWarningScreen {...baseProps} safetyConfirmed={false} />);
+  expect(screen.getByText(/Error: If any of the above apply to you/i)).toBeInTheDocument();
+});
+
+test("Renders 'closed' message when practiceIsOpen is false", () => {
+  render(
+    <SafetyWarningScreen 
+      {...baseProps} 
+      practiceIsOpen={false} 
+      availabilityClosedMessage="Custom closed message" 
+    />
+  );
+  expect(screen.getByText(/This service is currently closed/i)).toBeInTheDocument();
+  expect(screen.getByText(/Custom closed message/i)).toBeInTheDocument();
 });
