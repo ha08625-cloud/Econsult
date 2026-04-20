@@ -39,6 +39,9 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && npm ci
 
+      - name: TypeScript type check
+        run: cd frontend && npx tsc --noEmit
+
       - name: Run frontend tests
         run: cd frontend && npx vitest run
 
