@@ -415,3 +415,70 @@ input[type="text"]:focus {
   color: var(--text-muted);
   font-weight: 500;
 }
+/* ============================================================
+   Condition Combobox
+   ============================================================ */
+
+.combobox-wrapper {
+  position: relative;
+}
+
+/* The combobox input inherits the global input[type="text"] styles
+   (border, focus ring, font size). This class adds only what differs. */
+.combobox-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.combobox-listbox {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+  overflow-y: auto;
+  z-index: 100;
+}
+
+/* Informational rows (no-match notice, count) — not selectable options.
+   --text-muted (#5a6a7a) on white gives a contrast ratio above 4.5:1. */
+.combobox-info-item {
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.combobox-option {
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
+  font-weight: 400;
+  /* Transparent outline is invisible in standard mode but becomes visible
+     in forced-colors (Windows High Contrast), ensuring state is conveyed
+     without relying on background colour alone. */
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+}
+
+.combobox-option--active {
+  background: var(--nhs-blue-light);
+  outline-color: var(--nhs-blue);
+}
+
+.combobox-option--selected {
+  font-weight: 500;
+  background: var(--nhs-blue-light);
+  outline-color: var(--border-focus);
+}
+
+/* When an option is both active (keyboard focus) and selected, active wins. */
+.combobox-option--active.combobox-option--selected {
+  outline-color: var(--nhs-blue);
+}

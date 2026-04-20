@@ -172,7 +172,7 @@ export default function ConditionCombobox({
       : undefined;
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="combobox-wrapper">
       <input
         ref={inputRef}
         id={`${baseId}-input`}
@@ -182,6 +182,7 @@ export default function ConditionCombobox({
         aria-autocomplete="list"
         aria-controls={listboxId}
         aria-activedescendant={activeDescendant}
+        aria-label="Search for a condition"
         value={inputValue}
         onChange={handleInputChange}
         onFocus={handleFocus}
@@ -189,7 +190,7 @@ export default function ConditionCombobox({
         onKeyDown={handleKeyDown}
         placeholder="Start typing or click to see all conditions..."
         autoComplete="off"
-        style={{ width: "100%", padding: "8px", fontSize: "1em", boxSizing: "border-box" }}
+        className="combobox-input"
       />
 
       {isOpen && (
@@ -197,49 +198,18 @@ export default function ConditionCombobox({
           id={listboxId}
           role="listbox"
           aria-label="Conditions"
-          style={{
-            position: "absolute",
-            top: "100%",
-            left: 0,
-            right: 0,
-            margin: 0,
-            padding: 0,
-            listStyle: "none",
-            background: "#fff",
-            border: "1px solid #bbb",
-            borderTop: "none",
-            boxShadow: "0 4px 8px rgba(0,0,0,0.12)",
-            maxHeight: SUGGESTION_LIST_MAX_HEIGHT,
-            overflowY: "auto",
-            zIndex: 100,
-          }}
+          className="combobox-listbox"
+          style={{ maxHeight: SUGGESTION_LIST_MAX_HEIGHT }}
         >
           {noMatchFallback && (
-            <li
-              style={{
-                padding: "6px 10px",
-                fontSize: "0.85em",
-                color: "#666",
-                borderBottom: "1px solid #eee",
-                fontStyle: "italic",
-              }}
-              aria-live="polite"
-            >
+            <li className="combobox-info-item">
               No matching conditions — try different words, or scroll below.
             </li>
           )}
 
           {!noMatchFallback &&
             filteredConditions.length < conditions.length && (
-              <li
-                style={{
-                  padding: "4px 10px",
-                  fontSize: "0.8em",
-                  color: "#888",
-                  borderBottom: "1px solid #eee",
-                }}
-                aria-live="polite"
-              >
+              <li className="combobox-info-item">
                 Showing {filteredConditions.length} of {conditions.length}{" "}
                 conditions
               </li>
@@ -258,12 +228,13 @@ export default function ConditionCombobox({
                 onMouseDown={() => handleSuggestionMouseDown(condition)}
                 onMouseEnter={() => setActiveIndex(index)}
                 onMouseLeave={() => setActiveIndex(null)}
-                style={{
-                  padding: "8px 10px",
-                  cursor: "pointer",
-                  background: isActive ? "#d0e8f8" : isSelected ? "#eef6ff" : "#fff",
-                  fontWeight: isSelected ? 500 : 400,
-                }}
+                className={[
+                  "combobox-option",
+                  isActive ? "combobox-option--active" : "",
+                  isSelected ? "combobox-option--selected" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               >
                 {condition.label}
               </li>

@@ -137,11 +137,32 @@ Wire-format types (server contracts) live in `frontend/src/types.ts`. UI-only ty
 
 The input `id` is generated dynamically via React's `useId()` — do not target it by a stable string in tests. Query by label text instead.
 
+All visual styles live in `index.css` under the `/* Condition Combobox */` section. The class names are: `.combobox-wrapper`, `.combobox-input`, `.combobox-listbox`, `.combobox-info-item`, `.combobox-option`, `.combobox-option--active`, `.combobox-option--selected`. Do not add inline styles to this component — the CSS section is the single source of truth.
+
+The `maxHeight` of the listbox is the one permitted exception: it is set as an inline style because it is derived from the `SUGGESTION_LIST_MAX_HEIGHT` constant in the component. If the constant changes, the style updates automatically. Duplicating the value in CSS would create silent drift.
+
+Active and selected option states use `outline: 2px solid` in addition to a background colour. This is intentional — background colour alone is invisible in Windows High Contrast / forced-colors mode. Do not remove the outline rules.
+
+The informational rows inside the listbox (no-match notice, filtered count) use `--text-muted` (`#5a6a7a`), which passes the WCAG 2.1 AA 4.5:1 contrast threshold on a white background. Do not substitute a lighter colour.
+
 ---
 
 ## Accessibility (WCAG 2.1 AA / NHS Digital)
 
 The patient frontend must comply with WCAG 2.1 Level AA and follow NHS Digital Service Manual patterns. This section records decisions made during the accessibility pass so they are applied consistently across all screens.
+
+---
+
+### Focus Management on Screen Load
+
+When a screen mounts in a loading state and then transitions to a ready state (i.e. the DOM mutates significantly after an async fetch), focus must be programmatically moved so screen reader users are notified that content is ready.
+
+The established pattern, used in `SelectConditionScreen`:
+- Attach a `ref` to the screen's `<h1>` element.
+- Add `tabIndex={-1}` to the `<h1>`. This allows programmatic focus without inserting the heading into the natural tab order.
+- Add a `useEffect` that calls `headingRef.current?.focus()` when the data prop transitions from `null` to a loaded value.
+
+Any future screen that follows this loading pattern must replicate it. Do not focus the body or an arbitrary container — the heading is the correct target per the NHS Service Manual.
 
 ---
 
@@ -170,26 +191,21 @@ Using red for a clinical warning callout is wrong: it implies the page is in an 
 
 ### `InlineError` — shared component behaviour
 
-`InlineError` in `layout.tsx` carries `role="alert"`. This causes screen readers to announce the content immediately when the element appears in the DOM. Two consequences to be aware of:
-
-- Do not render `InlineError` on page load in a hidden or conditionally pre-rendered state — only mount it when an error has actually occurred, which is the existing pattern.
-- Do not use `InlineError` for non-error content (warnings, hints, instructions). Use a plain `<p>` with the appropriate CSS class instead. The safety gate hint ("If any of the above apply to you...") is a deliberate example of this — it is a `<p className="safety-gate-hint">`, not an `InlineError`.
+`InlineError` in `layout.tsx` carries `role="alert"`. This causes screen readers to announce the error immediately when it mounts. Do not add a second `role="alert"` wrapper around `InlineError`.
 
 ---
 
-### Form Element Associations
+### Loading States
 
-- Checkboxes must have their `<input>` wrapped inside a `<label>` element. Do not use separate `htmlFor`/`id` pairs for checkboxes — the wrapping pattern is simpler and equally valid.
-- Where a checkbox confirms something the patient has just read (as in the safety warning), add `aria-describedby` pointing to the `id` of the content being confirmed. This gives screen reader users the programmatic association between the question and its answer without repeating the content.
-- The `.confirm-checkbox-label` CSS class provides the correct touch target (44px minimum height) and focus ring for confirmation checkboxes. Use this class, not inline styles or `.selection-card`. The `.selection-card` pattern is reserved for radio button option lists.
+Loading containers must carry `role="status"`. This causes screen readers to announce the loading message when the container mounts. The `.status-container` / `.status-text` CSS classes are the standard pattern — use them for all loading states, and always pair them with `role="status"`.
 
 ---
 
-### Font Size
+### Contextual Button Descriptions
 
-- Body text: 16px minimum on mobile, 19px on desktop. The current base font size in `index.css` is 16px. This is the mobile floor — do not set inline `font-size` below this on any element that carries reading content.
-- 14px is permissible only for truly supplementary text (e.g. `.practice-tag` in the header). It must not be used for instructional text, error messages, or hint text. The `.safety-gate-hint` class enforces 16px for this reason.
-- Do not set font sizes with inline styles on screen components — add or reuse a CSS class so the size is defined in one place.
+When a button's purpose is explained by adjacent prose that is not its visible label, link them explicitly with `aria-describedby`. Set an `id` on the explanatory paragraph and set `aria-describedby` to that `id` on the button. This ensures screen reader users navigating by interactive elements hear the explanation, not just the button label.
+
+Established example: the "Use blank form" button in `SelectConditionScreen` is described by `id="blank-form-hint"`.
 
 ---
 
@@ -201,6 +217,7 @@ These must be observed on all screens; they are not enforced by the CSS and requ
 - **No italics** in patient-facing content.
 - **No all-caps** (BLOCK CAPITALS). Use sentence case for all headings and labels.
 - **Underlining is reserved for hyperlinks only.** Do not underline text for emphasis.
+- **Do not set font sizes with inline styles** on screen components — add or reuse a CSS class.
 
 ---
 
@@ -208,9 +225,10 @@ These must be observed on all screens; they are not enforced by the CSS and requ
 
 When writing or updating tests for screens that have been through the accessibility pass:
 
-- Use `getByLabelText` to assert checkbox/input associations — this verifies the label wrapping is working, not just that the element exists.
-- Use a `textContent` matcher function (not `getByText` with a plain string) when asserting on elements that contain both an `sr-only` span and visible text, since the full `textContent` includes the hidden text. Constrain the matcher to a specific `tagName` (e.g. `element?.tagName === "P"`) when multiple ancestor elements share the same `textContent` — this is the common failure mode with `role="alert"` wrappers.
+- Use `getByLabelText` to assert checkbox/input associations — this verifies the label association is working, not just that the element exists.
+- Use a `textContent` matcher function (not `getByText` with a plain string) when asserting on elements that contain both an `sr-only` span and visible text, since the full `textContent` includes the hidden text. Constrain the matcher to a specific `tagName` when multiple ancestor elements share the same `textContent`.
 - Do not test that `sr-only` text is visually hidden — that is a CSS concern, not a component concern. Test only that the text is present in the DOM.
+- For focus management tests, use `waitFor` and assert on `document.activeElement`.
 
 ---
 
