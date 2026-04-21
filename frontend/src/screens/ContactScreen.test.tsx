@@ -16,9 +16,16 @@ const mockFinishForm = vi.mocked(finishForm);
 const noop = () => {};
 
 const defaultPatientDetails: PatientDetails = {
+  patient_for: "me",
   first_name: "Jane",
   last_name: "Smith",
-  date_of_birth: "1990-01-01",
+  date_of_birth: { day: "01", month: "01", year: "1990" },
+  postcode: "SW1A 1AA",
+  gender: "female",
+  preferred_name: undefined,
+  nhs_number: undefined,
+  submitter_name: undefined,
+  submitter_relationship: undefined,
 };
 
 const defaultProps = {
@@ -26,6 +33,7 @@ const defaultProps = {
   runtimeId: "runtime-abc",
   version: 2,
   patientDetails: defaultPatientDetails,
+  consultationOutcome: "advice" as const,
   photos: [] as File[],
   doctors: [] as string[],
   onSubmit: noop,
@@ -34,11 +42,28 @@ const defaultProps = {
 
 // Helper: fill a valid email submission and click Submit.
 async function submitWithEmail() {
-  await userEvent.click(screen.getByRole("checkbox", { name: /email/i }));
+  await userEvent.click(screen.getByLabelText(/email/i));
   const emailInput = document.getElementById("contact-email") as HTMLInputElement;
   await userEvent.type(emailInput, "test@example.com");
   await userEvent.click(screen.getByRole("button", { name: /submit/i }));
 }
+
+// Helpers to handle RTL text normalization against screen reader only text spans
+const expectFieldError = (expectedMsg: string) => {
+  expect(
+    screen.getByText(
+      (_, el) => el?.tagName === "P" && el?.textContent === `Error: ${expectedMsg}`
+    )
+  ).toBeTruthy();
+};
+
+const expectErrorSummaryItem = (label: string, expectedMsg: string) => {
+  expect(
+    screen.getByText(
+      (_, el) => el?.tagName === "LI" && el?.textContent === `${label}: ${expectedMsg}`
+    )
+  ).toBeTruthy();
+};
 
 describe("ContactScreen", () => {
   beforeEach(() => {
@@ -52,25 +77,25 @@ describe("ContactScreen", () => {
 
   it("phone field appears when phone is selected", async () => {
     render(<ContactScreen {...defaultProps} />);
-    await userEvent.click(screen.getByRole("checkbox", { name: /phone call/i }));
+    await userEvent.click(screen.getByLabelText(/phone call/i));
     expect(document.getElementById("contact-phone")).not.toBeNull();
   });
 
   it("phone field appears when text message is selected", async () => {
     render(<ContactScreen {...defaultProps} />);
-    await userEvent.click(screen.getByRole("checkbox", { name: /text message/i }));
+    await userEvent.click(screen.getByLabelText(/text message/i));
     expect(document.getElementById("contact-phone")).not.toBeNull();
   });
 
   it("phone field does not appear when only email is selected", async () => {
     render(<ContactScreen {...defaultProps} />);
-    await userEvent.click(screen.getByRole("checkbox", { name: /email/i }));
+    await userEvent.click(screen.getByLabelText(/email/i));
     expect(document.getElementById("contact-phone")).toBeNull();
   });
 
   it("email field appears when email is selected", async () => {
     render(<ContactScreen {...defaultProps} />);
-    await userEvent.click(screen.getByRole("checkbox", { name: /email/i }));
+    await userEvent.click(screen.getByLabelText(/email/i));
     expect(document.getElementById("contact-email")).not.toBeNull();
   });
 
@@ -97,12 +122,14 @@ describe("ContactScreen", () => {
     render(<ContactScreen {...defaultProps} doctors={[]} />);
     const select = document.getElementById("doctor-preference") as HTMLSelectElement;
     await userEvent.selectOptions(select, "usual");
-    await userEvent.click(screen.getByRole("checkbox", { name: /email/i }));
+    await userEvent.click(screen.getByLabelText(/email/i));
     const emailInput = document.getElementById("contact-email") as HTMLInputElement;
     await userEvent.type(emailInput, "test@example.com");
     await userEvent.click(screen.getByRole("button", { name: /submit/i }));
-    // Both the label and the error <p> contain this text, so use getAllByText.
-    expect(screen.getAllByText(/please enter your doctor's name/i).length).toBeGreaterThan(0);
+    
+    const msg = "Please enter your doctor's name.";
+    expectFieldError(msg);
+    expectErrorSummaryItem("Doctor preference", msg);
   });
 
   // ---------------------------------
@@ -177,11 +204,14 @@ describe("ContactScreen", () => {
     render(<ContactScreen {...defaultProps} doctors={["Dr Smith"]} />);
     const select = document.getElementById("doctor-preference") as HTMLSelectElement;
     await userEvent.selectOptions(select, "other");
-    await userEvent.click(screen.getByRole("checkbox", { name: /email/i }));
+    await userEvent.click(screen.getByLabelText(/email/i));
     const emailInput = document.getElementById("contact-email") as HTMLInputElement;
     await userEvent.type(emailInput, "test@example.com");
     await userEvent.click(screen.getByRole("button", { name: /submit/i }));
-    expect(screen.getByText(/please enter your doctor's name/i)).toBeTruthy();
+    
+    const msg = "Please enter your doctor's name.";
+    expectFieldError(msg);
+    expectErrorSummaryItem("Doctor preference", msg);
   });
 
   it("does not require free text when a named doctor is selected from the list", async () => {
@@ -207,20 +237,22 @@ describe("ContactScreen", () => {
   it("validates and shows error when no contact method is selected", async () => {
     render(<ContactScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: /submit/i }));
-    expect(
-      screen.getByText(/please select at least one contact method/i)
-    ).toBeTruthy();
+    
+    const msg = "Please select at least one contact method.";
+    expectFieldError(msg);
+    expectErrorSummaryItem("Contact method", msg);
   });
 
   it("validates and shows error for invalid UK phone number", async () => {
     render(<ContactScreen {...defaultProps} />);
-    await userEvent.click(screen.getByRole("checkbox", { name: /phone call/i }));
+    await userEvent.click(screen.getByLabelText(/phone call/i));
     const phoneInput = document.getElementById("contact-phone") as HTMLInputElement;
     await userEvent.type(phoneInput, "00000000000");
     await userEvent.click(screen.getByRole("button", { name: /submit/i }));
-    expect(
-      screen.getByText(/please enter a valid uk mobile or landline number/i)
-    ).toBeTruthy();
+
+    const msg = "Please enter a valid UK mobile or landline number. We are unable to contact international numbers.";
+    expectFieldError(msg);
+    expectErrorSummaryItem("Phone number", msg);
   });
 
   // ---------------------------------
@@ -231,7 +263,7 @@ describe("ContactScreen", () => {
     mockFinishForm.mockImplementation(() => new Promise(() => {}));
 
     render(<ContactScreen {...defaultProps} />);
-    await userEvent.click(screen.getByRole("checkbox", { name: /email/i }));
+    await userEvent.click(screen.getByLabelText(/email/i));
     const emailInput = document.getElementById("contact-email") as HTMLInputElement;
     await userEvent.type(emailInput, "test@example.com");
     await userEvent.click(screen.getByRole("button", { name: /submit/i }));

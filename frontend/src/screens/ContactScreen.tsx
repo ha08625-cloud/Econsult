@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { PageShell, InlineError } from "../layout";
+import { useState, useRef } from "react";
+import { PageShell, InlineError, FieldError } from "../layout";
 import { finishForm, friendlyErrorMessage } from "../api";
 import { initialiseContactPreferences, isValidUkPhone } from "../helpers";
 import type { ContactPreferences, ContactMethod, PatientDetails, ConsultationOutcome } from "../types";
@@ -16,6 +16,14 @@ interface ContactScreenProps {
   onSubmit: () => void;
   onBack: () => void;
 }
+
+const ERROR_LABELS: Record<string, string> = {
+  contact_methods: "Contact method",
+  phone_number: "Phone number",
+  email_address: "Email address",
+  free_text_doctor: "Doctor preference",
+  usual_doctor_name: "Doctor preference",
+};
 
 export default function ContactScreen({
   practiceName,
@@ -35,6 +43,9 @@ export default function ContactScreen({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
 
+  // Ref for programmatic focus on the error summary after failed submission
+  const summaryRef = useRef<HTMLDivElement>(null);
+
   // When a list is shown, this tracks the value of the dropdown separately
   // from doctor_preference / usual_doctor_name so we can map to those fields
   // on submit. Values: "any" | "other" | <a doctor name from the list>.
@@ -50,6 +61,7 @@ export default function ContactScreen({
   const wantsPhoneOrText = wantsPhone || wantsText;
   const wantsEmail = methods.includes("email");
   const hasDoctorList = doctors.length > 0;
+  const hasErrors = Object.keys(contactErrors).length > 0;
 
   function toggleMethod(method: ContactMethod) {
     const next = methods.includes(method)
@@ -57,7 +69,11 @@ export default function ContactScreen({
       : [...methods, method];
     setContactPreferences({ ...cp, contact_methods: next });
     if (contactErrors.contact_methods) {
-      setContactErrors({ ...contactErrors, contact_methods: "" });
+      setContactErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors.contact_methods;
+        return newErrors;
+      });
     }
   }
 
@@ -105,6 +121,7 @@ export default function ContactScreen({
 
     if (Object.keys(errors).length > 0) {
       setContactErrors(errors);
+      setTimeout(() => summaryRef.current?.focus(), 0);
       return;
     }
 
@@ -162,178 +179,205 @@ export default function ContactScreen({
     <PageShell practiceName={practiceName}>
       <h1>How would you like to be contacted?</h1>
 
-      <div
-        style={{
-          background: "var(--surface-alt, #f0f4fa)",
-          border: "1px solid var(--border, #d0d7e3)",
-          borderRadius: "6px",
-          padding: "12px 16px",
-          marginBottom: "24px",
-          fontSize: "14px",
-          color: "var(--text-muted)",
-        }}
-      >
-        If you choose email or text message, we aim to respond within 2 working
-        days. If you select phone call only, we aim to respond within 5 working
-        days.
+      <div className="alert alert-info" style={{ marginBottom: "var(--space-lg)" }}>
+        <p>
+          If you choose email or text message, we aim to respond within 2 working
+          days. If you select phone call only, we aim to respond within 5 working
+          days.
+        </p>
       </div>
 
-      <div className="field">
-        <label>Contact method (select all that apply)</label>
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "8px" }}>
-          {(["email", "text", "phone"] as ContactMethod[]).map((method) => {
-            const labels: Record<ContactMethod, string> = {
-              email: "Email",
-              text: "Text message",
-              phone: "Phone call",
-            };
-            return (
-              <label
-                key={method}
-                style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", fontSize: "15px" }}
-              >
-                <input
-                  type="checkbox"
-                  checked={methods.includes(method)}
-                  onChange={() => toggleMethod(method)}
-                />
-                {labels[method]}
-              </label>
-            );
-          })}
+      {hasErrors && (
+        <div
+          className="error-summary"
+          role="alert"
+          tabIndex={-1}
+          ref={summaryRef}
+        >
+          <h2 className="error-summary-heading">There is a problem</h2>
+          <ul className="error-summary-list">
+            {Object.entries(contactErrors).map(([key, message]) => (
+              <li key={key}>
+                {ERROR_LABELS[key] ? `${ERROR_LABELS[key]}: ` : ""}
+                {message}
+              </li>
+            ))}
+          </ul>
         </div>
-        {contactErrors.contact_methods && (
-          <p style={{ color: "var(--danger)", fontSize: "13px", marginTop: "6px" }}>
-            {contactErrors.contact_methods}
-          </p>
+      )}
+
+      <div className="form-section">
+        <fieldset className={`field ${contactErrors.contact_methods ? "has-error" : ""}`}>
+          <legend>Contact method (select all that apply)</legend>
+          <div className="confirm-checkbox-row">
+            {(["email", "text", "phone"] as ContactMethod[]).map((method) => {
+              const labels: Record<ContactMethod, string> = {
+                email: "Email",
+                text: "Text message",
+                phone: "Phone call",
+              };
+              return (
+                <label key={method} className="confirm-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={methods.includes(method)}
+                    onChange={() => toggleMethod(method)}
+                    aria-invalid={!!contactErrors.contact_methods}
+                    aria-describedby={
+                      contactErrors.contact_methods ? "contact-methods-error" : undefined
+                    }
+                  />
+                  <span>{labels[method]}</span>
+                </label>
+              );
+            })}
+          </div>
+          {contactErrors.contact_methods && (
+            <FieldError id="contact-methods-error" message={contactErrors.contact_methods} />
+          )}
+        </fieldset>
+
+        {wantsPhoneOrText && (
+          <div className={`field ${contactErrors.phone_number ? "has-error" : ""}`}>
+            <label htmlFor="contact-phone">Phone number</label>
+            <input
+              id="contact-phone"
+              type="tel"
+              value={cp.phone_number ?? ""}
+              onChange={(e) => {
+                setContactPreferences({ ...cp, phone_number: e.target.value });
+                if (contactErrors.phone_number) {
+                  const newErrors = { ...contactErrors };
+                  delete newErrors.phone_number;
+                  setContactErrors(newErrors);
+                }
+              }}
+              aria-invalid={!!contactErrors.phone_number}
+              aria-describedby={contactErrors.phone_number ? "phone-error" : "phone-hint"}
+            />
+            <p id="phone-hint" className="field-hint">
+              UK numbers only. We are unable to contact international numbers.
+            </p>
+            {contactErrors.phone_number && (
+              <FieldError id="phone-error" message={contactErrors.phone_number} />
+            )}
+          </div>
+        )}
+
+        {wantsEmail && (
+          <div className={`field ${contactErrors.email_address ? "has-error" : ""}`}>
+            <label htmlFor="contact-email">Email address</label>
+            <input
+              id="contact-email"
+              type="email"
+              value={cp.email_address ?? ""}
+              onChange={(e) => {
+                setContactPreferences({ ...cp, email_address: e.target.value });
+                if (contactErrors.email_address) {
+                  const newErrors = { ...contactErrors };
+                  delete newErrors.email_address;
+                  setContactErrors(newErrors);
+                }
+              }}
+              aria-invalid={!!contactErrors.email_address}
+              aria-describedby={contactErrors.email_address ? "email-error" : undefined}
+            />
+            {contactErrors.email_address && (
+              <FieldError id="email-error" message={contactErrors.email_address} />
+            )}
+          </div>
+        )}
+
+        {wantsPhone && (
+          <div className="field">
+            <label htmlFor="contact-best-time">Best time to call <span className="field-label-optional">(optional)</span></label>
+            <input
+              id="contact-best-time"
+              type="text"
+              placeholder="e.g. Mornings before 11am"
+              value={cp.best_time_to_call ?? ""}
+              onChange={(e) =>
+                setContactPreferences({ ...cp, best_time_to_call: e.target.value })
+              }
+            />
+          </div>
         )}
       </div>
 
-      {wantsPhoneOrText && (
-        <div className="field">
-          <label htmlFor="contact-phone">Phone number</label>
-          <input
-            id="contact-phone"
-            type="tel"
-            value={cp.phone_number ?? ""}
-            onChange={(e) => {
-              setContactPreferences({ ...cp, phone_number: e.target.value });
-              if (contactErrors.phone_number) setContactErrors({ ...contactErrors, phone_number: "" });
-            }}
-          />
-          <p style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>
-            UK numbers only. We are unable to contact international numbers.
-          </p>
-          {contactErrors.phone_number && (
-            <p style={{ color: "var(--danger)", fontSize: "13px", marginTop: "2px" }}>
-              {contactErrors.phone_number}
-            </p>
-          )}
-        </div>
-      )}
+      <div className="form-section">
+        {/* Doctor preference — list path */}
+        {hasDoctorList ? (
+          <>
+            <div className="field">
+              <label htmlFor="doctor-preference">Which doctor would you prefer to hear from?</label>
+              <select
+                id="doctor-preference"
+                value={doctorSelection}
+                onChange={(e) => {
+                  setDoctorSelection(e.target.value);
+                  if (contactErrors.free_text_doctor) {
+                    const newErrors = { ...contactErrors };
+                    delete newErrors.free_text_doctor;
+                    setContactErrors(newErrors);
+                  }
+                }}
+                className="combobox-input"
+              >
+                <option value="any">Soonest available doctor</option>
+                <option value="other">Someone not on this list</option>
+                {doctors.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-      {wantsEmail && (
-        <div className="field">
-          <label htmlFor="contact-email">Email address</label>
-          <input
-            id="contact-email"
-            type="email"
-            value={cp.email_address ?? ""}
-            onChange={(e) => {
-              setContactPreferences({ ...cp, email_address: e.target.value });
-              if (contactErrors.email_address) setContactErrors({ ...contactErrors, email_address: "" });
-            }}
-          />
-          {contactErrors.email_address && (
-            <p style={{ color: "var(--danger)", fontSize: "13px", marginTop: "2px" }}>
-              {contactErrors.email_address}
-            </p>
-          )}
-        </div>
-      )}
-
-      {wantsPhone && (
-        <div className="field">
-          <label htmlFor="contact-best-time">Best time to call (optional)</label>
-          <input
-            id="contact-best-time"
-            type="text"
-            placeholder="e.g. Mornings before 11am"
-            value={cp.best_time_to_call ?? ""}
-            onChange={(e) =>
-              setContactPreferences({ ...cp, best_time_to_call: e.target.value })
-            }
-          />
-        </div>
-      )}
-
-      {/* Doctor preference — list path */}
-      {hasDoctorList ? (
-        <>
-          <div className="field" style={{ marginTop: "24px" }}>
-            <label htmlFor="doctor-preference">Which doctor would you prefer to hear from?</label>
-            <select
-              id="doctor-preference"
-              value={doctorSelection}
-              onChange={(e) => {
-                setDoctorSelection(e.target.value);
-                if (contactErrors.free_text_doctor) {
-                  setContactErrors({ ...contactErrors, free_text_doctor: "" });
-                }
-              }}
-              style={{ marginTop: "8px" }}
-            >
-              <option value="any">Soonest available doctor</option>
-              <option value="other">Someone not on this list</option>
-              {doctors.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="field">
-            <label htmlFor="usual-doctor-name">
-              If your preferred doctor is not listed above, please write their name here
-            </label>
-            <input
-              id="usual-doctor-name"
-              type="text"
-              value={freeTextDoctor}
-              onChange={(e) => {
-                setFreeTextDoctor(e.target.value);
-                if (contactErrors.free_text_doctor) {
-                  setContactErrors({ ...contactErrors, free_text_doctor: "" });
-                }
-              }}
-            />
-            {contactErrors.free_text_doctor && (
-              <p style={{ color: "var(--danger)", fontSize: "13px", marginTop: "2px" }}>
-                {contactErrors.free_text_doctor}
-              </p>
-            )}
-          </div>
-        </>
-      ) : (
-        /* Doctor preference — legacy path (no list configured or fetch failed) */
-        <>
-          <div className="field" style={{ marginTop: "24px" }}>
-            <label htmlFor="doctor-preference">Which doctor would you prefer to hear from?</label>
-            <select
-              id="doctor-preference"
-              value={cp.doctor_preference}
-              onChange={(e) => {
-                setContactPreferences({
-                  ...cp,
-                  doctor_preference: e.target.value as "any" | "usual",
-                  usual_doctor_name: null,
+            <div className={`field ${contactErrors.free_text_doctor ? "has-error" : ""}`}>
+              <label htmlFor="usual-doctor-name">
+                If your preferred doctor is not listed above, please write their name here
+              </label>
+              <input
+                id="usual-doctor-name"
+                type="text"
+                value={freeTextDoctor}
+                onChange={(e) => {
+                  setFreeTextDoctor(e.target.value);
+                  if (contactErrors.free_text_doctor) {
+                    const newErrors = { ...contactErrors };
+                    delete newErrors.free_text_doctor;
+                    setContactErrors(newErrors);
+                  }
+                }}
+                aria-invalid={!!contactErrors.free_text_doctor}
+                aria-describedby={contactErrors.free_text_doctor ? "free-text-doctor-error" : undefined}
+              />
+              {contactErrors.free_text_doctor && (
+                <FieldError id="free-text-doctor-error" message={contactErrors.free_text_doctor} />
+              )}
+            </div>
+          </>
+        ) : (
+          /* Doctor preference — legacy path (no list configured or fetch failed) */
+          <>
+            <div className="field">
+              <label htmlFor="doctor-preference">Which doctor would you prefer to hear from?</label>
+              <select
+                id="doctor-preference"
+                value={cp.doctor_preference}
+                onChange={(e) => {
+                  setContactPreferences({
+                    ...cp,
+                    doctor_preference: e.target.value as "any" | "usual",
+                    usual_doctor_name: null,
                 });
                 if (contactErrors.usual_doctor_name) {
-                  setContactErrors({ ...contactErrors, usual_doctor_name: "" });
+                  const newErrors = { ...contactErrors };
+                  delete newErrors.usual_doctor_name;
+                  setContactErrors(newErrors);
                 }
               }}
-              style={{ marginTop: "8px" }}
+              className="combobox-input"
             >
               <option value="any">Soonest available doctor</option>
               <option value="usual">I would prefer my usual doctor</option>
@@ -341,7 +385,7 @@ export default function ContactScreen({
           </div>
 
           {cp.doctor_preference === "usual" && (
-            <div className="field">
+            <div className={`field ${contactErrors.usual_doctor_name ? "has-error" : ""}`}>
               <label htmlFor="usual-doctor-name">Please enter your doctor's name</label>
               <input
                 id="usual-doctor-name"
@@ -350,19 +394,22 @@ export default function ContactScreen({
                 onChange={(e) => {
                   setContactPreferences({ ...cp, usual_doctor_name: e.target.value });
                   if (contactErrors.usual_doctor_name) {
-                    setContactErrors({ ...contactErrors, usual_doctor_name: "" });
+                    const newErrors = { ...contactErrors };
+                    delete newErrors.usual_doctor_name;
+                    setContactErrors(newErrors);
                   }
                 }}
+                aria-invalid={!!contactErrors.usual_doctor_name}
+                aria-describedby={contactErrors.usual_doctor_name ? "usual-doctor-error" : undefined}
               />
               {contactErrors.usual_doctor_name && (
-                <p style={{ color: "var(--danger)", fontSize: "13px", marginTop: "2px" }}>
-                  {contactErrors.usual_doctor_name}
-                </p>
+                <FieldError id="usual-doctor-error" message={contactErrors.usual_doctor_name} />
               )}
             </div>
           )}
         </>
       )}
+      </div>
 
       {screenError && <InlineError message={screenError} />}
 
