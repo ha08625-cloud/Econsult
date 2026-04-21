@@ -44,14 +44,17 @@ describe("FreeTextScreen", () => {
     mockInitForm.mockReset();
   });
 
-  it("renders loading state when presentationState.status is loading", () => {
+it("renders loading state with correct ARIA role when presentationState.status is loading", () => {
     render(
       <FreeTextScreen
         {...defaultProps}
         presentationState={{ status: "loading" }}
       />
     );
-    expect(screen.getByText(/loading/i)).toBeTruthy();
+    const statusContainer = screen.getByRole("status");
+    expect(statusContainer).toBeTruthy();
+    expect(statusContainer).toHaveAttribute("aria-live", "polite");
+    expect(statusContainer).toHaveTextContent(/loading/i);
   });
 
   it("renders error state when presentationState.status is error", () => {
@@ -154,3 +157,20 @@ describe("FreeTextScreen", () => {
     expect(screen.getByText(/server error/i)).toBeTruthy();
   });
 });
+
+it("marks the textarea as invalid when a submission error occurs", async () => {
+    mockInitForm.mockRejectedValueOnce(new Error("Server error"));
+
+    render(<FreeTextScreen {...defaultProps} />);
+    
+    const textarea = screen.getByRole("textbox", { name: /describe your symptoms/i });
+    expect(textarea.hasAttribute("aria-invalid")).toBe(false); // Valid initially
+
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+
+    // Wait for the inline error to appear, which indicates state has updated
+    expect(await screen.findByText(/server error/i)).toBeTruthy();
+    
+    // Now check the textarea
+    expect(textarea.getAttribute("aria-invalid")).toBe("true");
+  });

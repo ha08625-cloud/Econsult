@@ -220,16 +220,20 @@ label {
   margin-bottom: var(--space-sm);
 }
 
-input[type="text"] {
+input[type="text"],
+textarea {
   width: 100%;
   padding: 12px;
   border: 2px solid var(--border);
   border-radius: var(--radius);
   font-size: 16px;
+  font-family: inherit;
+  resize: vertical;
   transition: border-color 0.15s;
 }
 
-input[type="text"]:focus {
+input[type="text"]:focus,
+textarea:focus {
   border-color: var(--border-focus);
   outline: 4px solid var(--nhs-blue-light);
 }

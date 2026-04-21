@@ -39,7 +39,14 @@ export default function FreeTextScreen({
   if (presentationState.status === "loading") {
     return (
       <PageShell practiceName={practiceName}>
-        <p className="status-text">Loading...</p>
+        <div 
+          className="status-container" 
+          style={{ padding: 'var(--space-xl)' }}
+          role="status"
+          aria-live="polite"
+        >
+          <p className="status-text">Loading...</p>
+        </div>
       </PageShell>
     );
   }
@@ -50,10 +57,10 @@ export default function FreeTextScreen({
         <h1>Something went wrong</h1>
         <InlineError message={presentationState.message} />
         <div className="btn-row">
-          <button className="btn btn-secondary" onClick={onBack}>
+          <button type="button" className="btn btn-secondary" onClick={onBack}>
             Back
           </button>
-          <button className="btn btn-primary" onClick={onRetry}>
+          <button type="button" className="btn btn-primary" onClick={onRetry}>
             Try again
           </button>
         </div>
@@ -111,6 +118,7 @@ export default function FreeTextScreen({
             if (screenError) setScreenError(null);
           }}
           rows={5}
+          aria-invalid={!!screenError}
         />
       </div>
 
@@ -118,6 +126,7 @@ export default function FreeTextScreen({
 
       <div className="btn-row">
         <button
+          type="button"
           className="btn btn-secondary"
           disabled={isSubmitting}
           onClick={onBack}
@@ -125,6 +134,7 @@ export default function FreeTextScreen({
           Back
         </button>
         <button
+          type="button"
           className="btn btn-primary"
           disabled={isSubmitting}
           onClick={handleContinue}
