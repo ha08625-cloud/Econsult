@@ -8,7 +8,7 @@ interface DoneScreenProps {
 export default function DoneScreen({ practiceName, practiceWasClosed }: DoneScreenProps) {
   return (
     <PageShell practiceName={practiceName}>
-      <div className="done-icon">
+      <div className="done-icon" aria-hidden="true">
         <svg
           width="24"
           height="24"
@@ -17,19 +17,25 @@ export default function DoneScreen({ practiceName, practiceWasClosed }: DoneScre
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <polyline points="20 6 9 17 4 12" />
         </svg>
       </div>
+      
       <h1>Consultation submitted</h1>
-      <p>Your consultation has been submitted successfully.</p>
+      
+      <p style={{ marginBottom: "var(--space-md)" }}>
+        Your consultation has been submitted successfully.
+      </p>
+      
       {practiceWasClosed ? (
-        <p style={{ color: "var(--text-muted)" }}>
+        <p className="screen-description">
           The practice is now closed — your submission will be reviewed on the
           next working day.
         </p>
       ) : (
-        <p style={{ color: "var(--text-muted)" }}>
+        <p className="screen-description">
           If you do not hear back from the practice within the timeframe
           indicated, please contact them directly.
         </p>

@@ -2,13 +2,21 @@ import { render, screen } from "@testing-library/react";
 import DoneScreen from "./DoneScreen";
 
 describe("DoneScreen", () => {
-  it("renders the checkmark SVG icon", () => {
-    render(<DoneScreen practiceWasClosed={false} />);
-    expect(document.querySelector(".done-icon svg")).not.toBeNull();
+  it("renders the checkmark SVG icon and hides it from screen readers", () => {
+    render(<DoneScreen practiceName={null} practiceWasClosed={false} />);
+    
+    const iconContainer = document.querySelector(".done-icon");
+    const svg = iconContainer?.querySelector("svg");
+    
+    expect(iconContainer).not.toBeNull();
+    expect(iconContainer?.getAttribute("aria-hidden")).toBe("true");
+    
+    expect(svg).not.toBeNull();
+    expect(svg?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("renders the after-hours message when practiceWasClosed is true", () => {
-    render(<DoneScreen practiceWasClosed={true} />);
+    render(<DoneScreen practiceName={null} practiceWasClosed={true} />);
     expect(
       screen.getByText(/your submission will be reviewed on the next working day/i)
     ).toBeTruthy();
@@ -18,7 +26,7 @@ describe("DoneScreen", () => {
   });
 
   it("renders the standard follow-up message when practiceWasClosed is false", () => {
-    render(<DoneScreen practiceWasClosed={false} />);
+    render(<DoneScreen practiceName={null} practiceWasClosed={false} />);
     expect(
       screen.getByText(/if you do not hear back from the practice/i)
     ).toBeTruthy();
