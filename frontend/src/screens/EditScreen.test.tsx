@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import EditScreen from "./EditScreen";
@@ -81,15 +81,19 @@ describe("EditScreen", () => {
     expect(screen.getByText("How long have you had symptoms?")).toBeTruthy();
   });
 
-  it("boolean questions render Yes and No radio buttons", () => {
+  it("boolean questions render Yes and No radio buttons within a fieldset", () => {
     render(<EditScreen {...defaultProps} />);
-    const radios = screen.getAllByRole("radio");
-    const labels = radios.map((r) => r.parentElement?.textContent?.trim());
-    expect(labels).toContain("Yes");
-    expect(labels).toContain("No");
+    
+    // Asserts the fieldset and legend structure is accessible
+    const group = screen.getByRole("group", { name: /do you have pain/i });
+    expect(group).toBeTruthy();
+
+    // Asserts label wrapping works natively
+    expect(within(group).getByLabelText("Yes")).toBeTruthy();
+    expect(within(group).getByLabelText("No")).toBeTruthy();
   });
 
-  it("text questions render a text input", () => {
+  it("text questions render a text input associated with its label", () => {
     render(
       <EditScreen
         {...defaultProps}
@@ -97,13 +101,13 @@ describe("EditScreen", () => {
         editableAnswers={{ duration: "" }}
       />
     );
-    // The additional-text textarea is always present, so there are two textboxes:
-    // one for the question input and one for additional information.
-    expect(screen.getAllByRole("textbox")).toHaveLength(2);
-    expect(screen.getByText("How long have you had symptoms?")).toBeTruthy();
+    
+    // This will fail if the htmlFor/id association is broken
+    const input = screen.getByLabelText("How long have you had symptoms?");
+    expect(input.tagName).toBe("INPUT");
   });
 
-  it("suggested questions render the suggested badge", () => {
+  it("suggested questions render the suggested badge and optional indicator", () => {
     render(
       <EditScreen
         {...defaultProps}
@@ -112,6 +116,7 @@ describe("EditScreen", () => {
       />
     );
     expect(screen.getByText(/pre-filled from your description/i)).toBeTruthy();
+    expect(screen.getByText("(optional)")).toBeTruthy();
   });
 
   it("Continue button is disabled when a required answer is missing", () => {
