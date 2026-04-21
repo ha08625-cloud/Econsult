@@ -25,10 +25,10 @@ export default function ReviewScreen({
     <PageShell practiceName={practiceName}>
       <h1>Review your answers</h1>
 
-      <h3>{clientState.condition_label}</h3>
+      <h2>{clientState.condition_label}</h2>
 
       {clientState.free_text && (
-        <div className="description-box mb-md">
+        <div className="description-box" style={{ marginBottom: "var(--space-md)" }}>
           {clientState.free_text}
         </div>
       )}
@@ -39,9 +39,9 @@ export default function ReviewScreen({
             <span className="review-question">{q.question_text}</span>
             <span className="review-answer">
               {q.current_value === null || q.current_value === "" ? (
-                <em style={{ color: "var(--text-muted)", fontWeight: 400 }}>
+                <span style={{ color: "var(--text-muted)" }}>
                   Not answered
-                </em>
+                </span>
               ) : String(q.current_value) === "true" ? (
                 "Yes"
               ) : String(q.current_value) === "false" ? (
@@ -56,8 +56,8 @@ export default function ReviewScreen({
 
       {clientState.additional_text && (
         <>
-          <h3>Additional information</h3>
-          <div className="description-box mb-md">
+          <h2>Additional information</h2>
+          <div className="description-box" style={{ marginBottom: "var(--space-md)" }}>
             {clientState.additional_text}
           </div>
         </>
@@ -65,13 +65,13 @@ export default function ReviewScreen({
 
       {photos.length > 0 && (
         <>
-          <h3>Photos ({photos.length})</h3>
+          <h2>Photos ({photos.length})</h2>
           <div
             style={{
               display: "flex",
               flexWrap: "wrap",
-              gap: "8px",
-              marginBottom: "8px",
+              gap: "var(--space-sm)",
+              marginBottom: "var(--space-sm)",
             }}
           >
             {photos.map((photo, index) => (
@@ -88,10 +88,13 @@ export default function ReviewScreen({
       )}
 
       {hasSafetyBlock && (
-        <div className="alert alert-danger">
-          <strong>Important — action required</strong>
+        <div className="alert alert-warning" role="alert">
+          <strong>
+            <span className="sr-only">Important: </span>
+            Action required
+          </strong>
           {safetyMessages.map((m) => (
-            <p key={m.rule_id}>{m.message}</p>
+            <p key={m.rule_id} style={{ marginTop: "var(--space-sm)" }}>{m.message}</p>
           ))}
         </div>
       )}

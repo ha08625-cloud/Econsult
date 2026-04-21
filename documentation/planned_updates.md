@@ -7,7 +7,6 @@
 - remove submissions after 7 days
 - add new end object DebugOutput with no confidential info
 - Add backup alternative SMTP provider 
-- Add a public_slug column - More flexibility, but adds complexity
 - HTTPS for web traffic
 - TLS for SMTP
 - encrypted database storage
@@ -36,6 +35,7 @@
 - contract with confidentiality clause (they cannot share the code), a non-compete clause (they cannot build a competing product using your work), and an assignment clause (anything they build for you belongs to you, not them).
 
 ### multi-tenancy updates
+- Add a public_slug column
 
 Alerting
 The industry standard for a solo developer on a small production system is Sentry on the free tier. You add roughly five lines of code to your FastAPI startup, and any unhandled exception or explicit sentry_sdk.capture_message() call with a critical level sends you an email. It integrates with Python in about ten minutes. The alternative many solo developers use is a simple email alert via the logging handler — Python's logging.handlers.SMTPHandler can email you directly on CRITICAL-level log events, and you already have SMTP configured in this project, so the infrastructure is already there.
