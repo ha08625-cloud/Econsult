@@ -164,7 +164,9 @@ it("marks the textarea as invalid when a submission error occurs", async () => {
     render(<FreeTextScreen {...defaultProps} />);
     
     const textarea = screen.getByRole("textbox", { name: /describe your symptoms/i });
-    expect(textarea.hasAttribute("aria-invalid")).toBe(false); // Valid initially
+    
+    // CHANGE THIS LINE: Check for the string "false" rather than attribute presence
+    expect(textarea.getAttribute("aria-invalid")).toBe("false");
 
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
 
