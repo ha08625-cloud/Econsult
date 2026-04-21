@@ -107,7 +107,7 @@ describe("EditScreen", () => {
     expect(input.tagName).toBe("INPUT");
   });
 
-  it("suggested questions render the suggested badge and optional indicator", () => {
+it("suggested questions render the suggested badge and optional indicator", () => {
     render(
       <EditScreen
         {...defaultProps}
@@ -115,8 +115,13 @@ describe("EditScreen", () => {
         editableAnswers={{ frequency: "Daily" }}
       />
     );
+    
     expect(screen.getByText(/pre-filled from your description/i)).toBeTruthy();
-    expect(screen.getByText("(optional)")).toBeTruthy();
+    
+    // Use getAllByText because "Additional information" and "Photos" 
+    // also statically render the "(optional)" indicator on this screen.
+    const optionalIndicators = screen.getAllByText("(optional)");
+    expect(optionalIndicators.length).toBeGreaterThanOrEqual(3);
   });
 
   it("Continue button is disabled when a required answer is missing", () => {
