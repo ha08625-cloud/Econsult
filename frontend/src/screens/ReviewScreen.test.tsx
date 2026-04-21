@@ -104,11 +104,14 @@ describe("ReviewScreen", () => {
     expect(screen.getByText(/seek urgent care immediately/i)).toBeTruthy();
     
     // Use a textContent matcher constrained by tagName to test the sr-only + visible text combo
+    // Bypassing testing-library's normalized `content` string in favor of native DOM `textContent`
+    // to avoid cross-browser or jsdom whitespace inconsistencies.
     expect(
-      screen.getByText((content, element) => {
+      screen.getByText((_, element) => {
+        const text = element?.textContent || "";
         return (
           element?.tagName === "STRONG" &&
-          content.replace(/\s+/g, " ").trim() === "Important: Action required"
+          /Important:\s*Action required/.test(text)
         );
       })
     ).toBeTruthy();
