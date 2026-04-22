@@ -21,19 +21,25 @@
 include .env
 export
 
-.PHONY: test test-integration test-all migrate-test
+.PHONY: test test-integration test-all migrate-test seed-test-db
 
 test:
 	python -m pytest tests/ -m "not integration" -v
 	cd frontend && npx vitest run
 
-test-integration:
+seed-test-db:
+	DATABASE_URL=$(TEST_DATABASE_URL) \
+	PRACTICE_EMAIL=test@example.com \
+	PRACTICE_NAME="Test Practice" \
+	python scripts/create_admin_user.py test-admin@example.com --create-practice
+
+test-integration: seed-test-db
 	python -m pytest tests/ -m integration -v
 
 test-all:
 	python -m pytest tests/ -m "not integration" -v
 	cd frontend && npx vitest run
-	python -m pytest tests/ -m integration -v
+	$(MAKE) test-integration
 
 migrate-test:
 	DATABASE_URL=$(TEST_DATABASE_URL) python -m alembic upgrade head

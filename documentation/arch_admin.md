@@ -31,7 +31,7 @@ The domain boundary invariant from the original router is inherited by all sub-r
 
 ### Authentication (`admin_context.py`, `auth_service.py`, `auth_repository.py`)
 
-Authentication is email-based MFA using time-limited one-time codes and HttpOnly session cookies.
+Authentication is exclusively email-based MFA using time-limited one-time codes and HttpOnly session cookies. There is no bearer-token fallback — the MFA email flow is fast enough for local development.
 
 **MFA flow:**
 1. `POST /admin/auth/request-code` — validates email domain, looks up the user, checks the 60-second rate-limit cooldown, generates a 6-digit cryptographic code, hashes it with bcrypt, upserts it to `admin_auth_codes`, and sends it via `AdminDeliveryService`. If the email is not registered, returns 200 silently to prevent user enumeration.
@@ -41,17 +41,13 @@ Authentication is email-based MFA using time-limited one-time codes and HttpOnly
 **Session behaviour:**
 - Session TTL is 24 hours (`SESSION_TTL_MINUTES = 60 * 24` in `admin_context.py`).
 - Single-session enforcement: `AuthRepository.create_session` deletes all existing sessions for the user before inserting the new one, in a single transaction. This means a new login invalidates any existing session from another browser.
-- `require_admin` reads the session cookie, calls `auth_repo.get_session_context(session_id)`, and raises HTTP 401 if the session is absent, not found, or expired. The expiry check is done in SQL (`expires_at > NOW()`) to avoid clock-skew.
-
-**DEV_MODE bearer-token fallback:**
-- When `DEV_MODE=1` and no session cookie is present, `require_admin` falls back to the original bearer-token path for backward compatibility. This keeps existing admin endpoint tests passing during the transition.
-- If `ADMIN_TOKEN` is set in production alongside MFA, a startup warning is logged (both auth methods active). `ADMIN_TOKEN` is no longer required in production — MFA replaces it.
-- The bearer fallback will be removed in a future cleanup pass once MFA is fully deployed.
+- `require_admin` reads the session cookie, calls `auth_repo.get_session_context(session_id)`, and raises HTTP 401 if the cookie is absent, not found, or expired. The expiry check is done in SQL (`expires_at > NOW()`) to avoid clock-skew.
 
 **`admin_context.py` constraints:**
 - `require_admin` is the **sole authentication boundary** for all admin endpoints. Every admin endpoint that requires auth declares `Depends(require_admin)`. The three auth endpoints (`request-code`, `verify`, `logout`) are deliberately unauthenticated.
-- `auth_method` is a plain string (`"session_cookie"` | `"bearer_token"` | `"dev_any"`), not an enum.
 - **This module must never import any project module other than `app.core.db`.** Only stdlib, FastAPI, and psycopg2. The `AuthProvider` Protocol in this module documents the subset of `AuthRepository` used here without importing it directly.
+
+**`AdminContext` fields:** `practice_id`, `user_id`, `role`, `actor_email`, and `session_id` are all populated by `require_admin` from the session record. `user_id` is the UUID string of the `admin_users` row and is used for identity checks (e.g. self-deletion guards). All fields are always present — there is no fallback path that leaves them as `None`.
 
 **Timing attack mitigation:**
 `verify_mfa_code` in `auth_service.py` uses `_fixed_delay()` to ensure every verification attempt takes at least 300ms regardless of outcome. This prevents an attacker from learning which gate failed from response time. Uses `time.sleep` (not `asyncio.sleep`) because all repository calls are synchronous psycopg2. Revisit with `run_in_executor` if concurrent load ever becomes a concern.
@@ -108,8 +104,6 @@ Each mutating endpoint reads the "before" state, then wraps both the repository 
 **Auth events** (which have no paired mutation) use standalone inserts — `log_event` opens and commits its own connection when `conn=None`.
 
 **IP address extraction** is centralised in `app/utils/http_utils.py` (`extract_ip`). It reads `X-Forwarded-For` first (taking the first value, the original client), then `X-Real-IP`, then `request.client.host`. This logic lives in one place only — not repeated at each call site.
-
-**`AdminContext` fields:** `actor_email` and `session_id` are populated by `require_admin` from the session record. For the DEV_MODE bearer fallback, `session_id` is `None` and `actor_email` is `"dev@local"`.
 
 **Read endpoint:** `GET /admin/audit-log` accepts query parameters `cursor`, `from_date`, `to_date`, `actor`, `action` (prefix match), `limit` (default 50, max 200). Pagination uses an opaque base64 cursor encoding `last_id` and `last_occurred_at`. The cursor and filters are independent — discarding the cursor and re-querying when a filter changes is correct behaviour.
 

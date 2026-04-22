@@ -8,7 +8,7 @@
 
 The FastAPI application entry point, startup validation, resource initialisation, router registration, error handling, and static file serving.
 
-**Key files:** `main.py`, `request_validation.py`, `app/routers/public_router.py`, `app/routers/admin_router.py`, `app/routers/admin/` (sub-package), `app/routers/form_router.py`, `app/core/dependencies.py`, `app/services/delivery/delivery_service.py`
+**Key files:** `main.py`, `request_validation.py`, `app/routers/public_router.py`, `app/routers/admin_router.py`, `app/routers/form_router.py`, `app/core/dependencies.py`, `app/services/delivery/delivery_service.py`
 
 ---
 
@@ -18,7 +18,6 @@ The FastAPI application entry point, startup validation, resource initialisation
 - Clinical presentation metadata (e.g. `condition_label`) is resolved from the registry in the router handler and passed explicitly to engine adapters. It never enters the core engine.
 - Repositories and registries are initialised **once at startup** and stored in `app.state`. Routers access them exclusively via dependency provider functions in `app/core/dependencies.py` — never via direct `request.app.state` access inside handler bodies, and never via direct imports from `main.py`. This prevents circular imports and keeps handler signatures self-documenting.
 - The `/admin` prefix and `"admin"` tag are applied when the admin router is registered in `main.py`, not inside `admin_router.py`. This keeps the router decoupled from its mount point.
-- `admin_router.py` is a thin orchestrator only. It registers four sub-routers from `app/routers/admin/` and contains no route handlers itself. Per-domain tags (`admin-auth`, `admin-practice`, `admin-availability`, `admin-audit`) are applied at include time.
 - **All API routes must be registered before the static file mount block.** The catch-all static mount must come last or it will intercept API requests.
 
 ---
@@ -26,6 +25,8 @@ The FastAPI application entry point, startup validation, resource initialisation
 ## Startup Validation (Fail-Fast)
 
 Any failure in startup validation raises a `RuntimeError` and aborts. A misconfigured deployment must never silently degrade.
+
+The application does not seed or create database records at startup. All required records (practice, admin users) must be inserted before the application starts. See `docs/deployment_checklist.md`.
 
 **Startup sequence:**
 1. `import os`, `import logging`, and `init_telemetry("http-api")` execute — Sentry is initialised before any other internal import so that module-load failures (e.g. a failed Alembic migration) are captured by Sentry's default `sys.excepthook`
@@ -36,14 +37,12 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 
 **Validation rules enforced by `_validate_startup()`:**
 - `PRACTICE_ID` env var must be set.
-- If the practice record does not exist, it is **seeded automatically** from `PRACTICE_NAME` and `PRACTICE_EMAIL` env vars. This handles cloud deployments where the DB starts empty on container restart. It is safe to run on every startup — skips if the row already exists.
-- The database must contain **exactly one practice**. Multiple practices is a clinically unsafe configuration (cross-contamination risk) and aborts startup.
+- The practice record must exist in the database. If absent, startup aborts with instructions to run the deployment checklist.
 - The practice must have a non-empty email address.
-- Unless DEV_MODE=1: either MAILGUN_API_KEY+MAILGUN_DOMAIN(Mailgun HTTP) orSMTP_HOST+SMTP_USER+SMTP_PASSWORD(SMTP) must be set, plusEMAIL_FROMin both cases. Validation is handled by_validate_email_config().
-- Unless `DEV_MODE=1`: `INITIAL_ADMIN_EMAIL` and `ALLOWED_ADMIN_DOMAINS` must be set.
-- `INITIAL_ADMIN_EMAIL` domain is validated against `ALLOWED_ADMIN_DOMAINS` on **every startup** (not just first run). If the domain is not in the allowed list, startup aborts. This catches the case where domains are changed without updating the seed email.
-- If `admin_users` is empty for the practice, `INITIAL_ADMIN_EMAIL` is inserted as the first admin user with `role="admin"`. This seeding is idempotent — if the user already exists (unique constraint on email), the startup would crash; the count check guards against this.
-- `ADMIN_TOKEN` is **no longer required** in production — MFA replaces it. If `ADMIN_TOKEN` is set alongside MFA in production, a warning is logged (both auth methods active). In `DEV_MODE` without `ADMIN_TOKEN`, a warning is logged and any non-empty bearer token is accepted by admin endpoints via the DEV_MODE fallback in `require_admin`.
+- The database must contain **exactly one practice**. Multiple practices is a clinically unsafe configuration (cross-contamination risk) and aborts startup.
+- Unless `DEV_MODE=1`: either `MAILGUN_API_KEY` + `MAILGUN_DOMAIN` (Mailgun HTTP) or `SMTP_HOST` + `SMTP_USER` + `SMTP_PASSWORD` (SMTP) must be set, plus `EMAIL_FROM` in both cases. Validation is handled by `_validate_email_config()`.
+- Unless `DEV_MODE=1`: `ALLOWED_ADMIN_DOMAINS` must be set.
+- At least one admin user must exist for the practice. If none are found, startup aborts with instructions to run `scripts/create_admin_user.py`.
 
 **`app.state` values set by startup:**
 
@@ -61,8 +60,8 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 | `photo_repo` | PhotoRepository | Patient photo storage |
 | `delivery_repo` | DeliveryRepository | Delivery job queue |
 | `auth_repo` | AuthRepository | Admin MFA auth — users, codes, sessions |
-| delivery_service | DeliveryService | Clinical email delivery (Console, Mailgun HTTP, or SMTP) |
-| admin_delivery_service | AdminDeliveryService | MFA code email delivery (Console, Mailgun HTTP, or SMTP) |
+| `delivery_service` | DeliveryService | Clinical email delivery (Console, Mailgun HTTP, or SMTP) |
+| `admin_delivery_service` | AdminDeliveryService | MFA code email delivery (Console, Mailgun HTTP, or SMTP) |
 | `practice_name` | str \| None | Captured once for PDF generation |
 | `allowed_admin_domains` | str | Comma-separated permitted admin email domains |
 
@@ -83,8 +82,6 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 - Otherwise: `AdminDeliveryService` — sends via SMTP, separate connection from clinical path.
 
 Both console implementations raise `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental production use. Selection logic is mirrored in `worker_main.py` for the delivery worker process.
-
-Both console implementations raise `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental production use.
 
 ---
 

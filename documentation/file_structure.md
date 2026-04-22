@@ -20,6 +20,10 @@
 - `alembic/` — Alembic migration scripts.
 - `frontend/` — Patient-facing React app and Admin UI.
 - `data/` — Condition ruleset JSON files.
+- `scripts/` — One-time management commands for deployment and administration.
+  - `create_admin_user.py` — Inserts an admin user before first boot. Accepts `--create-practice` flag for CI use.
+- `docs/` — Architecture documents and operational guides.
+  - `deployment_checklist.md` — Step-by-step checklist for deploying to a new environment.
 
 ---
 
@@ -56,10 +60,12 @@ Business logic and orchestration.
 - `delivery_worker.py` — Delivery worker loop. *Imports: delivery_repository, attachment_repository, delivery_service, delivery_constants, sentry_sdk only.*
 - `pdf_worker.py` — PDF generation worker loop. *Imports: pdf_repository, photo_repository, submission_repository, attachment_repository, delivery_repository, pdf_formatter, pdf_constants, sentry_sdk only.*
 
-**`app/services/` (flat)**
+**`app/services/admin/`** (admin portal concerns - mirrors app/routers/admin/ subfolder)
 - `auth_service.py` — MFA auth business logic. *Imports: bcrypt, secrets, time, datetime, errors. DB/delivery via interfaces only.*
 - `availability_orchestration.py` — Wires repository and service.
 - `availability_service.py` — Availability business logic.
+
+**`app/services/` (flat)**
 - `presentation_service.py` — Patient-facing presentation assembler. *Imports: condition_registry, practice_repository.*
 
 ### 2.3 `app/repositories/`

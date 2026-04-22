@@ -8,10 +8,9 @@ Single-tenant deployment:
 - PRACTICE_ID environment variable is required at startup
 - The practice must exist in the database with a valid email
 - The database must contain exactly one practice
+- The database must contain at least one admin user for the practice
 - In production, either MAILGUN_API_KEY or all four SMTP variables must be set
-- ADMIN_TOKEN is now optional; MFA replaces it. If ADMIN_TOKEN is set in
-  production alongside MFA, a warning is logged (both auth methods active).
-- INITIAL_ADMIN_EMAIL and ALLOWED_ADMIN_DOMAINS are required in production.
+- ALLOWED_ADMIN_DOMAINS is required in production
 
 Delivery service selection:
 - DEV_MODE=1: ConsoleDeliveryService / ConsoleAdminDeliveryService (no email sent)
@@ -60,7 +59,6 @@ from app.services.delivery.admin_delivery_service import (
     ConsoleAdminDeliveryService,
     MailgunHttpAdminDeliveryService,
 )
-from app.services.admin.auth_service import validate_admin_domain
 from app.routers.admin_router import router as admin_router
 from app.routers.public_router import router as public_router
 from app.routers.form_router import router as form_router
@@ -81,9 +79,9 @@ def _require_env(name: str) -> str:
     return value
 
 
-# Intentionally duplicated in admin_context.py. That module must never
-# import any project module (see arch_admin.md), so this cannot be shared.
 def _is_dev_mode() -> bool:
+    # Intentionally duplicated in admin_context.py. That module must never
+    # import any project module (see arch_admin.md), so this cannot be shared.
     return os.environ.get("DEV_MODE", "").lower() in ("1", "true")
 
 
@@ -93,19 +91,24 @@ def _validate_startup(
 ) -> str:
     practice_id = _require_env("PRACTICE_ID")
 
-    # Seed the practice record if it does not exist.
-    # Handles cloud deployments where the database starts empty on every
-    # container restart. Safe to run on every startup - skips if already present.
-    if not practice_repo.practice_exists(practice_id):
-        practice_name = os.environ.get("PRACTICE_NAME", practice_id)
-        practice_email = os.environ.get("PRACTICE_EMAIL", "demo@demo.net")
-        logger.info("Practice '%s' not found - seeding record now", practice_id)
-        practice_repo.create_practice(
-            practice_id=practice_id,
-            name=practice_name,
-            email=practice_email,
+    # --- Practice existence check ---
+    # The practice record must be inserted before the application starts.
+    # See docs/deployment_checklist.md and scripts/create_admin_user.py.
+    practice = practice_repo.get_practice(practice_id)
+    if practice is None:
+        raise RuntimeError(
+            f"Practice '{practice_id}' not found in database. "
+            "Insert the practice record before starting the application. "
+            "See docs/deployment_checklist.md."
         )
 
+    if not practice.get("email", "").strip():
+        raise RuntimeError(
+            f"Practice '{practice_id}' has no email address configured. "
+            "Update the practice record with a valid email before starting."
+        )
+
+    # --- Single-tenant guard ---
     count = practice_repo.count_practices()
     if count > 1:
         raise RuntimeError(
@@ -115,65 +118,37 @@ def _validate_startup(
             "Aborting startup."
         )
 
-    practice = practice_repo.get_practice(practice_id)
-    if practice is None:
-        raise RuntimeError(
-            f"PRACTICE_ID '{practice_id}' not found in database. "
-            "Create the practice record before starting the application."
-        )
-
-    if not practice.get("email", "").strip():
-        raise RuntimeError(
-            f"Practice '{practice_id}' has no email address configured. "
-            "Update the practice record with a valid email before starting."
-        )
-
+    # --- Email delivery config ---
     if not _is_dev_mode():
         _validate_email_config()
 
-    # --- INITIAL_ADMIN_EMAIL and ALLOWED_ADMIN_DOMAINS ---
+    # --- Admin domain config ---
     # Required in production. In DEV_MODE, absence is allowed but logged.
-    initial_admin_email = os.environ.get("INITIAL_ADMIN_EMAIL", "").strip()
     allowed_admin_domains = os.environ.get("ALLOWED_ADMIN_DOMAINS", "").strip()
-
     if not _is_dev_mode():
-        if not initial_admin_email:
-            raise RuntimeError(
-                "Required environment variable not set: INITIAL_ADMIN_EMAIL. "
-                "Set this to the email address of the first admin user."
-            )
         if not allowed_admin_domains:
             raise RuntimeError(
                 "Required environment variable not set: ALLOWED_ADMIN_DOMAINS. "
                 "Set this to a comma-separated list of permitted admin email domains "
                 "(e.g. 'nhs.net,gov.uk')."
             )
-
-    # Validate that the seed email's domain is in the allowed list.
-    # Runs on every startup to catch the case where domains are changed
-    # without updating the seed email.
-    if initial_admin_email and allowed_admin_domains:
-        if not validate_admin_domain(initial_admin_email, allowed_admin_domains):
-            raise RuntimeError(
-                f"INITIAL_ADMIN_EMAIL domain is not in ALLOWED_ADMIN_DOMAINS. "
-                f"Email: '{initial_admin_email}', "
-                f"Allowed domains: '{allowed_admin_domains}'. "
-                "Update one of these environment variables before starting."
+    else:
+        if not allowed_admin_domains:
+            logger.warning(
+                "ALLOWED_ADMIN_DOMAINS is not set. "
+                "This is required in production but permitted in DEV_MODE."
             )
 
-        # Seed the initial admin user if no users exist for this practice.
-        user_count = auth_repo.count_users_for_practice(practice_id)
-        if user_count == 0:
-            logger.info(
-                "No admin users found for practice '%s' — seeding initial admin: %s",
-                practice_id,
-                initial_admin_email,
-            )
-            auth_repo.insert_user(
-                email=initial_admin_email,
-                practice_id=practice_id,
-                role="admin",
-            )
+    # --- Admin user existence check ---
+    # At least one admin user must exist before the application starts.
+    # Use scripts/create_admin_user.py to insert the first user.
+    user_count = auth_repo.count_users_for_practice(practice_id)
+    if user_count == 0:
+        raise RuntimeError(
+            f"No admin users found for practice '{practice_id}'. "
+            "Use scripts/create_admin_user.py to add an admin user before starting. "
+            "See docs/deployment_checklist.md."
+        )
 
     return practice_id
 
@@ -192,32 +167,26 @@ def _validate_email_config() -> None:
     if not os.environ.get("EMAIL_FROM"):
         raise RuntimeError(
             "Required environment variable not set: EMAIL_FROM. "
-            "Set DEV_MODE=1 to skip email sending during development."
+            "Set this to the sender address for outgoing emails."
         )
 
-    if os.environ.get("MAILGUN_API_KEY"):
-        # Mailgun HTTP path — check the Mailgun-specific variable.
-        if not os.environ.get("MAILGUN_DOMAIN"):
-            raise RuntimeError(
-                "MAILGUN_API_KEY is set but MAILGUN_DOMAIN is missing. "
-                "Both are required for Mailgun HTTP delivery."
-            )
-        logger.info("Email delivery: Mailgun HTTP API selected.")
-    else:
-        # SMTP path — check all four SMTP variables.
-        for var in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"):
-            if not os.environ.get(var):
-                raise RuntimeError(
-                    f"Required email environment variable not set: {var}. "
-                    "Either set MAILGUN_API_KEY + MAILGUN_DOMAIN for Mailgun HTTP, "
-                    "or set SMTP_HOST + SMTP_USER + SMTP_PASSWORD for SMTP. "
-                    "Set DEV_MODE=1 to skip email sending during development."
-                )
-        logger.info("Email delivery: SMTP selected.")
+    has_mailgun = bool(
+        os.environ.get("MAILGUN_API_KEY") and os.environ.get("MAILGUN_DOMAIN")
+    )
+    has_smtp = bool(
+        os.environ.get("SMTP_HOST")
+        and os.environ.get("SMTP_USER")
+        and os.environ.get("SMTP_PASSWORD")
+    )
+
+    if not has_mailgun and not has_smtp:
+        raise RuntimeError(
+            "No email delivery configuration found. "
+            "Set either MAILGUN_API_KEY + MAILGUN_DOMAIN (Mailgun HTTP) "
+            "or SMTP_HOST + SMTP_USER + SMTP_PASSWORD (SMTP)."
+        )
 
 
-# ---------------------------------------------------------------------------
-# Application factory
 # ---------------------------------------------------------------------------
 
 # Resolve paths relative to the project root.
@@ -256,7 +225,6 @@ presentation_service = PresentationService(registry, practice_repo)
 
 # Startup validation -- runs at import time (when FastAPI loads the module).
 # Any failure here prevents the application from starting.
-# Also seeds the practice record and initial admin user if they do not exist.
 # The "startup" tag is set unconditionally — sentry_sdk.set_tag is a no-op
 # when Sentry is not initialised, so no guard is needed.
 sentry_sdk.set_tag("phase", "startup")

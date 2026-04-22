@@ -72,8 +72,7 @@ jobs:
       DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
       TEST_DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
       PRACTICE_ID: test-practice
-      PRACTICE_NAME: Test Practice
-      PRACTICE_EMAIL: test@example.com
+      ALLOWED_ADMIN_DOMAINS: example.com
       DEV_MODE: "1"
 
     steps:
@@ -97,6 +96,12 @@ jobs:
 
       - name: Run Alembic migrations
         run: python -m alembic upgrade head
+
+      - name: Seed test database
+        run: |
+          PRACTICE_EMAIL=test@example.com \
+          PRACTICE_NAME="Test Practice" \
+          python scripts/create_admin_user.py test-admin@example.com --create-practice
 
       - name: Run integration tests
         run: python -m pytest tests/ -m integration -v
