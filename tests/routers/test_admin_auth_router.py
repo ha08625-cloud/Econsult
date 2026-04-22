@@ -4,7 +4,7 @@ tests/test_admin_auth_router.py
 Tests for admin_context.py and admin_auth_router.py.
 
 Covers:
-1. General Auth Behaviour (testing session vs DEV_MODE token)
+1. General Auth Behaviour (session cookie path)
 2. MFA Request Code Endpoint
 3. MFA Verify Endpoint
 4. Logout Endpoint
@@ -22,15 +22,14 @@ from tests.helpers.admin_test_helpers import (
     make_test_app,
     StubAuthRepo,
     StubAdminDeliveryService,
+    TEST_SESSION_COOKIE,
 )
 
 
 # ---------------------------------------------------------------------------
 # Section 1: Auth behaviour (admin_context.py)
 # ---------------------------------------------------------------------------
-# We test this against GET /admin/conditions, which is a protected route.
-# Even though the route lives in the practice router, it serves as the perfect
-# test bed for the require_admin dependency.
+# Tested against GET /admin/conditions, which is a protected route.
 
 class TestAuthBehaviour(unittest.TestCase):
 
@@ -39,47 +38,21 @@ class TestAuthBehaviour(unittest.TestCase):
         self.app = make_test_app()
         self.client = TestClient(self.app, raise_server_exceptions=True)
 
-    def _get(self, headers=None):
-        return self.client.get("/admin/conditions", headers=headers or {})
+    def _get(self, cookies=None):
+        return self.client.get("/admin/conditions", cookies=cookies or {})
 
-    def test_missing_authorization_header_returns_401(self):
+    def test_no_session_cookie_returns_401(self):
         res = self._get()
         self.assertEqual(res.status_code, 401)
 
-    def test_empty_bearer_value_returns_401(self):
-        # HTTPBearer with auto_error=False returns None for malformed header;
-        # our code then raises 401
-        res = self._get(headers={"Authorization": "Bearer "})
+    def test_invalid_session_cookie_returns_401(self):
+        # StubAuthRepo returns None for any session ID other than TEST_SESSION_ID.
+        res = self._get(cookies={"session_id": "not-a-real-session"})
         self.assertEqual(res.status_code, 401)
 
-    def test_wrong_token_when_admin_token_set_returns_401(self):
-        os.environ["ADMIN_TOKEN"] = "correct-token"
-        os.environ["DEV_MODE"] = "1"
-        try:
-            res = self._get(headers={"Authorization": "Bearer wrong-token"})
-            self.assertEqual(res.status_code, 401)
-        finally:
-            del os.environ["ADMIN_TOKEN"]
-            del os.environ["DEV_MODE"]
-
-    def test_correct_token_when_admin_token_set_returns_200(self):
-        os.environ["ADMIN_TOKEN"] = "correct-token"
-        os.environ["DEV_MODE"] = "1"
-        try:
-            res = self._get(headers={"Authorization": "Bearer correct-token"})
-            self.assertEqual(res.status_code, 200)
-        finally:
-            del os.environ["ADMIN_TOKEN"]
-            del os.environ["DEV_MODE"]
-
-    def test_any_nonempty_token_accepted_in_dev_mode_without_admin_token(self):
-        os.environ["DEV_MODE"] = "1"
-        os.environ.pop("ADMIN_TOKEN", None)
-        try:
-            res = self._get(headers={"Authorization": "Bearer anything"})
-            self.assertEqual(res.status_code, 200)
-        finally:
-            del os.environ["DEV_MODE"]
+    def test_valid_session_cookie_returns_200(self):
+        res = self._get(cookies=TEST_SESSION_COOKIE)
+        self.assertEqual(res.status_code, 200)
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +115,8 @@ class TestRequestMfaCode(unittest.TestCase):
 
     def _make_client(self, auth_repo=None, delivery_service=None):
         from fastapi.testclient import TestClient
+        # DEV_MODE is set so the verify endpoint sets secure=False on the
+        # session cookie, allowing it to work over plain HTTP in tests.
         os.environ["DEV_MODE"] = "1"
         app = make_test_app(auth_repo=auth_repo, delivery_service=delivery_service)
         return TestClient(app, raise_server_exceptions=False)
@@ -191,7 +166,7 @@ class TestRequestMfaCode(unittest.TestCase):
 
     def test_email_normalised_to_lowercase(self):
         user = {"id": "user-uuid", "email": "admin@nhs.net",
-                "practice_id": "test_practice", "role": "admin"}
+                "practice_id": "test_practice"}
         repo = SpyAuthRepo(user=user)
         delivery = StubAdminDeliveryService()
         client = self._make_client(auth_repo=repo, delivery_service=delivery)
@@ -211,6 +186,8 @@ class TestVerifyMfaCode(unittest.TestCase):
 
     def _make_client(self, auth_repo=None):
         from fastapi.testclient import TestClient
+        # DEV_MODE is set so the session cookie is set without Secure,
+        # allowing it to work over plain HTTP in tests.
         os.environ["DEV_MODE"] = "1"
         app = make_test_app(auth_repo=auth_repo)
         return TestClient(app, raise_server_exceptions=False)
@@ -230,7 +207,7 @@ class TestVerifyMfaCode(unittest.TestCase):
         code = "123456"
         hashed = bcrypt.hashpw(code.encode(), bcrypt.gensalt()).decode()
         user = {"id": "user-uuid", "email": "admin@nhs.net",
-                "practice_id": "test_practice", "role": "admin"}
+                "practice_id": "test_practice"}
         record = {
             "email": "admin@nhs.net",
             "hashed_code": hashed,
@@ -288,7 +265,7 @@ class TestVerifyMfaCode(unittest.TestCase):
 
     def test_no_code_record_returns_422(self):
         user = {"id": "user-uuid", "email": "admin@nhs.net",
-                "practice_id": "test_practice", "role": "admin"}
+                "practice_id": "test_practice"}
         repo = SpyAuthRepo(user=user, auth_code_record=None)
         client = self._make_client(auth_repo=repo)
         res = client.post(
@@ -304,7 +281,7 @@ class TestVerifyMfaCode(unittest.TestCase):
         code = "123456"
         hashed = bcrypt.hashpw(code.encode(), bcrypt.gensalt()).decode()
         user = {"id": "user-uuid", "email": "admin@nhs.net",
-                "practice_id": "test_practice", "role": "admin"}
+                "practice_id": "test_practice"}
         # expires_at in the past
         record = {
             "email": "admin@nhs.net",
@@ -328,7 +305,7 @@ class TestVerifyMfaCode(unittest.TestCase):
         code = "123456"
         hashed = bcrypt.hashpw(code.encode(), bcrypt.gensalt()).decode()
         user = {"id": "user-uuid", "email": "admin@nhs.net",
-                "practice_id": "test_practice", "role": "admin"}
+                "practice_id": "test_practice"}
         # attempts_count at maximum
         record = {
             "email": "admin@nhs.net",
@@ -356,6 +333,8 @@ class TestLogout(unittest.TestCase):
 
     def _make_client(self, auth_repo=None):
         from fastapi.testclient import TestClient
+        # DEV_MODE is set so the clearing cookie does not have Secure,
+        # matching the test environment's plain HTTP transport.
         os.environ["DEV_MODE"] = "1"
         app = make_test_app(auth_repo=auth_repo)
         return TestClient(app, raise_server_exceptions=False)

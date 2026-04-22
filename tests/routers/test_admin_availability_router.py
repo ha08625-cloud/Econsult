@@ -2,7 +2,7 @@
 Tests for admin_availability_router.py.
 
 Exercises the availability configuration, overrides, and exceptions endpoints.
-Relies on DEV_MODE=1 bearer token fallback for authentication.
+Authenticates via session cookie using TEST_SESSION_COOKIE from admin_test_helpers.
 
 Coverage:
   GET  /availability
@@ -14,7 +14,6 @@ Coverage:
   DELETE /availability/exceptions/{date}
 """
 
-import os
 import unittest
 import datetime
 from datetime import timezone
@@ -22,17 +21,12 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from tests.helpers.admin_test_helpers import make_test_app, dummy_conn
-
-VALID_AUTH = {"Authorization": "Bearer testtoken"}
+from tests.helpers.admin_test_helpers import make_test_app, dummy_conn, TEST_SESSION_COOKIE
 
 
 class TestAdminAvailabilityRouter(unittest.TestCase):
 
     def setUp(self):
-        os.environ["DEV_MODE"] = "1"
-        os.environ.pop("ADMIN_TOKEN", None)
-
         self._conn_patcher = patch(
             "app.routers.admin.admin_availability_router.get_conn", dummy_conn
         )
@@ -56,14 +50,13 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
 
     def tearDown(self):
         self._conn_patcher.stop()
-        os.environ.pop("DEV_MODE", None)
 
     # ---------------------------------------------------------------------------
     # GET /availability
     # ---------------------------------------------------------------------------
 
     def test_get_availability_returns_formatted_config(self):
-        res = self.client.get("/admin/availability", headers=VALID_AUTH)
+        res = self.client.get("/admin/availability", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(data["is_active"], True)
@@ -87,7 +80,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "close_time": "17:00",
             "closed_message": "Closed for lunch",
         }
-        res = self.client.put("/admin/availability", json=body, headers=VALID_AUTH)
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(data["weekly_open_days"], ["mon", "wed", "fri"])
@@ -102,7 +95,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "close_time": "18:00",
             "closed_message": None,
         }
-        res = self.client.put("/admin/availability", json=body, headers=VALID_AUTH)
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["closed_message"])
 
@@ -116,7 +109,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "close_time": "18:00",
             "closed_message": None,
         }
-        res = self.client.put("/admin/availability", json=body, headers=VALID_AUTH)
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
 
     def test_put_availability_auto_clears_override_when_deactivated(self):
@@ -131,7 +124,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "close_time": "18:00",
             "closed_message": None,
         }
-        res = self.client.put("/admin/availability", json=body, headers=VALID_AUTH)
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertFalse(data["is_active"])
@@ -146,7 +139,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "close_time": "18:00",
             "closed_message": None,
         }
-        res = self.client.put("/admin/availability", json=body, headers=VALID_AUTH)
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 422)
 
     def test_put_availability_invalid_day_returns_422(self):
@@ -157,7 +150,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "close_time": "18:00",
             "closed_message": None,
         }
-        res = self.client.put("/admin/availability", json=body, headers=VALID_AUTH)
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 422)
 
     def test_put_availability_equal_open_close_time_returns_422(self):
@@ -168,7 +161,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "close_time": "09:00",
             "closed_message": None,
         }
-        res = self.client.put("/admin/availability", json=body, headers=VALID_AUTH)
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 422)
 
     def test_put_availability_close_before_open_returns_422(self):
@@ -179,7 +172,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "close_time": "08:00",
             "closed_message": None,
         }
-        res = self.client.put("/admin/availability", json=body, headers=VALID_AUTH)
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 422)
 
     def test_put_availability_missing_is_active_returns_422(self):
@@ -188,7 +181,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "open_time": "08:00",
             "close_time": "18:00",
         }
-        res = self.client.put("/admin/availability", json=body, headers=VALID_AUTH)
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 422)
 
     # ---------------------------------------------------------------------------
@@ -203,7 +196,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "message": "Emergency closure",
         }
         res = self.client.post(
-            "/admin/availability/override", json=body, headers=VALID_AUTH
+            "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 200)
         data = res.json()
@@ -218,7 +211,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "message": None,
         }
         res = self.client.post(
-            "/admin/availability/override", json=body, headers=VALID_AUTH
+            "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["override_message"])
@@ -227,7 +220,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         naive = self.override_expires.replace(tzinfo=None).isoformat()
         body = {"status": "closed", "expires_at": naive, "message": None}
         res = self.client.post(
-            "/admin/availability/override", json=body, headers=VALID_AUTH
+            "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 422)
         self.assertIn("timezone offset", res.json()["error"]["message"])
@@ -239,7 +232,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "message": None,
         }
         res = self.client.post(
-            "/admin/availability/override", json=body, headers=VALID_AUTH
+            "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 422)
 
@@ -249,7 +242,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         ).isoformat()
         body = {"status": "closed", "expires_at": past, "message": None}
         res = self.client.post(
-            "/admin/availability/override", json=body, headers=VALID_AUTH
+            "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 422)
 
@@ -259,7 +252,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         ).isoformat()
         body = {"status": "closed", "expires_at": too_far, "message": None}
         res = self.client.post(
-            "/admin/availability/override", json=body, headers=VALID_AUTH
+            "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 422)
 
@@ -272,7 +265,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "test_practice", "closed", self.override_expires, "test"
         )
         res = self.client.delete(
-            "/admin/availability/override", headers=VALID_AUTH
+            "/admin/availability/override", cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 200)
         data = res.json()
@@ -282,7 +275,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
     def test_delete_override_idempotent_when_no_override_active(self):
         # No override set — should still return 200 cleanly.
         res = self.client.delete(
-            "/admin/availability/override", headers=VALID_AUTH
+            "/admin/availability/override", cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["override_status"])
@@ -292,7 +285,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
     # ---------------------------------------------------------------------------
 
     def test_get_exceptions_returns_empty_list_when_none_configured(self):
-        res = self.client.get("/admin/availability/exceptions", headers=VALID_AUTH)
+        res = self.client.get("/admin/availability/exceptions", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("exceptions", data)
@@ -302,7 +295,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         self.availability_repo.set_exception(
             "test_practice", self.future_date, "closed", None, None, "Holiday"
         )
-        res = self.client.get("/admin/availability/exceptions", headers=VALID_AUTH)
+        res = self.client.get("/admin/availability/exceptions", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(len(data["exceptions"]), 1)
@@ -325,7 +318,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         res = self.client.put(
             f"/admin/availability/exceptions/{date_str}",
             json=body,
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         data = res.json()
@@ -345,7 +338,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         res = self.client.put(
             f"/admin/availability/exceptions/{date_str}",
             json=body,
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         data = res.json()
@@ -368,7 +361,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         res = self.client.put(
             f"/admin/availability/exceptions/{date_str}",
             json=body,
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         data = res.json()
@@ -387,7 +380,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         res = self.client.put(
             f"/admin/availability/exceptions/{date_str}",
             json=body,
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -403,7 +396,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         res = self.client.put(
             f"/admin/availability/exceptions/{date_str}",
             json=body,
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -417,7 +410,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         res = self.client.put(
             "/admin/availability/exceptions/not-a-date",
             json=body,
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -432,7 +425,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         res = self.client.put(
             f"/admin/availability/exceptions/{date_str}",
             json=body,
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -446,7 +439,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         )
         date_str = self.future_date.isoformat()
         res = self.client.delete(
-            f"/admin/availability/exceptions/{date_str}", headers=VALID_AUTH
+            f"/admin/availability/exceptions/{date_str}", cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 204)
         self.assertIsNone(
@@ -456,13 +449,13 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
     def test_delete_exception_idempotent_when_no_exception_exists(self):
         date_str = self.future_date.isoformat()
         res = self.client.delete(
-            f"/admin/availability/exceptions/{date_str}", headers=VALID_AUTH
+            f"/admin/availability/exceptions/{date_str}", cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 204)
 
     def test_delete_exception_invalid_date_format_returns_422(self):
         res = self.client.delete(
-            "/admin/availability/exceptions/not-a-date", headers=VALID_AUTH
+            "/admin/availability/exceptions/not-a-date", cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 422)
 

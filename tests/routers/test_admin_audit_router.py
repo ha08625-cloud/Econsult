@@ -3,13 +3,12 @@ tests/test_admin_audit_router.py
 
 Tests for the admin audit log endpoint (GET /admin/audit-log).
 """
-import os
 import unittest
 from datetime import datetime, timezone, date
 
 from fastapi.testclient import TestClient
 
-from tests.helpers.admin_test_helpers import make_test_app, StubAuditRepo
+from tests.helpers.admin_test_helpers import make_test_app, StubAuditRepo, TEST_SESSION_COOKIE
 
 
 # ---------------------------------------------------------------------------
@@ -57,15 +56,9 @@ class RaisingAuditRepo(StubAuditRepo):
 class TestAuditLogEndpoint(unittest.TestCase):
     """Tests for GET /admin/audit-log."""
 
-    _AUTH_HEADERS = {"Authorization": "Bearer dev-token"}
-
     def _make_client(self, audit_repo=None):
-        os.environ["DEV_MODE"] = "1"
         app = make_test_app(audit_repo=audit_repo)
         return TestClient(app, raise_server_exceptions=False)
-
-    def tearDown(self):
-        os.environ.pop("DEV_MODE", None)
 
     # ------------------------------------------------------------------
     # Auth
@@ -82,7 +75,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
 
     def test_authenticated_no_filters_returns_200(self):
         client = self._make_client()
-        res = client.get("/admin/audit-log", headers=self._AUTH_HEADERS)
+        res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertIn("events", body)
@@ -90,7 +83,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
 
     def test_empty_result_returns_empty_events_and_null_cursor(self):
         client = self._make_client()
-        res = client.get("/admin/audit-log", headers=self._AUTH_HEADERS)
+        res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE)
         body = res.json()
         self.assertEqual(body["events"], [])
         self.assertIsNone(body["next_cursor"])
@@ -103,7 +96,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
             "next_cursor": "abc123",
         })
         client = self._make_client(audit_repo=repo)
-        res = client.get("/admin/audit-log", headers=self._AUTH_HEADERS)
+        res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertEqual(len(body["events"]), 1)
@@ -118,7 +111,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
             "next_cursor": None,
         })
         client = self._make_client(audit_repo=repo)
-        res = client.get("/admin/audit-log", headers=self._AUTH_HEADERS)
+        res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         occurred_at = res.json()["events"][0]["occurred_at"]
         self.assertIsInstance(occurred_at, str)
@@ -133,7 +126,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
         client = self._make_client(audit_repo=repo)
         client.get(
             "/admin/audit-log",
-            headers=self._AUTH_HEADERS,
+            cookies=TEST_SESSION_COOKIE,
             params={
                 "from_date": "2024-01-01",
                 "to_date": "2024-12-31",
@@ -155,7 +148,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
         client = self._make_client(audit_repo=repo)
         client.get(
             "/admin/audit-log",
-            headers=self._AUTH_HEADERS,
+            cookies=TEST_SESSION_COOKIE,
             params={"cursor": "opaque-token"},
         )
         self.assertEqual(repo.list_calls[0]["cursor"], "opaque-token")
@@ -167,14 +160,14 @@ class TestAuditLogEndpoint(unittest.TestCase):
     def test_limit_above_200_is_clamped_to_200(self):
         repo = ConfigurableAuditRepo()
         client = self._make_client(audit_repo=repo)
-        res = client.get("/admin/audit-log", headers=self._AUTH_HEADERS, params={"limit": "999"})
+        res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE, params={"limit": "999"})
         self.assertEqual(res.status_code, 200)
         self.assertEqual(repo.list_calls[0]["limit"], 200)
 
     def test_limit_below_1_is_clamped_to_1(self):
         repo = ConfigurableAuditRepo()
         client = self._make_client(audit_repo=repo)
-        res = client.get("/admin/audit-log", headers=self._AUTH_HEADERS, params={"limit": "0"})
+        res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE, params={"limit": "0"})
         self.assertEqual(res.status_code, 200)
         self.assertEqual(repo.list_calls[0]["limit"], 1)
 
@@ -186,7 +179,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
         client = self._make_client()
         res = client.get(
             "/admin/audit-log",
-            headers=self._AUTH_HEADERS,
+            cookies=TEST_SESSION_COOKIE,
             params={"from_date": "not-a-date"},
         )
         self.assertEqual(res.status_code, 422)
@@ -195,7 +188,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
         client = self._make_client()
         res = client.get(
             "/admin/audit-log",
-            headers=self._AUTH_HEADERS,
+            cookies=TEST_SESSION_COOKIE,
             params={"to_date": "31/12/2024"},
         )
         self.assertEqual(res.status_code, 422)
@@ -205,7 +198,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
         client = self._make_client(audit_repo=repo)
         res = client.get(
             "/admin/audit-log",
-            headers=self._AUTH_HEADERS,
+            cookies=TEST_SESSION_COOKIE,
             params={"cursor": "not-valid-base64-cursor"},
         )
         self.assertEqual(res.status_code, 400)
@@ -215,7 +208,7 @@ class TestAuditLogEndpoint(unittest.TestCase):
         client = self._make_client(audit_repo=repo)
         res = client.get(
             "/admin/audit-log",
-            headers=self._AUTH_HEADERS,
+            cookies=TEST_SESSION_COOKIE,
             params={"action": "UPPERCASE_INVALID"},
         )
         self.assertEqual(res.status_code, 400)

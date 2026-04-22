@@ -6,7 +6,6 @@ Covers:
 2. Signposting HTML sanitisation logic
 """
 
-import os
 import unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
@@ -18,9 +17,7 @@ from app.repositories.practice_repository import (
     sanitise_signposting_html,
     InvalidSignpostingData,
 )
-from tests.helpers.admin_test_helpers import make_test_app, dummy_conn
-
-VALID_AUTH = {"Authorization": "Bearer testtoken"}
+from tests.helpers.admin_test_helpers import make_test_app, dummy_conn, TEST_SESSION_COOKIE
 
 
 # ---------------------------------------------------------------------------
@@ -30,8 +27,6 @@ VALID_AUTH = {"Authorization": "Bearer testtoken"}
 class TestPracticeEndpointBehaviour(unittest.TestCase):
 
     def setUp(self):
-        os.environ["DEV_MODE"] = "1"
-        os.environ.pop("ADMIN_TOKEN", None)
         self._conn_patcher = patch(
             "app.routers.admin.admin_practice_router.get_conn", dummy_conn
         )
@@ -44,12 +39,11 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
 
     def tearDown(self):
         self._conn_patcher.stop()
-        os.environ.pop("DEV_MODE", None)
 
     # --- GET /admin/conditions ---
 
     def test_list_conditions_returns_condition_list(self):
-        res = self.client.get("/admin/conditions", headers=VALID_AUTH)
+        res = self.client.get("/admin/conditions", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("conditions", data)
@@ -59,7 +53,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
     # --- GET /admin/practice ---
 
     def test_get_practice_returns_practice_details(self):
-        res = self.client.get("/admin/practice", headers=VALID_AUTH)
+        res = self.client.get("/admin/practice", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("practice_id", data)
@@ -68,7 +62,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
 
     def test_get_practice_does_not_return_created_at(self):
         # created_at is an internal field and must never be exposed via the API.
-        res = self.client.get("/admin/practice", headers=VALID_AUTH)
+        res = self.client.get("/admin/practice", cookies=TEST_SESSION_COOKIE)
         self.assertNotIn("created_at", res.json())
 
     # --- PUT /admin/practice/email ---
@@ -77,7 +71,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/practice/email",
             json={"email": "new@nhs.net"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["email"], "new@nhs.net")
@@ -86,7 +80,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/practice/email",
             json={"wrong_key": "val"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -94,7 +88,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/practice/email",
             json={"email": 123},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -102,7 +96,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/practice/email",
             json={"email": "not-an-email"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -111,7 +105,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/practice/email",
             json={"email": " admin@nhs.net "},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -120,14 +114,14 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
     def test_get_signposting_unknown_condition_returns_404(self):
         res = self.client.get(
             f"/admin/conditions/{self.unknown_id}/signposting",
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 404)
 
     def test_get_signposting_when_none_configured_returns_null(self):
         res = self.client.get(
             f"/admin/conditions/{self.condition_id}/signposting",
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["signposting"])
@@ -138,7 +132,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>Call physio: 0800 123 456</p>"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         data = res.json()
@@ -149,18 +143,18 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>something</p>"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": ""},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["signposting"])
         get_res = self.client.get(
             f"/admin/conditions/{self.condition_id}/signposting",
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertIsNone(get_res.json()["signposting"])
 
@@ -168,7 +162,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "   "},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["signposting"])
@@ -177,12 +171,12 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>existing content</p>"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p></p>"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["signposting"])
@@ -191,7 +185,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": '<p><a href="javascript:alert(1)">click me</a></p>'},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         saved = res.json()["signposting"]
@@ -202,7 +196,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "a" * (MAX_SIGNPOSTING_LENGTH + 1)},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
         self.assertIn(str(MAX_SIGNPOSTING_LENGTH), res.json()["error"]["message"])
@@ -214,7 +208,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": raw},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
 
@@ -222,7 +216,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": ["item"]},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -230,7 +224,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": 123},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -238,7 +232,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"wrong_key": "value"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -246,7 +240,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             f"/admin/conditions/{self.unknown_id}/signposting",
             json={"signposting": "<p>item</p>"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 404)
 
@@ -256,37 +250,37 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         self.client.put(
             f"/admin/conditions/{self.condition_id}/signposting",
             json={"signposting": "<p>item</p>"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         res = self.client.delete(
             f"/admin/conditions/{self.condition_id}/signposting",
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 204)
         get_res = self.client.get(
             f"/admin/conditions/{self.condition_id}/signposting",
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertIsNone(get_res.json()["signposting"])
 
     def test_delete_idempotent_when_no_signposting_configured(self):
         res = self.client.delete(
             f"/admin/conditions/{self.condition_id}/signposting",
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 204)
 
     def test_delete_unknown_condition_returns_404(self):
         res = self.client.delete(
             f"/admin/conditions/{self.unknown_id}/signposting",
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 404)
 
     # --- GET /admin/doctors ---
 
     def test_get_doctors_returns_empty_list_when_none_configured(self):
-        res = self.client.get("/admin/doctors", headers=VALID_AUTH)
+        res = self.client.get("/admin/doctors", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("doctors", data)
@@ -296,9 +290,9 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         self.client.put(
             "/admin/doctors",
             json={"doctors": ["Dr Smith", "Dr Jones"]},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
-        res = self.client.get("/admin/doctors", headers=VALID_AUTH)
+        res = self.client.get("/admin/doctors", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["doctors"], ["Dr Smith", "Dr Jones"])
 
@@ -308,7 +302,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/doctors",
             json={"doctors": ["Dr Smith", "Dr Jones"]},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["doctors"], ["Dr Smith", "Dr Jones"])
@@ -317,12 +311,12 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         self.client.put(
             "/admin/doctors",
             json={"doctors": ["Dr Smith"]},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         res = self.client.put(
             "/admin/doctors",
             json={"doctors": []},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["doctors"], [])
@@ -331,12 +325,12 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         self.client.put(
             "/admin/doctors",
             json={"doctors": ["Dr Smith", "Dr Jones"]},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         res = self.client.put(
             "/admin/doctors",
             json={"doctors": ["Dr Brown"]},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["doctors"], ["Dr Brown"])
@@ -345,7 +339,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/doctors",
             json={"wrong_key": []},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -353,7 +347,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/doctors",
             json={"doctors": "Dr Smith"},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -361,7 +355,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/doctors",
             json={"doctors": ["Dr Smith", ""]},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -369,7 +363,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/doctors",
             json={"doctors": ["Dr Smith", 123]},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -378,7 +372,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/doctors",
             json={"doctors": [long_name]},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -387,7 +381,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/doctors",
             json={"doctors": too_many},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 422)
 
@@ -396,7 +390,7 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         res = self.client.put(
             "/admin/doctors",
             json={"doctors": exactly_max},
-            headers=VALID_AUTH,
+            cookies=TEST_SESSION_COOKIE,
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(len(res.json()["doctors"]), MAX_DOCTOR_LIST_LENGTH)

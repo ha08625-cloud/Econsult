@@ -3,17 +3,16 @@ Admin authentication boundary.
 
 Defines AdminContext and the require_admin FastAPI dependency.
 
+Authentication is exclusively via session cookie (HttpOnly, set by
+POST /admin/auth/verify). There is no bearer-token or DEV_MODE fallback
+path — the MFA email flow is fast enough for local development.
+
 Session-based auth rules:
 - Reads session_id from the HttpOnly cookie set by POST /admin/auth/verify.
 - Calls auth_repo.get_session_context(session_id) to validate and resolve
-  practice_id, role, email, and session_id.
+  practice_id, email, user_id, and session_id.
 - Returns HTTP 401 if the cookie is absent or the session is not found
   or has expired.
-
-DEV_MODE bearer-token fallback rules:
-- Active only when DEV_MODE=1 AND no session cookie is present.
-- In DEV_MODE with no ADMIN_TOKEN set: any non-empty bearer token is accepted.
-- If ADMIN_TOKEN is set: token must match exactly.
 
 This module must never import any project module other than app.core.db.
 Only stdlib, FastAPI, and psycopg2.
@@ -24,16 +23,12 @@ would create a circular dependency risk if admin_context is ever imported
 early in the startup chain.
 """
 
-import os
 import logging
 from typing import Optional, Dict, Any, Protocol, runtime_checkable
 
 from fastapi import Request, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 logger = logging.getLogger(__name__)
-
-_bearer_scheme = HTTPBearer(auto_error=False)
 
 # Session cookie name. Must match the name set in POST /admin/auth/verify
 # and cleared in POST /admin/auth/logout.
@@ -58,26 +53,26 @@ class AdminContext:
     Resolved authentication context for an admin request.
 
     practice_id:  the practice this user belongs to.
-    role:         "admin" or "staff" (from admin_users.role).
+    user_id:      UUID string of the authenticated admin_users row.
     auth_method:  "session_cookie" | "bearer_token" | "dev_any".
                   bearer_token and dev_any are DEV_MODE fallback paths only.
     actor_email:  email address of the authenticated user, used for audit
-                  logging. Set to "dev@local" on the DEV_MODE bearer path.
+                  logging.
     session_id:   the raw session UUID string from the cookie, used for
-                  audit logging. None on the DEV_MODE bearer path.
+                  audit logging.
     """
-    __slots__ = ("practice_id", "role", "auth_method", "actor_email", "session_id")
+    __slots__ = ("practice_id", "user_id", "auth_method", "actor_email", "session_id")
 
     def __init__(
         self,
         practice_id: str,
-        role: str,
+        user_id: str,
         auth_method: str,
         actor_email: str,
-        session_id: Optional[str],
+        session_id: str,
     ):
         self.practice_id = practice_id
-        self.role = role
+        self.user_id = user_id
         self.auth_method = auth_method
         self.actor_email = actor_email
         self.session_id = session_id
@@ -107,16 +102,6 @@ class AuthProvider(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-# Intentionally duplicated from main.py. This module must never import
-# any project module, so the helper cannot be shared.
-def _is_dev_mode() -> bool:
-    return os.environ.get("DEV_MODE", "").lower() in ("1", "true")
-
-
-# ---------------------------------------------------------------------------
 # require_admin dependency
 # ---------------------------------------------------------------------------
 
@@ -124,67 +109,36 @@ async def require_admin(request: Request) -> AdminContext:
     """
     FastAPI dependency. Validates session cookie and returns AdminContext.
 
-    Primary path (production and DEV_MODE):
     1. Read session_id from the HttpOnly cookie.
     2. Call auth_repo.get_session_context(session_id).
     3. If context is None (session not found or expired), raise HTTP 401.
-    4. Return AdminContext populated with practice_id, role, email, and
-       session_id from the context dict.
-
-    DEV_MODE fallback (only when no session cookie is present):
-    5. Attempt bearer-token auth using ADMIN_TOKEN env var.
-    6. If ADMIN_TOKEN is set: require exact match.
-    7. If ADMIN_TOKEN is not set in DEV_MODE: accept any non-empty token.
-    8. Return AdminContext with auth_method="bearer_token" or "dev_any",
-       actor_email="dev@local", and session_id=None.
+    4. Return AdminContext populated with practice_id, user_id, role,
+       actor_email, and session_id from the context dict.
 
     Raises:
-        HTTP 401 if no valid session and no valid DEV_MODE token.
+        HTTP 401 if no valid session cookie is present or the session has
+        expired.
     """
     auth_repo: AuthProvider = request.app.state.auth_repo
-    practice_id: str = request.app.state.practice_id
 
-    # --- Primary path: session cookie ---
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
-    if session_id:
-        context = auth_repo.get_session_context(session_id)
-        if context is None:
-            raise HTTPException(
-                status_code=401,
-                detail="Session expired or not found.",
-            )
-        return AdminContext(
-            practice_id=context["practice_id"],
-            role=context["role"],
-            auth_method="session_cookie",
-            actor_email=context["email"],
-            session_id=context["session_id"],
+    if not session_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required.",
         )
 
-    # --- DEV_MODE bearer-token fallback ---
-    if _is_dev_mode():
-        credentials: Optional[HTTPAuthorizationCredentials] = await _bearer_scheme(request)
-        if credentials is not None and credentials.credentials.strip():
-            token = credentials.credentials
-            admin_token = os.environ.get("ADMIN_TOKEN", "")
-            if admin_token:
-                if token != admin_token:
-                    raise HTTPException(status_code=401, detail="Invalid token")
-                auth_method = "bearer_token"
-            else:
-                auth_method = "dev_any"
-            # DEV_MODE fallback: no real user record to look up.
-            # practice_id comes from app.state. actor_email is synthetic.
-            # session_id is None — there is no session cookie on this path.
-            return AdminContext(
-                practice_id=practice_id,
-                role="admin",
-                auth_method=auth_method,
-                actor_email="dev@local",
-                session_id=None,
-            )
+    context = auth_repo.get_session_context(session_id)
+    if context is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Session expired or not found.",
+        )
 
-    raise HTTPException(
-        status_code=401,
-        detail="Authentication required.",
+    return AdminContext(
+        practice_id=context["practice_id"],
+        user_id=context["user_id"],
+        auth_method="session_cookie",
+        actor_email=context["email"],
+        session_id=context["session_id"],
     )

@@ -131,21 +131,6 @@ def _validate_startup(
     if not _is_dev_mode():
         _validate_email_config()
 
-    # --- ADMIN_TOKEN: optional with MFA, warn if both are active ---
-    if not _is_dev_mode():
-        if os.environ.get("ADMIN_TOKEN"):
-            logger.warning(
-                "ADMIN_TOKEN is set alongside MFA authentication. "
-                "Both auth methods are active. Consider removing ADMIN_TOKEN "
-                "once MFA is fully deployed."
-            )
-    else:
-        if not os.environ.get("ADMIN_TOKEN"):
-            logger.warning(
-                "ADMIN_TOKEN is not set. In DEV_MODE any non-empty bearer token "
-                "will be accepted by admin endpoints. Do not expose this server publicly."
-            )
-
     # --- INITIAL_ADMIN_EMAIL and ALLOWED_ADMIN_DOMAINS ---
     # Required in production. In DEV_MODE, absence is allowed but logged.
     initial_admin_email = os.environ.get("INITIAL_ADMIN_EMAIL", "").strip()
