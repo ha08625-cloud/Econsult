@@ -1,10 +1,11 @@
 """
 app/services/delivery/admin_delivery_service.py
 
-Transport layer for admin MFA emails.
+Transport layer for admin emails.
 
 Responsibilities:
-- Send a single plain-text MFA code email.
+- Send a plain-text MFA code email (send_mfa_code).
+- Send a plain-text admin invitation email (send_admin_invitation).
 
 This module defines:
   - AdminDeliveryService: production SMTP implementation
@@ -14,16 +15,24 @@ This module defines:
 Strict boundaries:
 - This service has no knowledge of admin_auth_codes, AuthRepository,
   or any cooldown/rate-limit logic.
-- The decision of whether to send is made entirely by auth_service.py.
+- The decision of whether to send is made entirely by the caller.
   This service is called only after that decision has been made.
 
 Service selection (main.py):
     If MAILGUN_API_KEY is set, MailgunHttpAdminDeliveryService is used.
     Otherwise AdminDeliveryService (SMTP) is used.
 
-SMTP configuration is read from environment variables at instantiation
-time. A missing variable raises RuntimeError at startup rather than
-silently failing at send time.
+Configuration is read from environment variables at instantiation time.
+A missing variable raises RuntimeError at startup rather than silently
+failing at send time.
+
+Required environment variables (all implementations):
+    ADMIN_URL   — full URL of the admin portal, included in invitation emails
+                  (e.g. https://my-practice.up.railway.app/admin)
+
+ConsoleAdminDeliveryService reads ADMIN_URL but does not require it —
+defaults to http://localhost/admin if absent, since emails are never sent
+in DEV_MODE.
 """
 
 import logging
@@ -58,6 +67,7 @@ class AdminDeliveryService:
         self._smtp_password = self._require_env("SMTP_PASSWORD")
         self._email_from = self._require_env("EMAIL_FROM")
         self._smtp_timeout = int(os.environ.get("SMTP_TIMEOUT", "30"))
+        self._admin_url = self._require_env("ADMIN_URL")
 
     @staticmethod
     def _require_env(name: str) -> str:
@@ -99,6 +109,34 @@ class AdminDeliveryService:
 
         logger.info("MFA code sent to %s", email)
 
+    def send_admin_invitation(self, email: str) -> None:
+        """
+        Send a plain-text invitation email to a newly added admin user.
+
+        Raises smtplib.SMTPException (or subclass) if the SMTP connection
+        or send fails. The caller (admin_user_router) should catch this and
+        return email_sent: false rather than raising a 500.
+        """
+        body = (
+            "You have been added as an administrator for this practice. "
+            f"Log in at: {self._admin_url}"
+        )
+
+        msg = EmailMessage()
+        msg["Subject"] = "You have been added as an admin"
+        msg["From"] = self._email_from
+        msg["To"] = email
+        msg.set_content(body)
+
+        with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._smtp_timeout) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(self._smtp_user, self._smtp_password)
+            server.send_message(msg)
+
+        logger.info("Invitation email sent to %s", email)
+
 
 # ---------------------------------------------------------------------------
 # Mailgun HTTP API implementation
@@ -120,6 +158,7 @@ class MailgunHttpAdminDeliveryService:
         self._api_key = self._require_env("MAILGUN_API_KEY")
         self._domain = self._require_env("MAILGUN_DOMAIN")
         self._email_from = self._require_env("EMAIL_FROM")
+        self._admin_url = self._require_env("ADMIN_URL")
 
     @staticmethod
     def _require_env(name: str) -> str:
@@ -160,6 +199,36 @@ class MailgunHttpAdminDeliveryService:
 
         logger.info("MFA code sent to %s", email)
 
+    def send_admin_invitation(self, email: str) -> None:
+        """
+        Send a plain-text invitation email via the Mailgun HTTP API.
+
+        Raises requests.RequestException if the HTTP call fails.
+        The caller (admin_user_router) should catch this and return
+        email_sent: false rather than raising a 500.
+        """
+        body = (
+            "You have been added as an administrator for this practice. "
+            f"Log in at: {self._admin_url}"
+        )
+
+        url = f"{_MAILGUN_EU_API_BASE}/{self._domain}/messages"
+
+        response = requests.post(
+            url,
+            auth=("api", self._api_key),
+            data={
+                "from": self._email_from,
+                "to": email,
+                "subject": "You have been added as an admin",
+                "text": body,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+
+        logger.info("Invitation email sent to %s", email)
+
 
 # ---------------------------------------------------------------------------
 # Development implementation
@@ -181,10 +250,18 @@ class ConsoleAdminDeliveryService:
                 "DEV_MODE=1. Use MailgunHttpAdminDeliveryService or "
                 "AdminDeliveryService in production."
             )
+        self._admin_url = os.environ.get("ADMIN_URL", "http://localhost/admin")
 
     def send_mfa_code(self, email: str, code: str) -> None:
         logger.info(
             "[DEV_MODE] MFA email send skipped. Would have sent to %s: code=%s",
             email,
             code,
+        )
+
+    def send_admin_invitation(self, email: str) -> None:
+        logger.info(
+            "[DEV_MODE] Invitation email send skipped. Would have sent to %s: url=%s",
+            email,
+            self._admin_url,
         )

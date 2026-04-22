@@ -16,11 +16,12 @@ User access control, multi-factor authentication, rate limiting, input sanitizat
 
 The patient-facing form is intentionally unauthenticated to ensure accessibility. The Admin Portal enforces strict access controls.
 
-- **MFA Only.** The admin portal is protected exclusively by Multi-Factor Authentication. Staff must request a login code and authenticate using a time-limited secure code sent to their registered email address. There is no password and no bearer-token fallback.
+- **MFA by Default.** The admin portal is protected by Multi-Factor Authentication. Staff must request a login code and authenticate using a time-limited secure code sent to their registered email address.
 - **Isolated MFA Delivery Pipeline.** Admin MFA code delivery uses a completely separate service instance from the clinical delivery path, ensuring operational isolation between authentication traffic and patient data. In production this is MailgunHttpAdminDeliveryService; the SMTP equivalent AdminDeliveryService is available for deployments where SMTP is not blocked.
 - **Domain Allowlisting.** The system enforces an `ALLOWED_ADMIN_DOMAINS` environment variable. The domain of the authenticating admin email is validated against this list on every login attempt. The application also validates this configuration at startup and aborts if it is absent or malformed.
-- **No Passwords or Tokens.** The system does not use passwords or bearer tokens for admin authentication.
+- **No Default Passwords.** The system does not use passwords. The legacy `ADMIN_TOKEN` has been replaced by MFA in production.
 - **Single-Tenant Isolation.** The application enforces a strict single-tenant architecture. Startup validation explicitly checks that exactly one practice exists in the database, preventing cross-contamination of patient data if the database is misconfigured.
+- **Manual Admin User Provisioning.** The first admin user must be inserted before the application starts using `scripts/create_admin_user.py`. The application will refuse to start if no admin users exist for the practice. This replaces the previous `INITIAL_ADMIN_EMAIL` seeding mechanism, which has been removed. Additional users can be added via the admin UI once the system is running.
 
 ---
 

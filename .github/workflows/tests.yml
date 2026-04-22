@@ -73,6 +73,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
       PRACTICE_ID: test-practice
       ALLOWED_ADMIN_DOMAINS: example.com
+      ADMIN_URL: "http://localhost/admin"
       DEV_MODE: "1"
 
     steps:

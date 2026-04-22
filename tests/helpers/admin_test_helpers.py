@@ -21,18 +21,6 @@ from app.repositories.practice_repository import (
 
 
 # ---------------------------------------------------------------------------
-# Test session constants
-#
-# All unit tests authenticate by sending this cookie value. StubAuthRepo
-# returns a valid context for this session ID and None for all others.
-# This mirrors the production session-cookie path without a real database.
-# ---------------------------------------------------------------------------
-
-TEST_SESSION_ID = "test-session-id"
-TEST_SESSION_COOKIE = {"session_id": TEST_SESSION_ID}
-
-
-# ---------------------------------------------------------------------------
 # Minimal stubs
 # ---------------------------------------------------------------------------
 
@@ -214,22 +202,11 @@ class StubAuthRepo:
     """
     In-memory auth repo stub for unit tests.
 
-    get_session_context returns a valid context for TEST_SESSION_ID and
-    None for all other values. Tests authenticate by sending a session
-    cookie with value TEST_SESSION_ID (via TEST_SESSION_COOKIE).
-
-    All other methods are no-ops or return safe defaults.
+    No sessions are valid by default — session lookups always return None,
+    which causes require_admin to fall through to the DEV_MODE bearer-token
+    fallback.
     """
-    def get_session_context(self, session_id):
-        if session_id == TEST_SESSION_ID:
-            return {
-                "user_id": "00000000-0000-0000-0000-000000000001",
-                "practice_id": "test_practice",
-                "email": "test@nhs.net",
-                "session_id": TEST_SESSION_ID,
-            }
-        return None
-
+    def get_session_context(self, session_id): return None
     def get_user_by_email(self, email): return None
     def get_auth_code_record(self, email): return None
     def upsert_auth_code(self, email, hashed_code, expires_at, last_requested_at): pass
@@ -238,7 +215,7 @@ class StubAuthRepo:
     def create_session(self, user_id, expires_at): return "stub-session-id"
     def delete_session(self, session_id): pass
     def count_users_for_practice(self, practice_id): return 0
-    def insert_user(self, email, practice_id): pass
+    def insert_user(self, email, practice_id, role): pass
 
 
 class StubAuditRepo:
@@ -263,12 +240,16 @@ class StubAuditRepo:
 
 
 class StubAdminDeliveryService:
-    """Captures send_mfa_code calls without sending email."""
+    """Captures send_mfa_code and send_admin_invitation calls without sending email."""
     def __init__(self):
         self.calls = []
+        self.invitation_calls = []
 
     def send_mfa_code(self, email, code):
         self.calls.append({"email": email, "code": code})
+
+    def send_admin_invitation(self, email):
+        self.invitation_calls.append({"email": email})
 
 
 # ---------------------------------------------------------------------------

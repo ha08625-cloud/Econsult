@@ -31,6 +31,7 @@ seed-test-db:
 	DATABASE_URL=$(TEST_DATABASE_URL) \
 	PRACTICE_EMAIL=test@example.com \
 	PRACTICE_NAME="Test Practice" \
+	ADMIN_URL=http://localhost/admin \
 	python scripts/create_admin_user.py test-admin@example.com --create-practice
 
 test-integration: seed-test-db
