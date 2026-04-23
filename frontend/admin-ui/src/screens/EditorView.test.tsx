@@ -40,6 +40,10 @@ vi.mock("./AuditLogTab", () => ({
   default: () => <div data-testid="audit-log-tab" />,
 }));
 
+vi.mock("./UsersTab", () => ({
+  default: () => <div data-testid="users-tab" />,
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -61,12 +65,13 @@ const defaultProps = {
 // ---------------------------------------------------------------------------
 
 describe("EditorView — tab bar", () => {
-  it("renders all four tab buttons", () => {
+  it("renders all five tab buttons", () => {
     render(<EditorView {...defaultProps} />);
     expect(screen.getByRole("button", { name: "Signposting" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Availability" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Practice settings" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Audit log" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Manage users" })).toBeTruthy();
   });
 
   it("signposting tab is active by default", () => {
@@ -106,6 +111,14 @@ describe("EditorView — tab bar", () => {
       screen.getByRole("button", { name: "Audit log" }).className
     ).toContain("active");
   });
+
+  it("clicking Manage users tab marks it active", async () => {
+    render(<EditorView {...defaultProps} />);
+    await userEvent.click(screen.getByRole("button", { name: "Manage users" }));
+    expect(
+      screen.getByRole("button", { name: "Manage users" }).className
+    ).toContain("active");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -128,6 +141,12 @@ describe("EditorView — tab content", () => {
     render(<EditorView {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: "Audit log" }));
     expect(screen.getByTestId("audit-log-tab")).toBeTruthy();
+  });
+
+  it("renders UsersTab when Manage users tab is clicked", async () => {
+    render(<EditorView {...defaultProps} />);
+    await userEvent.click(screen.getByRole("button", { name: "Manage users" }));
+    expect(screen.getByTestId("users-tab")).toBeTruthy();
   });
 
   it("AvailabilityEditor is always mounted regardless of active tab", () => {

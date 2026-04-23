@@ -54,3 +54,20 @@ export interface AuditLogPage {
   events: AuditEvent[];
   next_cursor: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Admin users
+// ---------------------------------------------------------------------------
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  is_current_user: boolean;
+  last_login: string | null; // ISO 8601 string or null
+  created_at: string;        // ISO 8601 string
+}
+
+export interface AddUserResponse {
+  ok: boolean;
+  email_sent: boolean;
+}

@@ -14,7 +14,7 @@
  * redirect to the login view.
  */
 
-import type { ConditionSummary, AvailabilityConfig, AvailabilityException, AuditLogPage } from "./types";
+import type { ConditionSummary, AvailabilityConfig, AvailabilityException, AuditLogPage, AdminUser, AddUserResponse } from "./types";
 
 // ---------------------------------------------------------------------------
 // AuthError — thrown by apiFetch on any 401 response.
@@ -422,4 +422,60 @@ export async function fetchAuditLog(
   const res = await apiFetch(path);
   if (!res.ok) throw new Error(await extractErrorDetail(res));
   return (await res.json()) as AuditLogPage;
+}
+
+// ---------------------------------------------------------------------------
+// Admin users
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetches the list of admin users for the current practice.
+ * Throws AuthError on 401. Throws a descriptive Error on other failures.
+ */
+export async function fetchUsers(): Promise<AdminUser[]> {
+  const res = await apiFetch("/admin/users");
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
+  return (await res.json()) as AdminUser[];
+}
+
+/**
+ * Adds a new admin user with the given email address.
+ * Returns ok: true on success. email_sent indicates whether the invitation
+ * email was delivered — callers should warn the user if false.
+ * Throws the server error message string on failure (covers domain rejection,
+ * duplicate email, and any other APIError from the envelope).
+ */
+export async function addUser(email: string): Promise<AddUserResponse> {
+  const res = await apiFetch("/admin/users", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
+  return (await res.json()) as AddUserResponse;
+}
+
+/**
+ * Deletes the admin user with the given id.
+ * Throws the server error message string on failure (covers self-deletion
+ * attempt, last-user guard, and not-found).
+ */
+export async function removeUser(id: string): Promise<void> {
+  const res = await apiFetch(`/admin/users/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
+}
+
+/**
+ * Resends the invitation email for the user with the given id.
+ * Returns ok: true on success. email_sent indicates whether delivery succeeded.
+ * Throws the server error message string on failure (covers not-found).
+ */
+export async function resendInvitation(id: string): Promise<AddUserResponse> {
+  const res = await apiFetch(
+    `/admin/users/${encodeURIComponent(id)}/resend-invitation`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error(await extractErrorDetail(res));
+  return (await res.json()) as AddUserResponse;
 }

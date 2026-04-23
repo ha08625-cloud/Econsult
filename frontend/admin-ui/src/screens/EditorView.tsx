@@ -3,27 +3,25 @@
  *
  * Rendered by App once a valid session is confirmed.
  *
- * Layout: four-tab interface
+ * Layout: five-tab interface
  * - "Signposting"       — condition selector + SignpostingEditor
  * - "Availability"      — AvailabilityEditor
  * - "Practice settings" — email/contact configuration via PracticeSettingsTab
  * - "Audit log"         — read-only audit event viewer via AuditLogTab
+ * - "Manage users"      — add/remove admin users via UsersTab
  *
  * Mounting strategy:
  * - AvailabilityEditor is always mounted, shown/hidden via display:none.
  *   This preserves its internal state across tab switches and allows
  *   availabilityUnsavedRef to be read synchronously at any time.
- * - Signposting content, Practice settings, and Audit log are conditionally
- *   rendered. SignpostingEditor (and its Quill instance) is destroyed when
- *   leaving the signposting tab and recreated on return. On recreation, Quill
- *   performs a fresh server fetch. This is intentional.
- * - PracticeSettingsTab and AuditLogTab are conditionally rendered and each
- *   performs a fresh fetch on mount. This is intentional.
+ * - All other tabs are conditionally rendered. Each performs a fresh fetch
+ *   on mount. This is intentional.
  *
  * Unsaved change tracking:
  * - signpostingUnsavedRef: set by SignpostingEditor via onUnsavedChange
  * - availabilityUnsavedRef: set by AvailabilityEditor via onUnsavedChange
  * Both are refs (not state) so confirm dialogs can read them synchronously.
+ * UsersTab has no unsaved state and requires no ref.
  *
  * Session expiry:
  * - If any child API call returns 401 (AuthError), the child calls
@@ -37,9 +35,10 @@ import SignpostingEditor from "./SignpostingEditor";
 import AvailabilityEditor from "./AvailabilityEditor";
 import PracticeSettingsTab from "./PracticeSettingsTab";
 import AuditLogTab from "./AuditLogTab";
+import UsersTab from "./UsersTab";
 import type { ConditionSummary } from "../types";
 
-type Tab = "signposting" | "availability" | "practice_settings" | "audit_log";
+type Tab = "signposting" | "availability" | "practice_settings" | "audit_log" | "users";
 
 interface Props {
   conditions: ConditionSummary[];
@@ -118,6 +117,12 @@ export default function EditorView({ conditions, onAuthError }: Props) {
         >
           Audit log
         </button>
+        <button
+          className={`tab-btn${activeTab === "users" ? " active" : ""}`}
+          onClick={() => handleTabChange("users")}
+        >
+          Manage users
+        </button>
       </div>
 
       {/* Availability tab — always mounted, shown/hidden to preserve state */}
@@ -175,6 +180,11 @@ export default function EditorView({ conditions, onAuthError }: Props) {
       {/* Audit log tab — conditionally rendered, fetches on mount */}
       {activeTab === "audit_log" && (
         <AuditLogTab onAuthError={onAuthError} />
+      )}
+
+      {/* Manage users tab — conditionally rendered, fetches on mount */}
+      {activeTab === "users" && (
+        <UsersTab onAuthError={onAuthError} />
       )}
     </>
   );
