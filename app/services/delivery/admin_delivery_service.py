@@ -4,8 +4,8 @@ app/services/delivery/admin_delivery_service.py
 Transport layer for admin emails.
 
 Responsibilities:
-- Send a plain-text MFA code email (send_mfa_code).
-- Send a plain-text admin invitation email (send_admin_invitation).
+- Send a single plain-text MFA code email.
+- Send a plain-text admin invitation email.
 
 This module defines:
   - AdminDeliveryService: production SMTP implementation
@@ -15,24 +15,22 @@ This module defines:
 Strict boundaries:
 - This service has no knowledge of admin_auth_codes, AuthRepository,
   or any cooldown/rate-limit logic.
-- The decision of whether to send is made entirely by the caller.
-  This service is called only after that decision has been made.
+- The decision of whether to send is made entirely by auth_service.py or
+  the admin user router. This service is called only after that decision
+  has been made.
 
 Service selection (main.py):
     If MAILGUN_API_KEY is set, MailgunHttpAdminDeliveryService is used.
     Otherwise AdminDeliveryService (SMTP) is used.
 
-Configuration is read from environment variables at instantiation time.
-A missing variable raises RuntimeError at startup rather than silently
-failing at send time.
+SMTP configuration is read from environment variables at instantiation
+time. A missing variable raises RuntimeError at startup rather than
+silently failing at send time.
 
-Required environment variables (all implementations):
-    ADMIN_URL   — full URL of the admin portal, included in invitation emails
-                  (e.g. https://my-practice.up.railway.app/admin)
-
-ConsoleAdminDeliveryService reads ADMIN_URL but does not require it —
-defaults to http://localhost/admin if absent, since emails are never sent
-in DEV_MODE.
+ADMIN_PORTAL_URL:
+    Optional. Used in invitation emails to tell the new admin where to go.
+    Defaults to "the admin portal" if not set. Read at call time (not
+    instantiation) so it can be set after the service is created in tests.
 """
 
 import logging
@@ -47,13 +45,18 @@ logger = logging.getLogger(__name__)
 _MAILGUN_EU_API_BASE = "https://api.eu.mailgun.net/v3"
 
 
+def _admin_portal_url() -> str:
+    """Return the admin portal URL from the environment, or a plain fallback."""
+    return os.environ.get("ADMIN_PORTAL_URL", "the admin portal")
+
+
 # ---------------------------------------------------------------------------
 # SMTP implementation
 # ---------------------------------------------------------------------------
 
 class AdminDeliveryService:
     """
-    Sends admin MFA codes via SMTP.
+    Sends admin emails via SMTP.
 
     Uses the same SMTP environment variables as EmailDeliveryService but
     opens a completely separate SMTP connection on every call. No shared
@@ -67,7 +70,6 @@ class AdminDeliveryService:
         self._smtp_password = self._require_env("SMTP_PASSWORD")
         self._email_from = self._require_env("EMAIL_FROM")
         self._smtp_timeout = int(os.environ.get("SMTP_TIMEOUT", "30"))
-        self._admin_url = self._require_env("ADMIN_URL")
 
     @staticmethod
     def _require_env(name: str) -> str:
@@ -78,12 +80,23 @@ class AdminDeliveryService:
             )
         return value
 
+    def _send(self, to: str, subject: str, body: str) -> None:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = self._email_from
+        msg["To"] = to
+        msg.set_content(body)
+
+        with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._smtp_timeout) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(self._smtp_user, self._smtp_password)
+            server.send_message(msg)
+
     def send_mfa_code(self, email: str, code: str) -> None:
         """
         Send a plain-text MFA code email to the given address.
-
-        Email body is a hardcoded plain-text string — no HTML, no headers,
-        no attachments, no clinical branding.
 
         Raises smtplib.SMTPException (or subclass) if the SMTP connection
         or send fails. The caller (auth_service.request_mfa_code) should
@@ -93,49 +106,24 @@ class AdminDeliveryService:
             f"Your Econsult admin security code is: {code}. "
             "It expires in 10 minutes."
         )
-
-        msg = EmailMessage()
-        msg["Subject"] = "Your Econsult admin security code"
-        msg["From"] = self._email_from
-        msg["To"] = email
-        msg.set_content(body)
-
-        with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._smtp_timeout) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(self._smtp_user, self._smtp_password)
-            server.send_message(msg)
-
+        self._send(email, "Your Econsult admin security code", body)
         logger.info("MFA code sent to %s", email)
 
     def send_admin_invitation(self, email: str) -> None:
         """
-        Send a plain-text invitation email to a newly added admin user.
+        Send a plain-text invitation email to a newly added admin.
 
-        Raises smtplib.SMTPException (or subclass) if the SMTP connection
-        or send fails. The caller (admin_user_router) should catch this and
-        return email_sent: false rather than raising a 500.
+        Raises smtplib.SMTPException (or subclass) if the send fails.
+        The caller (admin_user_router) catches this and returns
+        email_sent: false rather than propagating the error.
         """
+        url = _admin_portal_url()
         body = (
-            "You have been added as an administrator for this practice. "
-            f"Log in at: {self._admin_url}"
+            f"You have been added as an admin. "
+            f"Go to {url} and log in using this email address to receive an MFA code."
         )
-
-        msg = EmailMessage()
-        msg["Subject"] = "You have been added as an admin"
-        msg["From"] = self._email_from
-        msg["To"] = email
-        msg.set_content(body)
-
-        with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._smtp_timeout) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(self._smtp_user, self._smtp_password)
-            server.send_message(msg)
-
-        logger.info("Invitation email sent to %s", email)
+        self._send(email, "You have been added as an Econsult admin", body)
+        logger.info("Admin invitation sent to %s", email)
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +132,7 @@ class AdminDeliveryService:
 
 class MailgunHttpAdminDeliveryService:
     """
-    Sends admin MFA codes via the Mailgun HTTP API.
+    Sends admin emails via the Mailgun HTTP API.
 
     Uses the EU regional endpoint. Configuration is read from environment
     variables at instantiation time. A missing variable raises RuntimeError
@@ -158,7 +146,6 @@ class MailgunHttpAdminDeliveryService:
         self._api_key = self._require_env("MAILGUN_API_KEY")
         self._domain = self._require_env("MAILGUN_DOMAIN")
         self._email_from = self._require_env("EMAIL_FROM")
-        self._admin_url = self._require_env("ADMIN_URL")
 
     @staticmethod
     def _require_env(name: str) -> str:
@@ -168,6 +155,21 @@ class MailgunHttpAdminDeliveryService:
                 f"MailgunHttpAdminDeliveryService requires environment variable: {name}"
             )
         return value
+
+    def _send(self, to: str, subject: str, body: str) -> None:
+        url = f"{_MAILGUN_EU_API_BASE}/{self._domain}/messages"
+        response = requests.post(
+            url,
+            auth=("api", self._api_key),
+            data={
+                "from": self._email_from,
+                "to": to,
+                "subject": subject,
+                "text": body,
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
 
     def send_mfa_code(self, email: str, code: str) -> None:
         """
@@ -181,53 +183,24 @@ class MailgunHttpAdminDeliveryService:
             f"Your Econsult admin security code is: {code}. "
             "It expires in 10 minutes."
         )
-
-        url = f"{_MAILGUN_EU_API_BASE}/{self._domain}/messages"
-
-        response = requests.post(
-            url,
-            auth=("api", self._api_key),
-            data={
-                "from": self._email_from,
-                "to": email,
-                "subject": "Your Econsult admin security code",
-                "text": body,
-            },
-            timeout=30,
-        )
-        response.raise_for_status()
-
+        self._send(email, "Your Econsult admin security code", body)
         logger.info("MFA code sent to %s", email)
 
     def send_admin_invitation(self, email: str) -> None:
         """
-        Send a plain-text invitation email via the Mailgun HTTP API.
+        Send a plain-text invitation email to a newly added admin.
 
         Raises requests.RequestException if the HTTP call fails.
-        The caller (admin_user_router) should catch this and return
-        email_sent: false rather than raising a 500.
+        The caller (admin_user_router) catches this and returns
+        email_sent: false rather than propagating the error.
         """
+        url = _admin_portal_url()
         body = (
-            "You have been added as an administrator for this practice. "
-            f"Log in at: {self._admin_url}"
+            f"You have been added as an admin. "
+            f"Go to {url} and log in using this email address to receive an MFA code."
         )
-
-        url = f"{_MAILGUN_EU_API_BASE}/{self._domain}/messages"
-
-        response = requests.post(
-            url,
-            auth=("api", self._api_key),
-            data={
-                "from": self._email_from,
-                "to": email,
-                "subject": "You have been added as an admin",
-                "text": body,
-            },
-            timeout=30,
-        )
-        response.raise_for_status()
-
-        logger.info("Invitation email sent to %s", email)
+        self._send(email, "You have been added as an Econsult admin", body)
+        logger.info("Admin invitation sent to %s", email)
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +210,7 @@ class MailgunHttpAdminDeliveryService:
 
 class ConsoleAdminDeliveryService:
     """
-    Logs the MFA code to stdout instead of sending email.
+    Logs admin emails to stdout instead of sending them.
 
     For local development only. Raises RuntimeError at instantiation if
     DEV_MODE is not set, to prevent accidental use in production.
@@ -250,7 +223,6 @@ class ConsoleAdminDeliveryService:
                 "DEV_MODE=1. Use MailgunHttpAdminDeliveryService or "
                 "AdminDeliveryService in production."
             )
-        self._admin_url = os.environ.get("ADMIN_URL", "http://localhost/admin")
 
     def send_mfa_code(self, email: str, code: str) -> None:
         logger.info(
@@ -261,7 +233,6 @@ class ConsoleAdminDeliveryService:
 
     def send_admin_invitation(self, email: str) -> None:
         logger.info(
-            "[DEV_MODE] Invitation email send skipped. Would have sent to %s: url=%s",
+            "[DEV_MODE] Invitation email send skipped. Would have sent to %s",
             email,
-            self._admin_url,
         )

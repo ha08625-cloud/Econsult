@@ -87,6 +87,11 @@ class StubPracticeRepo:
         if len(parts) != 2 or not parts[0] or not parts[1]:
             raise InvalidEmailError("Email must be in format 'local@domain'")
 
+    def lock_practice(self, practice_id, conn):
+        # No-op in tests — the stub operates on in-memory state so no lock
+        # is needed. conn is accepted to match the real repository signature.
+        pass
+
     # --- Signposting ---
 
     def get_signposting(self, practice_id, condition_id):
@@ -205,7 +210,19 @@ class StubAuthRepo:
     No sessions are valid by default — session lookups always return None,
     which causes require_admin to fall through to the DEV_MODE bearer-token
     fallback.
+
+    User management methods (get_users_by_practice, get_user_by_id,
+    insert_user, delete_user) operate on an in-memory _users dict so that
+    user management router tests can exercise add/remove logic without a
+    real database.
     """
+    def __init__(self):
+        # Keyed by user id (str). Each value is a dict matching the shape
+        # returned by get_users_by_practice / get_user_by_id.
+        self._users = {}
+        # Controls whether insert_user raises UniqueViolation.
+        self._insert_raises_duplicate = False
+
     def get_session_context(self, session_id): return None
     def get_user_by_email(self, email): return None
     def get_auth_code_record(self, email): return None
@@ -215,7 +232,37 @@ class StubAuthRepo:
     def create_session(self, user_id, expires_at): return "stub-session-id"
     def delete_session(self, session_id): pass
     def count_users_for_practice(self, practice_id): return 0
-    def insert_user(self, email, practice_id, role): pass
+
+    def insert_user(self, email, practice_id, role, conn=None):
+        import uuid as _uuid
+        if self._insert_raises_duplicate:
+            import psycopg2.errors
+            raise psycopg2.errors.UniqueViolation("duplicate key value")
+        user_id = str(_uuid.uuid4())
+        self._users[user_id] = {
+            "id": user_id,
+            "email": email.lower(),
+            "practice_id": practice_id,
+            "created_at": None,
+            "last_login": None,
+        }
+
+    def get_users_by_practice(self, practice_id, conn=None):
+        return [
+            u for u in self._users.values()
+            if u["practice_id"] == practice_id
+        ]
+
+    def get_user_by_id(self, user_id, practice_id):
+        user = self._users.get(user_id)
+        if user is None or user["practice_id"] != practice_id:
+            return None
+        return dict(user)
+
+    def delete_user(self, user_id, practice_id, conn=None):
+        user = self._users.get(user_id)
+        if user and user["practice_id"] == practice_id:
+            del self._users[user_id]
 
 
 class StubAuditRepo:
@@ -240,15 +287,27 @@ class StubAuditRepo:
 
 
 class StubAdminDeliveryService:
-    """Captures send_mfa_code and send_admin_invitation calls without sending email."""
-    def __init__(self):
-        self.calls = []
-        self.invitation_calls = []
+    """
+    Captures admin email calls without sending email.
 
-    def send_mfa_code(self, email, code):
-        self.calls.append({"email": email, "code": code})
+    mfa_calls: list of {"email": str, "code": str} for send_mfa_code calls.
+    invitation_calls: list of {"email": str} for send_admin_invitation calls.
 
-    def send_admin_invitation(self, email):
+    invitation_raises: when True, send_admin_invitation raises RuntimeError
+    to simulate a delivery failure. Use this to test that the router returns
+    email_sent: false and does not propagate the error.
+    """
+    def __init__(self, invitation_raises: bool = False):
+        self.mfa_calls: list = []
+        self.invitation_calls: list = []
+        self._invitation_raises = invitation_raises
+
+    def send_mfa_code(self, email: str, code: str) -> None:
+        self.mfa_calls.append({"email": email, "code": code})
+
+    def send_admin_invitation(self, email: str) -> None:
+        if self._invitation_raises:
+            raise RuntimeError("Simulated invitation delivery failure")
         self.invitation_calls.append({"email": email})
 
 
@@ -278,7 +337,7 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
 
     Registers the same exception handlers as main.py:
       - ConditionNotFound  -> 404
-      - APIError           -> 422
+      - APIError           -> exc.status_code (covers 422, 409, 403, 404, etc.)
       - RateLimitError     -> 429
 
     with_rate_limiting=True additionally wires SlowAPIMiddleware and the
@@ -315,7 +374,7 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
     @app.exception_handler(APIError)
     async def api_error_handler(_, exc: APIError):
         return JSONResponse(
-            status_code=422,
+            status_code=exc.status_code,
             content={"error": {"code": exc.code, "message": exc.message}},
         )
 

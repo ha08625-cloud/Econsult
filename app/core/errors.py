@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class ConditionNotFound(Exception):
@@ -9,6 +9,7 @@ class ConditionNotFound(Exception):
 class APIError(Exception):
     code: str
     message: str
+    status_code: int = field(default=422)
 
 
 INVALID_PAYLOAD = lambda msg="Invalid payload": APIError("INVALID_PAYLOAD", msg)
@@ -46,11 +47,38 @@ INVALID_AUTH_CODE = lambda: APIError(
 # HTTPException handler registered in main.py.
 
 # RATE_LIMIT_EXCEEDED: code requested within the 60-second cooldown window.
-# Must return HTTP 429. The existing APIError handler hardcodes 422, so this
-# is a separate exception class with its own handler registered in main.py.
+# Must return HTTP 429. Kept as a separate exception class because slowapi
+# also raises RateLimitExceeded (a different type) which needs its own handler.
+# Both are registered separately in main.py.
 class RateLimitError(Exception):
     pass
 
 RATE_LIMIT_EXCEEDED = lambda: RateLimitError(
     "Code requested too recently. Wait 60 seconds before trying again."
+)
+
+# ---------------------------------------------------------------------------
+# User management errors
+#
+# These use APIError with explicit status_code values rather than separate
+# exception classes. The single APIError handler in main.py uses exc.status_code,
+# so no additional handler registration is needed for these.
+# ---------------------------------------------------------------------------
+
+USER_ALREADY_EXISTS = lambda: APIError(
+    "USER_ALREADY_EXISTS",
+    "A user with this email already exists.",
+    409,
+)
+
+ACTION_NOT_PERMITTED = lambda msg="This action is not permitted.": APIError(
+    "ACTION_NOT_PERMITTED",
+    msg,
+    403,
+)
+
+USER_NOT_FOUND = lambda: APIError(
+    "USER_NOT_FOUND",
+    "User not found.",
+    404,
 )
