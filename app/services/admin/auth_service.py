@@ -1,5 +1,5 @@
 """
-app/services/auth_service.py
+app/services/admin/auth_service.py
 
 Business logic for admin MFA authentication.
 
@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 import bcrypt
 
 from app.core.errors import INVALID_PAYLOAD, INVALID_AUTH_CODE, RATE_LIMIT_EXCEEDED
+from app.utils.email_utils import is_valid_email_format
 
 if TYPE_CHECKING:
     from app.repositories.auth_repository import AuthRepository
@@ -89,14 +90,13 @@ def validate_admin_domain(email: str, allowed_domains: str) -> bool:
     Example: "user@nhs.net" passes for "nhs.net" but not for "notnhs.net".
 
     Returns False if:
-    - The email contains no '@' or more than one '@'
+    - The email does not have a valid format (delegated to is_valid_email_format)
     - The domain is not in the allowed list
     - allowed_domains is empty or blank
     """
-    parts = email.split("@")
-    if len(parts) != 2:
+    if not is_valid_email_format(email):
         return False
-    domain = parts[1]
+    domain = email.split("@")[1]
     allowed = [d.strip() for d in allowed_domains.split(",") if d.strip()]
     return domain in allowed
 
@@ -147,20 +147,25 @@ def request_mfa_code(
     Validate the request, generate a code, persist it, and send it.
 
     Steps:
-    1. Validate domain — raise INVALID_PAYLOAD if not in allowed list.
+    1. Normalise email to lowercase.
+    2. Validate domain — raise INVALID_PAYLOAD if not in allowed list.
        Generic message; does not reveal whether the email is registered.
-    2. Look up user by email — return silently if not found.
+    3. Look up user by email — return silently if not found.
        Silence prevents user enumeration at this endpoint.
-    3. Check last_requested_at — raise RATE_LIMIT_EXCEEDED if within
+    4. Check last_requested_at — raise RATE_LIMIT_EXCEEDED if within
        the 60-second cooldown window.
-    4. Generate code, hash it, upsert the record.
-    5. Send the code via delivery_service.
+    5. Generate code, hash it, upsert the record.
+    6. Send the code via delivery_service.
 
     practice_id is accepted but not used for filtering here — user lookup
     is by email only, and the email domain check is the scope guard.
     It is retained in the signature for potential future multi-tenant use
     and to make the dependency explicit at the call site in the router.
     """
+    # Normalise before any lookup so the MFA flow always matches the
+    # lowercase value stored by insert_user.
+    email = email.lower()
+
     if not validate_admin_domain(email, allowed_domains):
         raise INVALID_PAYLOAD("Email domain is not permitted for admin access.")
 
