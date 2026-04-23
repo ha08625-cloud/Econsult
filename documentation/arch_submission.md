@@ -207,8 +207,8 @@ Owns the `submission_photos` table. `save_photos` inserts one row per photo with
 
 Abstract base class (`DeliveryService`) with three concrete implementations:
 
-- **`MailgunHttpDeliveryService`** — production (current deployment). Sends via the Mailgun EU HTTP API (`https://api.eu.mailgun.net/v3/{domain}/messages`). Requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `EMAIL_FROM`. Used because Railway's free and hobby plans block outbound SMTP.
-- **`EmailDeliveryService`** — production alternative. SMTP configuration read from environment variables at instantiation time. Available for deployments where SMTP is not blocked.
+- **`MailgunHttpDeliveryService`** — default for production. Sends via the Mailgun EU HTTP API (`https://api.eu.mailgun.net/v3/{domain}/messages`). Requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `EMAIL_FROM`.
+- **`EmailDeliveryService`** — alternative (unlikely to be needed). SMTP configuration read from environment variables at instantiation time.
 - **`ConsoleDeliveryService`** — development only. Raises `RuntimeError` at instantiation if `DEV_MODE` is not set.
 
 Service selection in `main.py` and `worker_main.py`: `DEV_MODE=1` -> Console; `MAILGUN_API_KEY` set -> Mailgun HTTP; otherwise -> SMTP.
