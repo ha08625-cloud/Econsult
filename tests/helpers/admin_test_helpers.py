@@ -89,6 +89,12 @@ class StubPracticeRepo:
         if len(parts) != 2 or not parts[0] or not parts[1]:
             raise InvalidEmailError("Email must be in format 'local@domain'")
 
+    def lock_practice(self, practice_id, conn):
+        # No-op in tests — the stub operates on in-memory state and has no
+        # transactions to lock. conn is required (no default) matching the
+        # real repository signature.
+        pass
+
     # --- Signposting ---
 
     def get_signposting(self, practice_id, condition_id):
@@ -208,6 +214,20 @@ class StubAuthRepo:
     which causes require_admin to fall through to the DEV_MODE bearer-token
     fallback.
     """
+    def __init__(self, users=None):
+        # users: list of dicts with at least {id, email, created_at, last_login}.
+        # Defaults to a single user matching the test session context.
+        self._users = users if users is not None else [
+            {
+                "id": "00000000-0000-0000-0000-000000000001",
+                "email": "admin@nhs.net",
+                "created_at": datetime.datetime(2024, 1, 1, tzinfo=timezone.utc),
+                "last_login": None,
+            }
+        ]
+        self._inserted = []   # records (email, practice_id, role) from insert_user
+        self._deleted = []    # records user_id from delete_user
+
     def get_session_context(self, session_id):
         if session_id == "test-session-id":
             return {
@@ -218,15 +238,46 @@ class StubAuthRepo:
                 "session_id": "test-session-id",
             }
         return None
-    def get_user_by_email(self, email): return None
-    def get_auth_code_record(self, email): return None
-    def upsert_auth_code(self, email, hashed_code, expires_at, last_requested_at): pass
-    def increment_code_attempts(self, email): pass
-    def delete_auth_code(self, email): pass
-    def create_session(self, user_id, expires_at): return "stub-session-id"
-    def delete_session(self, session_id): pass
-    def count_users_for_practice(self, practice_id): return 0
-    def insert_user(self, email, practice_id, role): pass
+
+    def get_user_by_email(self, email):
+        return None
+
+    def get_user_by_id(self, user_id, practice_id):
+        for u in self._users:
+            if u["id"] == user_id:
+                return dict(u)
+        return None
+
+    def get_users_by_practice(self, practice_id, conn=None):
+        return [dict(u) for u in self._users]
+
+    def get_auth_code_record(self, email):
+        return None
+
+    def upsert_auth_code(self, email, hashed_code, expires_at, last_requested_at):
+        pass
+
+    def increment_code_attempts(self, email):
+        pass
+
+    def delete_auth_code(self, email):
+        pass
+
+    def create_session(self, user_id, expires_at):
+        return "stub-session-id"
+
+    def delete_session(self, session_id):
+        pass
+
+    def count_users_for_practice(self, practice_id):
+        return len(self._users)
+
+    def insert_user(self, email, practice_id, role, conn=None):
+        self._inserted.append({"email": email, "practice_id": practice_id, "role": role})
+
+    def delete_user(self, user_id, practice_id, conn=None):
+        self._deleted.append(user_id)
+        self._users = [u for u in self._users if u["id"] != user_id]
 
 
 class StubAuditRepo:
@@ -251,15 +302,24 @@ class StubAuditRepo:
 
 
 class StubAdminDeliveryService:
-    """Captures send_mfa_code and send_admin_invitation calls without sending email."""
-    def __init__(self):
+    """
+    Captures send_mfa_code and send_admin_invitation calls without sending email.
+
+    invitation_raises: when True, send_admin_invitation raises RuntimeError to
+    simulate delivery failure. Allows tests to assert that email_sent: false is
+    returned by the router without a real SMTP/Mailgun call.
+    """
+    def __init__(self, invitation_raises: bool = False):
         self.calls = []
         self.invitation_calls = []
+        self._invitation_raises = invitation_raises
 
     def send_mfa_code(self, email, code):
         self.calls.append({"email": email, "code": code})
 
     def send_admin_invitation(self, email):
+        if self._invitation_raises:
+            raise RuntimeError("Simulated invitation delivery failure")
         self.invitation_calls.append({"email": email})
 
 
@@ -289,7 +349,7 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
 
     Registers the same exception handlers as main.py:
       - ConditionNotFound  -> 404
-      - APIError           -> 422
+      - APIError           -> exc.status_code (not hardcoded 422)
       - RateLimitError     -> 429
 
     with_rate_limiting=True additionally wires SlowAPIMiddleware and the
@@ -326,7 +386,7 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
     @app.exception_handler(APIError)
     async def api_error_handler(_, exc: APIError):
         return JSONResponse(
-            status_code=422,
+            status_code=exc.status_code,
             content={"error": {"code": exc.code, "message": exc.message}},
         )
 
