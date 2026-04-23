@@ -15,7 +15,6 @@ from app.routers.admin import (
     admin_availability_router,
     admin_practice_router,
     admin_audit_router,
-    admin_user_router,
 )
 
 router = APIRouter()
@@ -30,4 +29,3 @@ router.include_router(admin_auth_router.router, tags=["admin-auth"])
 router.include_router(admin_practice_router.router, tags=["admin-practice"])
 router.include_router(admin_availability_router.router, tags=["admin-availability"])
 router.include_router(admin_audit_router.router, tags=["admin-audit"])
-router.include_router(admin_user_router.router, tags=["admin-users"])
