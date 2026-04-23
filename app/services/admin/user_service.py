@@ -33,7 +33,7 @@ from app.core.errors import (
     USER_ALREADY_EXISTS,
     USER_NOT_FOUND,
 )
-from app.services.auth_service import validate_admin_domain
+from app.services.admin.auth_service import validate_admin_domain
 
 if TYPE_CHECKING:
     from app.repositories.auth_repository import AuthRepository
