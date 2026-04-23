@@ -24,7 +24,7 @@ from app.repositories.practice_repository import (
 # Minimal stubs
 # ---------------------------------------------------------------------------
 
-TEST_SESSION_COOKIE = "session_id"
+TEST_SESSION_COOKIE = {"session_id": "test-session-id"}
 
 class StubRegistry:
     def __init__(self, condition_ids):
@@ -208,7 +208,16 @@ class StubAuthRepo:
     which causes require_admin to fall through to the DEV_MODE bearer-token
     fallback.
     """
-    def get_session_context(self, session_id): return None
+    def get_session_context(self, session_id):
+        if session_id == "test-session-id":
+            return {
+                "user_id": "00000000-0000-0000-0000-000000000001",
+                "role": "admin",
+                "practice_id": "test_practice",
+                "email": "admin@nhs.net",
+                "session_id": "test-session-id",
+            }
+        return None
     def get_user_by_email(self, email): return None
     def get_auth_code_record(self, email): return None
     def upsert_auth_code(self, email, hashed_code, expires_at, last_requested_at): pass
