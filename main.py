@@ -296,7 +296,7 @@ app.include_router(form_router)
 @app.exception_handler(APIError)
 async def api_error_handler(_, exc: APIError):
     return JSONResponse(
-        status_code=422,
+        status_code=exc.status_code,
         content={"error": {"code": exc.code, "message": exc.message}},
     )
 
