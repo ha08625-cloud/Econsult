@@ -24,6 +24,8 @@ from app.repositories.practice_repository import (
 # Minimal stubs
 # ---------------------------------------------------------------------------
 
+TEST_SESSION_COOKIE = "session_id"
+
 class StubRegistry:
     def __init__(self, condition_ids):
         self._conditions = {
