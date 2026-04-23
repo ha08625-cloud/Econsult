@@ -429,3 +429,23 @@ class PracticeRepository:
             with get_conn(self.database_url) as own_conn:
                 with own_conn.cursor() as cur:
                     _execute(cur)
+                    
+    def lock_practice(self, practice_id: str, conn) -> None:
+        """
+        Acquire a row-level lock on the practice row for the current transaction.
+
+        Executes SELECT ... FOR UPDATE, which blocks until any concurrent
+        transaction holding a lock on this row commits or rolls back. This
+        serialises concurrent user add/remove operations for the same practice,
+        preventing two simultaneous requests from both passing the minimum-user
+        check and both proceeding to delete.
+
+        conn is required with no default — there is no sensible fallback.
+        Calling this without a surrounding transaction would acquire and
+        immediately release the lock on a separate connection, making it useless.
+        """
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM practices WHERE practice_id = %s FOR UPDATE",
+                (practice_id,),
+            )
