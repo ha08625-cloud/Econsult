@@ -100,7 +100,12 @@ Runs Python unit tests, then frontend Vitest, then Python integration tests, in 
 
 ## Schema Migration Obligation
 
-With a single consolidated migration (`0001_initial_schema.py`), schema changes now mean updating that file directly (at prototype stage, while no real data exists). Once real data is in play, new Alembic migrations will be added as before.
+The system now has two Alembic migrations:
+
+- `0001_initial_schema.py` — creates the complete baseline schema.
+- `0002_user_management_cascade.py` — adds `ON DELETE CASCADE` to `admin_sessions.user_id` FK and adds `admin_users.last_login` (nullable `TIMESTAMPTZ`).
+
+New schema changes should be added as further numbered migrations (`0003_...` etc.) rather than modifying existing ones, now that real data is involved.
 
 When the schema changes, the test database on Railway must be updated to match. Because the test database is not deployed to automatically, run:
 
@@ -109,6 +114,35 @@ make migrate-test
 ```
 
 If you forget, integration tests will fail against a stale schema.
+
+---
+
+## Admin Unit Test Infrastructure (`tests/helpers/admin_test_helpers.py`)
+
+All admin sub-router unit tests share a common set of stubs and an app factory defined in `admin_test_helpers.py`. Understanding this infrastructure is necessary when writing new admin tests.
+
+**`make_test_app`** builds a bare FastAPI app with the full admin router registered and `app.state` populated with stub dependencies. It registers the same exception handlers as `main.py`:
+- `ConditionNotFound` → 404
+- `APIError` → uses `exc.status_code` (not hardcoded 422 — this matters for user management errors which return 403, 404, and 409)
+- `RateLimitError` → 429
+
+The `with_rate_limiting=True` flag additionally wires `SlowAPIMiddleware` and the `RateLimitExceeded` handler. Pass it only in tests that specifically exercise slowapi counter behaviour.
+
+**`dummy_conn`** is a context manager stub that replaces `app.core.db.get_conn` in unit tests. It yields a sentinel string so that `with get_conn(...) as conn:` blocks in routers succeed without opening a real Postgres connection. Stub repositories accept `conn=None` and ignore it entirely.
+
+**Key stubs:**
+
+`StubAuthRepo` — in-memory auth repo. Session lookup returns a valid context only for `"test-session-id"`. Also exposes the user management methods used by `admin_user_router`: `get_users_by_practice`, `get_user_by_id`, `insert_user`, `delete_user`. Tests that need to control user list contents should subclass or replace this stub.
+
+`StubPracticeRepo` — in-memory practice repo. Includes `lock_practice(practice_id, conn)` which is a no-op in tests (the stub operates on in-memory state; no real lock is needed).
+
+`StubAdminDeliveryService` — captures calls in two separate lists:
+- `mfa_calls` — records `{"email": ..., "code": ...}` for each `send_mfa_code` call
+- `invitation_calls` — records `{"email": ...}` for each `send_admin_invitation` call
+
+When writing user management tests that need to simulate delivery failure, pass a custom delivery service subclass that raises `RuntimeError` from `send_admin_invitation` and assert that `response.json()["email_sent"] == False`.
+
+`StubAuditRepo` — no-op audit repo. Records calls to `log_event` in `self.logged` so tests can assert the audit trail was written.
 
 ---
 
@@ -143,3 +177,6 @@ The standard `make_test_app` factory does not wire `SlowAPIMiddleware` or the `R
 
 ### Why are auth_service functions patched in TestMFARateLimiting?
 The service-layer per-email cooldown in `auth_service.request_mfa_code` raises `RateLimitError` (HTTP 429) from the second request onward — before the slowapi IP counter reaches its limit. Without patching, the service-layer 429 would fire first and make it impossible to observe the slowapi counter reaching 5. Patching the service functions to no-ops isolates the two independent rate limiting mechanisms so each can be tested on its own terms.
+
+### Why does user_service receive conn as an argument rather than opening its own connection?
+`user_service.add_user` and `user_service.remove_user` both need to participate in a transaction opened by the router. The practice row lock, the user write, and the audit log write must all be atomic. Passing `conn` in as an argument keeps the service layer free of transaction management concerns and makes the boundary explicit: the router owns the transaction lifecycle, the service owns the business logic. `resend_invitation` performs no writes and therefore has no `conn` parameter.
