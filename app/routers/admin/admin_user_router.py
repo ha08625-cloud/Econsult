@@ -17,6 +17,9 @@ This module must never import:
 # get_conn. The transaction covers:
 #   - The practice row lock (acquired inside user_service)
 #   - The user write (insert or delete, inside user_service)
+#   - The reset token upsert (inside auth_service.generate_reset_token, for
+#     POST /users only — token generation is inside the transaction so it
+#     rolls back atomically if the user insert fails)
 #   - The audit log write
 #
 # If any of these fail the entire transaction rolls back.
@@ -32,9 +35,10 @@ This module must never import:
 # has been added and can be re-invited via POST /users/{id}/resend-invitation.
 # The response includes email_sent: false so the caller is informed.
 #
-# POST /users/{id}/resend-invitation performs no writes, so it has no
-# transaction. The audit log insert uses conn=None (standalone insert,
-# consistent with the pattern in admin_auth_router.py for write-free flows).
+# POST /users/{id}/resend-invitation performs a token upsert (its own
+# connection, not part of a larger transaction) then dispatches email.
+# The audit log insert uses conn=None (standalone insert, consistent with
+# the pattern in admin_auth_router.py for write-free flows).
 # ---------------------------------------------------------------------------
 """
 import logging
@@ -54,7 +58,7 @@ from app.core.errors import APIError, INVALID_PAYLOAD
 from app.core.db import get_conn
 from app.core.rate_limit import limiter
 from app.utils.http_utils import extract_ip
-from app.services.admin import user_service
+from app.services.admin import user_service, auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +127,7 @@ async def add_user(
     allowed_domains: str = Depends(get_allowed_admin_domains),
 ):
     """
-    Add a new admin user for this practice and send an invitation email.
+    Add a new admin user for this practice and send a setup invitation email.
 
     Accepts: {"email": "user@domain.com"}
 
@@ -133,8 +137,10 @@ async def add_user(
     - email domain must be in ALLOWED_ADMIN_DOMAINS (checked in user_service)
     - email must not already be registered (checked in user_service)
 
-    The user write and audit log are atomic. Email delivery is outside the
-    transaction — a delivery failure does not roll back the user insert.
+    The user insert, reset token upsert, and audit log are atomic — they
+    share a single transaction. If any of these fail, the entire transaction
+    rolls back. Email delivery is outside the transaction — a delivery failure
+    does not roll back the user insert.
 
     Returns:
         {"ok": true, "email_sent": true}   — user added, invitation sent
@@ -167,6 +173,8 @@ async def add_user(
         request.client.host if request.client else None,
     )
 
+    raw_token: str = ""
+
     try:
         with get_conn(practice_repo.database_url) as conn:
             user_service.add_user(
@@ -176,6 +184,17 @@ async def add_user(
                 practice_repo=practice_repo,
                 auth_repo=auth_repo,
                 conn=conn,
+            )
+            # Retrieve the newly inserted user's id to generate the token.
+            # get_user_by_email uses its own connection — inside a shared
+            # transaction we must use the conn-accepting path. user_service
+            # returns the inserted user for this purpose.
+            #
+            # Since insert_user does not return the id, we look it up within
+            # the same transaction to guarantee consistency.
+            new_user = _get_user_by_email_in_conn(auth_repo, email, conn)
+            raw_token = auth_service.generate_reset_token(
+                new_user["id"], auth_repo, conn=conn
             )
             audit_repo.log_event(
                 practice_id=admin.practice_id,
@@ -201,12 +220,38 @@ async def add_user(
     # the user insert — the admin can retry via /resend-invitation.
     email_sent = True
     try:
-        delivery_service.send_admin_invitation(email)
+        delivery_service.send_admin_invitation(email, raw_token)
     except Exception:
         logger.warning("Invitation email failed to send to %s", email)
         email_sent = False
 
     return {"ok": True, "email_sent": email_sent}
+
+
+def _get_user_by_email_in_conn(auth_repo, email: str, conn) -> dict:
+    """
+    Look up a user by email within an existing transaction connection.
+
+    get_user_by_email always opens its own connection (it is a read method
+    with no conn parameter). To retrieve the newly inserted user's id within
+    the same transaction — so the id read is consistent with the uncommitted
+    insert — we execute the query directly on the shared conn here.
+
+    This helper is private to admin_user_router and is only called from
+    add_user, immediately after insert_user, within the same get_conn block.
+    """
+    from psycopg2.extras import RealDictCursor
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            "SELECT id::text, email FROM admin_users WHERE email = %s",
+            (email,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        raise RuntimeError(
+            f"User '{email}' not found immediately after insert — this should not happen."
+        )
+    return dict(row)
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +276,8 @@ async def remove_user(
     - Cannot delete a user not in this practice (404)
 
     The delete and audit log are atomic. Postgres cascades the delete to
-    admin_sessions, so the deleted user's sessions are removed automatically.
+    admin_sessions and admin_password_reset_tokens, so the deleted user's
+    sessions and pending tokens are removed automatically.
 
     Returns {"ok": true} on success.
     Returns 403 if self-deletion or last-user deletion is attempted.
@@ -262,7 +308,6 @@ async def remove_user(
                 conn=conn,
             )
     except APIError:
-        # Domain validation failure (403, 404) — let it propagate unchanged.
         raise
     except Exception:
         logger.exception("Transaction failed for auth.user_deleted")
@@ -289,16 +334,17 @@ async def resend_invitation(
     delivery_service=Depends(get_admin_delivery_service),
 ):
     """
-    Re-send the invitation email to an existing admin user.
+    Re-send the setup invitation email to an existing admin user.
 
-    No writes — the user record is not modified. The frontend only renders
-    this button when last_login is null, but the endpoint does not enforce
-    that constraint — any user can be re-invited regardless of login history.
+    Generates a fresh reset token (replacing any existing pending token) and
+    sends an invitation email with the new setup link. The frontend only
+    renders this button when last_login is null, but the endpoint does not
+    enforce that constraint — any user can be re-invited regardless of login
+    history.
 
     The audit log uses a standalone insert (conn=None) consistent with the
-    pattern in admin_auth_router.py for endpoints that perform no mutations.
-    If the audit write fails the endpoint returns 500 — the audit trail is
-    mandatory.
+    pattern in admin_auth_router.py. If the audit write fails the endpoint
+    returns 500 — the audit trail is mandatory.
 
     Returns:
         {"ok": true, "email_sent": true}   — invitation sent
@@ -308,19 +354,21 @@ async def resend_invitation(
     Returns 401 if the session has expired.
     """
     # Raises USER_NOT_FOUND (404) if the user is not in this practice.
-    # No conn needed — no writes.
     email = user_service.resend_invitation(
         target_user_id=user_id,
         admin_context=admin,
         auth_repo=auth_repo,
     )
 
+    # Generate a fresh token. Uses its own connection (no transaction needed
+    # here — this is the only write and it is idempotent via upsert).
+    raw_token = auth_service.generate_reset_token(user_id, auth_repo)
+
     ip_address = extract_ip(
         request.headers,
         request.client.host if request.client else None,
     )
 
-    # Standalone audit log insert — no paired mutation, conn=None.
     try:
         audit_repo.log_event(
             practice_id=admin.practice_id,
@@ -339,7 +387,7 @@ async def resend_invitation(
 
     email_sent = True
     try:
-        delivery_service.send_admin_invitation(email)
+        delivery_service.send_admin_invitation(email, raw_token)
     except Exception:
         logger.warning("Re-invitation email failed to send to %s", email)
         email_sent = False

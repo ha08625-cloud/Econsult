@@ -58,6 +58,35 @@ RATE_LIMIT_EXCEEDED = lambda: RateLimitError(
 )
 
 # ---------------------------------------------------------------------------
+# Password authentication errors
+# ---------------------------------------------------------------------------
+
+# INVALID_CREDENTIALS: all password-path failures map to this single error.
+# Deliberately generic — does not reveal whether the gate that failed was
+# "user not found", "wrong password", "account locked", or "no password set".
+# Maps to HTTP 422 (consistent with INVALID_AUTH_CODE).
+INVALID_CREDENTIALS = lambda: APIError(
+    "INVALID_CREDENTIALS",
+    "Invalid email or password.",
+)
+
+# INVALID_RESET_TOKEN: the supplied reset/setup token is absent, expired,
+# or has already been consumed. Maps to HTTP 422.
+INVALID_RESET_TOKEN = lambda: APIError(
+    "INVALID_RESET_TOKEN",
+    "This link has expired or has already been used. Please request a new one.",
+)
+
+# WEAK_PASSWORD: the supplied password did not meet the minimum strength
+# requirements enforced by zxcvbn. The message is populated with the
+# specific feedback string returned by zxcvbn so the user receives
+# actionable guidance rather than a generic rejection.
+WEAK_PASSWORD = lambda msg="Password is too weak.": APIError(
+    "WEAK_PASSWORD",
+    msg,
+)
+
+# ---------------------------------------------------------------------------
 # User management errors (admin portal)
 # ---------------------------------------------------------------------------
 

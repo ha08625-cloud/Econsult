@@ -1,43 +1,53 @@
 /**
  * App.tsx — admin portal root component.
  *
- * Authentication is cookie-based. On mount, App attempts to fetch the
- * condition list. If it succeeds, the session cookie is valid and
- * EditorView is shown immediately. If it returns 401 (AuthError),
- * LoginView is shown instead.
+ * Authentication is cookie-based. On mount, App checks window.location.hash
+ * before probing the session:
+ *
+ * - If the hash matches #reset:{token}, bypass the session probe and go
+ *   directly to set_password state. SetPasswordView extracts and clears
+ *   the hash on its own mount.
+ *
+ * - Otherwise, attempt to fetch the condition list. If it succeeds, the
+ *   session cookie is valid and EditorView is shown immediately. If it
+ *   returns 401 (AuthError), LoginView is shown instead.
  *
  * Session expiry mid-session: any AuthError thrown by an EditorView API
  * call propagates to handleAuthError, which transitions back to LoginView.
  * Any unsaved data in EditorView is lost — this is intentional given the
  * 24-hour session TTL and infrequent use pattern. See arch_admin.md.
- *
- * TokenView has been removed. There is no token state.
  */
 
 import { useState, useEffect } from "react";
 import LoginView from "./screens/LoginView";
+import SetPasswordView from "./screens/SetPasswordView";
 import EditorView from "./screens/EditorView";
 import type { ConditionSummary } from "./types";
 import { fetchConditions, AuthError, logout } from "./api";
 
-type AuthState = "checking" | "login" | "editor";
+type AuthState = "checking" | "login" | "editor" | "set_password";
 
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>("checking");
   const [conditions, setConditions] = useState<ConditionSummary[]>([]);
 
-  // On mount: probe the session by fetching conditions.
-  // Success -> go straight to editor. AuthError -> show login.
   useEffect(() => {
+    // Check for a password reset/setup hash before probing the session.
+    // This prevents an unnecessary authenticated API call when the user
+    // has arrived via a setup link.
+    if (/^#reset:/.test(window.location.hash)) {
+      setAuthState("set_password");
+      return;
+    }
+
+    // Probe the session by fetching conditions.
+    // Success -> go straight to editor. AuthError -> show login.
     fetchConditions()
       .then((loaded) => {
         setConditions(loaded);
         setAuthState("editor");
       })
       .catch((err) => {
-        // AuthError means no valid session — show login.
-        // Any other error (network failure, 500) also shows login
-        // since we cannot operate without conditions.
         if (!(err instanceof AuthError)) {
           console.error("Startup fetch failed:", err);
         }
@@ -46,30 +56,30 @@ export default function App() {
   }, []);
 
   // Called by LoginView after successful MFA verification.
-  // Re-fetches conditions (session cookie is now set) then transitions
-  // to EditorView.
   async function handleLoginSuccess() {
     try {
       const loaded = await fetchConditions();
       setConditions(loaded);
       setAuthState("editor");
     } catch (err) {
-      // Should not happen immediately after successful verify, but guard
-      // against it by staying on the login view.
       console.error("Post-login conditions fetch failed:", err);
       setAuthState("login");
     }
   }
 
+  // Called by SetPasswordView when the user has set their password and
+  // clicks "Go to login", or when the link was invalid.
+  function handleSetPasswordComplete() {
+    setAuthState("login");
+  }
+
   // Called by EditorView when any API call returns 401.
-  // Transitions back to login — unsaved data is lost.
   function handleAuthError() {
     setConditions([]);
     setAuthState("login");
   }
 
   // Called when the user clicks the explicit "Log out" button.
-  // Fires the backend request and immediately clears local state.
   async function handleLogout() {
     await logout();
     setConditions([]);
@@ -82,12 +92,11 @@ export default function App() {
         <span className="wordmark">econsult</span>
         <span className="separator" />
         <span className="title">Practice admin</span>
-        
-        {/* Render the logout button only when authenticated */}
+
         {authState === "editor" && (
-          <button 
-            className="tab-btn" 
-            onClick={handleLogout} 
+          <button
+            className="tab-btn"
+            onClick={handleLogout}
             style={{ marginLeft: "auto", cursor: "pointer" }}
           >
             Log out
@@ -105,6 +114,10 @@ export default function App() {
 
         {authState === "login" && (
           <LoginView onSuccess={handleLoginSuccess} />
+        )}
+
+        {authState === "set_password" && (
+          <SetPasswordView onComplete={handleSetPasswordComplete} />
         )}
 
         {authState === "editor" && (

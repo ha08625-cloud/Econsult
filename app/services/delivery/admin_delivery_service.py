@@ -5,7 +5,7 @@ Transport layer for admin emails.
 
 Responsibilities:
 - Send a plain-text MFA code email (send_mfa_code).
-- Send a plain-text admin invitation email (send_admin_invitation).
+- Send a plain-text admin setup/invitation email (send_admin_invitation).
 
 This module defines:
   - AdminDeliveryService: production SMTP implementation
@@ -27,7 +27,8 @@ A missing variable raises RuntimeError at startup rather than silently
 failing at send time.
 
 Required environment variables (all implementations):
-    ADMIN_URL   — full URL of the admin portal, included in invitation emails
+    ADMIN_URL   — full URL of the admin portal, used to construct the
+                  password setup link in invitation emails
                   (e.g. https://my-practice.up.railway.app/admin)
 
 ConsoleAdminDeliveryService reads ADMIN_URL but does not require it —
@@ -53,7 +54,7 @@ _MAILGUN_EU_API_BASE = "https://api.eu.mailgun.net/v3"
 
 class AdminDeliveryService:
     """
-    Sends admin MFA codes via SMTP.
+    Sends admin MFA codes and setup invitations via SMTP.
 
     Uses the same SMTP environment variables as EmailDeliveryService but
     opens a completely separate SMTP connection on every call. No shared
@@ -86,8 +87,8 @@ class AdminDeliveryService:
         no attachments, no clinical branding.
 
         Raises smtplib.SMTPException (or subclass) if the SMTP connection
-        or send fails. The caller (auth_service.request_mfa_code) should
-        let this propagate — a failed send is a genuine error.
+        or send fails. The caller should let this propagate — a failed send
+        is a genuine error.
         """
         body = (
             f"Your Econsult admin security code is: {code}. "
@@ -109,21 +110,29 @@ class AdminDeliveryService:
 
         logger.info("MFA code sent to %s", email)
 
-    def send_admin_invitation(self, email: str) -> None:
+    def send_admin_invitation(self, email: str, token: str) -> None:
         """
-        Send a plain-text invitation email to a newly added admin user.
+        Send a plain-text setup/invitation email to an admin user.
+
+        The token is embedded in the URL hash as #reset:{token}. The hash
+        fragment is never sent to the server, so the raw token is not logged
+        in server access logs. The admin portal's App.tsx detects the hash
+        on load and routes to SetPasswordView.
 
         Raises smtplib.SMTPException (or subclass) if the SMTP connection
         or send fails. The caller (admin_user_router) should catch this and
         return email_sent: false rather than raising a 500.
         """
+        setup_url = f"{self._admin_url}#reset:{token}"
         body = (
             "You have been added as an administrator for this practice. "
-            f"Log in at: {self._admin_url}"
+            f"Set up your password at: {setup_url}\n\n"
+            "This link expires in 1 hour. If you did not expect this email, "
+            "you can ignore it."
         )
 
         msg = EmailMessage()
-        msg["Subject"] = "You have been added as an admin"
+        msg["Subject"] = "Set up your Econsult admin account"
         msg["From"] = self._email_from
         msg["To"] = email
         msg.set_content(body)
@@ -144,7 +153,7 @@ class AdminDeliveryService:
 
 class MailgunHttpAdminDeliveryService:
     """
-    Sends admin MFA codes via the Mailgun HTTP API.
+    Sends admin MFA codes and setup invitations via the Mailgun HTTP API.
 
     Uses the EU regional endpoint. Configuration is read from environment
     variables at instantiation time. A missing variable raises RuntimeError
@@ -174,8 +183,7 @@ class MailgunHttpAdminDeliveryService:
         Send a plain-text MFA code email via the Mailgun HTTP API.
 
         Raises requests.RequestException if the HTTP call fails.
-        The caller (auth_service.request_mfa_code) should let this
-        propagate — a failed send is a genuine error.
+        The caller should let this propagate — a failed send is a genuine error.
         """
         body = (
             f"Your Econsult admin security code is: {code}. "
@@ -199,17 +207,24 @@ class MailgunHttpAdminDeliveryService:
 
         logger.info("MFA code sent to %s", email)
 
-    def send_admin_invitation(self, email: str) -> None:
+    def send_admin_invitation(self, email: str, token: str) -> None:
         """
-        Send a plain-text invitation email via the Mailgun HTTP API.
+        Send a plain-text setup/invitation email via the Mailgun HTTP API.
+
+        The token is embedded in the URL hash as #reset:{token}. The hash
+        fragment is never sent to the server, so the raw token is not logged
+        in server access logs.
 
         Raises requests.RequestException if the HTTP call fails.
         The caller (admin_user_router) should catch this and return
         email_sent: false rather than raising a 500.
         """
+        setup_url = f"{self._admin_url}#reset:{token}"
         body = (
             "You have been added as an administrator for this practice. "
-            f"Log in at: {self._admin_url}"
+            f"Set up your password at: {setup_url}\n\n"
+            "This link expires in 1 hour. If you did not expect this email, "
+            "you can ignore it."
         )
 
         url = f"{_MAILGUN_EU_API_BASE}/{self._domain}/messages"
@@ -220,7 +235,7 @@ class MailgunHttpAdminDeliveryService:
             data={
                 "from": self._email_from,
                 "to": email,
-                "subject": "You have been added as an admin",
+                "subject": "Set up your Econsult admin account",
                 "text": body,
             },
             timeout=30,
@@ -237,7 +252,7 @@ class MailgunHttpAdminDeliveryService:
 
 class ConsoleAdminDeliveryService:
     """
-    Logs the MFA code to stdout instead of sending email.
+    Logs the MFA code and invitation URL to stdout instead of sending email.
 
     For local development only. Raises RuntimeError at instantiation if
     DEV_MODE is not set, to prevent accidental use in production.
@@ -259,9 +274,10 @@ class ConsoleAdminDeliveryService:
             code,
         )
 
-    def send_admin_invitation(self, email: str) -> None:
+    def send_admin_invitation(self, email: str, token: str) -> None:
+        setup_url = f"{self._admin_url}#reset:{token}"
         logger.info(
             "[DEV_MODE] Invitation email send skipped. Would have sent to %s: url=%s",
             email,
-            self._admin_url,
+            setup_url,
         )

@@ -15,3 +15,4 @@ requests==2.32.3
 sentry-sdk[fastapi]
 slowapi==0.1.9
 limits==3.14.0
+zxcvbn==4.4.28

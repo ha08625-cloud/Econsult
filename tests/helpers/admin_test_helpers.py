@@ -90,9 +90,6 @@ class StubPracticeRepo:
             raise InvalidEmailError("Email must be in format 'local@domain'")
 
     def lock_practice(self, practice_id, conn):
-        # No-op in tests — the stub operates on in-memory state and has no
-        # transactions to lock. conn is required (no default) matching the
-        # real repository signature.
         pass
 
     # --- Signposting ---
@@ -213,6 +210,10 @@ class StubAuthRepo:
     No sessions are valid by default — session lookups always return None,
     which causes require_admin to fall through to the DEV_MODE bearer-token
     fallback.
+
+    Password auth methods are no-ops by default. Tests that need to exercise
+    password authentication should use SpyAuthRepo (defined per test module)
+    or construct a user dict with the appropriate password fields.
     """
     def __init__(self, users=None):
         # users: list of dicts with at least {id, email, created_at, last_login}.
@@ -279,6 +280,26 @@ class StubAuthRepo:
         self._deleted.append(user_id)
         self._users = [u for u in self._users if u["id"] != user_id]
 
+    # --- Password auth methods (no-ops in base stub) ---
+
+    def set_password(self, user_id, hashed_password, conn=None):
+        pass
+
+    def record_failed_password_attempt(self, user_id, lock_until=None, conn=None):
+        pass
+
+    def reset_password_attempts(self, user_id, conn=None):
+        pass
+
+    def upsert_reset_token(self, user_id, token_hash, expires_at, conn=None):
+        pass
+
+    def get_reset_token_record(self, token_hash):
+        return None
+
+    def delete_reset_token(self, token_hash, conn=None):
+        pass
+
 
 class StubAuditRepo:
     """
@@ -317,10 +338,10 @@ class StubAdminDeliveryService:
     def send_mfa_code(self, email, code):
         self.calls.append({"email": email, "code": code})
 
-    def send_admin_invitation(self, email):
+    def send_admin_invitation(self, email, token):
         if self._invitation_raises:
             raise RuntimeError("Simulated invitation delivery failure")
-        self.invitation_calls.append({"email": email})
+        self.invitation_calls.append({"email": email, "token": token})
 
 
 # ---------------------------------------------------------------------------

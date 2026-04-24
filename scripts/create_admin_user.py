@@ -4,7 +4,7 @@ scripts/create_admin_user.py
 One-time management command for inserting an admin user before first boot.
 
 Usage:
-    DATABASE_URL=... PRACTICE_ID=... ALLOWED_ADMIN_DOMAINS=... \\
+    DATABASE_URL=... PRACTICE_ID=... ALLOWED_ADMIN_DOMAINS=... ADMIN_URL=... \\
         python scripts/create_admin_user.py <email>
 
 Optional flag:
@@ -13,6 +13,13 @@ Optional flag:
                         Intended for CI environments only. Production operators
                         should insert the practice record manually — see
                         docs/deployment_checklist.md.
+
+After inserting the user, the script generates a one-time password setup token
+and prints a setup URL to stdout. The operator must visit this URL (or forward
+it to the user) to complete account setup.
+
+If ADMIN_URL is not set, the raw token is printed so that the setup URL can
+be constructed manually. The token expires in 1 hour.
 
 This script does not start the application and does not run Alembic migrations.
 Migrations must have been run before this script is called.
@@ -69,13 +76,14 @@ def main() -> None:
     database_url = _require_env("DATABASE_URL")
     practice_id = _require_env("PRACTICE_ID")
     allowed_admin_domains = _require_env("ALLOWED_ADMIN_DOMAINS")
+    admin_url = os.environ.get("ADMIN_URL", "").strip()
 
     # ---------------------------------------------------------------------------
     # Import app modules only after path setup and env checks.
     # ---------------------------------------------------------------------------
     from app.repositories.practice_repository import PracticeRepository
     from app.repositories.auth_repository import AuthRepository
-    from app.services.admin.auth_service import validate_admin_domain
+    from app.services.admin.auth_service import validate_admin_domain, generate_reset_token
 
     practice_repo = PracticeRepository(database_url)
     auth_repo = AuthRepository(database_url)
@@ -127,7 +135,10 @@ def main() -> None:
     # ---------------------------------------------------------------------------
     existing = auth_repo.get_user_by_email(email)
     if existing is not None:
-        print(f"User '{email}' already exists for practice '{practice_id}'. No action taken.")
+        print(f"User '{email}' already exists for practice '{practice_id}'.")
+        print("Generating a fresh setup token for this user.")
+        raw_token = generate_reset_token(existing["id"], auth_repo)
+        _print_setup_instructions(email, raw_token, admin_url)
         sys.exit(0)
 
     # ---------------------------------------------------------------------------
@@ -135,6 +146,40 @@ def main() -> None:
     # ---------------------------------------------------------------------------
     auth_repo.insert_user(email=email, practice_id=practice_id, role="admin")
     print(f"Admin user '{email}' created for practice '{practice_id}'.")
+
+    # ---------------------------------------------------------------------------
+    # Generate a setup token.
+    # ---------------------------------------------------------------------------
+    # Re-fetch to get the id assigned by Postgres.
+    new_user = auth_repo.get_user_by_email(email)
+    if new_user is None:
+        print(
+            "ERROR: User was inserted but could not be re-fetched. "
+            "Cannot generate setup token.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    raw_token = generate_reset_token(new_user["id"], auth_repo)
+    _print_setup_instructions(email, raw_token, admin_url)
+
+
+def _print_setup_instructions(email: str, raw_token: str, admin_url: str) -> None:
+    """Print setup URL or raw token depending on whether ADMIN_URL is set."""
+    if admin_url:
+        setup_url = f"{admin_url}#reset:{raw_token}"
+        print(f"\nSetup URL for '{email}' (expires in 1 hour):")
+        print(f"  {setup_url}")
+        print("\nForward this URL to the user so they can set their password.")
+    else:
+        print(
+            "\nWARNING: ADMIN_URL is not set. Cannot construct a full setup URL."
+        )
+        print(f"Raw token for '{email}' (expires in 1 hour): {raw_token}")
+        print(
+            "Construct the setup URL manually: "
+            "<ADMIN_URL>#reset:<token>"
+        )
 
 
 if __name__ == "__main__":

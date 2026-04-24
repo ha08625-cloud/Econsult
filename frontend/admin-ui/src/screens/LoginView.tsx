@@ -1,63 +1,94 @@
 /**
- * LoginView.tsx — two-step MFA login component.
+ * LoginView.tsx — two-step 2FA login component.
  *
- * Step 1: email input. Calls POST /admin/auth/request-code.
- *         On success, advances to step 2.
+ * Step 1 ("login" state): Email and password inputs.
+ *   Calls POST /admin/auth/login.
+ *   On success, the server has generated an OTP and queued its delivery.
+ *   Advances to step 2.
  *
- * Step 2: 6-digit code input. Calls POST /admin/auth/verify.
- *         On success, calls onSuccess() so App can re-fetch conditions
- *         and transition to EditorView. The session cookie is set by
- *         the server — this component does not handle it directly.
+ * Step 2 ("code" state): 6-digit OTP input.
+ *   Calls POST /admin/auth/verify.
+ *   On success, calls onSuccess() so App can re-fetch conditions and
+ *   transition to EditorView. The session cookie is set by the server.
  *
- * On any 401 received while already in EditorView (detected by App),
- * App transitions back to LoginView. Any unsaved data in EditorView
- * is lost — this is intentional given the 24-hour session TTL and
- * infrequent use pattern.
+ * "Forgot / Set up password?" link:
+ *   If the email field is non-empty, calls POST /admin/auth/request-reset
+ *   and displays a generic confirmation message. If the email field is
+ *   empty, prompts the user to enter their email first.
  */
 
 import { useState } from "react";
-import { requestMfaCode, verifyMfaCode } from "../api";
+import { login, verifyMfaCode, requestPasswordReset } from "../api";
 
 interface Props {
   onSuccess: () => void;
 }
 
-type Step = "email" | "code";
+type Step = "login" | "code";
 
 export default function LoginView({ onSuccess }: Props) {
-  const [step, setStep] = useState<Step>("email");
+  const [step, setStep] = useState<Step>("login");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
-  // Step 1: email submission
+  // Step 1: email + password submission
   // ---------------------------------------------------------------------------
 
-  async function handleEmailSubmit() {
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed) return;
+  async function handleLoginSubmit() {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !password) return;
 
     setIsSubmitting(true);
     setError(null);
+    setResetMessage(null);
 
     try {
-      await requestMfaCode(trimmed);
+      await login(trimmedEmail, password);
       setStep("code");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  function handleEmailKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") handleEmailSubmit();
+  function handleLoginKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") handleLoginSubmit();
   }
 
   // ---------------------------------------------------------------------------
-  // Step 2: code submission
+  // Forgot / Set up password
+  // ---------------------------------------------------------------------------
+
+  async function handleForgotPassword() {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setError("Enter your email address above first.");
+      return;
+    }
+
+    setResetMessage(null);
+    setError(null);
+
+    // requestPasswordReset always resolves — server always returns 200.
+    await requestPasswordReset(trimmedEmail);
+
+    setResetMessage(
+      "If this email is registered, you will receive a setup link shortly."
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Step 2: OTP submission
   // ---------------------------------------------------------------------------
 
   async function handleCodeSubmit() {
@@ -85,70 +116,102 @@ export default function LoginView({ onSuccess }: Props) {
     if (e.key === "Enter") handleCodeSubmit();
   }
 
-  function handleBackToEmail() {
-    setStep("email");
+  function handleBackToLogin() {
+    setStep("login");
     setCode("");
     setError(null);
   }
 
   // ---------------------------------------------------------------------------
-  // Render: step 1 — email
+  // Render: step 1 — login
   // ---------------------------------------------------------------------------
 
-  if (step === "email") {
+  if (step === "login") {
     return (
       <div className="card token-view">
         <p className="card-title">Admin login</p>
         <p className="card-subtitle">
-          Enter your admin email address. A one-time security code will be sent to you.
+          Enter your email address and password.
         </p>
 
-        <div className="form-row">
-          <div className="field">
-            <label htmlFor="email-input">Email address</label>
-            <input
-              id="email-input"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={handleEmailKeyDown}
-              placeholder="you@example.nhs.net"
-              autoComplete="email"
-              disabled={isSubmitting}
-            />
-          </div>
-          <button
-            className="btn btn-primary"
-            onClick={handleEmailSubmit}
-            disabled={isSubmitting || email.trim() === ""}
-            style={{ marginTop: 22 }}
-          >
-            {isSubmitting ? (
-              <>
-                <span className="spinner" />
-                Sending…
-              </>
-            ) : (
-              "Send code"
-            )}
-          </button>
+        <div className="field" style={{ marginBottom: 12 }}>
+          <label htmlFor="email-input">Email address</label>
+          <input
+            id="email-input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={handleLoginKeyDown}
+            placeholder="you@example.nhs.net"
+            autoComplete="email"
+            disabled={isSubmitting}
+          />
         </div>
 
-        {error && <div className="alert alert-error">{error}</div>}
+        <div className="field" style={{ marginBottom: 16 }}>
+          <label htmlFor="password-input">Password</label>
+          <input
+            id="password-input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={handleLoginKeyDown}
+            autoComplete="current-password"
+            disabled={isSubmitting}
+          />
+        </div>
+
+        <button
+          className="btn btn-primary"
+          onClick={handleLoginSubmit}
+          disabled={isSubmitting || !email.trim() || !password}
+          style={{ width: "100%" }}
+        >
+          {isSubmitting ? (
+            <>
+              <span className="spinner" />
+              Signing in…
+            </>
+          ) : (
+            "Sign in"
+          )}
+        </button>
+
+        {error && (
+          <div className="alert alert-error" style={{ marginTop: 12 }}>
+            {error}
+          </div>
+        )}
+
+        {resetMessage && (
+          <div className="alert alert-info" style={{ marginTop: 12 }}>
+            {resetMessage}
+          </div>
+        )}
+
+        <button
+          className="btn btn-ghost"
+          onClick={handleForgotPassword}
+          disabled={isSubmitting}
+          style={{ marginTop: 16, fontSize: 13 }}
+        >
+          Forgot / Set up password?
+        </button>
       </div>
     );
   }
 
   // ---------------------------------------------------------------------------
-  // Render: step 2 — code
+  // Render: step 2 — OTP
   // ---------------------------------------------------------------------------
 
   return (
     <div className="card token-view">
       <p className="card-title">Enter your code</p>
       <p className="card-subtitle">
-        A 6-digit security code was sent to <strong>{email.trim().toLowerCase()}</strong>.
-        The code expires in 10 minutes.
+        A 6-digit security code was sent to{" "}
+        <strong>{email.trim().toLowerCase()}</strong>. The code expires in 10
+        minutes.
       </p>
 
       <div className="form-row">
@@ -190,11 +253,11 @@ export default function LoginView({ onSuccess }: Props) {
 
       <button
         className="btn btn-ghost"
-        onClick={handleBackToEmail}
+        onClick={handleBackToLogin}
         disabled={isSubmitting}
         style={{ marginTop: 12, fontSize: 13 }}
       >
-        Use a different email address
+        Back to login
       </button>
     </div>
   );

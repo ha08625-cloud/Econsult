@@ -1,7 +1,7 @@
 /**
  * api.ts — admin portal API helpers.
  *
- * Authentication is now handled via an HttpOnly session cookie set by
+ * Authentication is handled via an HttpOnly session cookie set by
  * POST /admin/auth/verify. No token is passed by callers — the browser
  * attaches the cookie automatically on every same-origin request.
  *
@@ -59,8 +59,6 @@ async function apiFetch(
  *
  * All backend error responses use the standard envelope:
  *   {"error": {"code": "...", "message": "..."}}
- * The body.detail path has been removed — FastAPI HTTPExceptions are now
- * reshaped into the standard envelope by the handler in main.py.
  */
 async function extractErrorDetail(res: Response): Promise<string> {
   let detail = `Server error: ${res.status}`;
@@ -78,21 +76,23 @@ async function extractErrorDetail(res: Response): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /**
- * Request an MFA code to be sent to the given email address.
+ * Step 1 of 2-factor login: submit email and password.
  *
- * Returns normally on success (including when the email is unregistered —
- * the server always returns 200 to prevent enumeration).
- * Throws on domain rejection (422) or rate limit (429).
+ * On success, the server has generated an OTP and queued its delivery.
+ * The caller should transition to the OTP entry screen.
+ *
+ * Throws an Error on any failure (422 INVALID_CREDENTIALS, 429 rate limit).
+ * The error message is safe to display to the user.
  */
-export async function requestMfaCode(email: string): Promise<void> {
-  const res = await fetch("/admin/auth/request-code", {
+export async function login(email: string, password: string): Promise<void> {
+  const res = await fetch("/admin/auth/login", {
     method: "POST",
     credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
       "X-Requested-With": "XMLHttpRequest",
     },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, password }),
   });
 
   if (!res.ok) {
@@ -115,6 +115,58 @@ export async function verifyMfaCode(email: string, code: string): Promise<void> 
       "X-Requested-With": "XMLHttpRequest",
     },
     body: JSON.stringify({ email, code }),
+  });
+
+  if (!res.ok) {
+    throw new Error(await extractErrorDetail(res));
+  }
+}
+
+/**
+ * Request a password reset/setup link for the given email address.
+ *
+ * Always resolves without throwing — the server always returns 200
+ * regardless of whether the email is registered, to prevent enumeration.
+ * Errors (network, 429) are silently swallowed; the UI displays a
+ * generic confirmation message in all cases.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  try {
+    await fetch("/admin/auth/request-reset", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: JSON.stringify({ email }),
+    });
+  } catch (_) {
+    // Network failure is silently ignored — the UI shows the same generic
+    // message regardless.
+  }
+}
+
+/**
+ * Set a new password using a password reset/setup token.
+ *
+ * token is the raw value extracted from the #reset:{token} URL hash fragment.
+ *
+ * Throws an Error on failure:
+ * - 422 INVALID_RESET_TOKEN: link has expired or was already used.
+ * - 422 WEAK_PASSWORD: password does not meet strength requirements.
+ *   The error message contains specific guidance from zxcvbn.
+ * - 422 INVALID_PAYLOAD: validation error (length, format).
+ */
+export async function setPassword(token: string, password: string): Promise<void> {
+  const res = await fetch("/admin/auth/set-password", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+    },
+    body: JSON.stringify({ token, password }),
   });
 
   if (!res.ok) {

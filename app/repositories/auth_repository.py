@@ -1,12 +1,15 @@
 """
 app/repositories/auth_repository.py
 
-Database access for admin MFA authentication and user management.
+Database access for admin MFA authentication, password authentication,
+and user management.
 
-Handles three tables: admin_users, admin_auth_codes, admin_sessions.
+Handles four tables: admin_users, admin_auth_codes, admin_sessions,
+admin_password_reset_tokens.
 
 This module must never:
-- Contain business logic (cooldown checks, code generation, hashing)
+- Contain business logic (cooldown checks, code generation, hashing,
+  lockout decisions)
 - Import from service modules
 - Import from routers
 
@@ -58,7 +61,10 @@ class AuthRepository:
         Return the admin_users row for the given email as a dict, or None
         if no matching row exists.
 
-        Returned dict keys: id (str), email, practice_id, role, created_at.
+        Returned dict keys: id (str), email, practice_id, role, created_at,
+        hashed_password, failed_password_attempts, password_locked_until,
+        password_changed_at.
+
         id is cast to str — psycopg2 returns UUID columns as uuid.UUID
         objects; callers expect strings throughout the auth layer.
         """
@@ -66,7 +72,15 @@ class AuthRepository:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
                     """
-                    SELECT id::text, email, practice_id, role, created_at
+                    SELECT id::text,
+                           email,
+                           practice_id,
+                           role,
+                           created_at,
+                           hashed_password,
+                           failed_password_attempts,
+                           password_locked_until,
+                           password_changed_at
                     FROM admin_users
                     WHERE email = %s
                     """,
@@ -194,9 +208,10 @@ class AuthRepository:
         practice_id is enforced as a tenant boundary — a delete can only
         succeed for a user that belongs to the caller's practice.
 
-        Postgres cascades the delete to admin_sessions via the FK defined
-        in migration 0002 (ON DELETE CASCADE), so all sessions for this
-        user are removed automatically.
+        Postgres cascades the delete to admin_sessions and
+        admin_password_reset_tokens via the FK constraints defined in
+        migrations 0002 and 0004, so all sessions and pending reset tokens
+        for this user are removed automatically.
 
         conn: see module-level convention.
         """
@@ -208,6 +223,118 @@ class AuthRepository:
                   AND practice_id = %s
                 """,
                 (user_id, practice_id),
+            )
+
+        if conn is not None:
+            with conn.cursor() as cur:
+                _execute(cur)
+        else:
+            with get_conn(self.database_url) as own_conn:
+                with own_conn.cursor() as cur:
+                    _execute(cur)
+
+    def set_password(self, user_id: str, hashed_password: str, conn=None) -> None:
+        """
+        Set a new hashed password for the given user.
+
+        Atomically updates hashed_password, sets password_changed_at to NOW(),
+        and resets the lockout state (failed_password_attempts = 0,
+        password_locked_until = NULL) in a single UPDATE statement.
+
+        This is the only method that should write hashed_password. It is
+        called after set_new_password validates strength and hashes the
+        plaintext in the service layer.
+
+        conn: see module-level convention.
+        """
+        def _execute(cur) -> None:
+            cur.execute(
+                """
+                UPDATE admin_users
+                SET hashed_password          = %s,
+                    password_changed_at      = NOW(),
+                    failed_password_attempts = 0,
+                    password_locked_until    = NULL
+                WHERE id = %s::uuid
+                """,
+                (hashed_password, user_id),
+            )
+
+        if conn is not None:
+            with conn.cursor() as cur:
+                _execute(cur)
+        else:
+            with get_conn(self.database_url) as own_conn:
+                with own_conn.cursor() as cur:
+                    _execute(cur)
+
+    def record_failed_password_attempt(
+        self,
+        user_id: str,
+        lock_until: Optional[datetime] = None,
+        conn=None,
+    ) -> None:
+        """
+        Atomically increment failed_password_attempts for the given user.
+
+        If lock_until is provided, also sets password_locked_until to that
+        timestamp. The service layer decides when to supply lock_until (i.e.
+        when the attempt count reaches the threshold). This method does not
+        make that decision.
+
+        Uses a single UPDATE to avoid a read-modify-write race. No-ops
+        silently if the user does not exist.
+
+        conn: see module-level convention.
+        """
+        def _execute(cur) -> None:
+            if lock_until is not None:
+                cur.execute(
+                    """
+                    UPDATE admin_users
+                    SET failed_password_attempts = failed_password_attempts + 1,
+                        password_locked_until    = %s
+                    WHERE id = %s::uuid
+                    """,
+                    (lock_until, user_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE admin_users
+                    SET failed_password_attempts = failed_password_attempts + 1
+                    WHERE id = %s::uuid
+                    """,
+                    (user_id,),
+                )
+
+        if conn is not None:
+            with conn.cursor() as cur:
+                _execute(cur)
+        else:
+            with get_conn(self.database_url) as own_conn:
+                with own_conn.cursor() as cur:
+                    _execute(cur)
+
+    def reset_password_attempts(self, user_id: str, conn=None) -> None:
+        """
+        Reset failed_password_attempts to 0 and clear password_locked_until.
+
+        Called on successful password verification to restore the attempt
+        counter without triggering a full set_password (which would update
+        password_changed_at, reserved for actual password changes).
+
+        conn: see module-level convention.
+        """
+        def _execute(cur) -> None:
+            cur.execute(
+                """
+                UPDATE admin_users
+                SET failed_password_attempts = 0,
+                    password_locked_until    = NULL
+                WHERE id = %s::uuid
+                """,
+                (user_id,),
             )
 
         if conn is not None:
@@ -405,3 +532,94 @@ class AuthRepository:
                     "DELETE FROM admin_sessions WHERE session_id = %s::uuid",
                     (session_id,),
                 )
+
+    # ------------------------------------------------------------------
+    # admin_password_reset_tokens
+    # ------------------------------------------------------------------
+
+    def upsert_reset_token(
+        self,
+        user_id: str,
+        token_hash: str,
+        expires_at: datetime,
+        conn=None,
+    ) -> None:
+        """
+        Insert or replace the reset token for the given user.
+
+        Uses INSERT ... ON CONFLICT (user_id) DO UPDATE so that generating
+        a new token atomically replaces any existing pending token for this
+        user. The UNIQUE constraint on user_id is therefore also the
+        de-duplication mechanism — there is never a window where two valid
+        tokens exist for the same user.
+
+        conn: see module-level convention. conn is accepted so that token
+        generation can be part of the same transaction as a user insert
+        (POST /users) to ensure the token is only committed if the user
+        write succeeds.
+        """
+        def _execute(cur) -> None:
+            cur.execute(
+                """
+                INSERT INTO admin_password_reset_tokens
+                    (token_hash, user_id, expires_at)
+                VALUES (%s, %s::uuid, %s)
+                ON CONFLICT (user_id) DO UPDATE SET
+                    token_hash = EXCLUDED.token_hash,
+                    expires_at = EXCLUDED.expires_at
+                """,
+                (token_hash, user_id, expires_at),
+            )
+
+        if conn is not None:
+            with conn.cursor() as cur:
+                _execute(cur)
+        else:
+            with get_conn(self.database_url) as own_conn:
+                with own_conn.cursor() as cur:
+                    _execute(cur)
+
+    def get_reset_token_record(self, token_hash: str) -> Optional[dict]:
+        """
+        Return the admin_password_reset_tokens row for the given token hash,
+        or None if no matching row exists.
+
+        Returned dict keys: token_hash, user_id (str), expires_at.
+        user_id is cast to str for consistency with the rest of the auth layer.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT token_hash, user_id::text, expires_at
+                    FROM admin_password_reset_tokens
+                    WHERE token_hash = %s
+                    """,
+                    (token_hash,),
+                )
+                row = cur.fetchone()
+        return dict(row) if row is not None else None
+
+    def delete_reset_token(self, token_hash: str, conn=None) -> None:
+        """
+        Delete the reset token with the given hash.
+
+        Idempotent — no-ops silently if the row does not exist.
+        Called by verify_reset_token after a token is consumed, ensuring
+        each token can only be used once.
+
+        conn: see module-level convention.
+        """
+        def _execute(cur) -> None:
+            cur.execute(
+                "DELETE FROM admin_password_reset_tokens WHERE token_hash = %s",
+                (token_hash,),
+            )
+
+        if conn is not None:
+            with conn.cursor() as cur:
+                _execute(cur)
+        else:
+            with get_conn(self.database_url) as own_conn:
+                with own_conn.cursor() as cur:
+                    _execute(cur)
