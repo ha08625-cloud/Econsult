@@ -31,7 +31,7 @@ Railway deployment, multi-stage Docker build, static file serving, Postgres + ps
 
 ### Critical Data Quirks — Do Not Violate
 
-- **JSONB writes:** psycopg2 does not automatically adapt Python dicts to JSONB. All write paths for JSONB columns (`state_json`, `clinical_output_json`, `audit_output_json`) must wrap dicts in `psycopg2.extras.Json()`. Read paths receive plain dicts naturally and need no unwrapping.
+- **JSONB writes:** psycopg2 does not automatically adapt Python dicts to JSONB. All write paths for JSONB columns (`state_json`, `clinical_output_json`, `audit_output_json`, `provider_events`) must wrap dicts in `psycopg2.extras.Json()`. Read paths receive plain dicts naturally and need no unwrapping.
 - **`signposting_json` misnomer:** The `signposting_json` column in `practice_signposting` stores a plain HTML string, not JSON. Do not attempt to parse it as JSON. The column name is a legacy artefact.
 - **`nh3` / DOMPurify sync:** The `SIGNPOSTING_PURIFY_CONFIG` in `frontend/src/constants.ts` must exactly match the `nh3` allowlist in `practice_repository.py`. If they diverge, content the admin can save will not render as expected on the patient side.
 - **`nh3` link constraint:** The `rel` attribute on `<a>` tags is reserved by `nh3`. Do not pass `rel` through the attributes dict — `nh3` will panic.
@@ -44,6 +44,11 @@ Railway deployment, multi-stage Docker build, static file serving, Postgres + ps
 - **No automated rollback.** Rollbacks are manual: `alembic downgrade -1` against the live database.
 - Migration files live in `alembic/versions/`. Check these files directly for the current schema.
 
+Current migrations:
+- `0001_initial_schema.py` — complete baseline schema.
+- `0002_user_management_cascade.py` — `ON DELETE CASCADE` on `admin_sessions.user_id` FK; `admin_users.last_login` nullable `TIMESTAMPTZ`.
+- `0003_webhook_tracking.py` — `provider_message_id` and `provider_events` on `delivery_jobs`; extended status check constraint; `webhook_tokens` replay protection table.
+
 ---
 
 ## Startup Validation (Fail-Fast)
@@ -54,7 +59,8 @@ Railway deployment, multi-stage Docker build, static file serving, Postgres + ps
 - The database contains more than one practice (single-tenant invariant)
 - The practice record has no email configured
 - `SMTP_*` / `EMAIL_FROM` vars are missing and `DEV_MODE` is not set
-- `INITIAL_ADMIN_EMAIL` or `ALLOWED_ADMIN_DOMAINS` are missing and `DEV_MODE` is not set
+- `MAILGUN_API_KEY` is set but `MAILGUN_SIGNING_KEY` is not set (webhook signature verification would be impossible)
+- `ALLOWED_ADMIN_DOMAINS` is missing and `DEV_MODE` is not set
 
 If the practice record does not exist, startup **seeds it** using `PRACTICE_NAME` and `PRACTICE_EMAIL` env vars (defaulting to `demo@demo.net`). This handles Railway deployments where the database starts empty on each container restart.
 
@@ -74,10 +80,10 @@ Repository tests currently run against a live Postgres instance via the `TEST_DA
 | `PRACTICE_ID` | Always | Practice identifier |
 | `DATA_DIR` | Always | Path to condition JSON directory (`data/`) |
 | `PORT` | Always | Injected by Railway; uvicorn binds to this |
-| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` | Production only | Email delivery |
-| `INITIAL_ADMIN_EMAIL` | Production only | Email address of the first admin user, seeded on first startup |
+| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` | Production only | Email delivery (SMTP path) |
+| `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `EMAIL_FROM` | Production only (Mailgun path) | Mailgun HTTP API delivery |
+| `MAILGUN_SIGNING_KEY` | Required when `MAILGUN_API_KEY` is set | Mailgun webhook HMAC signing key — used to verify inbound delivery signals |
 | `ALLOWED_ADMIN_DOMAINS` | Production only | Comma-separated list of permitted admin email domains (e.g. `nhs.net,gov.uk`) |
 | `DEV_MODE` | Dev only | Set to `1` to skip SMTP checks and use console delivery; sets cookies without `Secure` flag for plain HTTP |
 | `PRACTICE_NAME`, `PRACTICE_EMAIL` | Optional | Used to seed practice record on first startup |
-| `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` | Optional | If set, Mailgun HTTP API is used instead of SMTP |
 | `SENTRY_DSN` | Optional | If set, Sentry error reporting is enabled |

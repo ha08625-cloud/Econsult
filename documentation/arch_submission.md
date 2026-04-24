@@ -8,7 +8,7 @@
 
 Finalizing forms, persisting submission records, auditing, photo storage, PDF generation, attachment storage, and delivering clinical output to the practice via a three-stage async pipeline.
 
-**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `photo_repository.py`, `delivery_service.py`, `delivery_constants.py`, `pdf_formatter.py`, `pdf_repository.py`, `pdf_constants.py`, `delivery_repository.py`, `pdf_worker.py`, `pdf_worker_main.py`, `delivery_worker.py`, `worker_main.py`, `deletion_job.py`
+**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `photo_repository.py`, `delivery_service.py`, `delivery_constants.py`, `pdf_formatter.py`, `pdf_repository.py`, `pdf_constants.py`, `delivery_repository.py`, `pdf_worker.py`, `pdf_worker_main.py`, `delivery_worker.py`, `worker_main.py`, `deletion_job.py`, `webhook_router.py`
 
 ---
 
@@ -32,11 +32,15 @@ Delivery worker (delivery_worker.py)
   -> delivery_jobs (claim)
   -> submission_attachments (read pdf bytes)
   -> email send (Mailgun HTTP or SMTP)
-  -> delivery_jobs (mark sent/failed — returns bool on failure path)
+  -> delivery_jobs (mark_as_accepted with provider_message_id — Mailgun path)
+  -> delivery_jobs (mark_sent — SMTP/legacy path)
+
+Mailgun webhook (webhook_router.py)
+  -> delivery_jobs (mark_delivered or mark_provider_failed, append_provider_event)
 
 Deletion cron (deletion_job.py)
-  -> submission_photos (delete where sent)
-  -> submission_attachments (delete where sent)
+  -> submission_photos (delete where delivered)
+  -> submission_attachments (delete where delivered)
 ```
 
 ---
@@ -92,17 +96,31 @@ Status values: `pending`, `done`, `failed`.
 
 One row per submission. Created by the PDF worker as the second-to-last step of processing. Polled by the delivery worker.
 
-Status values: `pending`, `sent`, `failed`.
+Status values: `pending`, `provider_accepted`, `delivered`, `sent`, `failed`.
+
+| Status | Set by | Meaning |
+|---|---|---|
+| `pending` | PDF worker (`create_job`) | Awaiting delivery attempt |
+| `provider_accepted` | Delivery worker (`mark_as_accepted`) | Mailgun API accepted the message; webhook pending |
+| `delivered` | Webhook router (`mark_delivered`) | Mailgun confirmed delivery to recipient mail server |
+| `sent` | Delivery worker (`mark_sent`) | SMTP/legacy path; no webhook tracking available |
+| `failed` | Delivery worker (`mark_failed`) or webhook router (`mark_provider_failed`) | Permanent failure |
 
 `to_email`, `condition_label`, and `submitted_at` are denormalised at creation time so the delivery worker never needs to read `submission_records`.
 
-The `submission_id` column has a UNIQUE constraint. `create_job` uses ON CONFLICT DO NOTHING, making it safe to call multiple times for the same submission without inserting a duplicate. This is the mechanism that ensures PDF worker retries do not create duplicate delivery jobs.
+The `submission_id` column has a UNIQUE constraint. `create_job` uses ON CONFLICT DO NOTHING, making it safe to call multiple times for the same submission without inserting a duplicate.
+
+`provider_message_id` (VARCHAR 255, indexed) is populated by the delivery worker immediately after a successful Mailgun API call. The webhook router uses this as the lookup key when matching incoming delivery signals to jobs.
+
+`provider_events` (JSONB, append-only) stores the raw payloads of all received Mailgun webhook events for a lossless audit trail.
 
 ---
 
 ## Job Claiming (SKIP LOCKED)
 
 Both `PDFRepository.claim_next_pending` and `DeliveryRepository.claim_next_pending` use `SELECT ... FOR UPDATE SKIP LOCKED`. The lock is held only for the duration of the claim transaction, which immediately sets `next_retry_after` to 10 minutes in the future. This moves the job outside the eligible window before the lock is released, preventing a second worker from claiming the same job without requiring a `status = processing` column or a long-held lock.
+
+`claim_next_pending` filters exclusively on `status = 'pending'`. Jobs in `provider_accepted`, `delivered`, `sent`, or `failed` status are never re-claimed. A `provider_accepted` job must not be re-processed by the delivery worker — its status transitions exclusively via the webhook router.
 
 ---
 
@@ -118,12 +136,43 @@ Both `PDFRepository.claim_next_pending` and `DeliveryRepository.claim_next_pendi
 
 ---
 
+## Webhook Infrastructure
+
+### Security model (`webhook_router.py`)
+
+The webhook endpoint (`POST /webhooks/mailgun`) enforces three security checks in order before processing any event:
+
+1. **Timestamp check.** Webhooks with a timestamp older than 15 minutes are silently dropped (200 OK). This prevents stale replays and bounds the useful lifetime of tokens in the replay table.
+
+2. **HMAC verification.** The `signature` field in the payload is verified against `MAILGUN_SIGNING_KEY` using HMAC-SHA256 over `(timestamp + token)`. Requests failing verification return 403. `hmac.compare_digest` is used to prevent timing attacks. `MAILGUN_SIGNING_KEY` is required at startup when `MAILGUN_API_KEY` is set.
+
+3. **Replay protection.** Each webhook carries a unique `token`. The router deletes expired tokens (older than 15 minutes) then attempts `INSERT INTO webhook_tokens (token) ... ON CONFLICT DO NOTHING`. If no row is inserted the token was already seen — the request is a replay and returns 200 OK silently. This keeps the `webhook_tokens` table bounded without a separate cron job.
+
+### Race condition handling
+
+If a webhook arrives before the delivery worker has committed `provider_message_id` to `delivery_jobs`, the router returns 406 Not Acceptable. Mailgun retries with exponential backoff. This leverages the provider's built-in retry logic rather than holding open a synchronous connection.
+
+### Event processing
+
+| Mailgun event | Status transition | Payload appended |
+|---|---|---|
+| `delivered` | `provider_accepted` -> `delivered` | Yes |
+| `failed` | `provider_accepted` -> `failed` | Yes |
+| `dropped` | `provider_accepted` -> `failed` | Yes |
+| any other | none | Yes |
+
+All events append the raw payload to `provider_events` regardless of whether a status change occurs.
+
+---
+
 ## Data Retention & Deletion
 
-Photos (`submission_photos`) and PDF attachments (`submission_attachments`) are deleted nightly by `deletion_job.py` for all submissions where `delivery_jobs.status = 'sent'`.
+Photos (`submission_photos`) and PDF attachments (`submission_attachments`) are deleted nightly by `deletion_job.py` for all submissions where `delivery_jobs.status = 'delivered'`.
 
-- Minimum retention: ~5.25 hours (submission at 6:45pm grace window close, deletion at midnight).
-- Maximum retention: ~24 hours (submission at practice open, deletion next midnight).
+- Minimum retention: ~5.25 hours (submission at 6:45pm grace window close, delivered webhook received, deletion at midnight).
+- Maximum retention: ~24 hours (submission at practice open, delivered webhook received next day, deletion next midnight).
+
+Jobs on the SMTP/legacy path (`status = 'sent'`) are not deleted by the current deletion job. This is a known limitation — see Known Limitations below.
 
 `pdf_jobs` and `delivery_jobs` rows are never deleted. They accumulate as an operational audit trail. Storage cost is trivial (no blobs). A periodic cleanup can be added later if needed.
 
@@ -207,13 +256,13 @@ Owns the `submission_photos` table. `save_photos` inserts one row per photo with
 
 Abstract base class (`DeliveryService`) with three concrete implementations:
 
-- **`MailgunHttpDeliveryService`** — default for production. Sends via the Mailgun EU HTTP API (`https://api.eu.mailgun.net/v3/{domain}/messages`). Requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `EMAIL_FROM`.
-- **`EmailDeliveryService`** — alternative (unlikely to be needed). SMTP configuration read from environment variables at instantiation time.
-- **`ConsoleDeliveryService`** — development only. Raises `RuntimeError` at instantiation if `DEV_MODE` is not set.
+- **`MailgunHttpDeliveryService`** — default for production. Sends via the Mailgun EU HTTP API (`https://api.eu.mailgun.net/v3/{domain}/messages`). Requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `EMAIL_FROM`. Returns the Mailgun message ID string (angle brackets stripped) so the delivery worker can persist it as `provider_message_id`.
+- **`EmailDeliveryService`** — alternative (unlikely to be needed). SMTP configuration read from environment variables at instantiation time. Returns `None` — no webhook tracking available on the SMTP path.
+- **`ConsoleDeliveryService`** — development only. Raises `RuntimeError` at instantiation if `DEV_MODE` is not set. Returns `None`.
 
 Service selection in `main.py` and `worker_main.py`: `DEV_MODE=1` -> Console; `MAILGUN_API_KEY` set -> Mailgun HTTP; otherwise -> SMTP.
 
-`send_clinical_output` accepts `to_email`, `condition_label`, `pdf_bytes`, `submission_id`, and `submitted_at`. The delivery service has no knowledge of clinical contracts. The email body is a static message; all clinical detail is carried exclusively in the PDF attachment.
+`send_clinical_output` returns `str | None`. The delivery worker branches on this: a string triggers `mark_as_accepted` (Mailgun path); `None` triggers `mark_sent` (SMTP/legacy path).
 
 Must never: access the database, update delivery status, import engine modules, generate PDFs, or retry on failure.
 
@@ -232,11 +281,13 @@ Must never: access the database, update delivery status, import engine modules, 
 
 ## Known Limitations
 
-1. **Duplicate delivery on crash.** A process crash after a successful send but before `mark_sent` results in a re-send on the next retry. Duplicate delivery is safer than silently dropping a submission.
+1. **Duplicate delivery on crash.** A process crash after a successful send but before `mark_as_accepted` (Mailgun) or `mark_sent` (SMTP) commits results in a re-send on the next retry. Duplicate delivery is safer than silently dropping a submission.
 2. **No health check or liveness probe for workers.** Railway process restart is the only recovery mechanism for a stuck worker. Explicitly deferred. Revisit before scaling to multiple practices.
 3. **Orphan submissions require operator intervention.** If the router crashes between `create_submission` and `pdf_repo.create_job`, the orphan detection query finds the submission but automation cannot determine whether photos were fully saved. Manual inspection is required.
 4. **BYTEA storage for photos.** Acceptable at current scale. Revisit at multi-practice volume.
-5. **Nightly deletion timing.** Minimum retention is ~5.25 hours; maximum ~24 hours. Both are within acceptable data protection bounds.
+5. **Nightly deletion timing.** Minimum retention is ~5.25 hours; maximum ~24 hours. Both are within acceptable data protection bounds for the Mailgun webhook path.
 6. **`pdf_jobs` and `delivery_jobs` accumulate indefinitely.** They serve as an operational audit trail. Storage cost is trivial. Periodic cleanup can be added later.
 7. **Exhaustion is logged but not actively alerted.** `DeliveryRepository.mark_failed` returns `True` when a job is permanently exhausted (status transitions to `failed`). `run_worker` captures this and emits a dedicated `ERROR`-level log including `submission_id`, `job_id`, and `MAX_ATTEMPTS`. Structured alerting (e.g. Sentry) is planned as a separate ticket, before collecting real patient data.
 8. **Alternative delivery backup and admin portal notification for delivery failures** are planned as a separate ticket, before collecting real patient data.
+9. **SMTP path data retention is unbounded.** Submissions delivered via SMTP reach `status = 'sent'`, not `'delivered'`. The deletion job filters on `'delivered'` only, so photos and attachments for SMTP-delivered submissions are never deleted by the current job. This will be resolved when the backup delivery and notification architecture is implemented.
+10. **`provider_accepted` with no webhook.** If Mailgun accepts a message but the `delivered` webhook never arrives (provider outage, permanent failure without a `failed` event), the job remains in `provider_accepted` indefinitely and its photos and attachments are never deleted. This is an accepted known limitation until the backup delivery and notification architecture is implemented.

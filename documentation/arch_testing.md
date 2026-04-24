@@ -82,6 +82,8 @@ Current integration test files:
 
 **`tests/test_pipeline_repositories.py`** — repository layer tests for `PDFRepository`, `DeliveryRepository`, and `PhotoRepository`. Exercises the `pdf_jobs`, `delivery_jobs`, and `submission_photos` tables.
 
+**`tests/test_webhook_router.py`** — integration tests for the Mailgun webhook router. Exercises HMAC signature verification, timestamp staleness, replay protection, and all status transitions (`delivered`, `failed`, `dropped`, informational events). Builds a minimal FastAPI app with the webhook router directly rather than importing `main.py`, so it does not trigger `alembic_upgrade()` or startup validation.
+
 **Run all integration tests with:**
 ```
 make test-integration
@@ -100,12 +102,13 @@ Runs Python unit tests, then frontend Vitest, then Python integration tests, in 
 
 ## Schema Migration Obligation
 
-The system now has two Alembic migrations:
+Current Alembic migrations:
 
 - `0001_initial_schema.py` — creates the complete baseline schema.
 - `0002_user_management_cascade.py` — adds `ON DELETE CASCADE` to `admin_sessions.user_id` FK and adds `admin_users.last_login` (nullable `TIMESTAMPTZ`).
+- `0003_webhook_tracking.py` — adds `provider_message_id` and `provider_events` to `delivery_jobs`, extends the status check constraint, and creates the `webhook_tokens` replay protection table.
 
-New schema changes should be added as further numbered migrations (`0003_...` etc.) rather than modifying existing ones, now that real data is involved.
+New schema changes should be added as further numbered migrations (`0004_...` etc.) rather than modifying existing ones, now that real data is involved.
 
 When the schema changes, the test database on Railway must be updated to match. Because the test database is not deployed to automatically, run:
 
@@ -157,6 +160,9 @@ The per-module `pytest.skip()` guardrail is correct locally but produces a silen
 ### Why does MockDeliveryService exist?
 Integration tests must not require SMTP configuration. `MockDeliveryService` captures send calls in memory so tests can assert on delivery behaviour without network dependencies. It is defined in `test_form_routes.py` and is not shared — if other test files need delivery assertions in future, extract it to a shared `tests/fixtures.py`.
 
+### Why does MockDeliveryService return a provider ID string?
+`send_clinical_output` now returns `str | None`. `MockDeliveryService` returns a mock provider ID string by default so that integration tests exercise the Mailgun path (worker calls `mark_as_accepted`). Tests that need to exercise the SMTP legacy path should set `return_value = None` on the mock explicitly.
+
 ### Why does the CI unit job run tsc --noEmit separately from Vitest?
 Vitest transpiles TypeScript using esbuild, which deliberately skips type checking for speed. This means Vitest tests can pass while genuine TypeScript type errors exist in the codebase — those errors only surface during the production build (`tsc -b && vite build`). Running `tsc --noEmit` as a distinct CI step catches type errors at the earliest possible point, before Vitest runs and well before any deployment build is attempted. It does not duplicate Vitest — it covers a gap Vitest cannot fill. It is not added to `make test` because `tsc` is slow relative to Vitest and adds friction to the local development loop; CI is the right enforcement point.
 
@@ -180,3 +186,6 @@ The service-layer per-email cooldown in `auth_service.request_mfa_code` raises `
 
 ### Why does user_service receive conn as an argument rather than opening its own connection?
 `user_service.add_user` and `user_service.remove_user` both need to participate in a transaction opened by the router. The practice row lock, the user write, and the audit log write must all be atomic. Passing `conn` in as an argument keeps the service layer free of transaction management concerns and makes the boundary explicit: the router owns the transaction lifecycle, the service owns the business logic. `resend_invitation` performs no writes and therefore has no `conn` parameter.
+
+### Why does test_webhook_router.py build its own FastAPI app rather than importing main.py?
+The webhook router tests exercise only the webhook router in isolation. Importing `main.py` would trigger `alembic_upgrade()`, the full startup validation chain, and the delivery service instantiation — all of which require environment variables and a fully configured database. Building a minimal app with only the webhook router and the required `app.state` fields keeps the tests focused, faster, and free of startup-validation side effects.

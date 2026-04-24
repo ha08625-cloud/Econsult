@@ -8,7 +8,7 @@
 
 User access control, multi-factor authentication, rate limiting, input sanitization, malware mitigation, data retention, and secure configuration enforcement.
 
-**Key files:** `dependencies.py`, `admin_router.py`, `auth_repository.py`, `auth_service.py`, `deletion_job.py`, `request_validation.py`, `image_sanitizer.py`, `form_router.py`, `rate_limit.py`
+**Key files:** `dependencies.py`, `admin_router.py`, `auth_repository.py`, `auth_service.py`, `deletion_job.py`, `request_validation.py`, `image_sanitizer.py`, `form_router.py`, `rate_limit.py`, `webhook_router.py`
 
 ---
 
@@ -30,6 +30,7 @@ The patient-facing form is intentionally unauthenticated to ensure accessibility
 The system refuses to run in an insecure or partially configured state.
 
 - **Startup Validation.** The application entry point (`main.py`) validates the presence of all required security, database, and email environment variables before accepting any HTTP requests. Missing critical variables cause the process to abort rather than silently degrade.
+- **Webhook Signing Key Enforcement.** When `MAILGUN_API_KEY` is set (i.e. Mailgun is the delivery provider), `MAILGUN_SIGNING_KEY` is also required at startup. Absent this key the webhook endpoint cannot verify HMAC signatures, which would allow any party to forge delivery events. The application aborts startup if `MAILGUN_API_KEY` is present but `MAILGUN_SIGNING_KEY` is not.
 - **The Two-Database Rule.** Testing is strictly fenced from production. A hardcoded guardrail at the top of every integration test module prevents tests from running unless a dedicated `TEST_DATABASE_URL` environment variable is set. This structurally prevents accidental test data writes or deletions against the production patient database.
 - **Network Boundaries.** The application is a single-container deployment hosted on Railway. The database is isolated within the cloud provider's internal network and is not directly exposed to the public internet.
 - **Third-Party Observability (Sentry) — PII Lockdown.** Sentry is an external service. Its initialisation enforces strict data minimisation controls to prevent clinical data from leaving the system boundary:
@@ -46,7 +47,7 @@ Patient data is minimised, protected against concurrency flaws, and aggressively
 
 - **Append-Only State & Concurrency Control.** In-flight `RuntimeState` is strictly append-only in the database. Each API request creates a new version row, protected by optimistic concurrency control (version consistency validation). This prevents race conditions, state overwrites, or session hijacking if multiple browser tabs are used.
 - **Immutable Delivery Artifacts.** Once a patient clicks submit, the finalised PDF is rendered immutable. It is stored once and used as-is for all delivery retries, guaranteeing the clinical record cannot be altered post-submission.
-- **Ephemeral Storage & Nightly Deletion.** Raw patient photos (`submission_photos`) and the finalised delivery artifact (`submission_attachments`) are retained only long enough to ensure delivery. A scheduled cron job (`deletion_job.py`) runs at midnight to permanently delete all photos and PDF attachments for submissions that have been successfully delivered. Maximum retention is strictly bounded to approximately 24 hours.
+- **Ephemeral Storage & Nightly Deletion.** Raw patient photos (`submission_photos`) and the finalised delivery artifact (`submission_attachments`) are retained only long enough to ensure delivery. A scheduled cron job (`deletion_job.py`) runs at midnight to permanently delete all photos and PDF attachments for submissions where `delivery_jobs.status = 'delivered'`. Maximum retention is strictly bounded to approximately 24 hours for the Mailgun webhook path. See `arch_submission.md` Known Limitations for the SMTP path and `provider_accepted` edge cases.
 - **No Cross-Session Memory.** The clinical engine operates entirely on a session-backed basis. There is no conversational memory, no cross-session state, and no persistent per-user identity for patients.
 
 ---
@@ -75,6 +76,8 @@ Because the system accepts files and free text from the public, strict validatio
 
 - **PDF Output — Injection Risk.** The PDF formatter (`pdf_formatter.py`) uses `fpdf2`. Patient-supplied strings are passed directly to `cell()`, `multi_cell()`, and `body_text()` calls. This is safe: PDF is a binary format, not a markup language, and `fpdf2` does not use its optional HTML rendering mode anywhere in the codebase. There is no mechanism by which text content in a PDF cell can execute code. XSS sanitization is not applicable to this output path. The relevant threat model for PDFs (embedded JavaScript via interactive form fields or PDF actions) does not apply here as no such features are used.
 
+- **Webhook Endpoint Security.** The Mailgun webhook endpoint (`POST /webhooks/mailgun`) is a public-facing endpoint. It is secured by three independent controls: timestamp staleness check (>15 minutes dropped), HMAC-SHA256 signature verification using `MAILGUN_SIGNING_KEY`, and token-based replay protection backed by the `webhook_tokens` database table. See `arch_submission.md` for the full webhook security model.
+
 ---
 
 ## 5. Rate Limiting
@@ -99,6 +102,10 @@ The IP limit adds protection against a distributed attack cycling through differ
 ### Patient-facing endpoints — 30 requests/minute per IP
 
 All endpoints in `public_router.py` and `form_router.py` are decorated with `@limiter.limit("30/minute")`. This provides baseline protection against automated scraping or submission flooding. The limit is intentionally generous to accommodate scenarios where multiple patients share a single NAT IP (care home, public library) without violating the Fail-Open Availability invariant.
+
+### Webhook endpoint
+
+The webhook endpoint (`POST /webhooks/mailgun`) is covered by the SlowAPI middleware. No dedicated rate limit decorator is applied — the middleware provides baseline protection and the HMAC security boundary is the primary control against illegitimate traffic.
 
 ### IP extraction
 

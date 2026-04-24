@@ -113,6 +113,7 @@ HTTP route handlers. No business logic; orchestration only.
 - `public_router.py` — Patient-facing public endpoints (conditions list, availability check).
 - `form_router.py` — Patient form session endpoints (start, answer, finish).
 - `admin_router.py` — Thin orchestrator. Registers the five admin sub-routers. Contains no route handlers.
+- `webhook_router.py` — Mailgun delivery webhook endpoint (`POST /webhooks/mailgun`). Enforces HMAC signature verification, timestamp staleness, and token-based replay protection. Reads `app.state.mailgun_signing_key` and `app.state.database_url`. *Imports: delivery_repository, db, fastapi, hmac, hashlib, time only.*
 
 **`app/routers/admin/`** (Admin sub-router package)
 - `__init__.py` — Package marker.
@@ -130,6 +131,7 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `alembic/env.py` — Alembic environment configuration.
 - `alembic/versions/0001_initial_schema.py` — Creates the complete baseline schema.
 - `alembic/versions/0002_user_management_cascade.py` — Adds `ON DELETE CASCADE` to `admin_sessions.user_id` FK; adds `admin_users.last_login` (nullable TIMESTAMPTZ).
+- `alembic/versions/0003_webhook_tracking.py` — Adds `provider_message_id` (VARCHAR 255, indexed) and `provider_events` (JSONB) to `delivery_jobs`; extends status check constraint to include `provider_accepted` and `delivered`; creates `webhook_tokens` replay protection table.
 
 ---
 
@@ -172,7 +174,7 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `LoginView_test.tsx`, `EditorView_test.tsx`, `SignpostingEditor_test.tsx` (if present), `AvailabilityEditor_test.tsx`, `PracticeSettingsTab_test.tsx`, `AuditLogTab_test.tsx`, `UsersTab_test.tsx`
 
 **Integration tests (Live `TEST_DATABASE_URL`, placed in tests/integration/ subfolder)**
-- `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`.
+- `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`, `test_webhook_router.py`.
 
 ---
 
