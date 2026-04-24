@@ -11,7 +11,7 @@ tzdata
 fpdf2==2.8.3
 Pillow==12.2.0
 bcrypt==4.2.1
-requests==2.32.3
+requests==2.33.0
 sentry-sdk[fastapi]
 slowapi==0.1.9
 limits==3.14.0
