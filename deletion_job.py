@@ -2,22 +2,37 @@
 Nightly deletion job.
 
 One-shot script executed by Railway cron at midnight. Deletes raw photo bytes
-and generated PDF attachments for submissions that have been successfully
-delivered.
+and generated PDF attachments for submissions that have been confirmed delivered.
 
 What is deleted:
-- submission_photos rows where the corresponding delivery_jobs.status = 'sent'
-- submission_attachments rows where the corresponding delivery_jobs.status = 'sent'
+- submission_photos rows where the corresponding delivery_jobs.status = 'delivered'
+- submission_attachments rows where the corresponding delivery_jobs.status = 'delivered'
 
 What is never deleted:
 - submission_records rows (permanent clinical record)
 - pdf_jobs rows (operational audit trail)
 - delivery_jobs rows (operational audit trail)
-- Any rows where delivery_jobs.status is 'pending' or 'failed'
+- Any rows where delivery_jobs.status is 'pending', 'provider_accepted',
+  'sent', or 'failed'
 
-Retention window:
-- Minimum ~5.25 hours (submission at 6:45pm grace window, deletion at midnight)
-- Maximum ~24 hours (submission at practice open, deletion next midnight)
+Note on 'sent' status (SMTP/legacy path):
+Jobs delivered via SMTP reach 'sent' status, not 'delivered'. Photos and
+attachments for SMTP-delivered submissions are therefore NOT deleted by this
+job. This is a known limitation while the system transitions to webhook-tracked
+delivery. It will be addressed when the backup delivery service and notification
+architecture are implemented.
+
+Note on 'provider_accepted' status:
+Jobs where Mailgun accepted the message but no 'delivered' webhook was received
+remain in 'provider_accepted' status. Photos and attachments for these submissions
+are not deleted until a 'delivered' webhook arrives. If the webhook never arrives
+(provider outage, permanent delivery failure without a 'failed' event), data
+retention is not bounded. This is an accepted known limitation until the backup
+delivery and notification architecture is implemented.
+
+Retention window (delivered webhook path):
+- Minimum: ~5.25 hours (submission at 6:45pm, delivered webhook + midnight deletion)
+- Maximum: ~24 hours (submission at practice open, delivered webhook next midnight)
 
 This script exits with code 0 on success and code 1 on any database error.
 Railway cron treats a non-zero exit code as a failure and will log it.
@@ -52,12 +67,12 @@ def _require_env(name: str) -> str:
 
 def run_deletion(database_url: str) -> None:
     """
-    Delete photos and attachments for fully delivered submissions.
+    Delete photos and attachments for confirmed-delivered submissions.
 
     Uses a single database connection for both DELETE statements so they
     run within the same implicit transaction. Both statements identify
     their target rows by joining against delivery_jobs on submission_id
-    and filtering on status = 'sent'.
+    and filtering on status = 'delivered'.
 
     Logs the number of rows deleted from each table. Raises on any
     database error so the caller can exit with a non-zero code.
@@ -73,7 +88,7 @@ def run_deletion(database_url: str) -> None:
                 WHERE submission_id IN (
                     SELECT submission_id
                     FROM delivery_jobs
-                    WHERE status = 'sent'
+                    WHERE status = 'delivered'
                 )
                 """
             )
@@ -85,7 +100,7 @@ def run_deletion(database_url: str) -> None:
                 WHERE submission_id IN (
                     SELECT submission_id
                     FROM delivery_jobs
-                    WHERE status = 'sent'
+                    WHERE status = 'delivered'
                 )
                 """
             )

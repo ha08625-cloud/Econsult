@@ -6,7 +6,11 @@ Database access for the delivery_jobs table.
 Responsibilities:
 - Creating delivery jobs once the PDF attachment has been saved.
 - Claiming the next eligible pending job (SKIP LOCKED, single job per call).
-- Marking jobs as sent or failed.
+- Marking jobs as sent or failed (legacy SMTP path).
+- Marking jobs as provider_accepted (Mailgun path — worker sets this after
+  receiving the provider message ID from send_clinical_output).
+- Marking jobs as delivered or failed via webhook signals.
+- Appending raw webhook event payloads to the provider_events JSONB column.
 - Retrieving individual jobs by ID.
 
 Architecture rules:
@@ -16,18 +20,32 @@ Architecture rules:
   module does not define policy.
 - All claim operations use SELECT ... FOR UPDATE SKIP LOCKED and
   immediately update next_retry_after within the same transaction.
+- JSONB writes must wrap dicts in psycopg2.extras.Json() per the
+  infrastructure convention (psycopg2 does not auto-adapt Python dicts).
 
 Ordering invariant (enforced by the PDF worker, documented here):
 A delivery_jobs row can only exist after save_attachment has completed
 successfully. Therefore get_attachment will always find the attachment
 when a delivery job is claimed. Do not break this invariant in the PDF
 worker's operation ordering.
+
+Status lifecycle:
+  pending -> provider_accepted  (Mailgun path: worker marks after successful send)
+  pending -> sent               (SMTP/legacy path: worker marks after successful send)
+  provider_accepted -> delivered (webhook router marks on 'delivered' event)
+  provider_accepted -> failed    (webhook router marks on 'failed'/'dropped' event)
+  pending -> failed              (worker exhausts all retry attempts)
+
+Jobs in provider_accepted status are intentionally excluded from
+claim_next_pending. They must not be re-processed by the worker. Transition
+out of provider_accepted is exclusively the webhook router's responsibility.
 """
 
 from datetime import datetime
 from typing import Optional
 
-from psycopg2.extras import RealDictCursor
+import psycopg2.extras
+from psycopg2.extras import Json, RealDictCursor
 
 from app.core.db import get_conn
 from app.services.delivery.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
@@ -119,6 +137,11 @@ class DeliveryRepository:
         - status = 'pending'
         - next_retry_after IS NULL OR next_retry_after <= NOW()
 
+        Jobs in provider_accepted, delivered, sent, or failed status are
+        intentionally excluded. A provider_accepted job must not be
+        re-processed by the worker; its status transitions exclusively via
+        the webhook router.
+
         The claim is performed atomically:
         1. SELECT ... FOR UPDATE SKIP LOCKED finds and locks the row.
         2. An immediate UPDATE pushes next_retry_after 10 minutes into the
@@ -158,16 +181,53 @@ class DeliveryRepository:
         return dict(row)
 
     # ------------------------------------------------------------------
-    # Outcome recording
+    # Outcome recording — worker
     # ------------------------------------------------------------------
+
+    def mark_as_accepted(self, job_id: str, provider_message_id: str) -> None:
+        """
+        Mark a delivery_job as accepted by the provider (Mailgun path).
+
+        Sets status = 'provider_accepted' and records the provider_message_id
+        returned by the Mailgun API. Called by the delivery worker immediately
+        after a successful send_clinical_output call.
+
+        The provider_message_id is the lookup key used by the webhook router
+        to match incoming delivery signals to this job. It must be committed
+        before any webhook can arrive (in practice there is a small window
+        where a webhook could arrive first; the router handles this by
+        returning 406 to trigger a provider retry).
+
+        Raises DeliveryJobNotFound if the job_id does not exist.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    UPDATE delivery_jobs
+                    SET status              = 'provider_accepted',
+                        provider_message_id = %(provider_message_id)s,
+                        updated_at          = NOW()
+                    WHERE id = %(job_id)s
+                    RETURNING id
+                    """,
+                    {
+                        "job_id": job_id,
+                        "provider_message_id": provider_message_id,
+                    },
+                )
+                if cur.fetchone() is None:
+                    raise DeliveryJobNotFound(job_id)
 
     def mark_sent(self, job_id: str) -> None:
         """
-        Mark a delivery_job as successfully sent.
+        Mark a delivery_job as successfully sent (legacy SMTP path).
 
-        Sets status = 'sent' and updated_at. Does not clear last_error
-        (historical error context is useful if a job failed before
-        eventually succeeding on a later attempt).
+        Sets status = 'sent' and updated_at. Used when the delivery service
+        returns None (SMTP or ConsoleDeliveryService), indicating no webhook
+        tracking is available. Does not clear last_error (historical error
+        context is useful if a job failed before eventually succeeding on a
+        later attempt).
         """
         with get_conn(self.database_url) as conn:
             with conn.cursor() as cur:
@@ -227,6 +287,96 @@ class DeliveryRepository:
                 if result is None:
                     raise DeliveryJobNotFound(job_id)
                 return result["status"] == "failed"
+
+    # ------------------------------------------------------------------
+    # Outcome recording — webhook router
+    # ------------------------------------------------------------------
+
+    def mark_delivered(self, provider_message_id: str) -> bool:
+        """
+        Mark a job as delivered based on a Mailgun 'delivered' webhook event.
+
+        Sets status = 'delivered' and updated_at. Does not append the event
+        payload here — call append_provider_event separately to keep the
+        JSONB write and the status update decoupled.
+
+        Returns True if a row was found and updated, False if no row exists
+        for the given provider_message_id (signals the webhook router to
+        return 406 so Mailgun retries later).
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE delivery_jobs
+                    SET status     = 'delivered',
+                        updated_at = NOW()
+                    WHERE provider_message_id = %s
+                    RETURNING id
+                    """,
+                    (provider_message_id,),
+                )
+                return cur.fetchone() is not None
+
+    def mark_provider_failed(self, provider_message_id: str) -> bool:
+        """
+        Mark a job as failed based on a Mailgun 'failed' or 'dropped' webhook.
+
+        Sets status = 'failed' and updated_at. Does not append the event
+        payload here — call append_provider_event separately.
+
+        Returns True if a row was found and updated, False if no row exists
+        for the given provider_message_id (signals the webhook router to
+        return 406 so Mailgun retries later).
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE delivery_jobs
+                    SET status     = 'failed',
+                        updated_at = NOW()
+                    WHERE provider_message_id = %s
+                    RETURNING id
+                    """,
+                    (provider_message_id,),
+                )
+                return cur.fetchone() is not None
+
+    def append_provider_event(
+        self, provider_message_id: str, event_payload: dict
+    ) -> None:
+        """
+        Append a raw webhook event payload to the provider_events JSONB column.
+
+        Uses jsonb_build_array and the concatenation operator (||) to append
+        to the existing array, initialising to an empty array if NULL.
+        This keeps the column as an ordered array of event objects.
+
+        Called for all webhook event types, including ones that do not change
+        status (e.g. 'opened', 'clicked'). The lossless audit trail is
+        maintained regardless of whether the event triggers a status change.
+
+        No-ops silently if the provider_message_id is not found — a missing
+        row at this point means the status update (mark_delivered / mark_provider_failed)
+        already returned False and the router will return 406. Appending to a
+        non-existent row would be a no-op anyway.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE delivery_jobs
+                    SET provider_events = COALESCE(provider_events, '[]'::jsonb)
+                                         || jsonb_build_array(%(payload)s::jsonb),
+                        updated_at      = NOW()
+                    WHERE provider_message_id = %(provider_message_id)s
+                    """,
+                    {
+                        "provider_message_id": provider_message_id,
+                        "payload": Json(event_payload),
+                    },
+                )
 
     # ------------------------------------------------------------------
     # Lookup

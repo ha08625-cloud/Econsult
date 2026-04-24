@@ -8,6 +8,7 @@ No database or SMTP connection required.
 
 import os
 import logging
+import smtplib
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
@@ -17,6 +18,7 @@ from app.services.delivery.delivery_service import (
     ConsoleDeliveryService,
     EmailDeliveryError,
     MailgunHttpDeliveryService,
+    EmailDeliveryService,
     _format_body,
 )
 
@@ -97,6 +99,19 @@ class TestConsoleDeliveryService:
                 submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
             )
 
+    def test_send_returns_none(self):
+        """ConsoleDeliveryService must return None — no webhook tracking in dev."""
+        with patch.dict(os.environ, {"DEV_MODE": "1"}):
+            svc = ConsoleDeliveryService()
+            result = svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            )
+        assert result is None
+
     def test_send_logs_expected_fields(self, caplog):
         with patch.dict(os.environ, {"DEV_MODE": "1"}):
             svc = ConsoleDeliveryService()
@@ -118,6 +133,45 @@ class TestConsoleDeliveryService:
         with patch.dict(os.environ, {"DEV_MODE": ""}, clear=False):
             with pytest.raises(RuntimeError, match="DEV_MODE"):
                 ConsoleDeliveryService()
+
+
+# ---------------------------------------------------------------------------
+# EmailDeliveryService (SMTP)
+# ---------------------------------------------------------------------------
+
+_SMTP_ENV = {
+    "SMTP_HOST": "smtp.example.com",
+    "SMTP_USER": "user@example.com",
+    "SMTP_PASSWORD": "secret",
+    "EMAIL_FROM": "noreply@example.com",
+}
+
+
+class TestEmailDeliveryService:
+    def test_send_returns_none(self):
+        """
+        EmailDeliveryService must return None — SMTP does not support
+        webhooks; the delivery worker takes the legacy 'sent' path.
+        """
+        with patch.dict(os.environ, _SMTP_ENV, clear=True):
+            svc = EmailDeliveryService()
+
+        mock_server = MagicMock()
+        mock_smtp_class = MagicMock(return_value=__import__("contextlib").nullcontext(mock_server))
+
+        with patch("app.services.delivery.delivery_service.smtplib.SMTP") as mock_smtp:
+            mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
+            mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            )
+
+        assert result is None
 
 
 # ---------------------------------------------------------------------------
@@ -153,12 +207,68 @@ class TestMailgunHttpDeliveryService:
             with pytest.raises(RuntimeError, match="EMAIL_FROM"):
                 MailgunHttpDeliveryService()
 
+    def test_send_returns_provider_id_with_brackets_stripped(self):
+        """
+        send_clinical_output must return the Mailgun message ID with
+        angle brackets stripped. The worker persists this as the lookup
+        key for incoming webhook signals.
+        """
+        with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
+            svc = MailgunHttpDeliveryService()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "id": "<20260423123456.1.xyz@mailgun.org>",
+            "message": "Queued. Thank you.",
+        }
+
+        with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response):
+            result = svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            )
+
+        assert result == "20260423123456.1.xyz@mailgun.org"
+        assert not result.startswith("<")
+        assert not result.endswith(">")
+
+    def test_send_returns_provider_id_without_brackets(self):
+        """
+        If Mailgun returns an ID without angle brackets, it should still
+        be returned as-is (strip is a no-op on a clean string).
+        """
+        with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
+            svc = MailgunHttpDeliveryService()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "id": "20260423123456.1.xyz@mailgun.org",
+            "message": "Queued. Thank you.",
+        }
+
+        with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response):
+            result = svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            )
+
+        assert result == "20260423123456.1.xyz@mailgun.org"
+
     def test_send_calls_correct_eu_endpoint(self):
         with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
             svc = MailgunHttpDeliveryService()
 
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"id": "<msg-id@mailgun.org>"}
 
         with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response) as mock_post:
             svc.send_clinical_output(
@@ -180,6 +290,7 @@ class TestMailgunHttpDeliveryService:
 
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"id": "<msg-id@mailgun.org>"}
 
         with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response) as mock_post:
             svc.send_clinical_output(
@@ -199,6 +310,7 @@ class TestMailgunHttpDeliveryService:
 
         mock_response = MagicMock()
         mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"id": "<msg-id@mailgun.org>"}
 
         with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response) as mock_post:
             svc.send_clinical_output(

@@ -62,6 +62,7 @@ from app.services.delivery.admin_delivery_service import (
 from app.routers.admin_router import router as admin_router
 from app.routers.public_router import router as public_router
 from app.routers.form_router import router as form_router
+from app.routers.webhook_router import router as webhook_router
 from starlette.staticfiles import StaticFiles
 
 import sentry_sdk  # noqa: E402 — safe: no-op if Sentry not initialised
@@ -185,6 +186,13 @@ def _validate_email_config() -> None:
             "Set either MAILGUN_API_KEY + MAILGUN_DOMAIN (Mailgun HTTP) "
             "or SMTP_HOST + SMTP_USER + SMTP_PASSWORD (SMTP)."
         )
+    
+    if has_mailgun and not os.environ.get("MAILGUN_SIGNING_KEY"):
+        raise RuntimeError(
+            "Required environment variable not set: MAILGUN_SIGNING_KEY. "
+            "Set this to the Mailgun webhook signing key to enable webhook "
+            "signature verification."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +254,8 @@ app.state.audit_repo = audit_repo
 # Store allowed domains in app.state so the router can read it without
 # importing os directly (keeps handler signatures self-documenting).
 app.state.allowed_admin_domains = os.environ.get("ALLOWED_ADMIN_DOMAINS", "")
+app.state.mailgun_signing_key = os.environ.get("MAILGUN_SIGNING_KEY")
+app.state.database_url = DATABASE_URL
 
 # Look up practice name for use in generated PDFs.
 # Captured once at startup. If the practice name is changed via the admin
@@ -288,6 +298,8 @@ app.include_router(public_router)
 
 # Form session router -- no prefix, routes sit at root level
 app.include_router(form_router)
+
+app.include_router(webhook_router)
 
 # ---------------------------------------------------------------------------
 # Error handling

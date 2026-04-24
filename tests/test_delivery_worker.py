@@ -1,19 +1,22 @@
 """
 tests/test_delivery_worker.py
 
-Unit tests for the rewritten delivery worker loop.
+Unit tests for the delivery worker loop.
 
 No database required. All dependencies are replaced with fakes or mocks.
 time.sleep is patched so tests do not wait real time.
 
-The delivery worker no longer uses delivery_orchestration or list_retryable.
-It calls delivery_repo.claim_next_pending directly and processes one job per
-loop iteration. The tests reflect this new structure.
+The delivery worker calls delivery_repo.claim_next_pending directly and
+processes one job per loop iteration.
 
-Why delivery_service is patched at the module level:
-    The worker imports send_clinical_output via the delivery_service instance
-    passed as an argument, so no module-level patching of the service is needed.
-    The service is simply a MagicMock passed in at construction time.
+Provider ID branching:
+send_clinical_output now returns str | None.
+- str  -> worker calls mark_as_accepted (Mailgun path)
+- None -> worker calls mark_sent (SMTP/legacy path)
+
+_make_delivery_service defaults to returning a mock provider ID so tests
+exercise the Mailgun path by default. Tests that need the legacy path
+explicitly set send_clinical_output.return_value = None.
 """
 
 import logging
@@ -32,6 +35,8 @@ from app.services.delivery.delivery_worker import (
 from app.services.delivery.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
 from app.services.delivery.delivery_service import EmailDeliveryError
 from app.repositories.attachment_repository import AttachmentNotFound
+
+_MOCK_PROVIDER_ID = "20260423123456.1.abc@mailgun.org"
 
 
 # ---------------------------------------------------------------------------
@@ -58,8 +63,16 @@ def _make_attachment_repo(pdf_bytes=b"%PDF-fake"):
     return repo
 
 
-def _make_delivery_service():
-    return MagicMock()
+def _make_delivery_service(provider_id: str | None = _MOCK_PROVIDER_ID):
+    """
+    Build a mock DeliveryService.
+
+    By default, send_clinical_output returns a mock provider ID (Mailgun path).
+    Pass provider_id=None to exercise the legacy SMTP path.
+    """
+    svc = MagicMock()
+    svc.send_clinical_output.return_value = provider_id
+    return svc
 
 
 def _make_job(
@@ -117,7 +130,7 @@ def _run_worker_n_sleeps(
 
 
 # ---------------------------------------------------------------------------
-# _process_job: successful path
+# _process_job: successful path — Mailgun (provider ID returned)
 # ---------------------------------------------------------------------------
 
 def test_process_job_fetches_attachment_and_sends():
@@ -145,21 +158,44 @@ def test_process_job_fetches_attachment_and_sends():
     assert send_kwargs["submission_id"] == "sub-aaa"
 
 
-def test_process_job_marks_sent_on_success():
+def test_process_job_marks_accepted_on_mailgun_success():
     """
-    delivery_repo.mark_sent must be called with the job id after a successful send.
+    When send_clinical_output returns a provider ID string, mark_as_accepted
+    must be called with the job id and that ID. mark_sent must not be called.
     """
     job = _make_job(job_id="job-xyz")
     delivery_repo = MagicMock()
+    delivery_service = _make_delivery_service(provider_id=_MOCK_PROVIDER_ID)
 
     _process_job(
         job=job,
         delivery_repo=delivery_repo,
         attachment_repo=_make_attachment_repo(),
-        delivery_service=_make_delivery_service(),
+        delivery_service=delivery_service,
+    )
+
+    delivery_repo.mark_as_accepted.assert_called_once_with("job-xyz", _MOCK_PROVIDER_ID)
+    delivery_repo.mark_sent.assert_not_called()
+
+
+def test_process_job_marks_sent_on_smtp_path():
+    """
+    When send_clinical_output returns None (SMTP/legacy path), mark_sent must
+    be called with the job id. mark_as_accepted must not be called.
+    """
+    job = _make_job(job_id="job-xyz")
+    delivery_repo = MagicMock()
+    delivery_service = _make_delivery_service(provider_id=None)
+
+    _process_job(
+        job=job,
+        delivery_repo=delivery_repo,
+        attachment_repo=_make_attachment_repo(),
+        delivery_service=delivery_service,
     )
 
     delivery_repo.mark_sent.assert_called_once_with("job-xyz")
+    delivery_repo.mark_as_accepted.assert_not_called()
 
 
 def test_process_job_passes_denormalised_fields_to_send():
@@ -188,14 +224,14 @@ def test_process_job_passes_denormalised_fields_to_send():
 # _process_job: failure paths
 # ---------------------------------------------------------------------------
 
-def test_process_job_raises_email_delivery_error_on_smtp_failure():
+def test_process_job_raises_email_delivery_error_on_send_failure():
     """
     EmailDeliveryError from send_clinical_output must propagate uncaught from
     _process_job so the caller (run_worker) can record the backoff.
     """
     job = _make_job()
     delivery_service = _make_delivery_service()
-    delivery_service.send_clinical_output.side_effect = EmailDeliveryError("SMTP timeout")
+    delivery_service.send_clinical_output.side_effect = EmailDeliveryError("timeout")
 
     with pytest.raises(EmailDeliveryError):
         _process_job(
@@ -264,7 +300,7 @@ def test_worker_processes_job_and_does_not_sleep():
     assert mock_sleep.call_count == 1  # only after the empty second claim
 
 
-def test_worker_records_failed_backoff_on_smtp_error():
+def test_worker_records_failed_backoff_on_send_error():
     """
     When send_clinical_output raises EmailDeliveryError, run_worker calls
     delivery_repo.mark_failed with the job id and a future next_retry_after.
@@ -340,7 +376,8 @@ def test_worker_logs_error_on_exhaustion(caplog):
 def test_worker_logs_critical_on_attachment_not_found():
     """
     AttachmentNotFound from get_attachment is a bug (invariant broken) and
-    must be logged at CRITICAL. The worker must not mark_sent.
+    must be logged at CRITICAL. The worker must not call mark_sent or
+    mark_as_accepted.
     """
     job = _make_job()
     delivery_repo = _make_delivery_repo(job_sequence=[job, None])
@@ -362,6 +399,7 @@ def test_worker_logs_critical_on_attachment_not_found():
             pass
 
     delivery_repo.mark_sent.assert_not_called()
+    delivery_repo.mark_as_accepted.assert_not_called()
 
 
 def test_worker_exits_on_db_failure():

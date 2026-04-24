@@ -25,6 +25,14 @@ PDF generation is a submission-time concern, not a delivery concern. The caller
 pre-rendered bytes to send_clinical_output. This separation makes retry viable:
 the same bytes are sent on every attempt without regeneration.
 
+Return value of send_clinical_output:
+  - MailgunHttpDeliveryService returns the provider message ID string (the
+    Mailgun message ID with angle brackets stripped). The delivery worker
+    persists this immediately so the webhook router can match incoming signals.
+  - EmailDeliveryService and ConsoleDeliveryService return None. SMTP does not
+    support webhooks; the delivery worker takes the legacy 'sent' path when
+    None is returned.
+
 Configuration (EmailDeliveryService):
     SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASSWORD,
     EMAIL_FROM, SMTP_TIMEOUT (default 30)
@@ -70,7 +78,7 @@ class DeliveryService(ABC):
         pdf_bytes: bytes,
         submission_id: str,
         submitted_at: datetime,
-    ) -> None: ...
+    ) -> str | None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +120,9 @@ class EmailDeliveryService(DeliveryService):
 
     The email body is a static message with submission metadata only. All clinical
     detail is in the PDF attachment.
+
+    Returns None. SMTP does not support webhooks; the delivery worker takes the
+    legacy 'sent' path when None is returned.
     """
 
     def __init__(self) -> None:
@@ -138,7 +149,7 @@ class EmailDeliveryService(DeliveryService):
         pdf_bytes: bytes,
         submission_id: str,
         submitted_at: datetime,
-    ) -> None:
+    ) -> str | None:
         subject = f"E-consultation: {condition_label} [{submission_id}]"
         body = _format_body(condition_label, submission_id, submitted_at)
 
@@ -168,6 +179,8 @@ class EmailDeliveryService(DeliveryService):
         except Exception as e:
             raise EmailDeliveryError(str(e)) from e
 
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Mailgun HTTP API implementation
@@ -189,6 +202,11 @@ class MailgunHttpDeliveryService(DeliveryService):
 
     The email body is a static message with submission metadata only. All
     clinical detail is in the PDF attachment.
+
+    Returns the Mailgun message ID string with angle brackets stripped, e.g.:
+        "20260423123456.1.xyz@mailgun.org"
+    The delivery worker persists this immediately after a successful send so
+    the webhook router can match incoming delivery signals to the correct job.
     """
 
     def __init__(self) -> None:
@@ -212,7 +230,7 @@ class MailgunHttpDeliveryService(DeliveryService):
         pdf_bytes: bytes,
         submission_id: str,
         submitted_at: datetime,
-    ) -> None:
+    ) -> str | None:
         subject = f"E-consultation: {condition_label} [{submission_id}]"
         body = _format_body(condition_label, submission_id, submitted_at)
 
@@ -241,6 +259,12 @@ class MailgunHttpDeliveryService(DeliveryService):
         except requests.RequestException as e:
             raise EmailDeliveryError(str(e)) from e
 
+        # Parse and return the Mailgun message ID. Strip angle brackets if
+        # present so the stored value is a clean string for DB lookups:
+        # Mailgun returns: {"id": "<20260423123456.1.xyz@mailgun.org>", ...}
+        raw_id = response.json().get("id", "")
+        return raw_id.strip("<>")
+
 
 # ---------------------------------------------------------------------------
 # Development implementation
@@ -260,6 +284,9 @@ class ConsoleDeliveryService(DeliveryService):
 
     The email body is a static message with submission metadata only, matching
     the production implementation.
+
+    Returns None. The delivery worker takes the legacy 'sent' path when None
+    is returned, consistent with the SMTP behaviour in dev/test environments.
     """
 
     def __init__(self) -> None:
@@ -276,7 +303,7 @@ class ConsoleDeliveryService(DeliveryService):
         pdf_bytes: bytes,
         submission_id: str,
         submitted_at: datetime,
-    ) -> None:
+    ) -> str | None:
         body = _format_body(condition_label, submission_id, submitted_at)
 
         logger.info(
@@ -291,3 +318,5 @@ class ConsoleDeliveryService(DeliveryService):
             len(pdf_bytes),
             "\n".join(f"    {line}" for line in body.splitlines()),
         )
+
+        return None
