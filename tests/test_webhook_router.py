@@ -16,6 +16,7 @@ import hmac
 import os
 import time
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -41,8 +42,40 @@ pytestmark = pytest.mark.integration
 from app.routers.webhook_router import router as webhook_router
 from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.submission_repository import SubmissionRepository
+from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails
 
 _SIGNING_KEY = "test-signing-key-abc123"
+
+_SUBMITTED_AT = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+# Minimal PatientDetails satisfying all required fields.
+_PATIENT_DETAILS = PatientDetails(
+    patient_for="me",
+    first_name="Test",
+    last_name="Patient",
+    date_of_birth="1990-01-01",
+    postcode="OX1 1AA",
+    gender="prefer_not_to_say",
+)
+
+# Minimal ClinicalOutput satisfying all required fields.
+_CLINICAL_OUTPUT = ClinicalOutput(
+    condition_id="test-condition",
+    free_text="",
+    additional_text=None,
+    answers={},
+    safety_messages=[],
+    question_labels={},
+    patient_details=_PATIENT_DETAILS,
+    contact_preferences=None,
+)
+
+# Minimal AuditOutput satisfying all required fields.
+_AUDIT_OUTPUT = AuditOutput(
+    runtime_state={},
+    safety_evaluation={},
+    ruleset_version="test",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -113,8 +146,9 @@ def _insert_test_submission(submission_repo: SubmissionRepository) -> str:
         practice_id="test-practice",
         condition_id="test-condition",
         condition_label="Test Condition",
-        clinical_output_json={"test": True},
-        audit_output_json={"test": True},
+        clinical_output=_CLINICAL_OUTPUT,
+        audit_output=_AUDIT_OUTPUT,
+        submitted_at=_SUBMITTED_AT,
     )
     return submission_id
 
@@ -132,8 +166,7 @@ def _insert_delivery_job(
         submission_id=submission_id,
         to_email="gp@example.com",
         condition_label="Test Condition",
-        submitted_at=__import__("datetime").datetime(2026, 1, 1, 12, 0, 0,
-                                                     tzinfo=__import__("datetime").timezone.utc),
+        submitted_at=_SUBMITTED_AT,
     )
     delivery_repo.mark_as_accepted(job_id, provider_message_id)
     return job_id
