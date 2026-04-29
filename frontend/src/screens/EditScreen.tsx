@@ -297,7 +297,7 @@ export default function EditScreen({
               id="photo-upload"
               ref={fileInputRef}
               type="file"
-              accept="image/jpeg,image/png"
+              accept="image/*"
               multiple
               aria-describedby={photoError ? "photo-upload-hint photo-error" : "photo-upload-hint"}
               aria-invalid={!!photoError}
