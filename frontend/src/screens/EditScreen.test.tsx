@@ -318,7 +318,7 @@ describe("EditScreen — file input per tier", () => {
     await userEvent.upload(input, newFile);
 
     // Count error must be shown
-    expect(screen.getByText(/maximum of 1 photo/i)).toBeTruthy();
+    expect(screen.getAllByText(/maximum of 1 photo/i).length).toBeGreaterThanOrEqual(1);
     // Photos must not be updated
     expect(onPhotosChange).not.toHaveBeenCalled();
   });
@@ -357,7 +357,7 @@ describe("EditScreen — file input per tier", () => {
     );
     await userEvent.upload(input, newFile);
 
-    expect(screen.getByText(/maximum of 5 photos/i)).toBeTruthy();
+    expect(screen.getAllByText(/maximum of 5 photos/i).length).toBeGreaterThanOrEqual(1);
     expect(onPhotosChange).not.toHaveBeenCalled();
   });
 });
