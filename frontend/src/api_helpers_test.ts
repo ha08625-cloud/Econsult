@@ -29,6 +29,17 @@ describe("friendlyPhotoErrorMessage", () => {
     );
   });
 
+  it("returns the server message directly for an ImageTooLargeError", () => {
+    // The server message from ImageTooLargeError already contains patient-facing
+    // instructions, so it is passed through rather than replaced with a generic string.
+    const detail =
+      "Image could not be reduced below the 5 MB limit. " +
+      "Please check your camera settings — 12MP or lower is recommended. " +
+      "You can also crop the image before uploading.";
+    const result = friendlyPhotoErrorMessage(detail);
+    expect(result).toBe(detail);
+  });
+
   it("returns null for an unrecognised detail string", () => {
     const result = friendlyPhotoErrorMessage("Something completely unexpected");
     expect(result).toBeNull();
@@ -49,6 +60,15 @@ describe("friendlyErrorMessage — 422 photo errors", () => {
     expect(friendlyErrorMessage(err)).toBe(
       "One of your photos is too large to send. Please go back and remove it, then try again."
     );
+  });
+
+  it("passes through the ImageTooLargeError message from the server", () => {
+    const detail =
+      "Image could not be reduced below the 5 MB limit. " +
+      "Please check your camera settings — 12MP or lower is recommended. " +
+      "You can also crop the image before uploading.";
+    const err = new ApiError("HTTP 422", 422, detail);
+    expect(friendlyErrorMessage(err)).toBe(detail);
   });
 
   it("falls back to the generic message for an unrecognised 422 detail", () => {
@@ -103,7 +123,9 @@ describe("finishForm", () => {
       new Response(JSON.stringify({ submission_id: "abc-123" }), { status: 200 })
     );
 
-    const result = await finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, []);
+    const result = await finishForm(
+      RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [], null
+    );
 
     expect(result).toEqual({ submission_id: "abc-123" });
 
@@ -121,7 +143,7 @@ describe("finishForm", () => {
       new Response(JSON.stringify({ submission_id: "abc-123" }), { status: 200 })
     );
 
-    await finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, []);
+    await finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [], null);
 
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     const body = init.body as FormData;
@@ -134,6 +156,47 @@ describe("finishForm", () => {
     expect(parsed.patient_details).toEqual(PATIENT_DETAILS);
   });
 
+  it("does not include photo_quality_tier in the payload when no photos are submitted", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ submission_id: "abc-123" }), { status: 200 })
+    );
+
+    await finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [], null);
+
+    const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    const body = init.body as FormData;
+    const parsed = JSON.parse(body.get("payload") as string);
+    expect(parsed).not.toHaveProperty("photo_quality_tier");
+  });
+
+  it("includes photo_quality_tier in the payload when photos are present", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ submission_id: "abc-123" }), { status: 200 })
+    );
+
+    const file = new File([new Uint8Array([0xff, 0xd8, 0xff])], "a.jpg", { type: "image/jpeg" });
+    await finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [file], "standard");
+
+    const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    const body = init.body as FormData;
+    const parsed = JSON.parse(body.get("payload") as string);
+    expect(parsed.photo_quality_tier).toBe("standard");
+  });
+
+  it("includes photo_quality_tier 'high' when high tier is selected", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ submission_id: "abc-123" }), { status: 200 })
+    );
+
+    const file = new File([new Uint8Array([0xff, 0xd8, 0xff])], "a.jpg", { type: "image/jpeg" });
+    await finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [file], "high");
+
+    const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    const body = init.body as FormData;
+    const parsed = JSON.parse(body.get("payload") as string);
+    expect(parsed.photo_quality_tier).toBe("high");
+  });
+
   it("appends each File as a 'photos' field", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ submission_id: "abc-123" }), { status: 200 })
@@ -142,7 +205,7 @@ describe("finishForm", () => {
     const file1 = new File([new Uint8Array([0xff, 0xd8, 0xff])], "a.jpg", { type: "image/jpeg" });
     const file2 = new File([new Uint8Array([0xff, 0xd8, 0xff])], "b.jpg", { type: "image/jpeg" });
 
-    await finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [file1, file2]);
+    await finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [file1, file2], "standard");
 
     const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     const body = init.body as FormData;
@@ -161,7 +224,7 @@ describe("finishForm", () => {
     );
 
     await expect(
-      finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [])
+      finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [], null)
     ).rejects.toMatchObject({
       status: 422,
       detail: "Photo 1 exceeds the 5242880 byte limit",
@@ -172,7 +235,7 @@ describe("finishForm", () => {
     vi.mocked(fetch).mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
     await expect(
-      finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [])
+      finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [], null)
     ).rejects.toMatchObject({ status: null });
   });
 });
