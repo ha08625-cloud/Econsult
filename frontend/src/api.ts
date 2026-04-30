@@ -223,6 +223,7 @@ export async function updateForm(payload: ClientAnswerReturn): Promise<{
  *
  * The JSON payload is sent as a plain string in the `payload` field.
  * Each photo File is appended as a separate `photos` field.
+ * photo_quality_tier is included in the JSON payload when photos are present.
  * The server reads these in app/routers/form_router.py → form_finish.
  */
 export async function finishForm(
@@ -231,6 +232,7 @@ export async function finishForm(
   contactPreferences: ContactPreferences,
   patientDetails: PatientDetails,
   photos: File[],
+  photoQualityTier: "high" | "standard" | null,
 ): Promise<FinishFormResult> {
   const form = new FormData();
 
@@ -241,6 +243,12 @@ export async function finishForm(
       version: version,
       contact_preferences: contactPreferences,
       patient_details: patientDetails,
+      // Only include the tier field when photos are present. When no photos
+      // are submitted the field is omitted entirely — the server accepts its
+      // absence for photo-less submissions.
+      ...(photos.length > 0 && photoQualityTier !== null
+        ? { photo_quality_tier: photoQualityTier }
+        : {}),
     }),
   );
 

@@ -11,10 +11,7 @@ export function initialiseEditableAnswers(
   }, {} as Record<string, boolean | string | null>);
 }
 
-// Returns the contact-preference fields that belong to this screen's local
-// form state. consultation_outcome is excluded because it is captured earlier
-// on the OUTCOME screen and passed in as a prop to ContactScreen.
-export function initialiseContactPreferences(): Omit<ContactPreferences, "consultation_outcome"> {
+export function initialiseContactPreferences(): ContactPreferences {
   return {
     contact_methods: [],
     email_address: null,
@@ -40,8 +37,9 @@ export function isValidUkPhone(value: string): boolean {
  * Converts a server-supplied 422 detail string from POST /form/finish into a
  * plain-English message suitable for display to patients.
  *
- * The server strings are defined in app/routers/form_router.py. If those
- * strings change, update the patterns here to match.
+ * The server strings are defined in app/routers/form_router.py and
+ * app/utils/image_sanitizer.py. If those strings change, update the patterns
+ * here to match.
  *
  * Unrecognised strings — including 422s unrelated to photos — return null,
  * which signals the caller to fall back to the generic error message.
@@ -55,6 +53,12 @@ export function friendlyPhotoErrorMessage(detail: string): string | null {
   }
   if (detail.startsWith("Too many photos")) {
     return "You have attached too many photos. Please go back and remove some, then try again.";
+  }
+  // ImageTooLargeError from the high-tier CDR quality iteration fallback.
+  // The server message already contains patient-facing instructions; pass it
+  // through directly rather than replacing it with a generic string.
+  if (detail.startsWith("Image could not be reduced")) {
+    return detail;
   }
   return null;
 }

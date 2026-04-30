@@ -486,3 +486,128 @@ textarea:focus {
 .combobox-option--active.combobox-option--selected {
   outline-color: var(--nhs-blue);
 }
+/* ============================================================
+   Photo tier selection
+   ============================================================ */
+
+/* Wraps the two tier radio cards. Strips fieldset browser defaults. */
+.photo-tier-fieldset {
+  border: none;
+  min-width: 0;
+  padding: 0;
+  margin: var(--space-sm) 0 var(--space-md) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* Plain text link button for the photo guide trigger */
+.guide-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0 0 var(--space-md) 0;
+  color: var(--nhs-blue);
+  font-size: 16px;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  display: inline-block;
+}
+
+.guide-link:focus {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ============================================================
+   Modal overlay and panel
+   ============================================================ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--space-lg) var(--space-md);
+  overflow-y: auto;
+}
+
+.modal-panel {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl) var(--space-lg);
+  max-width: 560px;
+  width: 100%;
+  position: relative;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.modal-close {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.modal-close:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.modal-close:focus {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.modal-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-label);
+  margin-bottom: var(--space-md);
+  padding-right: var(--space-xl); /* prevent overlap with close button */
+}
+
+.modal-guide-list {
+  list-style: disc;
+  padding-left: var(--space-lg);
+  margin-bottom: var(--space-md);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.modal-guide-list li {
+  margin-bottom: var(--space-xs);
+}
+
+.modal-guide-subheading {
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text-label);
+  margin-bottom: var(--space-sm);
+}
+
+.modal-guide-image {
+  width: 100%;
+  border-radius: var(--radius);
+  margin: var(--space-lg) 0 var(--space-md) 0;
+  display: block;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-lg);
+}

@@ -3,6 +3,7 @@ import { PageShell, InlineError, FieldError } from "../layout";
 import { finishForm, friendlyErrorMessage } from "../api";
 import { initialiseContactPreferences, isValidUkPhone } from "../helpers";
 import type { ContactPreferences, ContactMethod, PatientDetails, ConsultationOutcome } from "../types";
+import type { PhotoTier } from "./EditScreen";
 
 interface ContactScreenProps {
   practiceName: string | null;
@@ -11,6 +12,7 @@ interface ContactScreenProps {
   patientDetails: PatientDetails;
   consultationOutcome: ConsultationOutcome;
   photos: File[];
+  photoTier: PhotoTier | null;
   /** Doctor names from GET /doctors. Empty array = no list configured; show free text only. */
   doctors: string[];
   onSubmit: () => void;
@@ -32,6 +34,7 @@ export default function ContactScreen({
   patientDetails,
   consultationOutcome,
   photos,
+  photoTier,
   doctors,
   onSubmit,
   onBack,
@@ -163,7 +166,7 @@ export default function ContactScreen({
     setIsSubmitting(true);
     setScreenError(null);
 
-    finishForm(runtimeId, version, cleanPreferences, patientDetails, photos)
+    finishForm(runtimeId, version, cleanPreferences, patientDetails, photos, photoTier)
       .then(() => {
         onSubmit();
       })

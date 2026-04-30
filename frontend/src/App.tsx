@@ -20,6 +20,7 @@ import type {
   ConsultationOutcome,
 } from "./types";
 import type { PhotoAttachment } from "./uiTypes";
+import type { PhotoTier } from "./screens/EditScreen";
 import { GENERAL_CONSULTATION_ID } from './constants';
 import { PageShell } from "./layout";
 import { initialiseEditableAnswers } from "./helpers";
@@ -55,6 +56,7 @@ export default function App() {
   const [patientDetails, setPatientDetails] = useState<PatientDetails | null>(null);
   const [consultationOutcome, setConsultationOutcome] = useState<ConsultationOutcome | null>(null);
   const [photos, setPhotos] = useState<PhotoAttachment[]>([]);
+  const [photoTier, setPhotoTier] = useState<PhotoTier | null>(null);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [showBackWarning, setShowBackWarning] = useState(false);
   const [safetyWarningFetchState, setSafetyWarningFetchState] = useState<SafetyWarningFetchState>({ status: "loading" });
@@ -325,6 +327,7 @@ export default function App() {
                   setPresentationState({ status: "loading" });
                   setPresentationFetchTrigger((k) => k + 1);
                   setScreen("FREE_TEXT");
+                  setPhotoTier(null);
                 }}>Go back</button>
               </div>
             </div>
@@ -349,6 +352,8 @@ export default function App() {
           version={version}
           photos={photos}
           onPhotosChange={setPhotos}
+          photoTier={photoTier}
+          onPhotoTierChange={setPhotoTier}
         />
       </>
     );
@@ -387,6 +392,7 @@ export default function App() {
         patientDetails={patientDetails}
         consultationOutcome={consultationOutcome}
         photos={photos.map((p) => p.file)}
+        photoTier={photoTier}
         doctors={doctors}
         onSubmit={() => setScreen("DONE")}
         onBack={() => setScreen("REVIEW")}

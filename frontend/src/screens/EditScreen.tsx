@@ -7,9 +7,18 @@ import type { PhotoAttachment } from "../uiTypes";
 import {
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE_BYTES,
-  MAX_FILE_COUNT,
   MAX_TOTAL_SIZE_BYTES,
 } from "../upload_constants";
+
+export type PhotoTier = "high" | "standard";
+
+// Per-tier photo count limits enforced on the client.
+// These must stay consistent with the _TIER_ATTEMPTS keys in image_sanitizer.py
+// and the _VALID_TIERS set in form_router.py.
+const TIER_MAX_COUNT: Record<PhotoTier, number> = {
+  high: 1,
+  standard: 5,
+};
 
 interface EditScreenProps {
   practiceName: string | null;
@@ -28,6 +37,8 @@ interface EditScreenProps {
   version: number;
   photos: PhotoAttachment[];
   onPhotosChange: (updated: PhotoAttachment[]) => void;
+  photoTier: PhotoTier | null;
+  onPhotoTierChange: (tier: PhotoTier) => void;
 }
 
 export default function EditScreen({
@@ -43,20 +54,45 @@ export default function EditScreen({
   version,
   photos,
   onPhotosChange,
+  photoTier,
+  onPhotoTierChange,
 }: EditScreenProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
-  
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
+  const guideCloseRef = useRef<HTMLButtonElement>(null);
 
-  // Move focus to the error summary when a new error appears
+  // Move focus to the error summary when a new error appears.
   useEffect(() => {
     if (screenError || photoError) {
       summaryRef.current?.focus();
     }
   }, [screenError, photoError]);
+
+  // Move focus to the close button when the guide modal opens.
+  // The close button is the first interactive element and is immediately
+  // actionable, making it the correct accessible focus target.
+  useEffect(() => {
+    if (isGuideOpen) {
+      guideCloseRef.current?.focus();
+    }
+  }, [isGuideOpen]);
+
+  // Attach an Escape key listener while the guide is open.
+  useEffect(() => {
+    if (!isGuideOpen) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setIsGuideOpen(false);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isGuideOpen]);
 
   const allRequiredAnswered = clientState.questions.every((q) => {
     if (!q.required) return true;
@@ -93,12 +129,12 @@ export default function EditScreen({
     setPhotoError(null);
 
     const incoming = Array.from(e.target.files ?? []);
-    // Reset the input so the same file can be re-selected after removal
+    // Reset the input so the same file can be re-selected after removal.
     if (fileInputRef.current) fileInputRef.current.value = "";
 
     if (incoming.length === 0) return;
 
-    // Per-file type and size checks
+    // Per-file type and size checks.
     for (const file of incoming) {
       if (!ALLOWED_MIME_TYPES.includes(file.type)) {
         setPhotoError(
@@ -115,15 +151,20 @@ export default function EditScreen({
       }
     }
 
-    // Count check — existing + incoming must not exceed MAX_FILE_COUNT
-    if (photos.length + incoming.length > MAX_FILE_COUNT) {
+    // Tier-conditional count check.
+    // photoTier is guaranteed to be set before the file input is rendered,
+    // but we check defensively here in case of unexpected state.
+    const maxCount = photoTier ? TIER_MAX_COUNT[photoTier] : 1;
+    if (photos.length + incoming.length > maxCount) {
+      const noun = maxCount === 1 ? "photo" : "photos";
       setPhotoError(
-        `You can upload a maximum of ${MAX_FILE_COUNT} photos. You currently have ${photos.length}.`
+        `You can upload a maximum of ${maxCount} ${noun} for this type of submission. ` +
+        `You currently have ${photos.length}.`
       );
       return;
     }
 
-    // Combined size check — existing bytes + incoming bytes
+    // Combined size check.
     const existingBytes = photos.reduce((sum, p) => sum + p.file.size, 0);
     const incomingBytes = incoming.reduce((sum, f) => sum + f.size, 0);
     if (existingBytes + incomingBytes > MAX_TOTAL_SIZE_BYTES) {
@@ -134,7 +175,7 @@ export default function EditScreen({
       return;
     }
 
-    // All checks passed — create PhotoAttachment objects and merge
+    // All checks passed — create PhotoAttachment objects and merge.
     const newAttachments: PhotoAttachment[] = incoming.map((file) => ({
       file,
       previewUrl: URL.createObjectURL(file),
@@ -148,10 +189,33 @@ export default function EditScreen({
     onPhotosChange(updated);
   }
 
+  function handleTierChange(tier: PhotoTier) {
+    // If switching tier after photos have been added, clear the photos to
+    // avoid a situation where the count constraint for the new tier is
+    // violated silently by existing attachments.
+    if (photos.length > 0) {
+      photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+      onPhotosChange([]);
+      setPhotoError(null);
+    }
+    onPhotoTierChange(tier);
+  }
+
   const totalBytes = photos.reduce((sum, p) => sum + p.file.size, 0);
   const totalMB = (totalBytes / 1_048_576).toFixed(1);
   const limitMB = (MAX_TOTAL_SIZE_BYTES / 1_048_576).toFixed(0);
   const hasErrors = !!(screenError || photoError);
+
+  // Derive hint text from the selected tier.
+  function photoHintText(): string {
+    if (photoTier === "high") {
+      return "1 photo maximum. JPEG or PNG.";
+    }
+    if (photoTier === "standard") {
+      return `Up to ${TIER_MAX_COUNT.standard} photos. JPEG or PNG.`;
+    }
+    return "Select a quality option above to add photos.";
+  }
 
   return (
     <PageShell practiceName={practiceName}>
@@ -189,7 +253,7 @@ export default function EditScreen({
                     {q.question_text}{" "}
                     {!q.required && <span className="field-label-optional">(optional)</span>}
                   </legend>
-                  
+
                   {q.suggested && (
                     <div className="alert alert-info" style={{ marginBottom: "var(--space-sm)", padding: "8px 12px" }}>
                       <p style={{ margin: 0, fontSize: "14px" }}>
@@ -283,27 +347,76 @@ export default function EditScreen({
         <div className="form-section">
           {/* Photo upload section */}
           <div className={`field ${photoError ? "has-error" : ""}`}>
-            <label htmlFor="photo-upload">
+            <label>
               Photos{" "}
               <span className="field-label-optional">(optional)</span>
             </label>
-            <p id="photo-upload-hint" className="field-hint">
-              You may attach up to {MAX_FILE_COUNT} photos (JPEG or PNG, max{" "}
-              {(MAX_FILE_SIZE_BYTES / 1_048_576).toFixed(0)} MB each).
-            </p>
 
-            {/* Native visible file input */}
-            <input
-              id="photo-upload"
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              aria-describedby={photoError ? "photo-upload-hint photo-error" : "photo-upload-hint"}
-              aria-invalid={!!photoError}
-              onChange={handleFileChange}
-              style={{ display: "block", marginTop: "var(--space-sm)", marginBottom: "var(--space-sm)" }}
-            />
+            {/* Tier selection — shown always; file input appears only after selection */}
+            <fieldset className="photo-tier-fieldset">
+              <legend className="sr-only">Photo quality</legend>
+
+              <label className={`selection-card ${photoTier === "high" ? "selected" : ""}`}>
+                <input
+                  type="radio"
+                  name="photo-tier"
+                  value="high"
+                  checked={photoTier === "high"}
+                  onChange={() => handleTierChange("high")}
+                />
+                <span className="selection-label">
+                  High quality — 1 photo maximum. Recommended for skin lesions and moles.
+                </span>
+              </label>
+
+              <label className={`selection-card ${photoTier === "standard" ? "selected" : ""}`}>
+                <input
+                  type="radio"
+                  name="photo-tier"
+                  value="standard"
+                  checked={photoTier === "standard"}
+                  onChange={() => handleTierChange("standard")}
+                />
+                <span className="selection-label">
+                  Standard quality — up to 5 photos. Recommended for documents, letters, or general photos.
+                </span>
+              </label>
+            </fieldset>
+
+            {/* Guide link — shown once a tier is selected */}
+            {photoTier !== null && (
+              <button
+                type="button"
+                className="guide-link"
+                onClick={() => setIsGuideOpen(true)}
+              >
+                How to take a good photo
+              </button>
+            )}
+
+            {/* File input — only shown once a tier is selected */}
+            {photoTier !== null && (
+              <>
+                <p id="photo-upload-hint" className="field-hint">
+                  {photoHintText()}
+                </p>
+
+                <input
+                  id="photo-upload"
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  // Only allow multi-select for standard tier. Removing the
+                  // multiple attribute prevents the OS picker from allowing
+                  // more than one file, which is clearer than a post-selection error.
+                  multiple={photoTier === "standard"}
+                  aria-describedby="photo-upload-hint"
+                  aria-invalid={!!photoError}
+                  onChange={handleFileChange}
+                  style={{ display: "block", marginTop: "var(--space-sm)", marginBottom: "var(--space-sm)" }}
+                />
+              </>
+            )}
 
             {photoError && <InlineError message={photoError} />}
 
@@ -394,6 +507,70 @@ export default function EditScreen({
           </button>
         </div>
       </form>
+
+      {/* Photo guide modal */}
+      {isGuideOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setIsGuideOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="How to take a good photo"
+        >
+          {/* Stop clicks inside the modal from closing it via the overlay handler */}
+          <div
+            className="modal-panel"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              ref={guideCloseRef}
+              type="button"
+              className="modal-close"
+              aria-label="Close guidance"
+              onClick={() => setIsGuideOpen(false)}
+            >
+              &times;
+            </button>
+
+            <h2 className="modal-title">Taking a good photo</h2>
+
+            <ul className="modal-guide-list">
+              <li>Take the photo in a well-lit area</li>
+              <li>
+                For a close-up, hold the camera at least 15cm (6 inches) from
+                the skin or the image will be blurry
+              </li>
+              <li>
+                Tap the screen to focus on the area of interest rather than
+                the background
+              </li>
+            </ul>
+
+            <p className="modal-guide-subheading">For best results:</p>
+            <ul className="modal-guide-list">
+              <li>Ask someone else to take the photo for you</li>
+              <li>Rest the phone on a stable surface</li>
+              <li>Use the 3-second countdown timer if available</li>
+            </ul>
+
+            <img
+              src="/photo-guide.jpg"
+              alt="Example of a well-lit, clearly focused close-up photo"
+              className="modal-guide-image"
+            />
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setIsGuideOpen(false)}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageShell>
   );
 }
