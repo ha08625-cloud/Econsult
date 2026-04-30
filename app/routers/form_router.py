@@ -21,6 +21,7 @@ Architecture rules:
 import json
 import logging
 import uuid
+from dataclasses import replace
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
@@ -67,11 +68,13 @@ from app.services.engine.pipeline import (
     init_runtime_state,
 )
 from app.core.rate_limit import limiter
-from app.utils.image_sanitizer import sanitize_image
+from app.utils.image_sanitizer import ImageTooLargeError, sanitize_image
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_VALID_TIERS = {"high", "standard"}
 
 
 # ---------------------------------------------------------------------------
@@ -243,12 +246,34 @@ async def form_finish(
             f"Too many photos: maximum is {MAX_FILE_COUNT}"
         )
 
+    # Tier validation.
+    #
+    # photo_quality_tier is validated here rather than in validate_finish_payload
+    # because the conditional requirement — tier is required when photos are
+    # present — spans both the JSON payload and the multipart file list.
+    # validate_finish_payload only sees the JSON; this handler sees both.
+    #
+    # When no photos are submitted, tier is accepted as None or absent and
+    # ignored. When photos are present, tier must be one of the valid values.
+    tier = data.get("photo_quality_tier")
+    if photo_bytes:
+        if tier not in _VALID_TIERS:
+            raise INVALID_PAYLOAD(
+                f"photo_quality_tier must be one of {sorted(_VALID_TIERS)} "
+                "when photos are included"
+            )
+
     # Image CDR (Content Disarm and Reconstruction).
     #
     # Each uploaded image is fully decoded by Pillow and re-encoded as a clean
-    # JPEG. This replaces the previous header-only verify() check and provides
-    # stronger guarantees:
+    # JPEG. The tier parameter controls the resize bounds and encode quality:
     #
+    # - "high":     long edge 3840px (4K), quality 85, with a fallback
+    #               iteration sequence if the initial encode exceeds 5 MB.
+    # - "standard": long edge 1920px (1080p), quality 80. A single encode
+    #               step — this combination reliably stays within 5 MB.
+    #
+    # CDR guarantees:
     # - Full decode: truncated or corrupt image bodies are rejected here rather
     #   than deferred to the PDF worker.
     # - Metadata stripping: EXIF, ICC profiles, and all other metadata are
@@ -258,15 +283,19 @@ async def form_finish(
     # - Structural polyglot defence: any payload embedded in regions Pillow
     #   ignores (e.g. appended after the JPEG EOI marker) is discarded during
     #   re-encoding.
+    # - 5 MB output guarantee: the sanitizer either returns bytes within the
+    #   EMIS limit or raises ImageTooLargeError with a user-facing message.
     #
-    # The post-sanitization size check is necessary because re-encoding an
-    # already-compressed JPEG can marginally increase its size. In practice
-    # this is rare, but the invariant that stored bytes are within the declared
-    # limits must be maintained.
+    # The post-sanitization size checks below remain as defensive guards.
+    # Re-encoding an already-compressed JPEG can marginally increase its size
+    # in edge cases; these checks ensure the stored bytes invariant holds.
+    effective_tier = tier if tier in _VALID_TIERS else "standard"
     sanitized = []
     for i, b in enumerate(photo_bytes):
         try:
-            sanitized.append(sanitize_image(b))
+            sanitized.append(sanitize_image(b, tier=effective_tier))
+        except ImageTooLargeError as exc:
+            raise INVALID_PAYLOAD(str(exc))
         except ValueError:
             raise INVALID_PAYLOAD(f"Photo {i + 1} is not a valid image")
     photo_bytes = sanitized
@@ -335,6 +364,17 @@ async def form_finish(
         contact_preferences=contact_preferences,
         patient_details=patient_details,
     )
+
+    # Stamp the submission-level photo tier onto the audit record.
+    #
+    # finish_runtime_state() has no knowledge of the HTTP submission tier —
+    # tier is a transport concern, not a clinical engine concern. We use
+    # dataclasses.replace() to produce an augmented AuditOutput without
+    # mutating the value returned by the pipeline.
+    #
+    # tier is None when no photos were submitted, which is the correct value
+    # for a text-only submission.
+    audit = replace(audit, photo_quality_tier=tier)
 
     delivery_email = practice_repo.get_email(practice_id)
     submission_id = str(uuid.uuid4())

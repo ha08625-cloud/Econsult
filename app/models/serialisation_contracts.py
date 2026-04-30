@@ -71,3 +71,10 @@ class AuditOutput:
     runtime_state: Dict[str, Any]
     safety_evaluation: Dict[str, Any]
     ruleset_version: str
+    # photo_quality_tier is optional because:
+    # - Submissions without photos do not have a meaningful tier value.
+    # - The clinical pipeline (pipeline.py / serialisation.py) has no knowledge
+    #   of the HTTP submission tier. form_router.py stamps this field after
+    #   finish_runtime_state() returns, using dataclasses.replace().
+    # - Historical records predating this field will read None when deserialised.
+    photo_quality_tier: Optional[str] = field(default=None)

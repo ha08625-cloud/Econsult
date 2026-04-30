@@ -13,9 +13,6 @@ Architecture notes:
   the submission and photos, enqueues a pdf_jobs row, and returns immediately.
   MockDeliveryService is retained for tests that inject it via other paths,
   but form_finish tests no longer assert on delivery service calls.
-- Tests that previously checked attachment_count on submission_records now
-  check pdf_jobs.attachment_count and submission_photos row count instead,
-  since those columns were moved in Migration 0013.
 - The availability check in form_init is overridden to return open for
   happy-path tests, and to raise for the fail-open test.
 - Each test that writes to the database uses a unique condition_id drawn
@@ -388,6 +385,7 @@ def test_finish_with_one_photo_creates_pdf_job_and_photo_row():
             "version": version,
             "contact_preferences": _valid_contact_preferences(),
             "patient_details": _valid_patient_details(),
+            "photo_quality_tier": "standard",
         }
         finish_res = client.post(
             "/form/finish",
@@ -416,6 +414,7 @@ def test_finish_with_multiple_photos_creates_correct_photo_rows():
             "version": version,
             "contact_preferences": _valid_contact_preferences(),
             "patient_details": _valid_patient_details(),
+            "photo_quality_tier": "standard",
         }
         finish_res = client.post(
             "/form/finish",
@@ -554,18 +553,7 @@ def test_finish_rejects_truncated_jpeg():
     """
     A truncated JPEG — valid SOI header bytes, abrupt end — must return 422.
 
-    This is the CE+ regression test for CDR. The previous header-only
-    verify() call would pass these bytes because the SOI marker is present.
-    CDR calls convert("RGB") which triggers a full Pillow decode; the missing
-    image data causes decode to fail and the router returns 422 before any
-    database write.
-
-    Structural note: this same full-decode property structurally neutralises
-    polyglot files. A polyglot embeds a second payload in regions Pillow
-    ignores (e.g. bytes appended after the JPEG EOI marker). Because CDR
-    re-encodes from the decoded pixel buffer, appended payloads are not
-    carried through to the stored bytes. There is no need to test this with
-    a specific polyglot payload — it follows from the re-encoding itself.
+    This is the CE+ regression test for CDR. 
     """
     with TestClient(app) as client:
         runtime_id, version = _run_full_flow(client)
@@ -575,6 +563,7 @@ def test_finish_rejects_truncated_jpeg():
             "version": version,
             "contact_preferences": _valid_contact_preferences(),
             "patient_details": _valid_patient_details(),
+            "photo_quality_tier": "standard",
         }
         truncated = b"\xff\xd8\xff" + b"\x00" * 50
         finish_res = client.post(
@@ -592,8 +581,6 @@ def test_finish_sanitizes_png_to_jpeg():
     A valid PNG must be accepted, sanitized to JPEG, and result in a 200
     response with a pdf_jobs row and one submission_photos row.
 
-    This confirms CDR does not incorrectly reject valid PNG uploads — PNG
-    is a declared accepted input type and must survive the sanitization pass.
     """
     png_img = Image.new("RGB", (1, 1), color=(0, 128, 0))
     buf = io.BytesIO()
@@ -608,6 +595,7 @@ def test_finish_sanitizes_png_to_jpeg():
             "version": version,
             "contact_preferences": _valid_contact_preferences(),
             "patient_details": _valid_patient_details(),
+            "photo_quality_tier": "standard",
         }
         finish_res = client.post(
             "/form/finish",
@@ -623,3 +611,101 @@ def test_finish_sanitizes_png_to_jpeg():
     assert pdf_job is not None
     assert pdf_job["attachment_count"] == 1
     assert _count_submission_photos(submission_id) == 1
+
+# ---------------------------------------------------------------------------
+# Tier validation tests
+# ---------------------------------------------------------------------------
+
+def test_finish_with_photo_and_high_tier_returns_200():
+    """
+    Submitting a photo with photo_quality_tier "high" must return 200.
+    The high-tier CDR path is exercised; the result is a valid submission.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+            "photo_quality_tier": "high",
+        }
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[("photos", ("photo.jpg", MINIMAL_JPEG, "image/jpeg"))],
+        )
+        assert finish_res.status_code == 200, (
+            f"Expected 200 for high-tier photo submission, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
+        assert "submission_id" in finish_res.json()
+
+
+def test_finish_with_photo_and_invalid_tier_returns_422():
+    """
+    Submitting a photo with an unrecognised photo_quality_tier value must
+    return 422. No database writes occur.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+            "photo_quality_tier": "ultra",
+        }
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[("photos", ("photo.jpg", MINIMAL_JPEG, "image/jpeg"))],
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for invalid tier value, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
+
+
+def test_finish_with_photo_and_no_tier_returns_422():
+    """
+    Submitting photos without a photo_quality_tier field must return 422.
+    The tier field is required when photos are present.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+            # photo_quality_tier intentionally absent
+        }
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[("photos", ("photo.jpg", MINIMAL_JPEG, "image/jpeg"))],
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 when photos present but tier absent, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
+
+
+def test_finish_without_photos_and_no_tier_returns_200():
+    """
+    Submitting no photos without a photo_quality_tier field must return 200.
+    The tier field is only required when photos are present; text-only
+    submissions must not be rejected for omitting it.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+        # _finish_multipart sends no photos and no photo_quality_tier.
+        finish_res = client.post("/form/finish", **_finish_multipart(runtime_id, version))
+        assert finish_res.status_code == 200, (
+            f"Expected 200 for text-only submission with no tier field, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )

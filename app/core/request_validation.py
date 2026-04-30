@@ -240,9 +240,21 @@ def validate_patient_details(pd: dict) -> None:
 
 
 def validate_finish_payload(payload: dict):
+    # photo_quality_tier is included in the allowed set here so that
+    # submissions from the new frontend (which always include this field)
+    # are not rejected as having illegal fields. Value validation and the
+    # conditional requirement (tier required when photos present) are
+    # handled in form_router.py, which has visibility of both the JSON
+    # payload and the uploaded photo files.
     require_keys(
         payload,
-        {"runtime_id", "version", "contact_preferences", "patient_details"},
+        {
+            "runtime_id",
+            "version",
+            "contact_preferences",
+            "patient_details",
+            "photo_quality_tier",
+        },
     )
 
     if not isinstance(payload["runtime_id"], str):
