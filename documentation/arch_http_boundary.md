@@ -16,8 +16,8 @@ The FastAPI application entry point, startup validation, resource initialisation
 
 - `main.py` is the **imperative shell only**. It contains no route handlers except `/healthz`. Its responsibilities are: environment guards, repository and registry instantiation, startup validation, router registration, error handler registration, and static file serving.
 - Clinical presentation metadata (e.g. `condition_label`) is resolved from the registry in the router handler and passed explicitly to engine adapters. It never enters the core engine.
-- Repositories and registries are initialised **once at startup** and stored in `app.state`. Routers access them exclusively via dependency provider functions in `app/core/dependencies.py` — never via direct `request.app.state` access inside handler bodies, and never via direct imports from `main.py`. This prevents circular imports and keeps handler signatures self-documenting.
-- The `/admin` prefix and `"admin"` tag are applied when the admin router is registered in `main.py`, not inside `admin_router.py`. This keeps the router decoupled from its mount point.
+- Repositories and registries are initialised **once at startup** and stored in `app.state`. Routers access them exclusively via dependency provider functions in `app/core/dependencies.py` — never via direct `request.app.state` access inside handler bodies, and never via direct imports from `main.py`.
+- The `/admin` prefix and `"admin"` tag are applied when the admin router is registered in `main.py`, not inside `admin_router.py`.
 - **All API routes must be registered before the static file mount block.** The catch-all static mount must come last or it will intercept API requests.
 
 ---
@@ -26,23 +26,21 @@ The FastAPI application entry point, startup validation, resource initialisation
 
 Any failure in startup validation raises a `RuntimeError` and aborts. A misconfigured deployment must never silently degrade.
 
-The application does not seed or create database records at startup. All required records (practice, admin users) must be inserted before the application starts. See `docs/deployment_checklist.md`.
-
 **Startup sequence:**
-1. `import os`, `import logging`, and `init_telemetry("http-api")` execute — Sentry is initialised before any other internal import so that module-load failures (e.g. a failed Alembic migration) are captured by Sentry's default `sys.excepthook`
-2. `DATABASE_URL` checked at module load time — failure prevents the app object from being created
-3. Alembic migrations run (`alembic_upgrade()`) — a failed migration aborts startup
-4. `_validate_startup()` runs and stores `practice_id` in `app.state` — wrapped in `sentry_sdk.set_tag("phase", "startup")` / `"running"` so any `RuntimeError` raised here is tagged in Sentry
-5. `availability_repo.init_availability()` seeds a default availability row if absent — must run after step 4 so the practice row exists
+1. `import os`, `import logging`, and `init_telemetry("http-api")` execute — Sentry is initialised before any other internal import
+2. `DATABASE_URL` checked at module load time
+3. Alembic migrations run (`alembic_upgrade()`)
+4. `_validate_startup()` runs and stores `practice_id` in `app.state`
+5. `availability_repo.init_availability()` seeds a default availability row if absent
 
 **Validation rules enforced by `_validate_startup()`:**
 - `PRACTICE_ID` env var must be set.
-- The practice record must exist in the database. If absent, startup aborts with instructions to run the deployment checklist.
+- The practice record must exist in the database.
 - The practice must have a non-empty email address.
-- The database must contain **exactly one practice**. Multiple practices is a clinically unsafe configuration (cross-contamination risk) and aborts startup.
-- Unless `DEV_MODE=1`: either `MAILGUN_API_KEY` + `MAILGUN_DOMAIN` (Mailgun HTTP) or `SMTP_HOST` + `SMTP_USER` + `SMTP_PASSWORD` (SMTP) must be set, plus `EMAIL_FROM` in both cases. Validation is handled by `_validate_email_config()`.
+- The database must contain **exactly one practice**.
+- Unless `DEV_MODE=1`: either `MAILGUN_API_KEY` + `MAILGUN_DOMAIN` or `SMTP_HOST` + `SMTP_USER` + `SMTP_PASSWORD` must be set, plus `EMAIL_FROM`.
 - Unless `DEV_MODE=1`: `ALLOWED_ADMIN_DOMAINS` must be set.
-- At least one admin user must exist for the practice. If none are found, startup aborts with instructions to run `scripts/create_admin_user.py`.
+- At least one admin user must exist for the practice.
 
 **`app.state` values set by startup:**
 
@@ -59,9 +57,9 @@ The application does not seed or create database records at startup. All require
 | `pdf_repo` | PDFRepository | PDF job queue |
 | `photo_repo` | PhotoRepository | Patient photo storage |
 | `delivery_repo` | DeliveryRepository | Delivery job queue |
-| `auth_repo` | AuthRepository | Admin MFA auth — users, codes, sessions |
-| `delivery_service` | DeliveryService | Clinical email delivery (Console, Mailgun HTTP, or SMTP) |
-| `admin_delivery_service` | AdminDeliveryService | MFA code email delivery (Console, Mailgun HTTP, or SMTP) |
+| `auth_repo` | AuthRepository | Admin auth — users, codes, sessions, reset tokens |
+| `delivery_service` | DeliveryService | Clinical email delivery |
+| `admin_delivery_service` | AdminDeliveryService | Admin MFA code and invitation email delivery |
 | `practice_name` | str \| None | Captured once for PDF generation |
 | `allowed_admin_domains` | str | Comma-separated permitted admin email domains |
 
@@ -72,61 +70,83 @@ The application does not seed or create database records at startup. All require
 `main.py` instantiates two delivery services at startup:
 
 **Clinical delivery** (`app.state.delivery_service`):
-- `DEV_MODE=1`: `ConsoleDeliveryService` — logs the email body to stdout, never sends.
-- `MAILGUN_API_KEY` set: `MailgunHttpDeliveryService` — sends via Mailgun EU HTTP API.
-- Otherwise: `EmailDeliveryService` — sends via SMTP.
+- `DEV_MODE=1`: `ConsoleDeliveryService`
+- `MAILGUN_API_KEY` set: `MailgunHttpDeliveryService`
+- Otherwise: `EmailDeliveryService`
 
-**Admin MFA delivery** (`app.state.admin_delivery_service`):
-- `DEV_MODE=1`: `ConsoleAdminDeliveryService` — logs the MFA code to stdout, never sends.
-- `MAILGUN_API_KEY` set: `MailgunHttpAdminDeliveryService` — sends via Mailgun EU HTTP API.
-- Otherwise: `AdminDeliveryService` — sends via SMTP, separate connection from clinical path.
+**Admin delivery** (`app.state.admin_delivery_service`):
+- `DEV_MODE=1`: `ConsoleAdminDeliveryService`
+- `MAILGUN_API_KEY` set: `MailgunHttpAdminDeliveryService`
+- Otherwise: `AdminDeliveryService`
 
-Both console implementations raise `RuntimeError` at instantiation if `DEV_MODE` is not set, preventing accidental production use. Selection logic is mirrored in `worker_main.py` for the delivery worker process.
+Both console implementations raise `RuntimeError` at instantiation if `DEV_MODE` is not set.
 
 ---
 
 ## Error Handlers
 
-Three exception handlers are registered in `main.py`:
+Four exception handlers are registered in `main.py`:
 
 | Exception | HTTP status | Response body |
 |---|---|---|
-| `APIError` | 422 | `{"error": {"code": "...", "message": "..."}}` |
+| `APIError` | `exc.status_code` (default 422) | `{"error": {"code": "...", "message": "..."}}` |
 | `ConditionNotFound` | 404 | `{"error": {"code": "CONDITION_NOT_FOUND", "message": "..."}}` |
 | `RateLimitError` | 429 | `{"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "..."}}` |
+| `HTTPException` (401) | 401 | `{"error": {"code": "UNAUTHORIZED", "message": "..."}}` |
 
-`RateLimitError` is a separate exception class (not an `APIError` subclass) because the `APIError` handler hardcodes status 422. `SESSION_EXPIRED` is raised directly as `HTTPException(status_code=401)` in `admin_context.py` and does not require a registered handler.
+`RateLimitError` is a separate exception class (not an `APIError` subclass) because the `APIError` handler uses `exc.status_code` rather than hardcoding 422. `SESSION_EXPIRED` is raised directly as `HTTPException(status_code=401)` in `admin_context.py` and reshaped by the `HTTPException` handler.
 
-`ConditionNotFound` is defined in `app/core/errors.py` (not `condition_registry.py`). This separation is required so `telemetry.py` can reference it in `ignore_errors` without importing `condition_registry`, which has transitive service dependencies.
+`APIError`, `ConditionNotFound`, and `RateLimitError` are passed to Sentry's `ignore_errors` list to suppress expected 4xx responses.
 
-`APIError`, `ConditionNotFound`, and `RateLimitError` are all passed to Sentry's `ignore_errors` list in `telemetry.py`. This prevents expected 4xx responses from generating false-positive alerts while still allowing unhandled 5xx exceptions to reach Sentry via FastAPI's default exception hook.
+The test factory in `test_admin_router.py` registers the same handlers so error-path tests reflect production behaviour.
 
-The test factory in `test_admin_router.py` registers the same three handlers so that error-path tests reflect production behaviour.
+**Password auth error codes** (all `APIError` subclasses, HTTP 422 unless noted):
+
+| Code | Raised by | Meaning |
+|---|---|---|
+| `INVALID_CREDENTIALS` | `verify_login_credentials` | Generic failure for all password-step gates — wrong password, user not found, locked, no password set, OTP cooldown active. Deliberately generic to prevent gate enumeration. |
+| `INVALID_RESET_TOKEN` | `verify_reset_token` | Token absent, expired, or already consumed. |
+| `WEAK_PASSWORD` | `set_new_password` | zxcvbn score below threshold. Message contains specific feedback. |
+
+---
+
+## Admin Auth Endpoints (`/admin/auth/*`)
+
+All four auth endpoints are unauthenticated. They are the mechanism by which an admin establishes a session and cannot require one.
+
+| Method | Path | Rate limit | Description |
+|---|---|---|---|
+| `POST` | `/admin/auth/login` | 5/min | Step 1: verify password. On success, synchronously upserts OTP to `admin_auth_codes`, then dispatches email delivery as a `BackgroundTask`. Returns 200. |
+| `POST` | `/admin/auth/verify` | 5/min | Step 2: verify OTP. On success, creates session and sets `session_id` HttpOnly cookie. |
+| `POST` | `/admin/auth/request-reset` | 5/min | Request a password setup/reset link. Always returns 200 (anti-enumeration). |
+| `POST` | `/admin/auth/set-password` | 5/min | Set a new password using a reset token from the URL hash. |
+| `POST` | `/admin/auth/logout` | none | Delete session and clear cookie. Unauthenticated. |
+
+**`BackgroundTasks` usage in `POST /admin/auth/login`:**
+FastAPI injects `BackgroundTasks` automatically when it appears in the handler signature (no `Depends()` needed). The OTP DB upsert is synchronous — it happens before the 200 response is returned. Only the network call to the delivery service is backgrounded. If the background task fails, it catches the exception, reports to Sentry, and deletes the OTP record from the database to allow an immediate retry.
 
 ---
 
 ## Availability Orchestration
 
-`check_availability()` in `app/services/availability_orchestration.py` wires `AvailabilityRepository` and `availability_service` together. It does not belong in `availability_service.py` because the service layer has no database access.
+`check_availability()` in `app/services/availability_orchestration.py` wires `AvailabilityRepository` and `availability_service` together.
 
-**Fail-open rule:** Any exception during an availability check (database, network, logic) must be caught and execution must continue as if the practice is open. Patients must never be locked out due to system errors.
+**Fail-open rule:** Any exception during an availability check must be caught and execution must continue as if the practice is open.
 
 ---
 
 ## Submission Ordering (form/finish)
 
-`POST /form/finish` accepts `multipart/form-data`. The JSON payload is sent as a string in the `payload` form field. Photos are sent as optional `photos` file fields. Do not set `Content-Type` manually when calling this endpoint — the browser (or httpx in tests) sets it automatically with the correct boundary when a `FormData` object is used.
-
-The handler body executes in this order: validate payload, read photo bytes, assemble `PatientDetails`, load runtime state, run engine, `create_submission`, `save_photos`, `create_job`, `close_session`, return `submission_id`. See `arch_submission.md` for full detail.
+`POST /form/finish` accepts `multipart/form-data`. The JSON payload is sent as a string in the `payload` form field. See `arch_submission.md` for full detail.
 
 ---
 
 ## Request Validation (`request_validation.py`)
 
-Validates HTTP input for the three form endpoints before any engine call. Raises `INVALID_PAYLOAD` on failure. Extra/unexpected fields in the payload are rejected — the validator uses an allowlist, not a blocklist. See the source file for exact field rules.
+Validates HTTP input for the three form endpoints before any engine call. Raises `INVALID_PAYLOAD` on failure. Extra/unexpected fields are rejected.
 
 ---
 
 ## Static File Serving
 
-The built Vite frontend is served from `frontend/dist/` via a `StaticFiles` mount. This mount is only activated if the `dist/` directory exists. In local development, Vite serves the frontend directly, so `dist/` is absent and the mount is skipped automatically. `DEV_MODE` does not control this — it only controls email and auth behaviour.
+The built Vite frontend is served from `frontend/dist/` via a `StaticFiles` mount, activated only if the `dist/` directory exists. `DEV_MODE` does not control this.

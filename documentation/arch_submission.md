@@ -192,7 +192,25 @@ The form router applies Content Disarm and Reconstruction (CDR) to every uploade
 
 **What CDR does:**
 
-Each image is fully decoded by Pillow via `convert("RGB")` and then re-encoded from scratch as a JPEG at quality 85. The output buffer is written fresh — no data from the original file is carried through except the decoded pixel values.
+Each image is fully decoded by Pillow via `convert("RGB")` — which must be called before `thumbnail()`, since `thumbnail()` on a palette-mode or RGBA image can behave unexpectedly — and then re-encoded from scratch as a JPEG. The output buffer is written fresh; no data from the original file is carried through except the decoded pixel values.
+
+**Tier-aware resize and quality:**
+
+The sanitizer accepts a `tier` parameter passed from `form_router.py`:
+
+- `"high"` — targets 4K (3840px long edge) at quality 85. Intended for clinical close-ups where a clinician may zoom to 200% or beyond.
+- `"standard"` — targets 1080p (1920px long edge) at quality 80. Intended for documents and general photos.
+
+Resize uses `Image.thumbnail()`, which never upscales — if the image is already within the target bounds it is left at its original dimensions.
+
+**EMIS 5 MB output enforcement (high tier):**
+
+After the initial encode, if the output exceeds 5 MB, the high-tier path iterates through two fallback attempts before giving up:
+
+1. Quality 80 at 3840px — allows clinician zoom to approximately 200% with minimal quality loss.
+2. Quality 85 at 2560px — allows clinician zoom to approximately 150% with minimal quality loss.
+
+If all three attempts produce output over 5 MB, `sanitize_image` raises `ImageTooLargeError` (a subclass of `ValueError`) with a patient-facing message. `form_router.py` catches this and returns 422. Standard-tier submissions use a single encode step — 1080p at quality 80 reliably stays within 5 MB for any realistic source image and does not require iteration.
 
 **Security properties:**
 
@@ -203,15 +221,15 @@ Each image is fully decoded by Pillow via `convert("RGB")` and then re-encoded f
 
 **Post-sanitization size check:**
 
-After CDR, the router re-validates each image against `MAX_FILE_SIZE_BYTES` and the combined total against `MAX_TOTAL_SIZE_BYTES`. This is necessary because re-encoding an already-compressed JPEG at quality 85 can marginally increase its size. In practice this is rare, but the invariant that stored bytes are within the declared limits must be maintained.
+After CDR, the router re-validates each image against `MAX_FILE_SIZE_BYTES` and the combined total against `MAX_TOTAL_SIZE_BYTES`. This is necessary because re-encoding an already-compressed JPEG can marginally increase its size. In practice this is rare, but the invariant that stored bytes are within the declared limits must be maintained.
 
 **Failure behaviour:**
 
-If CDR raises for any photo, the router returns 422 with a message identifying the photo by 1-based index. No database writes have occurred at this point. The entire submission is rejected.
+If CDR raises for any photo, the router returns 422. No database writes have occurred at this point. The entire submission is rejected.
 
 **Known limitation — lossy PNG conversion:**
 
-PNG-to-JPEG conversion at quality 85 is lossy. This is accepted because PNG uploads in this system are almost always screenshots rather than clinical photographs requiring maximum fidelity. This decision should be revisited if the system is extended to use cases where PNG fidelity matters clinically.
+PNG-to-JPEG conversion is lossy. This is accepted because PNG uploads in this system are almost always screenshots rather than clinical photographs requiring maximum fidelity. This decision should be revisited if the system is extended to use cases where PNG fidelity matters clinically.
 
 ---
 
@@ -222,7 +240,7 @@ PNG-to-JPEG conversion at quality 85 is lossy. This is accepted because PNG uplo
 Two output types with distinct purposes:
 
 - **`ClinicalOutput`** — lossy by design. Strips provenance and encoder internals. Safe for clinical and patient use. Contains `question_labels` (answer_key -> question text at submission time) so the record is self-contained and interpretable without reloading the ruleset. Provides a `from_dict` classmethod for reconstructing from the JSONB dict returned by psycopg2, which handles the nested `PatientDetails` dataclass.
-- **`AuditOutput`** — lossless. Contains full `runtime_state` snapshot, safety evaluation, and ruleset version. Intended for debugging, safety review, and regulatory inspection.
+- **`AuditOutput`** — lossless. Contains full `runtime_state` snapshot, safety evaluation, ruleset version, and `photo_quality_tier`. Intended for debugging, safety review, and regulatory inspection. `photo_quality_tier` is stamped by `form_router.py` after `finish_runtime_state()` returns using `dataclasses.replace()` — the clinical pipeline has no knowledge of the HTTP submission tier. It is `None` for text-only submissions and for historical records predating the field.
 
 Neither contract may be used as an input back into the engine. This module contains no logic beyond the `from_dict` reconstruction helper.
 

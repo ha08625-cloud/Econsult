@@ -65,6 +65,8 @@ It is consumed by:
 
 **Exception — `ContactScreen`:** Its `onSubmit` is `() => void` with no result parameter. `POST /form/finish` returns only a `submission_id` which `App.tsx` does not need, so nothing is passed up. This is the only screen where the callback carries no data.
 
+**`photoTier` state:** `photoTier: PhotoTier | null` follows the same ownership pattern as `photos` — owned by `App.tsx`, passed as a prop to `EditScreen` (read/write) and `ContactScreen` (read-only, forwarded to `finishForm`). The `PhotoTier` type is exported from `EditScreen.tsx` and imported by `App.tsx` and `ContactScreen.tsx`. It is reset to `null` alongside `photos` on back navigation from EDIT to FREE_TEXT.
+
 The `triggerFatalError` function in `App.tsx` is the single entry point for fatal errors. It fires `Sentry.captureMessage` before calling `setFatalError`, ensuring the event is captured even if the component subsequently unmounts. Direct calls to `setFatalError` from the render path are banned — all five render-guard fatal paths use `triggerFatalError`. The conditions fetch failure in the `useEffect` is the one exception: it calls `setFatalError` directly because the underlying server error has already been captured by `api.ts`, and double-reporting must be avoided.
 
 The fatal error reset button uses `window.location.reload()` rather than a manual enumeration of state setters. This guarantees object URL revocation (the browser destroys the JS context), eliminates the need to keep a reset list in sync with new `useState` declarations, and provides the cleanest possible slate after a React tree collapse. The state checklist comment in `App.tsx` no longer requires a parallel reset block entry — it is a record of state variables only.
@@ -75,16 +77,36 @@ The fatal error reset button uses `window.location.reload()` rather than a manua
 
 ## Photo Attachments
 
-`photos: PhotoAttachment[]` is owned by `App.tsx` and threaded as props to `EditScreen` (read/write via `onPhotosChange`), `ReviewScreen` (read-only thumbnails), and `ContactScreen` (as `File[]` extracted from the attachment objects).
+`photos: PhotoAttachment[]` and `photoTier: PhotoTier | null` are both owned by `App.tsx`. They are threaded as props to `EditScreen` (read/write), `ReviewScreen` (`photos` read-only for thumbnails), and `ContactScreen` (`photos` as `File[]`, `photoTier` passed through to `finishForm`).
+
+`photoTier` is reset to `null` when the patient navigates back from EDIT to FREE_TEXT, alongside the photo array being cleared. They are always reset together.
+
+**Two-tier upload model:**
+
+The patient must select a photo quality tier before the file input is shown. Two tiers are available:
+
+- `"high"` — 1 photo maximum. Intended for clinical close-ups (skin lesions, moles). The backend CDR targets 4K (3840px long edge) at quality 85.
+- `"standard"` — up to 5 photos. Intended for documents, letters, or general photos. The backend CDR targets 1080p (1920px long edge) at quality 80.
+
+The `multiple` attribute on the file input is set conditionally based on the selected tier (`multiple={photoTier === "standard"}`). This prevents the OS file picker from allowing multi-select in high tier at the point of selection, rather than only after the fact.
+
+Switching tier after photos have already been added clears the existing photos and resets the photo error. A patient selecting a different tier is changing their intent and re-uploading is the correct behaviour.
+
+**Photo guide modal:**
+
+A "How to take a good photo" button appears below the tier selection once a tier has been chosen. It opens a modal overlay with guidance text and a reference image (`/photo-guide.jpg` served from `frontend/public/`). The modal is self-contained local state in `EditScreen` — nothing outside the screen needs to know whether the guide is open.
+
+Modal accessibility requirements: focus moves to the close button on open (not the container), the Escape key closes the modal via a `keydown` listener attached on open and removed on close, clicking the backdrop closes the modal, clicking inside the panel does not.
 
 **Object URL lifecycle:** Each `PhotoAttachment` holds a `previewUrl` created with `URL.createObjectURL`. These must be explicitly revoked to avoid browser memory leaks. The rules are:
 
 - **On remove:** revoke the URL immediately in the remove handler before updating state. Implemented in `EditScreen`.
+- **On tier change:** `EditScreen` revokes all existing URLs and calls `onPhotosChange([])` before calling `onPhotoTierChange`.
 - **On back navigation from EDIT to FREE_TEXT:** `App.tsx` revokes all URLs and clears `photos` before navigating. Photos do not persist across a condition change.
 - **On fatal error:** `App.tsx` renders the fatal error screen and the reset button triggers `window.location.reload()`. The browser destroys the JS context on reload, which revokes all object URLs automatically. No manual revocation is needed in this path.
 - **On unmount:** a `useEffect` with an empty dependency array in `App.tsx` revokes all remaining URLs via a `photosRef`. A ref is required here because the cleanup closure would otherwise capture the initial empty array.
 
-**Client-side validation in EditScreen:** The `onChange` handler on the file input performs synchronous checks using the constants from `upload_constants.ts`: MIME type against `ALLOWED_MIME_TYPES`, per-file size against `MAX_FILE_SIZE_BYTES`, total count against `MAX_FILE_COUNT`, and combined size against `MAX_TOTAL_SIZE_BYTES`. These checks run against the existing `photos` prop plus the newly selected files, so the total size and count limits account for photos already in state. The server enforces the same limits independently — the client checks are a usability guard, not a security boundary. No magic bytes validation is performed; MIME type is checked via `file.type` (browser-supplied, not cryptographically verified).
+**Client-side validation in EditScreen:** The `onChange` handler on the file input performs synchronous checks: MIME type against `ALLOWED_MIME_TYPES`, per-file size against `MAX_FILE_SIZE_BYTES`, photo count against the per-tier limit (`TIER_MAX_COUNT`), and combined size against `MAX_TOTAL_SIZE_BYTES`. These checks run against the existing `photos` prop plus the newly selected files. The server enforces the same limits independently — the client checks are a usability guard, not a security boundary. No magic bytes validation is performed; MIME type is checked via `file.type` (browser-supplied, not cryptographically verified).
 
 **ReviewScreen thumbnail display:** `ReviewScreen` renders a read-only `Photos (n)` section when `photos.length > 0`, positioned after `additional_text` and before the safety alert. Thumbnails are 80px tall with descriptive alt text (`Photo 1`, `Photo 2`, etc.). There is no remove affordance on this screen — a plain instruction directs the patient to go back if they need to remove a photo. Photos persist when navigating back from REVIEW to EDIT, so the instruction is always actionable.
 
