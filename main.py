@@ -9,11 +9,10 @@ Single-tenant deployment:
 - The practice must exist in the database with a valid email
 - The database must contain exactly one practice
 - The database must contain at least one admin user for the practice
-- In production, either MAILGUN_API_KEY or all four SMTP variables must be set
-- ALLOWED_ADMIN_DOMAINS is required in production
+- Either MAILGUN_API_KEY or all four SMTP variables must be set
+- ALLOWED_ADMIN_DOMAINS is required
 
 Delivery service selection:
-- DEV_MODE=1: ConsoleDeliveryService / ConsoleAdminDeliveryService (no email sent)
 - MAILGUN_API_KEY set: MailgunHttpDeliveryService / MailgunHttpAdminDeliveryService
 - Otherwise: EmailDeliveryService / AdminDeliveryService (SMTP)
 """
@@ -50,13 +49,11 @@ from app.repositories.audit_repository import AuditRepository
 from app.services.presentation_service import PresentationService
 from app.core.errors import APIError, RateLimitError, ConditionNotFound
 from app.services.delivery.delivery_service import (
-    ConsoleDeliveryService,
     EmailDeliveryService,
     MailgunHttpDeliveryService,
 )
 from app.services.delivery.admin_delivery_service import (
     AdminDeliveryService,
-    ConsoleAdminDeliveryService,
     MailgunHttpAdminDeliveryService,
 )
 from app.routers.admin_router import router as admin_router
@@ -78,12 +75,6 @@ def _require_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Required environment variable not set: {name}")
     return value
-
-
-def _is_dev_mode() -> bool:
-    # Intentionally duplicated in admin_context.py. That module must never
-    # import any project module (see arch_admin.md), so this cannot be shared.
-    return os.environ.get("DEV_MODE", "").lower() in ("1", "true")
 
 
 def _validate_startup(
@@ -120,25 +111,16 @@ def _validate_startup(
         )
 
     # --- Email delivery config ---
-    if not _is_dev_mode():
-        _validate_email_config()
+    _validate_email_config()
 
     # --- Admin domain config ---
-    # Required in production. In DEV_MODE, absence is allowed but logged.
     allowed_admin_domains = os.environ.get("ALLOWED_ADMIN_DOMAINS", "").strip()
-    if not _is_dev_mode():
-        if not allowed_admin_domains:
-            raise RuntimeError(
-                "Required environment variable not set: ALLOWED_ADMIN_DOMAINS. "
-                "Set this to a comma-separated list of permitted admin email domains "
-                "(e.g. 'nhs.net,gov.uk')."
-            )
-    else:
-        if not allowed_admin_domains:
-            logger.warning(
-                "ALLOWED_ADMIN_DOMAINS is not set. "
-                "This is required in production but permitted in DEV_MODE."
-            )
+    if not allowed_admin_domains:
+        raise RuntimeError(
+            "Required environment variable not set: ALLOWED_ADMIN_DOMAINS. "
+            "Set this to a comma-separated list of permitted admin email domains "
+            "(e.g. 'nhs.net,gov.uk')."
+        )
 
     # --- Admin user existence check ---
     # At least one admin user must exist before the application starts.
@@ -266,15 +248,11 @@ app.state.practice_name = _practice_name
 
 # ---------------------------------------------------------------------------
 # Delivery service selection
-# DEV_MODE=1       -> Console (no email sent)
 # MAILGUN_API_KEY  -> Mailgun HTTP API
 # otherwise        -> SMTP
 # ---------------------------------------------------------------------------
 
-if _is_dev_mode():
-    app.state.delivery_service = ConsoleDeliveryService()
-    app.state.admin_delivery_service = ConsoleAdminDeliveryService()
-elif os.environ.get("MAILGUN_API_KEY"):
+if os.environ.get("MAILGUN_API_KEY"):
     app.state.delivery_service = MailgunHttpDeliveryService()
     app.state.admin_delivery_service = MailgunHttpAdminDeliveryService()
 else:
@@ -375,7 +353,6 @@ async def health():
 # All API routes must be registered before this block.
 # Served whenever frontend/dist exists - i.e. on Railway after the build step.
 # Skipped automatically in local dev because Vite has not built dist/ there.
-# DEV_MODE does not control this - it only controls email and auth behaviour.
 # The catch-all route must come last so it never intercepts API requests.
 # ---------------------------------------------------------------------------
 

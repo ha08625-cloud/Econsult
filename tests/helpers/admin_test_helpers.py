@@ -208,8 +208,7 @@ class StubAuthRepo:
     In-memory auth repo stub for unit tests.
 
     No sessions are valid by default — session lookups always return None,
-    which causes require_admin to fall through to the DEV_MODE bearer-token
-    fallback.
+    which causes require_admin to return HTTP 401.
 
     Password auth methods are no-ops by default. Tests that need to exercise
     password authentication should use SpyAuthRepo (defined per test module)

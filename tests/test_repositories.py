@@ -25,7 +25,6 @@ if "TEST_DATABASE_URL" not in os.environ:
     )
 
 os.environ.setdefault("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
-os.environ.setdefault("DEV_MODE", "1")
 os.environ.setdefault("PRACTICE_ID", "test-practice")
 
 pytestmark = pytest.mark.integration
@@ -411,7 +410,6 @@ def _make_dummy_patient_details() -> PatientDetails:
         last_name="Patient",
         date_of_birth="1990-01-15",
         postcode="SW1A 1AA",
-        gender="female",
     )
 
 
@@ -510,6 +508,21 @@ def test_attachment_save_and_get():
         _create_test_submission(sub_repo, sid)
         att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
         assert att_repo.get_attachment(sid) == _DUMMY_PDF_BYTES
+    finally:
+        _cleanup_submission(sid)
+
+
+def test_attachment_duplicate_save_raises():
+    sub_repo = _make_submission_repo()
+    att_repo = _make_attachment_repo()
+    sid = _uid()
+
+    try:
+        _create_test_submission(sub_repo, sid)
+        att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
+        with pytest.raises(Exception):
+            # psycopg2.errors.UniqueViolation
+            att_repo.save_attachment(sid, _DUMMY_PDF_BYTES)
     finally:
         _cleanup_submission(sid)
 

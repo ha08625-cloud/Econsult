@@ -12,7 +12,7 @@ Design rules:
 - All sentry_sdk imports are deferred (inside the function body) so that
   missing or broken sentry-sdk installation never crashes a process that
   has not set SENTRY_DSN.
-- Sentry is always disabled in test environments and local dev mode.
+- Sentry is always disabled in test environments.
   This prevents test-suite HTTP requests and pipeline pollution.
 """
 
@@ -33,7 +33,6 @@ def init_telemetry(app_context: str) -> None:
     Returns immediately (no-op) if:
     - pytest is loaded in sys.modules (test environment)
     - TEST_DATABASE_URL is set (integration test environment)
-    - DEV_MODE=1 (local development)
     - SENTRY_DSN is absent (graceful fallback — logs a warning)
 
     FastAPIIntegration is included only when app_context == "http-api".
@@ -45,10 +44,6 @@ def init_telemetry(app_context: str) -> None:
     """
     # --- Test environment bypass ---
     if "pytest" in sys.modules or os.environ.get("TEST_DATABASE_URL"):
-        return
-
-    # --- Local dev bypass ---
-    if os.environ.get("DEV_MODE", "").lower() in ("1", "true"):
         return
 
     # --- Graceful fallback if DSN is absent ---

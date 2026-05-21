@@ -39,9 +39,16 @@ if "TEST_DATABASE_URL" not in os.environ:
     )
 
 os.environ.setdefault("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
-os.environ.setdefault("DEV_MODE", "1")
 os.environ.setdefault("PRACTICE_ID", "test-practice")
 os.environ.setdefault("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data"))
+# Startup validation in main.py requires email config and ALLOWED_ADMIN_DOMAINS.
+# These are stub values — the delivery service is overridden at the route level
+# in tests that exercise submission, so no real email is ever sent.
+os.environ.setdefault("MAILGUN_API_KEY", "test-key")
+os.environ.setdefault("MAILGUN_DOMAIN", "test.mailgun.org")
+os.environ.setdefault("EMAIL_FROM", "test@example.com")
+os.environ.setdefault("MAILGUN_SIGNING_KEY", "test-signing-key")
+os.environ.setdefault("ALLOWED_ADMIN_DOMAINS", "example.com")
 
 pytestmark = pytest.mark.integration
 

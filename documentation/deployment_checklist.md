@@ -41,7 +41,6 @@ Variables marked **Dev only** must not be set in production.
 | `SMTP_PORT` | Optional | SMTP port. Defaults to 587. |
 | `SMTP_TIMEOUT` | Optional | SMTP connection timeout in seconds. Defaults to 30. |
 | `ADMIN_URL` | Required | Full URL of the admin portal (e.g. `https://my-practice.up.railway.app/admin`). Included in admin invitation emails. |
-| `DEV_MODE` | Dev only | Set to `1` to disable email sending and relax auth checks. Never set in production. |
 
 *Either Mailgun or SMTP must be fully configured. Both sets of variables need
 not be present, but one complete set is required.

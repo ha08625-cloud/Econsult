@@ -167,12 +167,11 @@ class TestLogin(unittest.TestCase):
 
     def _make_client(self, auth_repo=None, delivery_service=None):
         from fastapi.testclient import TestClient
-        os.environ["DEV_MODE"] = "1"
         app = make_test_app(auth_repo=auth_repo, delivery_service=delivery_service)
         return TestClient(app, raise_server_exceptions=False)
 
     def tearDown(self):
-        os.environ.pop("DEV_MODE", None)
+        pass
 
     def _valid_user_repo(self):
         """Return a SpyAuthRepo with a user who has a known bcrypt password."""
@@ -302,12 +301,11 @@ class TestVerifyMfaCode(unittest.TestCase):
 
     def _make_client(self, auth_repo=None):
         from fastapi.testclient import TestClient
-        os.environ["DEV_MODE"] = "1"
         app = make_test_app(auth_repo=auth_repo)
         return TestClient(app, raise_server_exceptions=False)
 
     def tearDown(self):
-        os.environ.pop("DEV_MODE", None)
+        pass
 
     def _valid_code_repo(self):
         code = "123456"
@@ -398,12 +396,11 @@ class TestRequestReset(unittest.TestCase):
 
     def _make_client(self, auth_repo=None, delivery_service=None):
         from fastapi.testclient import TestClient
-        os.environ["DEV_MODE"] = "1"
         app = make_test_app(auth_repo=auth_repo, delivery_service=delivery_service)
         return TestClient(app, raise_server_exceptions=False)
 
     def tearDown(self):
-        os.environ.pop("DEV_MODE", None)
+        pass
 
     def test_registered_email_returns_200(self):
         user = _make_user()
@@ -456,12 +453,11 @@ class TestSetPassword(unittest.TestCase):
 
     def _make_client(self, auth_repo=None):
         from fastapi.testclient import TestClient
-        os.environ["DEV_MODE"] = "1"
         app = make_test_app(auth_repo=auth_repo)
         return TestClient(app, raise_server_exceptions=False)
 
     def tearDown(self):
-        os.environ.pop("DEV_MODE", None)
+        pass
 
     def _valid_token_repo(self):
         """Return a SpyAuthRepo with a valid unexpired reset token."""
@@ -592,12 +588,11 @@ class TestLogout(unittest.TestCase):
 
     def _make_client(self, auth_repo=None):
         from fastapi.testclient import TestClient
-        os.environ["DEV_MODE"] = "1"
         app = make_test_app(auth_repo=auth_repo)
         return TestClient(app, raise_server_exceptions=False)
 
     def tearDown(self):
-        os.environ.pop("DEV_MODE", None)
+        pass
 
     def test_logout_without_cookie_returns_200(self):
         repo = SpyAuthRepo()
@@ -623,19 +618,9 @@ class TestLogout(unittest.TestCase):
         self.assertIn("session_id", set_cookie)
         self.assertIn("Max-Age=0", set_cookie)
 
-    def test_logout_cookie_not_secure_in_dev_mode(self):
+    def test_logout_cookie_is_always_secure(self):
         repo = SpyAuthRepo()
         client = self._make_client(auth_repo=repo)
-        client.cookies.set("session_id", "some-session-id")
-        res = client.post("/admin/auth/logout")
-        set_cookie = res.headers.get("set-cookie", "").lower()
-        self.assertNotIn("secure", set_cookie)
-
-    def test_logout_cookie_secure_outside_dev_mode(self):
-        from fastapi.testclient import TestClient
-        os.environ.pop("DEV_MODE", None)
-        app = make_test_app(auth_repo=SpyAuthRepo())
-        client = TestClient(app, raise_server_exceptions=False)
         client.cookies.set("session_id", "some-session-id")
         res = client.post("/admin/auth/logout")
         set_cookie = res.headers.get("set-cookie", "").lower()
@@ -651,12 +636,10 @@ class TestAuthRateLimiting(unittest.TestCase):
     def setUp(self):
         from app.core.rate_limit import limiter
         limiter._storage.reset()
-        os.environ["DEV_MODE"] = "1"
 
     def tearDown(self):
         from app.core.rate_limit import limiter
         limiter._storage.reset()
-        os.environ.pop("DEV_MODE", None)
 
     def _make_client(self):
         from fastapi.testclient import TestClient

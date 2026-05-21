@@ -23,7 +23,6 @@ Does not serve HTTP. Does not seed data.
 Environment variables:
     DATABASE_URL                    -- Postgres connection string (required)
     PDF_WORKER_POLL_INTERVAL_SECONDS -- seconds to sleep when queue is empty (required)
-    DEV_MODE                        -- set to "1" or "true" for console delivery (optional)
 """
 
 import logging
@@ -48,10 +47,6 @@ def _require_env(name: str) -> str:
         logger.critical("Required environment variable not set: %s", name)
         sys.exit(1)
     return value
-
-
-def _is_dev_mode() -> bool:
-    return os.environ.get("DEV_MODE", "").lower() in ("1", "true")
 
 
 def main() -> None:
@@ -111,9 +106,8 @@ def main() -> None:
         )
 
     logger.info(
-        "PDF worker configuration: poll_interval=%ds dev_mode=%s practice_name=%r",
+        "PDF worker configuration: poll_interval=%ds practice_name=%r",
         poll_interval,
-        _is_dev_mode(),
         practice_name,
     )
 

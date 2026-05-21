@@ -4,8 +4,7 @@ Admin authentication boundary.
 Defines AdminContext and the require_admin FastAPI dependency.
 
 Authentication is exclusively via session cookie (HttpOnly, set by
-POST /admin/auth/verify). There is no bearer-token or DEV_MODE fallback
-path — the MFA email flow is fast enough for local development.
+POST /admin/auth/verify). Session cookie is the only authentication path.
 
 Session-based auth rules:
 - Reads session_id from the HttpOnly cookie set by POST /admin/auth/verify.
@@ -54,8 +53,7 @@ class AdminContext:
 
     practice_id:  the practice this user belongs to.
     user_id:      UUID string of the authenticated admin_users row.
-    auth_method:  "session_cookie" | "bearer_token" | "dev_any".
-                  bearer_token and dev_any are DEV_MODE fallback paths only.
+    auth_method:  "session_cookie" — the only supported authentication path.
     actor_email:  email address of the authenticated user, used for audit
                   logging.
     session_id:   the raw session UUID string from the cookie, used for

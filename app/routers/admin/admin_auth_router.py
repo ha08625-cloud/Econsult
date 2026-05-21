@@ -19,7 +19,6 @@ does not block the response. If the background delivery fails, the task
 catches the exception, logs it to Sentry, and deletes the OTP record from
 the database so the user is not left waiting for a code that will never arrive.
 """
-import os
 import logging
 
 import sentry_sdk
@@ -236,7 +235,7 @@ async def verify_mfa_code(
 
     The session cookie attributes:
     - HttpOnly: not readable by JavaScript
-    - Secure: HTTPS only (set False in DEV_MODE to work over HTTP locally)
+    - Secure: HTTPS only
     - SameSite=Strict: no cross-site requests
     - Max-Age: SESSION_COOKIE_MAX_AGE seconds
 
@@ -313,14 +312,12 @@ async def verify_mfa_code(
             detail="Action succeeded but audit logging failed. Please report this.",
         )
 
-    is_dev = os.environ.get("DEV_MODE", "").lower() in ("1", "true")
-
     response = JSONResponse(content={"ok": True})
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_id,
         httponly=True,
-        secure=not is_dev,
+        secure=True,
         samesite="strict",
         max_age=SESSION_COOKIE_MAX_AGE,
     )
@@ -502,14 +499,12 @@ async def logout(
                 detail="Action succeeded but audit logging failed. Please report this.",
             )
 
-    is_dev = os.environ.get("DEV_MODE", "").lower() in ("1", "true")
-
     response = JSONResponse(content={"ok": True})
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value="",
         httponly=True,
-        secure=not is_dev,
+        secure=True,
         samesite="strict",
         max_age=0,
     )

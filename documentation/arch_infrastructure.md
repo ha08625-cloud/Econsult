@@ -17,7 +17,7 @@ Railway deployment, multi-stage Docker build, static file serving, Postgres + ps
 - **Platform:** Railway, single-container deployment.
 - **Dockerfile** is two-stage: Stage 1 (Node 22 slim) builds the Vite frontend; Stage 2 (Python 3.12 slim) is the runtime. The built `frontend/dist` is copied from Stage 1 into the Python image.
 - The Vite build produces two entry points under `frontend/dist/`: `index.html` (patient form) and `admin-ui/index.html` (admin portal).
-- **Static serving:** `main.py` checks whether `frontend/dist` exists on disk at startup. If present, it mounts the entire directory via Starlette `StaticFiles(html=True)` at `/`. If absent (local dev, no build step), static serving is silently skipped. `DEV_MODE` does not control this — it only controls email delivery behaviour and cookie security flags.
+- **Static serving:** `main.py` checks whether `frontend/dist` exists on disk at startup. If present, it mounts the entire directory via Starlette `StaticFiles(html=True)` at `/`. If absent (local dev, no build step), static serving is silently skipped.
 - **Critical ordering constraint:** All API routes must be registered in `main.py` before the static files mount. `StaticFiles` acts as a catch-all and will intercept API requests if mounted first.
 - The server process is started directly with `uvicorn` via the Dockerfile `CMD` — no process manager.
 
@@ -58,9 +58,9 @@ Current migrations:
 - `PRACTICE_ID` env var is missing
 - The database contains more than one practice (single-tenant invariant)
 - The practice record has no email configured
-- `SMTP_*` / `EMAIL_FROM` vars are missing and `DEV_MODE` is not set
+- `SMTP_*` / `EMAIL_FROM` vars are missing (or `MAILGUN_API_KEY` + `MAILGUN_DOMAIN` are not set as the Mailgun alternative)
 - `MAILGUN_API_KEY` is set but `MAILGUN_SIGNING_KEY` is not set (webhook signature verification would be impossible)
-- `ALLOWED_ADMIN_DOMAINS` is missing and `DEV_MODE` is not set
+- `ALLOWED_ADMIN_DOMAINS` is missing
 
 If the practice record does not exist, startup **seeds it** using `PRACTICE_NAME` and `PRACTICE_EMAIL` env vars (defaulting to `demo@demo.net`). This handles Railway deployments where the database starts empty on each container restart.
 
@@ -83,7 +83,6 @@ Repository tests currently run against a live Postgres instance via the `TEST_DA
 | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM` | Production only | Email delivery (SMTP path) |
 | `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `EMAIL_FROM` | Production only (Mailgun path) | Mailgun HTTP API delivery |
 | `MAILGUN_SIGNING_KEY` | Required when `MAILGUN_API_KEY` is set | Mailgun webhook HMAC signing key — used to verify inbound delivery signals |
-| `ALLOWED_ADMIN_DOMAINS` | Production only | Comma-separated list of permitted admin email domains (e.g. `nhs.net,gov.uk`) |
-| `DEV_MODE` | Dev only | Set to `1` to skip SMTP checks and use console delivery; sets cookies without `Secure` flag for plain HTTP |
+| `ALLOWED_ADMIN_DOMAINS` | Always | Comma-separated list of permitted admin email domains (e.g. `nhs.net,gov.uk`) |
 | `PRACTICE_NAME`, `PRACTICE_EMAIL` | Optional | Used to seed practice record on first startup |
 | `SENTRY_DSN` | Optional | If set, Sentry error reporting is enabled |

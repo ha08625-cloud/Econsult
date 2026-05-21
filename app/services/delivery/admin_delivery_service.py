@@ -10,7 +10,6 @@ Responsibilities:
 This module defines:
   - AdminDeliveryService: production SMTP implementation
   - MailgunHttpAdminDeliveryService: production Mailgun HTTP API implementation
-  - ConsoleAdminDeliveryService: local development only — logs to stdout, never sends email
 
 Strict boundaries:
 - This service has no knowledge of admin_auth_codes, AuthRepository,
@@ -30,10 +29,6 @@ Required environment variables (all implementations):
     ADMIN_URL   — full URL of the admin portal, used to construct the
                   password setup link in invitation emails
                   (e.g. https://my-practice.up.railway.app/admin)
-
-ConsoleAdminDeliveryService reads ADMIN_URL but does not require it —
-defaults to http://localhost/admin if absent, since emails are never sent
-in DEV_MODE.
 """
 
 import logging
@@ -243,41 +238,3 @@ class MailgunHttpAdminDeliveryService:
         response.raise_for_status()
 
         logger.info("Invitation email sent to %s", email)
-
-
-# ---------------------------------------------------------------------------
-# Development implementation
-# ConsoleAdminDeliveryService is for local development only. Never instantiate in production.
-# ---------------------------------------------------------------------------
-
-class ConsoleAdminDeliveryService:
-    """
-    Logs the MFA code and invitation URL to stdout instead of sending email.
-
-    For local development only. Raises RuntimeError at instantiation if
-    DEV_MODE is not set, to prevent accidental use in production.
-    """
-
-    def __init__(self) -> None:
-        if os.environ.get("DEV_MODE", "").lower() not in ("1", "true"):
-            raise RuntimeError(
-                "ConsoleAdminDeliveryService may only be instantiated when "
-                "DEV_MODE=1. Use MailgunHttpAdminDeliveryService or "
-                "AdminDeliveryService in production."
-            )
-        self._admin_url = os.environ.get("ADMIN_URL", "http://localhost/admin")
-
-    def send_mfa_code(self, email: str, code: str) -> None:
-        logger.info(
-            "[DEV_MODE] MFA email send skipped. Would have sent to %s: code=%s",
-            email,
-            code,
-        )
-
-    def send_admin_invitation(self, email: str, token: str) -> None:
-        setup_url = f"{self._admin_url}#reset:{token}"
-        logger.info(
-            "[DEV_MODE] Invitation email send skipped. Would have sent to %s: url=%s",
-            email,
-            setup_url,
-        )

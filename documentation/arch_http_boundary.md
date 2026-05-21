@@ -38,8 +38,8 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 - The practice record must exist in the database.
 - The practice must have a non-empty email address.
 - The database must contain **exactly one practice**.
-- Unless `DEV_MODE=1`: either `MAILGUN_API_KEY` + `MAILGUN_DOMAIN` or `SMTP_HOST` + `SMTP_USER` + `SMTP_PASSWORD` must be set, plus `EMAIL_FROM`.
-- Unless `DEV_MODE=1`: `ALLOWED_ADMIN_DOMAINS` must be set.
+- Either `MAILGUN_API_KEY` + `MAILGUN_DOMAIN` or `SMTP_HOST` + `SMTP_USER` + `SMTP_PASSWORD` must be set, plus `EMAIL_FROM`.
+- `ALLOWED_ADMIN_DOMAINS` must be set.
 - At least one admin user must exist for the practice.
 
 **`app.state` values set by startup:**
@@ -70,16 +70,12 @@ Any failure in startup validation raises a `RuntimeError` and aborts. A misconfi
 `main.py` instantiates two delivery services at startup:
 
 **Clinical delivery** (`app.state.delivery_service`):
-- `DEV_MODE=1`: `ConsoleDeliveryService`
 - `MAILGUN_API_KEY` set: `MailgunHttpDeliveryService`
 - Otherwise: `EmailDeliveryService`
 
 **Admin delivery** (`app.state.admin_delivery_service`):
-- `DEV_MODE=1`: `ConsoleAdminDeliveryService`
 - `MAILGUN_API_KEY` set: `MailgunHttpAdminDeliveryService`
 - Otherwise: `AdminDeliveryService`
-
-Both console implementations raise `RuntimeError` at instantiation if `DEV_MODE` is not set.
 
 ---
 
@@ -149,4 +145,4 @@ Validates HTTP input for the three form endpoints before any engine call. Raises
 
 ## Static File Serving
 
-The built Vite frontend is served from `frontend/dist/` via a `StaticFiles` mount, activated only if the `dist/` directory exists. `DEV_MODE` does not control this.
+The built Vite frontend is served from `frontend/dist/` via a `StaticFiles` mount, activated only if the `dist/` directory exists. In local development where Vite has not run a build, the directory is absent and static serving is silently skipped.

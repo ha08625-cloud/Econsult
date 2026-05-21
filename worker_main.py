@@ -19,13 +19,11 @@ Does not serve HTTP. Does not seed data.
 Environment variables:
     DATABASE_URL                   -- Postgres connection string (required)
     WORKER_POLL_INTERVAL_SECONDS   -- seconds to sleep when queue is empty (required)
-    DEV_MODE                       -- set to "1" or "true" for ConsoleDeliveryService
     MAILGUN_API_KEY                -- if set, uses Mailgun HTTP delivery
     MAILGUN_DOMAIN                 -- required when MAILGUN_API_KEY is set
     EMAIL_FROM                     -- required in production
 
 Service selection:
-    DEV_MODE=1       -> ConsoleDeliveryService (no email sent)
     MAILGUN_API_KEY  -> MailgunHttpDeliveryService
     otherwise        -> EmailDeliveryService (SMTP)
 """
@@ -54,10 +52,6 @@ def _require_env(name: str) -> str:
     return value
 
 
-def _is_dev_mode() -> bool:
-    return os.environ.get("DEV_MODE", "").lower() in ("1", "true")
-
-
 def main() -> None:
     database_url = _require_env("DATABASE_URL")
     poll_interval_raw = _require_env("WORKER_POLL_INTERVAL_SECONDS")
@@ -83,7 +77,6 @@ def main() -> None:
     from app.repositories.delivery_repository import DeliveryRepository
     from app.repositories.attachment_repository import AttachmentRepository
     from app.services.delivery.delivery_service import (
-        ConsoleDeliveryService,
         EmailDeliveryService,
         MailgunHttpDeliveryService,
     )
@@ -92,10 +85,7 @@ def main() -> None:
     delivery_repo = DeliveryRepository(database_url)
     attachment_repo = AttachmentRepository(database_url)
 
-    if _is_dev_mode():
-        delivery_service = ConsoleDeliveryService()
-        logger.info("Delivery worker running in DEV_MODE — email delivery disabled")
-    elif os.environ.get("MAILGUN_API_KEY"):
+    if os.environ.get("MAILGUN_API_KEY"):
         delivery_service = MailgunHttpDeliveryService()
         logger.info("Delivery worker: Mailgun HTTP API selected")
     else:
@@ -103,9 +93,8 @@ def main() -> None:
         logger.info("Delivery worker: SMTP selected")
 
     logger.info(
-        "Delivery worker configuration: poll_interval=%ds dev_mode=%s",
+        "Delivery worker configuration: poll_interval=%ds",
         poll_interval,
-        _is_dev_mode(),
     )
 
     run_worker(
