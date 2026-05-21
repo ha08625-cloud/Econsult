@@ -1,0 +1,20 @@
+services:
+  mesh_sandbox:
+    # Builds directly from the official NHS Digital repository
+    build: 
+      context: https://github.com/NHSDigital/mesh-sandbox.git#refs/tags/v1.0.4
+    ports:
+      - "8700:443"
+    environment:
+      # The shared secret used to generate the MESH authorization header
+      - SHARED_KEY=TestKey
+      # MESH uses TLS, but we can disable strict verification in our client for local dev
+      - SSL=yes
+      - STORE_MODE=file
+      - MAILBOXES_DATA_DIR=/tmp/mesh/mailboxes
+    volumes:
+      - ./mailboxes.jsonl:/tmp/mesh/mailboxes/mailboxes.jsonl
+    healthcheck:
+      test: curl -ksf https://localhost/health || exit 1
+      interval: 3s
+      timeout: 10s
