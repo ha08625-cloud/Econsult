@@ -1,21 +1,18 @@
 """
 Unit tests for delivery_service.py.
 
-Tests the static email body format, ConsoleDeliveryService behaviour,
+Tests the static email body format, EmailDeliveryService behaviour,
 and MailgunHttpDeliveryService behaviour.
 No database or SMTP connection required.
 """
 
 import os
-import logging
-import smtplib
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 import pytest
 
 from app.services.delivery.delivery_service import (
-    ConsoleDeliveryService,
     EmailDeliveryError,
     MailgunHttpDeliveryService,
     EmailDeliveryService,
@@ -82,57 +79,6 @@ class TestFormatBody:
         assert "CONTACT PREFERENCES" not in body
         assert "SAFETY FLAGS" not in body
 
-
-# ---------------------------------------------------------------------------
-# ConsoleDeliveryService
-# ---------------------------------------------------------------------------
-
-class TestConsoleDeliveryService:
-    def test_send_does_not_raise(self):
-        with patch.dict(os.environ, {"DEV_MODE": "1"}):
-            svc = ConsoleDeliveryService()
-            svc.send_clinical_output(
-                to_email="gp@example.com",
-                condition_label="Earache",
-                pdf_bytes=b"%PDF-fake-content",
-                submission_id="abc12345-0000-0000-0000-000000000000",
-                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
-            )
-
-    def test_send_returns_none(self):
-        """ConsoleDeliveryService must return None — no webhook tracking in dev."""
-        with patch.dict(os.environ, {"DEV_MODE": "1"}):
-            svc = ConsoleDeliveryService()
-            result = svc.send_clinical_output(
-                to_email="gp@example.com",
-                condition_label="Earache",
-                pdf_bytes=b"%PDF-fake-content",
-                submission_id="abc12345-0000-0000-0000-000000000000",
-                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
-            )
-        assert result is None
-
-    def test_send_logs_expected_fields(self, caplog):
-        with patch.dict(os.environ, {"DEV_MODE": "1"}):
-            svc = ConsoleDeliveryService()
-            with caplog.at_level(logging.INFO):
-                svc.send_clinical_output(
-                    to_email="gp@example.com",
-                    condition_label="Earache",
-                    pdf_bytes=b"%PDF-fake-content",
-                    submission_id="abc12345-0000-0000-0000-000000000000",
-                    submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
-                )
-        log_text = caplog.text
-        assert "gp@example.com" in log_text
-        assert "Earache" in log_text
-        assert "abc12345" in log_text
-        assert "17 bytes" in log_text  # len(b"%PDF-fake-content")
-
-    def test_raises_without_dev_mode(self):
-        with patch.dict(os.environ, {"DEV_MODE": ""}, clear=False):
-            with pytest.raises(RuntimeError, match="DEV_MODE"):
-                ConsoleDeliveryService()
 
 
 # ---------------------------------------------------------------------------

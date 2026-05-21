@@ -26,12 +26,8 @@ from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.auth_repository import AuthRepository
 from app.repositories.audit_repository import AuditRepository
 from app.services.delivery.delivery_service import DeliveryService
-from app.services.delivery.admin_delivery_service import (
-    AdminDeliveryService,
-    ConsoleAdminDeliveryService,
-)
+from app.services.delivery.admin_delivery_service import AdminDeliveryService
 from app.services.presentation_service import PresentationService
-from typing import Union
 
 
 def get_registry(request: Request) -> ConditionRegistry:
@@ -94,9 +90,7 @@ def get_audit_repo(request: Request) -> AuditRepository:
     return request.app.state.audit_repo
 
 
-def get_admin_delivery_service(
-    request: Request,
-) -> Union[AdminDeliveryService, ConsoleAdminDeliveryService]:
+def get_admin_delivery_service(request: Request) -> AdminDeliveryService:
     return request.app.state.admin_delivery_service
 
 
