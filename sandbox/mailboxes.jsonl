@@ -1,2 +1,2 @@
-{"mailbox_id": "SENDER_MAILBOX", "mailbox_name": "My Sender System", "password": "password", "billing_entity": "Unknown", "ods_code": "X26", "org_code": "X26", "org_name": "Test Sender Org"}
-{"mailbox_id": "TARGET_MAILBOX", "mailbox_name": "Target GP System", "password": "password", "billing_entity": "Unknown", "ods_code": "A99999", "org_code": "A99999", "org_name": "Test Target Org"}
+{"mailbox_id": "SENDER_MAILBOX", "mailbox_name": "Local Dev Sender", "password": "password", "billing_entity": "Unknown", "ods_code": "X26", "org_code": "X26", "org_name": "Test Sender Org"}
+{"mailbox_id": "TARGET_MAILBOX", "mailbox_name": "Mock GP Practice", "password": "password", "billing_entity": "Unknown", "ods_code": "A99999", "org_code": "A99999", "org_name": "Test Target Org"}

@@ -1,20 +1,48 @@
+# MESH Sandbox for local development.
+#
+# A locally-run mock of the NHS MESH API for testing the dispatcher
+# (mesh_worker.py) and inbox poller (mesh_inbox_worker.py) without needing
+# real Spine credentials.
+#
+# This file is consumed only by local docker compose — it is NOT deployed
+# to Railway or used in CI.
+#
+# Usage:
+#   cd sandbox/
+#   docker compose up -d        # start in background
+#   docker compose down         # stop and remove
+#   docker compose logs -f      # tail logs
+#
+# Verify it is running:
+#   curl -k https://localhost:8700/health
+#
+# Pinned tag: v1.0.54 (released 27 March 2026 — the latest at time of build).
+# Bump deliberately, not casually — sandbox behaviour can shift between releases.
+
 services:
   mesh_sandbox:
-    # Builds directly from the official NHS Digital repository
-    build: 
-      context: https://github.com/NHSDigital/mesh-sandbox.git#refs/tags/v1.0.4
+    build:
+      context: https://github.com/NHSDigital/mesh-sandbox.git#refs/tags/v1.0.54
     ports:
       - "8700:443"
-    environment:
-      # The shared secret used to generate the MESH authorization header
-      - SHARED_KEY=TestKey
-      # MESH uses TLS, but we can disable strict verification in our client for local dev
-      - SSL=yes
-      - STORE_MODE=file
-      - MAILBOXES_DATA_DIR=/tmp/mesh/mailboxes
-    volumes:
-      - ./mailboxes.jsonl:/tmp/mesh/mailboxes/mailboxes.jsonl
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
     healthcheck:
       test: curl -ksf https://localhost/health || exit 1
       interval: 3s
       timeout: 10s
+    environment:
+      # Shared secret used by the sandbox to generate the Authorization header.
+      # Our worker code (when MESH_ENV=sandbox) must use this same value.
+      - SHARED_KEY=TestKey
+      # Sandbox listens on HTTPS (self-signed cert). Workers must skip TLS
+      # verification when MESH_ENV=sandbox — see arch_security.md.
+      - SSL=yes
+      # No STORE_MODE — messages live in memory only.
+      # docker compose down wipes everything, which is what we want for dev.
+    volumes:
+      # Pre-create our two test mailboxes (SENDER_MAILBOX, TARGET_MAILBOX).
+      # Path matches the official NHSDigital/mesh-sandbox docker-compose.yml.
+      - ./mailboxes.jsonl:/app/mesh_sandbox/store/data/mailboxes.jsonl:ro

@@ -17,11 +17,25 @@
 # When adding a new integration test file, add the pytestmark line —
 # no changes to this Makefile or ci.yml are needed.
 # ---------------------------------------------------------------------------
+#
+# MESH sandbox targets (local development only — see sandbox/README.md)
+#
+# Start the local MESH sandbox:
+#     make sandbox-up
+#
+# Verify it is running:
+#     make sandbox-check
+#
+# Stop and remove:
+#     make sandbox-down
+#
+# The sandbox is never deployed to Railway or used in CI.
+# ---------------------------------------------------------------------------
 
 include .env
 export
 
-.PHONY: test test-integration test-all migrate-test seed-test-db
+.PHONY: test test-integration test-all migrate-test seed-test-db sandbox-up sandbox-down sandbox-check
 
 test:
 	python -m pytest tests/ -m "not integration" -v
@@ -44,3 +58,12 @@ test-all:
 
 migrate-test:
 	DATABASE_URL=$(TEST_DATABASE_URL) python -m alembic upgrade head
+
+sandbox-up:
+	cd sandbox && docker compose up -d
+
+sandbox-down:
+	cd sandbox && docker compose down
+
+sandbox-check:
+	curl -k https://localhost:8700/health
