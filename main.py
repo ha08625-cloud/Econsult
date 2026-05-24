@@ -113,6 +113,9 @@ def _validate_startup(
     # --- Email delivery config ---
     _validate_email_config()
 
+    # --- MESH delivery mode ---
+    _validate_mesh_delivery()
+
     # --- Admin domain config ---
     allowed_admin_domains = os.environ.get("ALLOWED_ADMIN_DOMAINS", "").strip()
     if not allowed_admin_domains:
@@ -174,6 +177,40 @@ def _validate_email_config() -> None:
             "Required environment variable not set: MAILGUN_SIGNING_KEY. "
             "Set this to the Mailgun webhook signing key to enable webhook "
             "signature verification."
+        )
+
+
+def _validate_mesh_delivery() -> None:
+    """
+    Validate the MESH_DELIVERY environment variable.
+
+    Must be present and exactly "0" or "1". No defaulting is permitted —
+    a misconfigured deployment must abort at startup per the Fail-Fast
+    Configuration project invariant.
+
+    In Phase 1a only "0" (email path) is implemented. "1" is reserved
+    for Phase 1b onwards and causes startup to abort with a clear
+    message.
+
+    Raises RuntimeError on any invalid value. The same validation is
+    duplicated in every *_worker_main.py; the deployment_checklist.md
+    mandates that all processes share the same MESH_DELIVERY value.
+    """
+    value = os.environ.get("MESH_DELIVERY")
+    if value is None:
+        raise RuntimeError(
+            "Required environment variable not set: MESH_DELIVERY. "
+            "Must be exactly '0' or '1'. No default is permitted."
+        )
+    if value not in ("0", "1"):
+        raise RuntimeError(
+            f"MESH_DELIVERY must be exactly '0' or '1', got: {value!r}. "
+            "No other values (including truthy strings) are accepted."
+        )
+    if value == "1":
+        raise RuntimeError(
+            "MESH_DELIVERY=1 is not yet supported. Phase 1a only "
+            "implements the email path. Set MESH_DELIVERY=0."
         )
 
 

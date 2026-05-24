@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout, structural purpose, and import mapping
-# Last updated: 2026-04-23
+# Last updated: 2026-04-24
 
 ---
 
@@ -21,7 +21,7 @@
 - `frontend/` — Patient-facing React app and Admin UI.
 - `data/` — Condition ruleset JSON files.
 - `scripts/` — One-time management commands for deployment and administration.
-  - `create_admin_user.py` — Inserts an admin user before first boot. Accepts `--create-practice` flag for CI use.
+  - `create_admin_user.py` — Inserts an admin user before first boot. Generates a one-time password setup token and prints the setup URL. Accepts `--create-practice` flag for CI use.
 - `docs/` — Architecture documents and operational guides.
   - `deployment_checklist.md` — Step-by-step checklist for deploying to a new environment.
 
@@ -54,14 +54,15 @@ Business logic and orchestration.
 
 **`app/services/delivery/`** (IO-touching delivery concerns)
 - `delivery_service.py` — Email delivery implementations. *Imports: no clinical contract imports. Receives pre-rendered PDF bytes.*
-- `admin_delivery_service.py` — Admin MFA and invitation delivery. Implements `send_mfa_code` and `send_admin_invitation`. *Imports: stdlib only.*
+- `admin_delivery_service.py` — Admin MFA and invitation delivery. Implements `send_mfa_code(email, code)` and `send_admin_invitation(email, token)`. The token is embedded in the setup URL as `#reset:{token}`. *Imports: stdlib only.*
 - `delivery_constants.py` — Retry thresholds. *Imports: standalone; no application modules.*
 - `pdf_constants.py` — PDF retry thresholds. *Imports: standalone; no application modules.*
 - `delivery_worker.py` — Delivery worker loop. *Imports: delivery_repository, attachment_repository, delivery_service, delivery_constants, sentry_sdk only.*
-- `pdf_worker.py` — PDF generation worker loop. *Imports: pdf_repository, photo_repository, submission_repository, attachment_repository, delivery_repository, pdf_formatter, pdf_constants, sentry_sdk only.*
+- `pdf_worker.py` — PDF generation worker loop. *Imports: pdf_repository, photo_repository, submission_repository, attachment_repository, downstream_enqueuer, pdf_formatter, pdf_constants, sentry_sdk only.*
+- `downstream_enqueuer.py` — Polymorphic seam between the PDF worker and its next-stage queue. Defines `DownstreamEnqueuer` Protocol and `DeliveryEnqueuer` (email path) implementation. Selected at worker startup based on `MESH_DELIVERY`. *Imports: pdf_repository, submission_repository, delivery_repository only.*
 
 **`app/services/admin/`** (admin portal concerns - mirrors app/routers/admin/ subfolder)
-- `auth_service.py` — MFA auth business logic. *Imports: bcrypt, secrets, time, datetime, errors. DB/delivery via interfaces only.*
+- `auth_service.py` — MFA and password authentication business logic. Implements: `request_mfa_code`, `verify_mfa_code`, `verify_login_credentials` (timing-safe password check with dummy-hash path), `generate_reset_token`, `verify_reset_token`, `set_new_password` (zxcvbn strength enforcement, score >= 3). *Imports: bcrypt, zxcvbn, hashlib, secrets, time, datetime, errors. DB/delivery via interfaces only.*
 - `user_service.py` — Admin user management business logic (add, remove, resend invitation). *Imports: errors, auth_service.validate_admin_domain, email_utils. Receives repositories and conn as arguments — no direct DB access.*
 - `availability_orchestration.py` — Wires repository and service.
 - `availability_service.py` — Availability business logic.
@@ -74,7 +75,7 @@ Database access for persistent records. No business logic.
 
 - `attachment_repository.py` — Owns `submission_attachments`. *Imports: db only.*
 - `audit_repository.py` — Owns `admin_audit_log`. *Imports: db, psycopg2, base64, json, re, datetime only.*
-- `auth_repository.py` — Owns `admin_users`, `admin_auth_codes`, `admin_sessions`. Includes user management methods: `insert_user` (normalises email to lowercase, accepts conn), `get_users_by_practice` (accepts conn for lock-consistent reads), `get_user_by_id`, `delete_user` (accepts conn), `create_session` (sets `last_login = NOW()` atomically). *Imports: db, psycopg2, uuid, datetime only.*
+- `auth_repository.py` — Owns `admin_users`, `admin_auth_codes`, `admin_sessions`, `admin_password_reset_tokens`. User management methods: `insert_user`, `get_users_by_practice` (accepts conn), `get_user_by_id`, `delete_user` (accepts conn), `create_session` (sets `last_login = NOW()` atomically). Password auth methods: `set_password` (sets hashed_password, password_changed_at, resets lockout atomically), `record_failed_password_attempt` (atomic increment; accepts optional lock_until), `reset_password_attempts`. Reset token methods: `upsert_reset_token` (ON CONFLICT DO UPDATE; accepts conn), `get_reset_token_record`, `delete_reset_token`. *Imports: db, psycopg2, uuid, datetime only.*
 - `availability_repository.py` — Owns availability and exception tables.
 - `delivery_repository.py` — Owns `delivery_jobs`. *Imports: db, delivery_constants only.*
 - `pdf_repository.py` — Owns `pdf_jobs`. *Imports: db, pdf_constants only.*
@@ -91,7 +92,7 @@ Infrastructure concerns only. No clinical logic.
 - `consultation_outcomes.py` — Python interface for outcome constants. *Imports: json and os only.*
 - `db.py` — Shared Postgres connection module.
 - `dependencies.py` — Shared FastAPI dependency provider functions.
-- `errors.py` — Shared API, rate limit, and condition-not-found errors. `APIError` carries `status_code: int = 422`. User management adds: `USER_ALREADY_EXISTS` (409), `ACTION_NOT_PERMITTED` (403, accepts optional message), `USER_NOT_FOUND` (404).
+- `errors.py` — Shared API, rate limit, and condition-not-found errors. `APIError` carries `status_code: int = 422`. User management errors: `USER_ALREADY_EXISTS` (409), `ACTION_NOT_PERMITTED` (403), `USER_NOT_FOUND` (404). Password auth errors: `INVALID_CREDENTIALS` (422, generic — does not reveal which gate failed), `INVALID_RESET_TOKEN` (422), `WEAK_PASSWORD` (422, message populated from zxcvbn feedback).
 - `rate_limit.py` — SlowAPI Limiter instantiation. *Imports: slowapi, app.utils.http_utils only.*
 - `request_validation.py` — HTTP payload validation.
 - `telemetry.py` — Sentry initialisation. Called once at the top of each process entry point. *Imports: stdlib only at module level; sentry_sdk and app.core.errors imported lazily inside the function body. Must NOT import repositories, registries, or db.*
@@ -117,11 +118,11 @@ HTTP route handlers. No business logic; orchestration only.
 
 **`app/routers/admin/`** (Admin sub-router package)
 - `__init__.py` — Package marker.
-- `admin_auth_router.py` — MFA request, verify, logout. Unauthenticated by design.
+- `admin_auth_router.py` — Password login (step 1), OTP verify (step 2), password reset request, set-password, logout. Unauthenticated by design. `POST /auth/login` dispatches OTP email via FastAPI BackgroundTask; on delivery failure the background task deletes the OTP record and reports to Sentry.
 - `admin_practice_router.py` — Conditions list, practice settings, signposting, doctor list.
 - `admin_availability_router.py` — Weekly config, manual overrides, per-date exceptions.
 - `admin_audit_router.py` — Audit log read endpoint.
-- `admin_user_router.py` — List, add, delete, and resend-invitation for admin users. Rate-limits POST /users and POST /users/{id}/resend-invitation at 10/minute.
+- `admin_user_router.py` — List, add, delete, and resend-invitation for admin users. POST /users generates a reset token inside the user-insert transaction. POST /users/{id}/resend-invitation generates a fresh reset token before sending the invitation email. Rate-limits POST /users and POST /users/{id}/resend-invitation at 10/minute.
 
 ---
 
@@ -132,6 +133,7 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `alembic/versions/0001_initial_schema.py` — Creates the complete baseline schema.
 - `alembic/versions/0002_user_management_cascade.py` — Adds `ON DELETE CASCADE` to `admin_sessions.user_id` FK; adds `admin_users.last_login` (nullable TIMESTAMPTZ).
 - `alembic/versions/0003_webhook_tracking.py` — Adds `provider_message_id` (VARCHAR 255, indexed) and `provider_events` (JSONB) to `delivery_jobs`; extends status check constraint to include `provider_accepted` and `delivered`; creates `webhook_tokens` replay protection table.
+- `alembic/versions/0004_password_auth.py` — Adds `hashed_password` (TEXT nullable), `failed_password_attempts` (INTEGER NOT NULL DEFAULT 0), `password_locked_until` (TIMESTAMPTZ nullable), `password_changed_at` (TIMESTAMPTZ nullable) to `admin_users`; creates `admin_password_reset_tokens` table (token_hash PK, user_id FK with ON DELETE CASCADE, UNIQUE(user_id) enforcing one active token per user, expires_at).
 
 ---
 
@@ -150,11 +152,14 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `screens/` — Patient flow views (`SafetyWarningScreen`, `PatientDetailsScreen`, `OutcomeScreen`, `SelectConditionScreen`, `FreeTextScreen`, `EditScreen`, `ReviewScreen`, `ContactScreen`) and corresponding test files e.g. SafetyWarningScreen.test.tsx
 
 **Admin UI (`frontend/admin-ui/src/`)**
-- `App.tsx` — Admin root component and routing.
-- `api.ts` — Admin API clients (cookie-auth based). Includes user management functions: `fetchUsers`, `addUser`, `removeUser`, `resendInvitation`.
+- `App.tsx` — Admin root component. AuthState = `"checking" | "login" | "editor" | "set_password"`. On mount, checks `window.location.hash` for `#reset:{token}` before probing the session — if matched, routes directly to `set_password` state without an API call.
+- `api.ts` — Admin API clients (cookie-auth based). Auth functions: `login(email, password)`, `verifyMfaCode(email, code)`, `requestPasswordReset(email)` (always resolves, never throws), `setPassword(token, password)`. User management functions: `fetchUsers`, `addUser`, `removeUser`, `resendInvitation`.
 - `main.tsx` — React entry point.
 - `types.ts` — Admin-specific contracts. Includes `AdminUser` and `AddUserResponse` interfaces.
-- `screens/` — Admin views (`LoginView`, `EditorView`, `SignpostingEditor`, `AvailabilityEditor`, `PracticeSettingsTab`, `AuditLogTab`, `UsersTab`) and corresponding test files e.g. LoginView.test.tsx
+- `screens/` — Admin views and corresponding test files:
+  - `LoginView` — Two-step login: step 1 accepts email + password (calls `POST /auth/login`), step 2 accepts 6-digit OTP (calls `POST /auth/verify`). Includes "Forgot / Set up password?" link that calls `requestPasswordReset`.
+  - `SetPasswordView` — Password setup/reset screen. Rendered when `authState === "set_password"`. Extracts and clears the `#reset:{token}` hash on mount. Includes zxcvbn real-time strength meter (score >= 3 required to submit). Handles `INVALID_RESET_TOKEN` and `WEAK_PASSWORD` server errors.
+  - `EditorView`, `SignpostingEditor`, `AvailabilityEditor`, `PracticeSettingsTab`, `AuditLogTab`, `UsersTab`
 
 ---
 
@@ -162,16 +167,18 @@ Schema migration scripts. See code files directly for exact table definitions.
 
 **Shared fixtures**
 - `conftest.py` — Autouse pytest fixture that resets the SlowAPI in-memory rate limit storage before and after every test. Prevents counter state leaking across test boundaries.
-- `helpers/admin_test_helpers.py` — Shared helpers for the admin sub-router tests. Provides `make_test_app`, `dummy_conn`, and stubs: `StubAuthRepo`, `StubPracticeRepo` (includes `lock_practice`), `StubAvailabilityRepo`, `StubAuditRepo`, `StubAdminDeliveryService` (tracks `mfa_calls` and `invitation_calls` separately), `StubRegistry`.
+- `helpers/admin_test_helpers.py` — Shared helpers for the admin sub-router tests. Provides `make_test_app`, `dummy_conn`, and stubs: `StubAuthRepo` (includes no-op password auth methods: `set_password`, `record_failed_password_attempt`, `reset_password_attempts`, `upsert_reset_token`, `get_reset_token_record`, `delete_reset_token`), `StubPracticeRepo` (includes `lock_practice`), `StubAvailabilityRepo`, `StubAuditRepo`, `StubAdminDeliveryService` (tracks `send_mfa_code` calls and `send_admin_invitation(email, token)` calls separately), `StubRegistry`.
 
 **Unit tests (Mocked/In-memory)**
-- `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`.
+- `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_downstream_enqueuer.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`.
 
 **Admin Sub-Router unit tests (placed in tests/routers/ subfolder)**
-- `test_admin_auth_router.py`, `test_admin_availability_router.py`, `test_admin_practice_router.py`, `test_admin_audit_router.py`, `test_admin_user_router.py`
+- `test_admin_auth_router.py` — Covers: general auth behaviour, `POST /auth/login` (correct credentials, wrong password, lockout, no password set, missing fields), `POST /auth/verify` (OTP check, unchanged), `POST /auth/request-reset` (registered and unregistered emails), `POST /auth/set-password` (valid token, expired token, unknown token, weak password, token consumed on use), `POST /auth/logout`, SlowAPI rate limiting on all four unauthenticated auth endpoints.
+- `test_admin_availability_router.py`, `test_admin_practice_router.py`, `test_admin_audit_router.py`, `test_admin_user_router.py`
 
 **Frontend component tests (placed in frontend/admin-ui/src/screens/)**
-- `LoginView_test.tsx`, `EditorView_test.tsx`, `SignpostingEditor_test.tsx` (if present), `AvailabilityEditor_test.tsx`, `PracticeSettingsTab_test.tsx`, `AuditLogTab_test.tsx`, `UsersTab_test.tsx`
+- `LoginView_test.tsx` — Covers step 1 rendering (email + password inputs, Sign in button disabled until both filled, forgot link), step 1 behaviour (login() called with normalised credentials, advances to step 2, error handling), forgot/set-up link (calls requestPasswordReset, shows confirmation, prompts for email if blank), step 2 rendering and behaviour (unchanged from OTP flow), navigation between steps.
+- `EditorView_test.tsx`, `SignpostingEditor_test.tsx` (if present), `AvailabilityEditor_test.tsx`, `PracticeSettingsTab_test.tsx`, `AuditLogTab_test.tsx`, `UsersTab_test.tsx`
 
 **Integration tests (Live `TEST_DATABASE_URL`, placed in tests/integration/ subfolder)**
 - `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`, `test_webhook_router.py`.

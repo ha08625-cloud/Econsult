@@ -2,25 +2,31 @@
 PDF worker.
 
 Background worker loop responsible for generating PDFs from queued pdf_jobs
-rows and enqueuing the resulting attachment for delivery.
+rows and enqueuing the resulting attachment onto a downstream queue.
 
 Architecture rules:
 - This module may import from: pdf_repository, photo_repository,
-  submission_repository, attachment_repository, delivery_repository,
-  pdf_formatter, pdf_constants, delivery_constants, sentry_sdk.
+  submission_repository, attachment_repository, downstream_enqueuer,
+  pdf_formatter, pdf_constants.
 - This module must never: access the database directly (uses repositories),
-  import from routers, or implement delivery policy.
+  import from routers, implement delivery policy, or know which
+  downstream queue is active.
 - The operation ordering within process_job is an invariant that must not
   be broken. See arch_submission.md.
 
 Operation ordering invariant (must not be reordered):
   1. save_attachment  (UPSERT — safe on retry)
-  2. delivery_repo.create_job  (ON CONFLICT DO NOTHING — idempotent)
+  2. downstream.enqueue  (idempotent — underlying repos use ON CONFLICT DO NOTHING)
   3. pdf_repo.mark_done
 
-A delivery_jobs row can only exist after save_attachment has completed.
-This guarantees the delivery worker will always find an attachment when it
-claims a delivery job.
+A downstream queue row can only exist after save_attachment has completed.
+This guarantees the next worker (delivery worker on the email path, or
+the PDS worker on the future MESH path) will always find an attachment
+when it claims its job.
+
+The active downstream is selected at worker startup by pdf_worker_main.py.
+In the email-only configuration (MESH_DELIVERY=0) it is DeliveryEnqueuer.
+The worker itself is downstream-agnostic.
 
 Orphan detection:
 - Once per loop iteration, list_orphaned_submissions is called on pdf_repo.
@@ -30,10 +36,10 @@ Orphan detection:
 
 Crash recovery at each step in process_job:
 - Before save_attachment: retry regenerates PDF from stored photos — safe.
-- After save_attachment, before create_job: UPSERT fires, delivery job is
-  created, mark_done succeeds — safe.
-- After create_job, before mark_done: UPSERT and DO NOTHING both fire
-  safely, mark_done succeeds — safe.
+- After save_attachment, before enqueue: UPSERT fires, enqueue is
+  idempotent, mark_done succeeds — safe.
+- After enqueue, before mark_done: UPSERT and the downstream's
+  idempotent insert both fire safely, mark_done succeeds — safe.
 - After mark_done: job is done and not re-claimed — safe.
 There is no crash point that requires operator intervention within a job.
 
@@ -48,13 +54,11 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import sentry_sdk
-
 from app.repositories.attachment_repository import AttachmentRepository
-from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.pdf_repository import PDFRepository
 from app.repositories.photo_repository import PhotoRepository
 from app.repositories.submission_repository import SubmissionRepository
+from app.services.delivery.downstream_enqueuer import DownstreamEnqueuer
 from app.services.delivery.pdf_constants import MAX_PDF_ATTEMPTS, PDF_RETRY_BACKOFF_MINUTES
 from app.utils.pdf_formatter import generate_pdf
 from app.models.serialisation_contracts import ClinicalOutput  # noqa: F401 (used via from_dict)
@@ -75,7 +79,7 @@ def run_worker(
     photo_repo: PhotoRepository,
     submission_repo: SubmissionRepository,
     attachment_repo: AttachmentRepository,
-    delivery_repo: DeliveryRepository,
+    downstream: DownstreamEnqueuer,
     poll_interval: int,
     practice_name: Optional[str],
 ) -> None:
@@ -83,8 +87,9 @@ def run_worker(
     Run the PDF worker loop indefinitely.
 
     Claims one pending pdf_jobs row per iteration, generates the PDF,
-    saves the attachment, enqueues a delivery job, and marks the pdf_job
-    done. Sleeps only when the queue is empty.
+    saves the attachment, enqueues the next-stage queue row via the
+    downstream adapter, and marks the pdf_job done. Sleeps only when the
+    queue is empty.
 
     psycopg2.OperationalError from claim_next_pending propagates uncaught
     so the process exits and Railway restarts the container.
@@ -94,7 +99,7 @@ def run_worker(
         photo_repo      -- PhotoRepository instance
         submission_repo -- SubmissionRepository instance
         attachment_repo -- AttachmentRepository instance
-        delivery_repo   -- DeliveryRepository instance
+        downstream      -- DownstreamEnqueuer adapter selected at startup
         poll_interval   -- seconds to sleep when the queue is empty
         practice_name   -- practice name for PDF header; may be None
     """
@@ -117,48 +122,27 @@ def run_worker(
         submission_id = str(job["submission_id"])
         job_id = str(job["id"])
 
-        with sentry_sdk.new_scope() as scope:
-            # Tag every Sentry event from this iteration with the job
-            # identifiers. new_scope() inherits process-level tags (e.g.
-            # server_name set in telemetry.py) while isolating breadcrumbs
-            # so one job's noise cannot contaminate the next.
-            scope.set_tag("job_id", job_id)
-            scope.set_tag("submission_id", submission_id)
-
-            try:
-                _process_job(
-                    job=job,
-                    pdf_repo=pdf_repo,
-                    photo_repo=photo_repo,
-                    submission_repo=submission_repo,
-                    attachment_repo=attachment_repo,
-                    delivery_repo=delivery_repo,
-                    practice_name=practice_name,
-                )
-            except Exception as exc:
-                next_retry = _compute_backoff(job["attempt_count"])
-                is_exhausted = pdf_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
-                if is_exhausted:
-                    sentry_sdk.capture_message(
-                        f"PDF job permanently failed after {MAX_PDF_ATTEMPTS} attempts. "
-                        "Operator intervention required.",
-                        level="error",
-                    )
-                    logger.error(
-                        "PDF worker: job permanently failed after %d attempts "
-                        "submission_id=%s job_id=%s",
-                        MAX_PDF_ATTEMPTS,
-                        submission_id,
-                        job_id,
-                    )
-                logger.critical(
-                    "PDF worker: job failed submission_id=%s job_id=%s attempt=%d error=%s",
-                    submission_id,
-                    job_id,
-                    job["attempt_count"] + 1,
-                    exc,
-                    exc_info=True,
-                )
+        try:
+            _process_job(
+                job=job,
+                pdf_repo=pdf_repo,
+                photo_repo=photo_repo,
+                submission_repo=submission_repo,
+                attachment_repo=attachment_repo,
+                downstream=downstream,
+                practice_name=practice_name,
+            )
+        except Exception as exc:
+            next_retry = _compute_backoff(job["attempt_count"])
+            pdf_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
+            logger.critical(
+                "PDF worker: job failed submission_id=%s job_id=%s attempt=%d error=%s",
+                submission_id,
+                job_id,
+                job["attempt_count"] + 1,
+                exc,
+                exc_info=True,
+            )
 
 
 def _process_job(
@@ -167,7 +151,7 @@ def _process_job(
     photo_repo: PhotoRepository,
     submission_repo: SubmissionRepository,
     attachment_repo: AttachmentRepository,
-    delivery_repo: DeliveryRepository,
+    downstream: DownstreamEnqueuer,
     practice_name: Optional[str],
 ) -> None:
     """
@@ -211,13 +195,8 @@ def _process_job(
     # --- Step 1: Save attachment (UPSERT — safe on retry) ---
     attachment_repo.save_attachment(submission_id, pdf_bytes)
 
-    # --- Step 2: Create delivery job (ON CONFLICT DO NOTHING — idempotent) ---
-    delivery_repo.create_job(
-        submission_id=submission_id,
-        to_email=job["delivery_email"],
-        condition_label=condition_label,
-        submitted_at=submitted_at,
-    )
+    # --- Step 2: Enqueue downstream queue row (idempotent in all implementations) ---
+    downstream.enqueue(submission_id=submission_id)
 
     # --- Step 3: Mark pdf_job done ---
     pdf_repo.mark_done(str(job["id"]))
@@ -292,7 +271,6 @@ def _check_orphans(
             "submission_ids=%s",
             ORPHAN_THRESHOLD_MINUTES,
             orphan_ids,
-            extra={"orphan_submission_ids": orphan_ids},
         )
         return now
 

@@ -8,7 +8,7 @@
 
 Finalizing forms, persisting submission records, auditing, photo storage, PDF generation, attachment storage, and delivering clinical output to the practice via a three-stage async pipeline.
 
-**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `photo_repository.py`, `delivery_service.py`, `delivery_constants.py`, `pdf_formatter.py`, `pdf_repository.py`, `pdf_constants.py`, `delivery_repository.py`, `pdf_worker.py`, `pdf_worker_main.py`, `delivery_worker.py`, `worker_main.py`, `deletion_job.py`, `webhook_router.py`
+**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `photo_repository.py`, `delivery_service.py`, `delivery_constants.py`, `pdf_formatter.py`, `pdf_repository.py`, `pdf_constants.py`, `delivery_repository.py`, `downstream_enqueuer.py`, `pdf_worker.py`, `pdf_worker_main.py`, `delivery_worker.py`, `worker_main.py`, `deletion_job.py`, `webhook_router.py`
 
 ---
 
@@ -62,18 +62,20 @@ Deletion cron (deletion_job.py)
 Within the PDF worker, operations on a single job execute in this order:
 
 1. `save_attachment` (UPSERT — safe on retry)
-2. `delivery_repo.create_job` (ON CONFLICT DO NOTHING — idempotent)
+2. `downstream.enqueue` (idempotent — underlying repos use ON CONFLICT DO NOTHING)
 3. `pdf_repo.mark_done`
 
-A `delivery_jobs` row can only exist after `save_attachment` has completed successfully. This guarantees the delivery worker will always find an attachment when it claims a delivery job. There is no need to handle a missing attachment as a normal case in the delivery worker — if the attachment is absent, the invariant has been broken and the error should propagate loudly.
+A downstream queue row can only exist after `save_attachment` has completed successfully. This guarantees the next worker (the delivery worker on the email path, or the PDS worker on the future MESH path) will always find an attachment when it claims its job. There is no need to handle a missing attachment as a normal case in any downstream worker — if the attachment is absent, the invariant has been broken and the error should propagate loudly.
+
+The active `downstream` adapter is selected at worker startup by `pdf_worker_main.py` based on `MESH_DELIVERY`. In the email-only configuration, the adapter is `DeliveryEnqueuer`, which dispatches to `delivery_repo.create_job`. The PDF worker itself is downstream-agnostic.
 
 **Crash recovery at each step:**
 
 | Crash point | State | Recovery |
 |---|---|---|
-| Before `save_attachment` | No attachment, no delivery job | PDF worker retries; regenerates PDF from stored photos |
-| After `save_attachment`, before `create_job` | Attachment exists, no delivery job | UPSERT is safe; worker creates delivery job then marks done |
-| After `create_job`, before `mark_done` | Attachment and delivery job both exist | Both UPSERT and DO NOTHING fire safely; worker marks done |
+| Before `save_attachment` | No attachment, no downstream queue row | PDF worker retries; regenerates PDF from stored photos |
+| After `save_attachment`, before `downstream.enqueue` | Attachment exists, no downstream queue row | UPSERT is safe; worker enqueues downstream then marks done |
+| After `downstream.enqueue`, before `mark_done` | Attachment and downstream queue row both exist | Both UPSERT and the downstream's idempotent insert fire safely; worker marks done |
 | After `mark_done` | Job is done; not re-claimed | No action needed |
 
 There is no crash point that leaves the system in an irrecoverable state without operator intervention.

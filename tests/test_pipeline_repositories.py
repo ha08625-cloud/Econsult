@@ -465,6 +465,38 @@ class TestPDFRepositoryGet:
         assert raised, "Expected PDFJobNotFound was not raised"
 
 
+class TestPDFRepositoryGetDeliveryEmail:
+    def test_get_delivery_email_returns_email_for_existing_job(self):
+        """
+        get_delivery_email must return the delivery_email stored on the
+        pdf_jobs row for the given submission_id.
+        """
+        sid = _uid()
+        repo = PDFRepository(DATABASE_URL)
+        try:
+            _create_submission(sid)
+            repo.create_job(sid, attachment_count=1, delivery_email="practice@nhs.net")
+            assert repo.get_delivery_email(sid) == "practice@nhs.net"
+        finally:
+            _cleanup(sid)
+
+    def test_get_delivery_email_raises_when_no_pdf_job(self):
+        """
+        get_delivery_email must raise PDFJobNotFound when no pdf_jobs row
+        exists for the submission_id. Under the system's ordering
+        invariants this should never happen in production; the explicit
+        exception surfaces invariant breakage loudly rather than
+        returning None and corrupting downstream state.
+        """
+        repo = PDFRepository(DATABASE_URL)
+        raised = False
+        try:
+            repo.get_delivery_email(_uid())
+        except PDFJobNotFound:
+            raised = True
+        assert raised, "Expected PDFJobNotFound was not raised"
+
+
 class TestPDFRepositoryListOrphanedSubmissions:
     def test_returns_submission_with_no_pdf_job(self):
         sid = _uid()

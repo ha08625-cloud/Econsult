@@ -168,7 +168,7 @@ class PDFRepository:
         job_id: str,
         error: str,
         next_retry_after: Optional[datetime],
-    ) -> bool:
+    ) -> None:
         """
         Record a failed PDF generation attempt.
 
@@ -178,9 +178,6 @@ class PDFRepository:
         supplied value so the job is not re-claimed before the backoff
         window elapses.
 
-        Returns True if the job has been permanently exhausted (status is
-        now 'failed'), False if it remains pending for a future retry.
-
         next_retry_after must be supplied by the caller (typically the
         PDF worker, which reads PDF_RETRY_BACKOFF_MINUTES). Passing None
         leaves the job immediately eligible for re-claim, which is only
@@ -189,7 +186,7 @@ class PDFRepository:
         Raises PDFJobNotFound if the job_id does not exist.
         """
         with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     """
                     UPDATE pdf_jobs
@@ -202,7 +199,7 @@ class PDFRepository:
                         END,
                         updated_at       = NOW()
                     WHERE id = %(job_id)s
-                    RETURNING id, status
+                    RETURNING id
                     """,
                     {
                         "job_id": job_id,
@@ -214,7 +211,6 @@ class PDFRepository:
                 result = cur.fetchone()
                 if result is None:
                     raise PDFJobNotFound(job_id)
-                return result["status"] == "failed"
 
     # ------------------------------------------------------------------
     # Lookup
@@ -238,6 +234,36 @@ class PDFRepository:
             raise PDFJobNotFound(job_id)
 
         return dict(row)
+
+    def get_delivery_email(self, submission_id: str) -> str:
+        """
+        Return the delivery_email stored on the pdf_jobs row for a
+        submission.
+
+        Used by DeliveryEnqueuer to look up the recipient address when
+        building a delivery_jobs row. The PDF worker no longer threads
+        this value through its call signature, so adapters fetch it
+        themselves.
+
+        Raises PDFJobNotFound if no pdf_jobs row exists for the
+        submission. Under the system's ordering invariants this should
+        never happen: a pdf_job is always created before the worker
+        processes the submission, and the row is never deleted.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT delivery_email FROM pdf_jobs WHERE submission_id = %s",
+                    (submission_id,),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            raise PDFJobNotFound(
+                f"No pdf_jobs row for submission_id={submission_id}"
+            )
+
+        return row[0]
 
     # ------------------------------------------------------------------
     # Orphan detection

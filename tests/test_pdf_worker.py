@@ -8,16 +8,22 @@ time.sleep is patched so tests do not wait real time.
 
 Test coverage:
 - Successful job: photos fetched, count verified, PDF generated,
-  attachment saved (UPSERT), delivery job created, job marked done.
+  attachment saved (UPSERT), downstream enqueued, job marked done.
 - Photo count mismatch: job marked failed immediately, no PDF generated,
-  no delivery job created.
+  no downstream enqueue call.
 - UPSERT safety: save_attachment called once per process (idempotency
   is a DB-level guarantee, not tested here; we verify the call is made).
-- Idempotent delivery job creation: create_job called once per process
-  (DO NOTHING is a DB-level guarantee; we verify the call is made).
-- Failed generation: job marked failed with backoff, delivery job not created.
+- Idempotent downstream enqueue: downstream.enqueue called once per
+  process (the underlying repo's DO NOTHING is a DB-level guarantee;
+  we verify the call is made).
+- Failed generation: job marked failed with backoff, downstream not enqueued.
 - Empty queue: worker sleeps for the configured interval.
 - Orphan detection: CRITICAL logged when orphans exist, rate-limited.
+
+Note: the previous test_process_job_passes_delivery_email_to_create_job
+case has been removed. After the Phase 1a refactor, the PDF worker no
+longer threads delivery_email through; that lookup now lives in
+DeliveryEnqueuer and is covered by test_downstream_enqueuer.py.
 """
 
 import logging
@@ -27,6 +33,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from app.services.delivery.downstream_enqueuer import DownstreamEnqueuer
 from app.services.delivery.pdf_worker import (
     ORPHAN_LOG_INTERVAL_SECONDS,
     ORPHAN_THRESHOLD_MINUTES,
@@ -121,8 +128,13 @@ def _make_attachment_repo():
     return MagicMock()
 
 
-def _make_delivery_repo():
-    return MagicMock()
+def _make_downstream():
+    """
+    Build a mock DownstreamEnqueuer. spec=DownstreamEnqueuer keeps the
+    mock honest: attempting to call a method other than enqueue raises
+    AttributeError, catching refactor mistakes.
+    """
+    return MagicMock(spec=DownstreamEnqueuer)
 
 
 def _run_worker_n_sleeps(
@@ -130,7 +142,7 @@ def _run_worker_n_sleeps(
     photo_repo,
     submission_repo,
     attachment_repo,
-    delivery_repo,
+    downstream,
     n_sleeps,
     poll_interval=10,
     practice_name=None,
@@ -159,7 +171,7 @@ def _run_worker_n_sleeps(
                 photo_repo=photo_repo,
                 submission_repo=submission_repo,
                 attachment_repo=attachment_repo,
-                delivery_repo=delivery_repo,
+                downstream=downstream,
                 poll_interval=poll_interval,
                 practice_name=practice_name,
             )
@@ -182,7 +194,7 @@ def test_process_job_fetches_photos_and_generates_pdf():
     photo_repo = _make_photo_repo(photos=[b"img"])
     submission_repo = _make_submission_repo()
     attachment_repo = _make_attachment_repo()
-    delivery_repo = _make_delivery_repo()
+    downstream = _make_downstream()
 
     with patch(
         "app.services.delivery.pdf_worker.generate_pdf", return_value=b"%PDF-fake"
@@ -193,7 +205,7 @@ def test_process_job_fetches_photos_and_generates_pdf():
             photo_repo=photo_repo,
             submission_repo=submission_repo,
             attachment_repo=attachment_repo,
-            delivery_repo=delivery_repo,
+            downstream=downstream,
             practice_name="Test Practice",
         )
 
@@ -204,18 +216,24 @@ def test_process_job_fetches_photos_and_generates_pdf():
     attachment_repo.save_attachment.assert_called_once_with("sub-aaa", b"%PDF-fake")
 
 
-def test_process_job_creates_delivery_job_after_save_attachment():
+def test_process_job_enqueues_downstream_after_save_attachment():
     """
-    delivery_repo.create_job must be called after save_attachment, never before.
-    The ordering invariant: a delivery_jobs row can only exist after
+    downstream.enqueue must be called after save_attachment, never before.
+    The ordering invariant: a downstream queue row can only exist after
     save_attachment has completed.
+
+    This is a structural test of the operation ordering invariant
+    documented in arch_submission.md. The exact downstream implementation
+    (DeliveryEnqueuer or, in future phases, PdsEnqueuer) is irrelevant;
+    the worker must respect the order regardless of which adapter is
+    wired.
     """
     call_order = []
     job = _make_job(attachment_count=1)
     attachment_repo = _make_attachment_repo()
     attachment_repo.save_attachment.side_effect = lambda *a, **kw: call_order.append("save")
-    delivery_repo = _make_delivery_repo()
-    delivery_repo.create_job.side_effect = lambda *a, **kw: call_order.append("create_job")
+    downstream = _make_downstream()
+    downstream.enqueue.side_effect = lambda *a, **kw: call_order.append("enqueue")
     pdf_repo = MagicMock()
     pdf_repo.mark_done.side_effect = lambda *a, **kw: call_order.append("mark_done")
 
@@ -226,13 +244,13 @@ def test_process_job_creates_delivery_job_after_save_attachment():
             photo_repo=_make_photo_repo(),
             submission_repo=_make_submission_repo(),
             attachment_repo=attachment_repo,
-            delivery_repo=delivery_repo,
+            downstream=downstream,
             practice_name=None,
         )
 
-    assert call_order == ["save", "create_job", "mark_done"], (
+    assert call_order == ["save", "enqueue", "mark_done"], (
         f"Operations out of order: {call_order}. "
-        "The ordering invariant (save -> create_job -> mark_done) must not be broken."
+        "The ordering invariant (save -> enqueue -> mark_done) must not be broken."
     )
 
 
@@ -250,20 +268,29 @@ def test_process_job_marks_pdf_job_done_on_success():
             photo_repo=_make_photo_repo(),
             submission_repo=_make_submission_repo(),
             attachment_repo=_make_attachment_repo(),
-            delivery_repo=_make_delivery_repo(),
+            downstream=_make_downstream(),
             practice_name=None,
         )
 
     pdf_repo.mark_done.assert_called_once_with("job-xyz")
 
 
-def test_process_job_passes_delivery_email_to_create_job():
+def test_process_job_calls_downstream_with_submission_id_only():
     """
-    delivery_repo.create_job must receive the delivery_email from the job row,
-    not from submission_records.
+    The PDF worker's contract with the downstream adapter is to pass only
+    the submission_id. Any further lookups (delivery email, condition
+    label, etc.) are the adapter's responsibility.
+
+    This test would have been called
+    'test_process_job_passes_delivery_email_to_create_job' before the
+    Phase 1a refactor. Its semantics have moved to
+    test_downstream_enqueuer.py, where the DeliveryEnqueuer's lookup of
+    delivery_email is asserted directly. This replacement test enforces
+    the worker side of that boundary: it must not pass anything other
+    than submission_id.
     """
-    job = _make_job(delivery_email="practice@nhs.net", attachment_count=1)
-    delivery_repo = _make_delivery_repo()
+    job = _make_job(submission_id="sub-zzz", attachment_count=1)
+    downstream = _make_downstream()
 
     with patch("app.services.delivery.pdf_worker.generate_pdf", return_value=b"%PDF"):
         _process_job(
@@ -272,12 +299,11 @@ def test_process_job_passes_delivery_email_to_create_job():
             photo_repo=_make_photo_repo(),
             submission_repo=_make_submission_repo(),
             attachment_repo=_make_attachment_repo(),
-            delivery_repo=delivery_repo,
+            downstream=downstream,
             practice_name=None,
         )
 
-    call_kwargs = delivery_repo.create_job.call_args.kwargs
-    assert call_kwargs["to_email"] == "practice@nhs.net"
+    downstream.enqueue.assert_called_once_with(submission_id="sub-zzz")
 
 
 # ---------------------------------------------------------------------------
@@ -287,11 +313,11 @@ def test_process_job_passes_delivery_email_to_create_job():
 def test_process_job_fails_immediately_on_photo_count_mismatch():
     """
     When len(photos) != job.attachment_count, _process_job must raise ValueError
-    without calling generate_pdf or creating a delivery job.
+    without calling generate_pdf or enqueueing the downstream queue row.
     """
     job = _make_job(attachment_count=2)
     photo_repo = _make_photo_repo(photos=[b"only-one"])  # 1 photo, expected 2
-    delivery_repo = _make_delivery_repo()
+    downstream = _make_downstream()
 
     with patch(
         "app.services.delivery.pdf_worker.generate_pdf"
@@ -303,12 +329,12 @@ def test_process_job_fails_immediately_on_photo_count_mismatch():
                 photo_repo=photo_repo,
                 submission_repo=_make_submission_repo(),
                 attachment_repo=_make_attachment_repo(),
-                delivery_repo=delivery_repo,
+                downstream=downstream,
                 practice_name=None,
             )
 
     mock_gen.assert_not_called()
-    delivery_repo.create_job.assert_not_called()
+    downstream.enqueue.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -332,7 +358,7 @@ def test_process_job_succeeds_with_zero_photos():
             photo_repo=photo_repo,
             submission_repo=_make_submission_repo(),
             attachment_repo=_make_attachment_repo(),
-            delivery_repo=_make_delivery_repo(),
+            downstream=_make_downstream(),
             practice_name=None,
         )
 
@@ -354,7 +380,7 @@ def test_worker_sleeps_when_queue_is_empty():
         _make_photo_repo(),
         _make_submission_repo(),
         _make_attachment_repo(),
-        _make_delivery_repo(),
+        _make_downstream(),
         n_sleeps=2,
         poll_interval=15,
     )
@@ -375,7 +401,7 @@ def test_worker_processes_job_and_continues():
         _make_photo_repo(photos=[]),
         _make_submission_repo(),
         _make_attachment_repo(),
-        _make_delivery_repo(),
+        _make_downstream(),
         n_sleeps=1,
     )
 
@@ -403,7 +429,7 @@ def test_worker_marks_job_failed_on_exception():
                 photo_repo=_make_photo_repo(),
                 submission_repo=_make_submission_repo(),
                 attachment_repo=_make_attachment_repo(),
-                delivery_repo=_make_delivery_repo(),
+                downstream=_make_downstream(),
                 poll_interval=10,
                 practice_name=None,
             )
@@ -416,13 +442,15 @@ def test_worker_marks_job_failed_on_exception():
     assert isinstance(call_args.args[1], str)  # error message
 
 
-def test_worker_does_not_create_delivery_job_on_failed_generation():
+def test_worker_does_not_enqueue_downstream_on_failed_generation():
     """
-    If generate_pdf raises, no delivery job must be created.
+    If generate_pdf raises, downstream.enqueue must not be called. This
+    enforces the ordering invariant: no downstream queue row exists
+    unless a PDF was successfully generated and saved.
     """
     job = _make_job(attachment_count=1)
     pdf_repo = _make_pdf_repo(job_sequence=[job, None])
-    delivery_repo = _make_delivery_repo()
+    downstream = _make_downstream()
 
     with patch(
         "app.services.delivery.pdf_worker.generate_pdf",
@@ -436,14 +464,14 @@ def test_worker_does_not_create_delivery_job_on_failed_generation():
                 photo_repo=_make_photo_repo(),
                 submission_repo=_make_submission_repo(),
                 attachment_repo=_make_attachment_repo(),
-                delivery_repo=delivery_repo,
+                downstream=downstream,
                 poll_interval=10,
                 practice_name=None,
             )
         except StopIteration:
             pass
 
-    delivery_repo.create_job.assert_not_called()
+    downstream.enqueue.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
