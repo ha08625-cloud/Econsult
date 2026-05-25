@@ -91,3 +91,13 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Scope:** Access control, MFA, fail-fast configuration boundaries, data retention, file upload security (CDR), input sanitization, rate limiting, and dependency patching. Maps technical controls to Cyber Essentials Plus audit requirements.
 * **Domain Doc:** `docs/arch_security.md`
 * **Key Files:** `dependencies.py`, `admin_router.py`, `auth_repository.py`, `auth_service.py`, `deletion_job.py`, `request_validation.py`, `image_sanitizer.py`, `form_router.py`, `rate_limit.py`
+
+## 4. Other reference files
+
+### 4.1 nhs_integration_reference.md
+Contains information about information with integration with NHS APIs such as MESH, PDS and GP connect. This is not included in the architecture spoke documents deliberately - it contains facts not design decisions
+
+### 4.2 file_structure.md
+File structure reference
+
+### 4.3 Deployment checklist
