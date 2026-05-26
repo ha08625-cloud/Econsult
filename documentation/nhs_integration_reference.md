@@ -21,7 +21,7 @@ first to avoid re-running discovery work.
 ## Document contents
 
 - [MESH (Message Exchange for Social Care and Health)](#mesh)
-- [PDS (Personal Demographics Service)](#pds) — placeholder, not yet investigated
+- [PDS (Personal Demographics Service)](#pds)
 - [NHS login](#nhs-login) — placeholder, scope not yet confirmed
 
 ---
@@ -291,22 +291,324 @@ NHS Digital before go-live.
 
 ## PDS
 
-**Not yet investigated.** This section will be populated when we run the
-PDS sandbox investigation as a precursor to Phase 1b implementation.
+The Personal Demographics Service. The national database of NHS patient
+demographic details. Our system uses PDS to look up a patient's currently
+registered GP practice (via ODS code) so we can deliver electronic
+referrals to the right destination.
 
-### Open questions to investigate
-
-- Auth model: PDS FHIR uses application-restricted OAuth2 with signed JWT, materially different from MESH. Need to verify the JWT signing flow against the sandbox.
-- Response shape for `verified` cases (full FHIR Patient resource).
-- Response shape for `not_found` (404 with FHIR OperationOutcome? Plain 404?).
-- Response shape for demographic `mismatch` (does PDS distinguish "found but doesn't match" from "verified match"? Or is mismatch a client-side comparison we must do ourselves?).
-- 5xx and timeout behaviour.
-- Rate limits.
-- The PDS sandbox is documented as stateless with hard-coded responses. The set of available test patients needs cataloguing.
+This section covers the **FHIR R4** version of the PDS API. The older
+HL7 V3 version is documented as deprecated and not used here.
 
 ### Operational tier
 
-`[NHS docs]` PDS FHIR API is a **silver service**: 24/7 operational, business-hours support only.
+`[NHS docs]` PDS FHIR API is a **silver service**: 24/7 operational,
+business-hours support only.
+
+### Endpoint inventory
+
+All paths are relative to the PDS base URL for the environment:
+- `[sandbox]` sandbox: `https://sandbox.api.service.nhs.uk/personal-demographics/FHIR/R4`
+- `[NHS docs]` integration (PTL): `https://int.api.service.nhs.uk/personal-demographics/FHIR/R4`
+- `[NHS docs]` production: `https://api.service.nhs.uk/personal-demographics/FHIR/R4`
+
+| Path | Method | Purpose |
+|---|---|---|
+| `/Patient/<nhs_number>` | GET | Retrieve a Patient resource by NHS number |
+| `/Patient?<demographic params>` | GET | Search for patients by demographic parameters (returns Bundle) |
+| `/metadata` | GET | FHIR CapabilityStatement |
+
+`[sandbox]` The sandbox is a **single-fixture mock**: it only meaningfully
+recognises NHS number `9000000009`. Other NHS numbers return a proper 404
+OperationOutcome. The search endpoint returns a warning-shaped
+OperationOutcome (see "Sandbox behavioural quirks" below) for any input.
+
+### Auth model
+
+`[sandbox]` The sandbox is **completely unauthenticated**: no OAuth2,
+no API key, no Authorization header. The only mandatory authentication-
+adjacent header is `X-Request-ID` (see below). This makes sandbox
+development fast but means the sandbox cannot be used to validate the
+production auth flow.
+
+`[NHS docs]` Production and integration environments use
+**application-restricted access mode**: OAuth2 with a signed JWT bearer
+token. The JWT is signed with a private key whose public key is
+registered with NHS Digital during onboarding. Tokens are obtained from
+the OAuth endpoint and presented as `Authorization: Bearer <token>` on
+each request. Token lifetime and refresh behaviour have not yet been
+verified against the integration environment.
+
+Implication for client design: the request *shape* is identical between
+sandbox and production — only the auth wrapper differs. A PDS client
+can be developed entirely against the sandbox and have OAuth bolted on
+as a request-signing middleware when moving to integration.
+
+### Mandatory headers
+
+`[sandbox]` Every request must include:
+
+| Header | Value | Purpose |
+|---|---|---|
+| `X-Request-ID` | A fresh UUID per request | Spine correlation ID. Spine rejects calls without it. |
+| `Accept` | `application/fhir+json` | Negotiates FHIR JSON response |
+
+A missing `X-Request-ID` returns:
+
+- Status: `400 Bad Request`
+- Body: OperationOutcome with `code: required`, Spine error code `MISSING_VALUE`, diagnostics `"Invalid request with error - X-Request-ID header must be supplied to access this resource"`
+
+`[NHS docs]` Production additionally requires:
+
+- `Authorization: Bearer <jwt>` (see Auth model)
+- `X-Correlation-ID` may be present alongside `X-Request-ID`; semantics not yet investigated
+
+### GET Patient by NHS number
+
+`[sandbox]` Request:
+
+```
+GET /Patient/9000000009
+X-Request-ID: <uuid>
+Accept: application/fhir+json
+```
+
+Successful response:
+
+- Status: `200 OK`
+- Body: a FHIR `Patient` resource (see "Patient resource shape" below)
+
+NHS-number-not-found response:
+
+- Status: `404 Not Found`
+- Body: an `OperationOutcome` (see "OperationOutcome shape" below) with:
+  - `issue[].severity: "information"` (note: **not** `"error"`)
+  - `issue[].code: "not-found"`
+  - `details.coding[].code: "RESOURCE_NOT_FOUND"`
+
+Malformed NHS number response (e.g. non-numeric):
+
+- Status: `400 Bad Request`
+- Body: OperationOutcome with:
+  - `issue[].severity: "error"`
+  - `issue[].code: "value"`
+  - `details.coding[].code: "INVALID_RESOURCE_ID"`
+
+### Search Patient by demographics
+
+`[NHS docs]` Standard FHIR search semantics, with query parameters like
+`family=`, `given=`, `birthdate=`, `gender=`, `address-postalcode=`,
+`fuzzy-match=true`.
+
+`[sandbox]` **Demographic search is effectively unusable in the
+sandbox.** Regardless of inputs, the sandbox returns:
+
+- Status: `200 OK` (note: **not** an error status)
+- Body: OperationOutcome with:
+  - `issue[].severity: "warning"`
+  - `issue[].code: "not-supported"`
+  - `issue[].diagnostics: "This mock endpoint has no example response for this combination of search parameters"`
+
+This is a sandbox limitation, not a real PDS error condition. Production
+PDS returns a real FHIR `Bundle` of matching `Patient` resources.
+
+### Sandbox behavioural quirks (very important for client design)
+
+`[sandbox]`
+
+1. **HTTP 200 + warning body is a real combination.** The sandbox can
+   return an `OperationOutcome` with `severity: "warning"` and HTTP 200.
+   A client that branches on HTTP status alone will treat the response as
+   a successful empty result. The client **must inspect the response body
+   type** to differentiate a real `Patient`/`Bundle` from an
+   `OperationOutcome`.
+
+2. **The metadata endpoint returns an empty body with HTTP 200.** We
+   cannot use it for capability discovery. Hand-code the operations the
+   client uses.
+
+3. **The sandbox is essentially a fixture lookup keyed by NHS number.**
+   Only `9000000009` returns a populated Patient. Other valid-shaped NHS
+   numbers return a proper 404. This is enough to develop the GET path
+   but not enough to test demographic-search-and-disambiguate flows —
+   those need the integration environment or hand-built fixtures.
+
+4. **The sandbox fixture is deliberately pathological.** Patient
+   `9000000009` carries multiple "do not deliver" signals simultaneously
+   (see "Clinical safety: deliverability decision tree" below). This is
+   intentional: the sandbox is designed to catch developers who skip
+   safety validation. Treat the canonical fixture as a *negative* test
+   case, not a happy-path example.
+
+### Patient resource shape
+
+`[sandbox]` The raw JSON for NHS number `9000000009` is stored as a test
+fixture in the repo (`tests/fixtures/pds_patient_9000000009.json`, to be
+captured during Phase 1b implementation). This section documents the
+fields and FHIR paths we consume.
+
+Key identifier systems (used as constants in the client):
+
+| Concept | System URL |
+|---|---|
+| NHS number | `https://fhir.nhs.uk/Id/nhs-number` |
+| ODS organization code | `https://fhir.nhs.uk/Id/ods-organization-code` |
+| Spine error code | `https://fhir.nhs.uk/R4/CodeSystem/Spine-ErrorOrWarningCode` |
+| Death notification status | `https://fhir.hl7.org.uk/CodeSystem/UKCore-DeathNotificationStatus` |
+| Removal from registration | `https://fhir.nhs.uk/CodeSystem/PDS-RemovalReasonExitCode` |
+
+Key fields we consume from a `Patient` resource:
+
+| Field | FHIR path | What it means |
+|---|---|---|
+| Confidentiality flag | `meta.security[].code` | `"U"` = unrestricted (deliverable); `"R"` or `"V"` = restricted/very restricted (S-flag — do not deliver) |
+| Death indicator | `deceasedDateTime` or `deceasedBoolean` | Presence indicates deceased patient |
+| Formal death notification | `extension[url=...DeathNotificationStatus].extension[url=deathNotificationStatus].valueCodeableConcept.coding[].code` | Codes `1` (informal) or `2` (formal) indicate death notification received |
+| Removal from registration | `extension[url=...RemovalFromRegistration]` | Presence with no `effectiveTime.end` (or end in future) indicates removed from English GP registration |
+| Registered GP | `generalPractitioner[].identifier.value` | The ODS code of the registered GP practice |
+| GP registration period | `generalPractitioner[].identifier.period.start` / `.period.end` | When this GP registration was/is active |
+| Managing organisation | `managingOrganization.identifier.value` | Currently observed to match `generalPractitioner` in the sandbox |
+
+`[sandbox]` **Critical structural pattern**: many fields are arrays of
+period-bounded entries. `name`, `address`, `telecom`, and
+`generalPractitioner` all follow this pattern. Each entry has
+`period.start` and (optionally) `period.end`. **Never use array index
+`[0]` to pick an entry**; always filter to the currently-active entry
+(period.end absent or in the future, and period.start in the past or
+absent).
+
+The sandbox fixture deliberately includes historic entries with
+`period.end` in the past, alongside no current entry, to catch
+developers who skip this filter.
+
+### Clinical safety: deliverability decision tree
+
+`[sandbox]` The sandbox fixture for `9000000009` carries multiple
+independent "do not deliver" signals:
+
+- `meta.security.code: "U"` (unrestricted — OK on this dimension)
+- `deceasedDateTime: "2010-10-22T00:00:00+00:00"` (deceased)
+- `extension[DeathNotificationStatus].code: "2"` (formal death notice received)
+- `extension[RemovalFromRegistration].code: "SCT"` (transferred to Scotland)
+- `generalPractitioner[0].identifier.period.end: "2021-12-31"` (registration ended in the past — no current GP)
+
+Yet `generalPractitioner` is still populated. **A naive extractor that
+simply reads `Patient.generalPractitioner[0].identifier.value` will
+happily try to deliver clinical documents to a GP practice that hasn't
+been the patient's GP for years, concerning a patient who has been dead
+since 2010.** This is the central clinical-safety hazard the sandbox is
+designed to expose.
+
+The deliverability check must run in this order, short-circuiting on
+the first failure:
+
+1. **Security flag**: `meta.security[].code` — if `"R"` or `"V"`,
+   abort (S-flagged patient).
+2. **Deceased flag**: `deceasedDateTime` or `deceasedBoolean` —
+   if present, abort.
+3. **Death notification extension**: if the
+   `Extension-UKCore-DeathNotificationStatus` extension exists with a
+   non-null status code, abort.
+4. **Removal from registration**: if the
+   `Extension-PDS-RemovalFromRegistration` extension exists with no
+   `effectiveTime.end` or an end in the future, abort.
+5. **Active GP**: scan `generalPractitioner[]` for an entry where
+   `identifier.period.end` is absent or in the future, AND
+   `identifier.period.start` is absent or in the past. If none found,
+   abort (no currently-registered GP).
+6. **Extract ODS code**: from the active GP entry,
+   `identifier.value` is the ODS code to use as the MESH/GP Connect
+   recipient.
+
+Each abort condition should produce a distinct, named outcome
+(`PATIENT_RESTRICTED`, `PATIENT_DECEASED`, `PATIENT_DECEASE_NOTIFIED`,
+`PATIENT_DEREGISTERED`, `PATIENT_NO_ACTIVE_GP`) so the fallback layer
+can log and the operator can understand why electronic delivery did not
+proceed. This is a clinical-safety surface and the failure reasons are
+clinically meaningful, not implementation-internal.
+
+### OperationOutcome shape
+
+`[sandbox]` All error and warning responses use the same OperationOutcome
+structure:
+
+```json
+{
+  "resourceType": "OperationOutcome",
+  "issue": [
+    {
+      "severity": "error" | "warning" | "information",
+      "code": "<fhir-issue-code>",
+      "details": {
+        "coding": [
+          {
+            "system": "https://fhir.nhs.uk/R4/CodeSystem/Spine-ErrorOrWarningCode",
+            "version": "1",
+            "code": "<spine-error-code>",
+            "display": "<human readable>"
+          }
+        ]
+      },
+      "diagnostics": "<optional message>"
+    }
+  ],
+  "timestamp": "<optional ISO-8601, present on warnings>"
+}
+```
+
+Note that for 404 responses, `severity` is `"information"`, not
+`"error"`. The HTTP status code and the FHIR severity do not always
+align — another reason the client must inspect both.
+
+### Spine error codes (observed)
+
+`[sandbox]`
+
+| HTTP | `severity` | `issue.code` | Spine `code` | Meaning | Retry? |
+|---|---|---|---|---|---|
+| 200 | `warning` | `not-supported` | (none) | Sandbox-only: mock has no example for this query | No (sandbox quirk) |
+| 400 | `error` | `value` | `INVALID_RESOURCE_ID` | The path parameter (e.g. NHS number) is malformed | No (our bug; log critical) |
+| 400 | `error` | `required` | `MISSING_VALUE` | A required header is missing | No (our bug; log critical) |
+| 404 | `information` | `not-found` | `RESOURCE_NOT_FOUND` | NHS number is well-formed but no patient exists | No (terminal; trigger fallback) |
+
+`[NHS docs]` Production will additionally surface (not yet observed):
+
+- `INVALID_NHS_NUMBER` — checksum failure on the NHS number
+- `INVALID_SEARCH_DATA` — malformed search parameters
+- `ACCESS_DENIED` — auth scope insufficient for the requested operation
+- `INTERNAL_SERVER_ERROR` (5xx)
+- Rate limit responses (429 — exact format not yet investigated)
+
+### Known sandbox limitations vs production
+
+`[sandbox]`
+
+- Sandbox is a single-fixture mock; only `9000000009` returns real data.
+- No authentication, so the OAuth2/JWT flow cannot be tested.
+- Demographic search is not implemented; the search endpoint returns a not-supported warning regardless of input.
+- The metadata endpoint returns empty.
+- Rate limits and 5xx behaviour cannot be exercised.
+- No support for `If-Match` / optimistic-concurrency headers (we don't use these as a read-only client, but worth noting).
+
+### Useful undocumented observations
+
+`[sandbox]`
+
+- `meta.versionId` is present on the Patient resource (`"2"` for the canonical fixture). Used for optimistic concurrency on updates; not relevant to our read-only use case.
+- The `multipleBirthInteger` field is `1` in the fixture, which is a slightly odd value (1 implies "first of multiple", but multiple-birth context is otherwise absent). Treat this field as informational only.
+- The `birthDate` and `deceasedDateTime` in the canonical fixture are set to the same date (`2010-10-22`), suggesting a stillbirth or neonatal death scenario. This is intentional sandbox seeding.
+- Address entries include `Extension-UKCore-AddressKey` extensions carrying PAF (Postcode Address File) and UPRN (Unique Property Reference Number) identifiers. We do not consume these.
+
+### Still open (to be investigated against PTL/integration)
+
+The sandbox cannot answer these. They will be settled during integration-
+environment onboarding.
+
+- OAuth2 token endpoint URL, JWT signing requirements, token lifetime, refresh model.
+- Rate limit headers and 429 response format.
+- 5xx behaviour and recommended retry/backoff strategy.
+- Demographic search Bundle response shape (the FHIR spec defines it; PDS may add extensions).
+- Whether the production response includes any fields the sandbox does not (e.g. additional extensions for nominated pharmacy, language preferences in different shapes).
+- The catalogue of test patients available in the integration environment and which clinical-safety branch each one exercises.
 
 ---
 
