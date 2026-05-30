@@ -84,7 +84,7 @@ delivered shortly after acceptance. The end-to-end happy path is:
    32-char hex `messageID`.
 2. The sandbox auto-transitions the message to delivered.
 3. `mesh_tracking_worker.py` polls
-   `/messageexchange/<sender_mailbox>/outbox/tracking/<messageID>`, finds
+   `/messageexchange/<sender_mailbox>/outbox/tracking?messageID=<messageID>`, finds
    `statusSuccess: SUCCESS`, and transitions the local `mesh_jobs.status`
    to `delivered`.
 
