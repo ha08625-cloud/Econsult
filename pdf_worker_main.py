@@ -21,8 +21,12 @@ for this race.
 Does not serve HTTP. Does not seed data.
 
 Environment variables:
-    DATABASE_URL                    -- Postgres connection string (required)
+    DATABASE_URL                     -- Postgres connection string (required)
     PDF_WORKER_POLL_INTERVAL_SECONDS -- seconds to sleep when queue is empty (required)
+    MESH_DELIVERY                    -- "0" or "1" (required). "1" is reserved for
+                                        the MESH path and is not yet supported in
+                                        Phase 1a; this entry point will refuse to
+                                        start if "1" is set. No defaulting.
 """
 
 import logging
@@ -49,9 +53,48 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _validate_mesh_delivery() -> str:
+    """
+    Validate the MESH_DELIVERY environment variable.
+
+    Must be present and exactly "0" or "1". No defaulting is permitted —
+    a misconfigured deployment must abort at startup per the Fail-Fast
+    Configuration project invariant (see architecture.md).
+
+    In Phase 1a only "0" (email path) is implemented. "1" is reserved
+    for Phase 1b onwards and causes startup to abort with a clear
+    message.
+
+    Returns the validated value as a string. Exits the process on any
+    invalid value.
+    """
+    value = os.environ.get("MESH_DELIVERY")
+    if value is None:
+        logger.critical(
+            "Required environment variable not set: MESH_DELIVERY. "
+            "Must be exactly '0' or '1'. No default is permitted."
+        )
+        sys.exit(1)
+    if value not in ("0", "1"):
+        logger.critical(
+            "MESH_DELIVERY must be exactly '0' or '1', got: %r. "
+            "No other values (including truthy strings) are accepted.",
+            value,
+        )
+        sys.exit(1)
+    if value == "1":
+        logger.critical(
+            "MESH_DELIVERY=1 is not yet supported. Phase 1a only "
+            "implements the email path. Set MESH_DELIVERY=0."
+        )
+        sys.exit(1)
+    return value
+
+
 def main() -> None:
     database_url = _require_env("DATABASE_URL")
     poll_interval_raw = _require_env("PDF_WORKER_POLL_INTERVAL_SECONDS")
+    mesh_delivery = _validate_mesh_delivery()  # exits on invalid; only "0" reached here in Phase 1a
 
     try:
         poll_interval = int(poll_interval_raw)
@@ -71,12 +114,14 @@ def main() -> None:
 
     # Import application modules after env validation so import errors are not
     # confused with missing configuration.
+    import sentry_sdk
     from app.repositories.pdf_repository import PDFRepository
     from app.repositories.photo_repository import PhotoRepository
     from app.repositories.submission_repository import SubmissionRepository
     from app.repositories.attachment_repository import AttachmentRepository
     from app.repositories.delivery_repository import DeliveryRepository
     from app.repositories.practice_repository import PracticeRepository
+    from app.services.delivery.downstream_enqueuer import DeliveryEnqueuer
     from app.services.delivery.pdf_worker import run_worker
 
     pdf_repo = PDFRepository(database_url)
@@ -106,9 +151,21 @@ def main() -> None:
         )
 
     logger.info(
-        "PDF worker configuration: poll_interval=%ds practice_name=%r",
+        "PDF worker configuration: poll_interval=%ds practice_name=%r mesh_delivery=%s downstream_mode=email",
         poll_interval,
         practice_name,
+        mesh_delivery,
+    )
+
+    # Phase 1a: only the email path is implemented. _validate_mesh_delivery has
+    # already exited the process if MESH_DELIVERY=1, so by this point we are
+    # always wiring the email path.
+    sentry_sdk.set_tag("downstream_mode", "email")
+
+    downstream = DeliveryEnqueuer(
+        pdf_repo=pdf_repo,
+        submission_repo=submission_repo,
+        delivery_repo=delivery_repo,
     )
 
     run_worker(
@@ -116,7 +173,7 @@ def main() -> None:
         photo_repo=photo_repo,
         submission_repo=submission_repo,
         attachment_repo=attachment_repo,
-        delivery_repo=delivery_repo,
+        downstream=downstream,
         poll_interval=poll_interval,
         practice_name=practice_name,
     )
