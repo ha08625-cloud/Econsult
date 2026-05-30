@@ -134,8 +134,7 @@ casually.
 
 ## Troubleshooting
 
-- **`curl -k https://localhost:8700/health` returns an SSL handshake
-  error.** Correct: the nginx layer rejects connections that do not
+- **`curl -k https://localhost:8700/health` returns HTTP 400 "No required SSL certificate was sent" from nginx.** Correct: the nginx layer rejects connections that do not
   present a valid client cert. Use the certs as shown in `make sandbox-check`.
 
 - **nginx exits immediately after start.** Run `docker compose logs nginx`.

@@ -62,14 +62,16 @@ The original plan included a FHIR Builder phase that wrapped the PDF in an ITK3 
 
 ```
 Phase 1a (adapter refactor)              [SHIPPED]
-    -> Phase 2a (MESH client library)
-        -> Phase 2b (schema + MeshEnqueuer + wiring)
-            -> Phase 3 (MESH dispatcher + Mailgun fallback)
-                -> Phase 4 (tracking poller + deletion job rewrite)
-                    -> Phase 5 (observability + operator tooling)
+    -> Phase 1b (local mTLS PKI + sandbox proxy)  [SHIPPED]
+        -> Phase 2a (MESH client library)
+            -> Phase 2b (schema + MeshEnqueuer + wiring)
+                -> Phase 3 (MESH dispatcher + Mailgun fallback)
+                    -> Phase 4 (tracking poller + deletion job rewrite)
+                        -> Phase 5 (observability + operator tooling)
 ```
 
 - Phase 1a is already done. It is the polymorphic seam (`DownstreamEnqueuer`) in the PDF worker, plus the strict `MESH_DELIVERY` env validation. `MESH_DELIVERY=1` currently refuses to start because no implementation exists yet.
+- Phase 1b is also done. It establishes the local-dev mTLS parity: a dev PKI, an nginx mTLS-terminating proxy in front of the sandbox container, and the documentation/env-var canonicalisation that downstream phases rely on. No application code.
 - Phase 2a is a pure code library — no DB schema, no worker, no wiring. It exercises the MESH protocol against the sandbox in tests and can ship on its own.
 - Phase 2b adds migration 0005 (the `mesh_jobs` table and `delivery_jobs.is_fallback` column), the `MeshEnqueuer` adapter, the wiring in `pdf_worker_main.py` so `MESH_DELIVERY=1` no longer aborts startup, and the per-practice MESH mailbox configuration. After Phase 2b, the PDF worker can enqueue `mesh_jobs` rows but nothing consumes them yet.
 - Phase 3 adds the dispatcher worker that consumes `mesh_jobs` and POSTs to MESH, including the Mailgun fallback when MESH terminally fails.
@@ -95,6 +97,53 @@ No schema changes, no runtime behaviour change.
 
 ---
 
+## Phase 1b — Local mTLS PKI and Sandbox Proxy (SHIPPED)
+
+A pure infrastructure phase: no application code, no DB schema. Establishes the local-dev mTLS parity needed before any `MeshClient` work.
+
+### 1b.1 Strategic decision
+
+MESH production requires mutual TLS. The NHSDigital `mesh-sandbox` Docker image does not enforce mTLS natively — its uvicorn process is launched with server-cert flags only (see `docs/nhs_integration_reference.md`). To exercise the production mTLS code path on every local request, the sandbox runs behind an nginx mTLS-terminating proxy.
+
+The `MeshClient` (Phase 2a) therefore unconditionally presents a client certificate and unconditionally verifies the server. There is no special-case skip for sandbox. Three strict string paths — `ca_cert_path`, `client_cert_path`, `client_key_path` — are mandatory constructor inputs to the client. No `None`, no boolean toggle, no environment-name-driven bypass.
+
+### 1b.2 Files
+
+New:
+- `sandbox/certs/generate.sh` — idempotent OpenSSL script generating the dev PKI.
+- `sandbox/certs/sandbox_ca.{pem,key}`, `sandbox_server.{pem,key}`, `sandbox_client.{pem,key}` — committed dev PKI. See `sandbox/certs/README.md` for the rationale.
+- `sandbox/certs/README.md`
+- `sandbox/nginx/nginx.conf` — TLS termination + client-cert validation + reverse proxy.
+
+Modified:
+- `sandbox/docker-compose.yml` — adds the nginx service, removes the host port from `mesh_sandbox`, creates an internal `mesh_net` bridge network, depends_on `service_healthy`.
+- `sandbox/README.md` — rewritten for the mTLS topology. Stale references removed: `mesh_inbox_worker.py`, `MESH_ENV`, `MESH_URL`, `SENDER_ODS_CODE`, `TARGET_ODS_CODE`, the `X26`-in-production `main.py` guard.
+- `Makefile` — `sandbox-check` target passes the dev CA, cert, and key to curl.
+- `docs/arch_security.md` — new Section 8 "MESH Outbound TLS" describing strategy, strict-path inputs, fail-fast invariant, and parity limits.
+- `docs/nhs_integration_reference.md` — expanded sandbox-limitations TLS bullet capturing the uvicorn-command-line evidence that the sandbox cannot enforce mTLS.
+
+### 1b.3 Canonical env var names
+
+These names are used from Phase 2a onwards. Earlier drafts of this plan referenced `MESH_ENV`, `MESH_URL`, `MESH_CERT_PATH`, `MESH_KEY_PATH`, `SENDER_ODS_CODE`, `TARGET_ODS_CODE` — all are superseded.
+
+| Variable | Purpose |
+|---|---|
+| `MESH_DELIVERY` | `0` or `1`. Shipped in Phase 1a. |
+| `MESH_BASE_URL` | e.g. `https://localhost:8700` (sandbox) or the production base URL. |
+| `MESH_MAILBOX_ID` | Sender mailbox ID. |
+| `MESH_MAILBOX_PASSWORD` | Input to the HMAC over the auth canonical string. |
+| `MESH_SHARED_KEY` | HMAC secret. |
+| `MESH_CA_CERT_PATH` | Path to CA bundle for verifying the server certificate. |
+| `MESH_CLIENT_CERT_PATH` | Path to our client certificate. |
+| `MESH_CLIENT_KEY_PATH` | Path to our client private key. |
+| `MESH_WORKFLOW_ID` | Workflow ID for outgoing messages (introduced in Phase 3). |
+
+### 1b.4 Parity limits
+
+The nginx sidecar catches the most common mTLS mistakes: failing to present a cert, presenting one signed by the wrong CA, failing to verify the server cert against the expected CA. It does not catch Spine-specific quirks such as cipher-suite restrictions, peer-cert subject-DN validation, or revocation checks. First contact with NHS PTL may surface issues invisible to the local sandbox; this is an accepted limitation of any local mTLS emulation.
+
+---
+
 ## Phase 2a — MESH Client Library
 
 A pure code library: HTTP client for the MESH API, with auth-header construction, request signing, and parsing of the message-send and tracking responses. No DB schema, no worker process, no wiring.
@@ -102,11 +151,11 @@ A pure code library: HTTP client for the MESH API, with auth-header construction
 ### 2a.1 New File: `app/services/delivery/mesh/client.py`
 
 Module exposing a `MeshClient` class. Constructor takes:
-- `base_url` (string, e.g. `http://localhost:8700` for sandbox or the integration/production URL)
+- `base_url` (string, e.g. `https://localhost:8700` for sandbox or the integration/production URL)
 - `mailbox_id` (the sender mailbox ID — i.e. the practice's own MESH mailbox)
 - `mailbox_password` (for auth header construction)
 - `shared_key` (used in the HMAC over the auth string)
-- `cert` and `key` paths for mTLS (`None` in sandbox mode)
+- `ca_cert_path`, `client_cert_path`, `client_key_path` — three mandatory string paths for mTLS. No `None`, no boolean toggle, no environment-based skip. See Phase 1b for the strategy. The constructor stores the paths but does not touch the filesystem; the worker entry point (Phase 3) owns the fail-fast `os.path.exists()` check.
 
 Methods:
 - `send_message(*, recipient_mailbox_id, payload_bytes, workflow_id, mex_localid, content_type) -> str` — POSTs to `/messageexchange/<mailbox_id>/outbox`. Returns the `messageID` from the 202 response. Raises `MeshTransientError` for retryable failures (network, 5xx, 503), `MeshTerminalError` for unrecoverable failures (4xx other than 503, malformed response).
@@ -125,14 +174,24 @@ class MeshTerminalError(MeshError): ...
 
 The dispatcher (Phase 3) uses the exception type to decide retry vs fallback.
 
-### 2a.3 New File: `tests/test_mesh_client.py`
+### 2a.3 New Files: `tests/test_mesh_client.py` and `tests/test_mesh_client_integration.py`
 
-Unit tests against the sandbox. The test class is marked `@pytest.mark.integration` and is skipped when `MESH_SANDBOX_URL` is not set. Covers:
-- Successful send returns a 32-char-hex `messageID`.
-- 4xx response raises `MeshTerminalError` with the `errorCode` from the response body.
-- 5xx response raises `MeshTransientError`.
-- Handshake succeeds on first call.
-- Auth header construction (unit-tested with a fixed timestamp).
+The test surface is split into two files matching the existing project convention (see `docs/arch_testing.md`):
+
+**`tests/test_mesh_client.py` (unit tests, no marker, run in every CI build).** Mocks `requests.Session`. Covers:
+- Auth header construction with a fixed timestamp and injected nonce (golden test).
+- Session is constructed with `cert=(client_cert_path, client_key_path)` and `verify=ca_cert_path`.
+- Error classification: network errors → transient, 5xx → transient, 403 with empty `errorCode` → transient (clock/auth retryable), 403 with populated `errorCode` → terminal, other 4xx → terminal, malformed 202 body → terminal.
+- Successful 202 returns the 32-char hex `messageID` string. Storage type is `TEXT`, not UUID-parseable.
+
+**`tests/test_mesh_client_integration.py` (marked `@pytest.mark.integration`, module-level skip on missing `MESH_SANDBOX_URL`).** Runs against the local sandbox. Covers:
+- Handshake against `SENDER_MAILBOX` returns 200.
+- Send to `TARGET_MAILBOX` returns a 32-char hex `messageID`.
+- Wrong shared key triggers `MeshTransientError` (matching the production "retry on auth failure" semantics — see error classification in 2a.1).
+- `get_message_status` returns a dict with the expected fields.
+- Non-existent client cert path → `MeshTransientError` (TLS handshake failure).
+
+Integration tests are intentionally local-only. CI does not start the sandbox (see `sandbox/README.md`).
 
 ### 2a.4 No Wiring
 
@@ -270,9 +329,9 @@ Operation sequence per claim:
 
 The ordering invariant `mark_fallback_triggered` → `delivery_repo.create_job(is_fallback=True)` is critical. If the worker crashes between them, the next loop iteration will see `status='fallback_triggered'` but no `delivery_jobs` row. A small "find orphaned fallbacks" sweep (similar to the existing PDF worker orphan detection) handles this. Document the invariant and the recovery path in `arch_submission.md`.
 
-### 3.2 New File: `app/services/delivery/mesh_worker_main.py`
+### 3.2 New File: `mesh_worker_main.py`
 
-Entry point. Validates env vars including `MESH_BASE_URL`, `MESH_MAILBOX_ID`, `MESH_MAILBOX_PASSWORD`, `MESH_SHARED_KEY`, `MESH_CERT_PATH`, `MESH_KEY_PATH`, `MESH_WORKFLOW_ID`. Instantiates `MeshClient`, performs the startup handshake, then runs the worker loop. Fail-fast on missing config or handshake failure.
+Entry point. Validates env vars including `MESH_BASE_URL`, `MESH_MAILBOX_ID`, `MESH_MAILBOX_PASSWORD`, `MESH_SHARED_KEY`, `MESH_CA_CERT_PATH`, `MESH_CLIENT_CERT_PATH`, `MESH_CLIENT_KEY_PATH`, `MESH_WORKFLOW_ID`. For each of the three cert paths, validates the file exists on disk via `os.path.exists` before instantiating `MeshClient` — fail-fast invariant per `docs/arch_security.md` section 8. Missing env var or missing file aborts startup with a clear log line identifying the missing input. Instantiates `MeshClient`, performs the startup handshake, then runs the worker loop. Fail-fast on missing config, missing cert file, or handshake failure.
 
 ### 3.3 Startup Handshake
 
@@ -360,9 +419,11 @@ Add a "MESH delivery" section to the deployment checklist:
 ### New Files (across all phases)
 
 Phase 2a:
+- `app/services/delivery/mesh/__init__.py`
 - `app/services/delivery/mesh/client.py`
 - `app/services/delivery/mesh/errors.py`
 - `tests/test_mesh_client.py`
+- `tests/test_mesh_client_integration.py`
 
 Phase 2b:
 - `app/services/delivery/mesh_enqueuer.py`
@@ -413,7 +474,7 @@ Phase 5:
 These don't block planning but need answering during implementation:
 
 1. **MESH workflow ID for raw PDF sends.** GP Connect uses `GPFED_CONSULT_REPORT`. For a non-GP-Connect raw-PDF send, the workflow ID is practice-and-use-case specific. Worth confirming with whichever practice goes first what their MESH client expects.
-2. **MESH auth header exact format.** The sandbox investigation confirmed the broad shape (HMAC-SHA256 over a canonical string) but the exact field ordering and nonce semantics should be verified against the v1.0.54 sandbox source before writing `client.py`. Worth one focused sandbox session.
+2. ~~**MESH auth header exact format.**~~ Resolved by the Phase 1b sandbox investigation. Authoritative source for Phase 2a is `docs/nhs_integration_reference.md` ("Auth header construction"). If production behaviour diverges from the sandbox, the discrepancy goes into the integration reference and the client is amended.
 3. **Tracking poll cadence.** Starts at 5 minutes per the plan, but practices' MESH clients poll their inboxes on widely different schedules (some 30s, some 30min). Worth measuring against the integration environment before locking the value.
 4. **Mailgun fallback content.** When MESH fails and we fall through to email, do we send the same PDF with the same subject line? Probably yes, but the email body should ideally mention that this is a fallback delivery so the practice doesn't think both channels are independent. Decide before Phase 3 ships.
 5. **`delivery_jobs.is_fallback=TRUE` downstream behaviour.** Does the existing delivery worker do anything different with fallback rows? Probably not — same email, same body. But worth a defensive check in case anything routes on it.
