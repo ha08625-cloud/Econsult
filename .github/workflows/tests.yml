@@ -75,6 +75,7 @@ jobs:
       ALLOWED_ADMIN_DOMAINS: example.com
       ADMIN_URL: "http://localhost/admin"
       DEV_MODE: "1"
+      MESH_DELIVERY: "0"
 
     steps:
       - uses: actions/checkout@v4
