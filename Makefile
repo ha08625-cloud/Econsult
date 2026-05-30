@@ -66,4 +66,8 @@ sandbox-down:
 	cd sandbox && docker compose down
 
 sandbox-check:
-	curl -k https://localhost:8700/health
+	@echo "Expect: a successful mTLS handshake and a JSON health response."
+	curl --cacert sandbox/certs/sandbox_ca.pem \
+	     --cert   sandbox/certs/sandbox_client.pem \
+	     --key    sandbox/certs/sandbox_client.key \
+	     https://localhost:8700/health
