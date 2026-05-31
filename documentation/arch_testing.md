@@ -86,6 +86,8 @@ Current integration test files:
 
 **`tests/test_webhook_router.py`** — integration tests for the Mailgun webhook router. Exercises HMAC signature verification, timestamp staleness, replay protection, and all status transitions (`delivered`, `failed`, `dropped`, informational events). Builds a minimal FastAPI app with the webhook router directly rather than importing `main.py`, so it does not trigger `alembic_upgrade()` or startup validation.
 
+**`tests/test_mesh_client_integration.py`** — DB-free integration tests for MeshClient against the local MESH sandbox (behind its nginx mTLS proxy). Unlike every other integration module, it does not connect to Postgres and therefore does not carry the TEST_DATABASE_URL guardrail. It is guarded module-level on MESH_BASE_URL (skips when unset, so it never runs in CI). The remaining MESH env vars are read with a direct subscript, so a half-configured .env.sandbox fails loudly with a KeyError rather than skipping.
+
 **Run all integration tests with:**
 ```
 make test-integration
@@ -191,3 +193,6 @@ The service-layer per-email cooldown in `auth_service.request_mfa_code` raises `
 
 ### Why does test_webhook_router.py build its own FastAPI app rather than importing main.py?
 The webhook router tests exercise only the webhook router in isolation. Importing `main.py` would trigger `alembic_upgrade()`, the full startup validation chain, and the delivery service instantiation — all of which require environment variables and a fully configured database. Building a minimal app with only the webhook router and the required `app.state` fields keeps the tests focused, faster, and free of startup-validation side effects.
+
+### Why test_mesh_client_integration.py omits the TEST_DATABASE_URL guardrail?
+the two-database rule exists to protect Postgres data, this test touches no database, forcing the guardrail would make a DB-free test require an unrelated DB var, the correct guard for a sandbox test is MESH_BASE_URL, and the integration marker is still applied purely to keep it out of the fast make test run and out of CI (the sandbox never runs in CI).

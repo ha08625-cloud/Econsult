@@ -4,7 +4,7 @@ Downstream enqueuer.
 Defines the polymorphic seam between the PDF worker and whatever queue
 consumes its output. In the email-only configuration (MESH_DELIVERY=0),
 the seam dispatches to delivery_jobs via DeliveryEnqueuer. Future phases
-will add a second implementation (PdsEnqueuer) for the MESH delivery path.
+will add a second implementation (MeshEnqueuer) for the MESH delivery path.
 
 Architecture rules:
 - The Protocol owns the contract: enqueue(submission_id).

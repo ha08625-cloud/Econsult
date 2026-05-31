@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout, structural purpose, and import mapping
-# Last updated: 2026-05-30
+# Last updated: 2026-05-31
 
 ---
 
@@ -65,6 +65,11 @@ Business logic and orchestration.
 - `delivery_worker.py` — Delivery worker loop. *Imports: delivery_repository, attachment_repository, delivery_service, delivery_constants, sentry_sdk only.*
 - `pdf_worker.py` — PDF generation worker loop. *Imports: pdf_repository, photo_repository, submission_repository, attachment_repository, downstream_enqueuer, pdf_formatter, pdf_constants, sentry_sdk only.*
 - `downstream_enqueuer.py` — Polymorphic seam between the PDF worker and its next-stage queue. Defines `DownstreamEnqueuer` Protocol and `DeliveryEnqueuer` (email path) implementation. Selected at worker startup based on `MESH_DELIVERY`. *Imports: pdf_repository, submission_repository, delivery_repository only.*
+
+**`app/services/delivery/mesh/`** (MESH client library — Phase 2a. Pure library: no DB, no worker loop, no wiring.)
+- `__init__.py` — Package init; re-exports `MeshClient`, `MeshError`, `MeshTransientError`, `MeshTerminalError`.
+- `client.py` — `MeshClient`: synchronous MESH HTTP client. Builds one `requests.Session` with mandatory `cert=(client_cert_path, client_key_path)` and `verify=ca_cert_path` (mTLS, no bypass — see arch_security.md §8). Constructs the per-request `NHSMESH` HMAC-SHA256 auth header (regenerated each call; minute-granularity timestamp). Methods: `handshake()`, `send_message(...) -> str` (returns the 32-hex `messageID` verbatim, stored as TEXT), `get_message_status(...) -> dict` (query-string tracking form). Reads no env vars and touches no filesystem at construction; the Phase 3 worker entry point owns env reads and the cert-file fail-fast. *Imports: requests, hmac, hashlib, uuid, datetime, logging, mesh.errors only.*
+- `errors.py` — `MeshError` base with `MeshTransientError` (retryable: transport, 5xx, 403/empty-errorCode auth failures) and `MeshTerminalError` (non-retryable: 4xx with populated errorCode, other 4xx, malformed responses). The dispatcher (Phase 3) branches on the type. *Imports: standalone; no application modules.*
 
 **`app/services/admin/`** (admin portal concerns - mirrors app/routers/admin/ subfolder)
 - `auth_service.py` — MFA and password authentication business logic. Implements: `request_mfa_code`, `verify_mfa_code`, `verify_login_credentials` (timing-safe password check with dummy-hash path), `generate_reset_token`, `verify_reset_token`, `set_new_password` (zxcvbn strength enforcement, score >= 3). *Imports: bcrypt, zxcvbn, hashlib, secrets, time, datetime, errors. DB/delivery via interfaces only.*
@@ -175,7 +180,7 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `helpers/admin_test_helpers.py` — Shared helpers for the admin sub-router tests. Provides `make_test_app`, `dummy_conn`, and stubs: `StubAuthRepo` (includes no-op password auth methods: `set_password`, `record_failed_password_attempt`, `reset_password_attempts`, `upsert_reset_token`, `get_reset_token_record`, `delete_reset_token`), `StubPracticeRepo` (includes `lock_practice`), `StubAvailabilityRepo`, `StubAuditRepo`, `StubAdminDeliveryService` (tracks `send_mfa_code` calls and `send_admin_invitation(email, token)` calls separately), `StubRegistry`.
 
 **Unit tests (Mocked/In-memory)**
-- `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_downstream_enqueuer.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`.
+- `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_downstream_enqueuer.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`, `test_mesh_client.py` (MESH client library; mocks `requests.Session`, no DB, no network).
 
 **Admin Sub-Router unit tests (placed in tests/routers/ subfolder)**
 - `test_admin_auth_router.py` — Covers: general auth behaviour, `POST /auth/login` (correct credentials, wrong password, lockout, no password set, missing fields), `POST /auth/verify` (OTP check, unchanged), `POST /auth/request-reset` (registered and unregistered emails), `POST /auth/set-password` (valid token, expired token, unknown token, weak password, token consumed on use), `POST /auth/logout`, SlowAPI rate limiting on all four unauthenticated auth endpoints.
@@ -187,6 +192,9 @@ Schema migration scripts. See code files directly for exact table definitions.
 
 **Integration tests (Live `TEST_DATABASE_URL`, placed in tests/integration/ subfolder)**
 - `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`, `test_webhook_router.py`.
+
+**DB-free integration test (sandbox-backed, guarded on `MESH_BASE_URL`, placed flat in `tests/`)**
+- `test_mesh_client_integration.py` — Exercises `MeshClient` against the local MESH sandbox behind its nginx mTLS proxy. Carries the `integration` marker (so it stays out of `make test` and CI) but, uniquely, does NOT carry the `TEST_DATABASE_URL` guardrail because it never touches Postgres. Module-level `pytest.skip` if `MESH_BASE_URL` is unset; the remaining MESH env vars are read with a direct subscript (a missing one is a `KeyError`, not a skip). Recipient hardcoded to the sandbox `TARGET_MAILBOX`. This is the one documented exception to the "every integration module carries the TEST_DATABASE_URL guardrail" convention; see docs/arch_testing.md.
 
 ---
 
