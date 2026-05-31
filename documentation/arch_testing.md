@@ -19,7 +19,9 @@ The system has two Postgres databases on Railway:
 | Production | Live application data | `DATABASE_URL` |
 | Test | Integration tests only (`test-practice`) | `TEST_DATABASE_URL` |
 
-These must never be the same URL locally. All integration test modules enforce this with a hard guardrail at the top of the file: if `TEST_DATABASE_URL` is not set, the entire module is skipped. This guardrail must never be removed, even during development.
+These must never be the same URL locally. Integration test modules that exercise Postgres enforce this with a hard guardrail at the top of the file: if `TEST_DATABASE_URL` is not set, the entire module is skipped. This guardrail must never be removed, even during development.
+
+Integration tests that exercise a different external dependency (for example, the local MESH sandbox over HTTP rather than Postgres) still carry the `pytest.mark.integration` marker so they stay out of fast feedback runs and out of CI, but they guard module-level on the env var corresponding to the dependency they exercise — not on `TEST_DATABASE_URL`. The underlying principle is the same: if the external dependency isn't configured, the module is skipped. The current example is `tests/test_mesh_client_integration.py`, which guards on `MESH_BASE_URL` and never touches Postgres. Forcing a DB guardrail onto a DB-free test would be a false coupling and would require an unrelated database to be configured for an unrelated test to run.
 
 **CI exception:** In GitHub Actions, `DATABASE_URL` and `TEST_DATABASE_URL` intentionally point at the same ephemeral Postgres container. This is safe because the container is created fresh for each run, contains no real data, and is destroyed when the job completes. The two-database rule exists to protect production data locally — it does not apply to a throwaway CI container.
 
@@ -62,13 +64,13 @@ The `tsc --noEmit` type check is not included in `make test` — it runs in CI o
 ---
 
 ### Integration tests
-Tests that exercise the full request pipeline or repository layer against a live Postgres database. Identified by the module-level marker:
+Tests that exercise the full request pipeline or repository layer against a live Postgres database, or that exercise an external HTTP service (such as the local MESH sandbox). Identified by the module-level marker:
 
 ```python
 pytestmark = pytest.mark.integration
 ```
 
-This line must appear in every integration test file, after the `TEST_DATABASE_URL` guardrail block. pytest discovers all integration tests automatically via `-m integration`. No changes to `Makefile` or `ci.yml` are needed when adding a new integration test file — only the marker is required.
+This line must appear in every integration test file, after the guardrail block at the top (which guards on `TEST_DATABASE_URL` for DB-backed tests and on the relevant external-dependency env var for others — see the Two-Database Rule section above). pytest discovers all integration tests automatically via `-m integration`. No changes to `Makefile` or `ci.yml` are needed when adding a new integration test file — only the marker is required.
 
 The marker is registered in `pytest.ini` at the project root.
 
