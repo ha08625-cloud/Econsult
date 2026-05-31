@@ -184,8 +184,16 @@ The test surface is split into two files matching the existing project conventio
 - Error classification: network errors → transient, 5xx → transient, 403 with empty `errorCode` → transient (clock/auth retryable), 403 with populated `errorCode` → terminal, other 4xx → terminal, malformed 202 body → terminal.
 - Successful 202 returns the 32-char hex `messageID` string. Storage type is `TEXT`, not UUID-parseable.
 
-**`tests/test_mesh_client_integration.py` (marked `@pytest.mark.integration`, module-level skip on missing `MESH_SANDBOX_URL`).** Runs against the local sandbox. Covers:
-- Handshake against `SENDER_MAILBOX` returns 200.
+**`tests/test_mesh_client_integration.py` (marked `@pytest.mark.integration`, module-level skip on missing `MESH_BASE_URL`).** Runs against the local sandbox.
+
+This is the first DB-free integration test in the project. It carries the integration marker so it stays out of the fast `make test` run and out of CI (the sandbox never runs in CI), but it does NOT carry the `TEST_DATABASE_URL` guardrail — it never touches Postgres. See the generalised "guard on the dependency you exercise" rule in `docs/arch_testing.md`.
+
+Sandbox credentials are read from the canonical env vars (`MESH_MAILBOX_ID`, `MESH_MAILBOX_PASSWORD`, `MESH_SHARED_KEY`, `MESH_CA_CERT_PATH`, `MESH_CLIENT_CERT_PATH`, `MESH_CLIENT_KEY_PATH`) so the same `.env.sandbox` that runs the worker also runs this test. Only `MESH_BASE_URL` controls skip-vs-run; the rest are presence-required and fail loudly if absent (a developer who sets `MESH_BASE_URL` but forgets the cert paths should get a hard error, not a silent skip).
+
+The recipient mailbox is hardcoded to `TARGET_MAILBOX` (the sandbox fixture in `sandbox/mailboxes.jsonl`).
+
+Covers:
+- Handshake against the sender mailbox returns 200.
 - Send to `TARGET_MAILBOX` returns a 32-char hex `messageID`.
 - Wrong shared key triggers `MeshTransientError` (matching the production "retry on auth failure" semantics — see error classification in 2a.1).
 - `get_message_status` returns a dict with the expected fields.
