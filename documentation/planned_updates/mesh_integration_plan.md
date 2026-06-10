@@ -24,7 +24,7 @@ PDS sandbox investigation (since the prior round) confirmed that PDS lookup adds
 
 - MESH delivery is controlled by a single process-level env var `MESH_DELIVERY` (`0` or `1`). Single-practice, single-tenancy deployment for the foreseeable future. The `MESH_DELIVERY=0` path is the email path and is unchanged from current production behaviour; the `MESH_DELIVERY=1` path is what this plan builds.
 - `MESH_DELIVERY` is read once at process startup. It is never re-read inside hot loops. A misconfigured deployment must fail at startup, not silently degrade. This requirement is already enforced in Phase 1a (shipped).
-- **The receiving practice is determined by deployment configuration**, not by patient-side lookup. Each deployment serves exactly one practice. The destination MESH mailbox ID is therefore a property of `practices` (or the `app.state.practice_id`-backed config), loaded once at startup, and applied to every submission this process handles.
+- **The receiving practice is determined by deployment configuration**, not by patient-side lookup. Each deployment serves exactly one practice. The destination MESH mailbox ID is therefore a deployment-controlled env var (`MESH_RECIPIENT_MAILBOX_ID`), read once at the PDF worker's startup and applied to every submission this process handles. It is deliberately **not** stored in `practices` or surfaced in the admin UI: a wrong recipient does not bounce like a mistyped email, it silently misroutes a clinical referral to the wrong NHS mailbox (or is rejected as an unregistered recipient). A write-once, clinically-sensitive routing value behind a self-service UI with shape-only validation is exactly the silent-misroute failure the Fail-Fast Configuration invariant exists to prevent, so it stays in the deployment-controlled, `_require_env`-guarded path. The value is copied onto each `mesh_jobs` row at enqueue time so a config change between enqueue and dispatch cannot misroute an already-queued referral.
 - **Delivery channel hierarchy:**
   1. **MESH** — primary delivery path when `MESH_DELIVERY=1`.
   2. **Mailgun HTTPS API** — secondary path. Used as fallback on terminal MESH failure.
@@ -73,7 +73,7 @@ Phase 1a (adapter refactor)              [SHIPPED]
 - Phase 1a is already done. It is the polymorphic seam (`DownstreamEnqueuer`) in the PDF worker, plus the strict `MESH_DELIVERY` env validation. `MESH_DELIVERY=1` currently refuses to start because no implementation exists yet.
 - Phase 1b is also done. It establishes the local-dev mTLS parity: a dev PKI, an nginx mTLS-terminating proxy in front of the sandbox container, and the documentation/env-var canonicalisation that downstream phases rely on. No application code.
 - Phase 2a is a pure code library — no DB schema, no worker, no wiring. It exercises the MESH protocol against the sandbox in tests and can ship on its own.
-- Phase 2b adds migration 0005 (the `mesh_jobs` table and `delivery_jobs.is_fallback` column), the `MeshEnqueuer` adapter, the wiring in `pdf_worker_main.py` so `MESH_DELIVERY=1` no longer aborts startup, and the per-practice MESH mailbox configuration. After Phase 2b, the PDF worker can enqueue `mesh_jobs` rows but nothing consumes them yet.
+- Phase 2b adds migration 0005 (the `mesh_jobs` table and `delivery_jobs.is_fallback` column), the `MeshEnqueuer` adapter, and the wiring in `pdf_worker_main.py` so `MESH_DELIVERY=1` no longer aborts startup (with `MESH_RECIPIENT_MAILBOX_ID` as a required fail-fast env var). After Phase 2b, the PDF worker can enqueue `mesh_jobs` rows but nothing consumes them yet.
 - Phase 3 adds the dispatcher worker that consumes `mesh_jobs` and POSTs to MESH, including the Mailgun fallback when MESH terminally fails.
 - Phase 4 adds the tracking poller (delivery confirmation) and rewrites `deletion_job.py` to be MESH-status-aware.
 - Phase 5 covers Sentry alerts, operator SQL, and the deployment checklist.
@@ -131,6 +131,7 @@ These names are used from Phase 2a onwards. Earlier drafts of this plan referenc
 | `MESH_DELIVERY` | `0` or `1`. Shipped in Phase 1a. |
 | `MESH_BASE_URL` | e.g. `https://localhost:8700` (sandbox) or the production base URL. |
 | `MESH_MAILBOX_ID` | Sender mailbox ID. |
+| `MESH_RECIPIENT_MAILBOX_ID` | Destination practice mailbox ID. Required when `MESH_DELIVERY=1`; read by the PDF worker and copied onto each `mesh_jobs` row at enqueue time. Deployment-controlled (never set via the admin UI) — see Governing Decisions. |
 | `MESH_MAILBOX_PASSWORD` | Input to the HMAC over the auth canonical string. |
 | `MESH_SHARED_KEY` | HMAC secret. |
 | `MESH_CA_CERT_PATH` | Path to CA bundle for verifying the server certificate. |
@@ -144,66 +145,75 @@ The nginx sidecar catches the most common mTLS mistakes: failing to present a ce
 
 ---
 
-## Phase 2a — MESH Client Library
+## Phase 2a — MESH Client Library (SHIPPED)
 
-A pure code library: HTTP client for the MESH API, with auth-header construction, request signing, and parsing of the message-send and tracking responses. No DB schema, no worker process, no wiring.
+A pure client library: no DB schema, no worker process, no wiring.
+`MESH_DELIVERY=1` still aborts at startup (unchanged from Phase 1a). What
+landed:
 
-### 2a.1 New File: `app/services/delivery/mesh/client.py`
+- New package `app/services/delivery/mesh/`:
+  - `client.py` — the `MeshClient` class.
+  - `errors.py` — `MeshError` and its subclasses `MeshTransientError` and
+    `MeshTerminalError`.
+  - `__init__.py` — re-exports all four names.
+- `tests/test_mesh_client.py` — unit tests (no marker; runs in CI).
+- `tests/test_mesh_client_integration.py` — DB-free sandbox integration tests.
 
-Module exposing a `MeshClient` class. Constructor takes:
-- `base_url` (string, e.g. `https://localhost:8700` for sandbox or the integration/production URL)
-- `mailbox_id` (the sender mailbox ID — i.e. the practice's own MESH mailbox)
-- `mailbox_password` (for auth header construction)
-- `shared_key` (used in the HMAC over the auth string)
-- `ca_cert_path`, `client_cert_path`, `client_key_path` — three mandatory string paths for mTLS. No `None`, no boolean toggle, no environment-based skip. See Phase 1b for the strategy. The constructor stores the paths but does not touch the filesystem; the worker entry point (Phase 3) owns the fail-fast `os.path.exists()` check.
+Protocol facts (auth-header layout, endpoint paths, the query-string tracking
+form, response and error shapes) live in `docs/nhs_integration_reference.md`,
+which is authoritative. The client follows it; this plan does not restate it.
+
+### Public API (consumed by Phases 3 and 4)
+
+`MeshClient` is constructed with keyword-only arguments: `base_url`,
+`mailbox_id`, `mailbox_password`, `shared_key`, the three mTLS paths
+(`ca_cert_path`, `client_cert_path`, `client_key_path`), and an optional
+`timeout` (default 30s). It reads **no** environment variables — the Phase 3
+worker entry point reads the env and passes explicit values. The constructor
+builds one `requests.Session` (with `cert` and `verify` set) and does **not**
+touch the filesystem; validating that the three cert files exist on disk is the
+Phase 3 `mesh_worker_main.py` fail-fast (`docs/arch_security.md` section 8).
 
 Methods:
-- `send_message(*, recipient_mailbox_id, payload_bytes, workflow_id, mex_localid, content_type) -> str` — POSTs to `/messageexchange/<mailbox_id>/outbox`. Returns the `messageID` from the 202 response. Raises `MeshTransientError` for retryable failures (network, 5xx, 503), `MeshTerminalError` for unrecoverable failures (4xx other than 503, malformed response).
-- `get_message_status(*, message_id) -> dict` — GETs the tracking endpoint. Returns the parsed JSON. Raises the same exception types.
-- `handshake() -> None` — performs the mandatory startup handshake (`POST /messageexchange/<mailbox>`). Called once per process at startup before any send.
 
-Auth header generation is a private helper that constructs the canonical string `mailbox_id:nonce:nonce_count:password:timestamp` (or whatever the current MESH spec dictates — we have the sandbox to verify against), HMAC-SHA256s it with `shared_key`, and assembles the `Authorization: NHSMESH ...` value. The function is called per request because the timestamp is part of the input.
+- `handshake() -> None` — POSTs the startup handshake; raises on failure.
+  Phase 3 calls it once at process startup, before the loop.
+- `send_message(*, recipient_mailbox_id, payload_bytes, workflow_id, mex_localid, content_type) -> str`
+  — returns the MESH `messageID`. **Store it verbatim as `TEXT`.** It is a
+  32-character uppercase hex string and must not be normalised; parsing it as a
+  UUID lowercases and hyphenates it, which would no longer match the value the
+  tracking endpoint echoes back.
+- `get_message_status(*, message_id) -> dict` — returns the parsed tracking
+  JSON. Phase 4 reads `status`, `statusSuccess`, and `downloadTimestamp` from
+  it.
 
-### 2a.2 New File: `app/services/delivery/mesh/errors.py`
+### Error contract (what the Phase 3 dispatcher branches on)
 
-```
-class MeshError(Exception): ...
-class MeshTransientError(MeshError): ...
-class MeshTerminalError(MeshError): ...
-```
+- `MeshTransientError` — retryable. Transport/network failures, 5xx, and a 403
+  with an empty `errorCode` (auth/clock). Phase 3 retries with backoff, then
+  falls back to email after `MAX_MESH_ATTEMPTS`.
+- `MeshTerminalError` — not retryable. A 403 with a populated `errorCode`, any
+  other 4xx (including 417 "unregistered recipient"), and malformed or
+  unparseable success bodies. Phase 3 falls back to email immediately.
 
-The dispatcher (Phase 3) uses the exception type to decide retry vs fallback.
+The exception classes are attribute-free; their message string carries the HTTP
+status and any MESH `errorCode`. If Phase 3 or 5 wants the error code as a
+structured field (to populate `mesh_jobs.last_error_code` without parsing the
+message), add it then — a small additive change to the exceptions and the
+classification helper.
 
-### 2a.3 New Files: `tests/test_mesh_client.py` and `tests/test_mesh_client_integration.py`
+### Sandbox integration-test convention (Phases 3 and 4 follow this)
 
-The test surface is split into two files matching the existing project convention (see `docs/arch_testing.md`):
-
-**`tests/test_mesh_client.py` (unit tests, no marker, run in every CI build).** Mocks `requests.Session`. Covers:
-- Auth header construction with a fixed timestamp and injected nonce (golden test).
-- Session is constructed with `cert=(client_cert_path, client_key_path)` and `verify=ca_cert_path`.
-- Error classification: network errors → transient, 5xx → transient, 403 with empty `errorCode` → transient (clock/auth retryable), 403 with populated `errorCode` → terminal, other 4xx → terminal, malformed 202 body → terminal.
-- Successful 202 returns the 32-char hex `messageID` string. Storage type is `TEXT`, not UUID-parseable.
-
-**`tests/test_mesh_client_integration.py` (marked `@pytest.mark.integration`, module-level skip on missing `MESH_BASE_URL`).** Runs against the local sandbox.
-
-This is the first DB-free integration test in the project. It carries the integration marker so it stays out of the fast `make test` run and out of CI (the sandbox never runs in CI), but it does NOT carry the `TEST_DATABASE_URL` guardrail — it never touches Postgres. See the generalised "guard on the dependency you exercise" rule in `docs/arch_testing.md`.
-
-Sandbox credentials are read from the canonical env vars (`MESH_MAILBOX_ID`, `MESH_MAILBOX_PASSWORD`, `MESH_SHARED_KEY`, `MESH_CA_CERT_PATH`, `MESH_CLIENT_CERT_PATH`, `MESH_CLIENT_KEY_PATH`) so the same `.env.sandbox` that runs the worker also runs this test. Only `MESH_BASE_URL` controls skip-vs-run; the rest are presence-required and fail loudly if absent (a developer who sets `MESH_BASE_URL` but forgets the cert paths should get a hard error, not a silent skip).
-
-The recipient mailbox is hardcoded to `TARGET_MAILBOX` (the sandbox fixture in `sandbox/mailboxes.jsonl`).
-
-Covers:
-- Handshake against the sender mailbox returns 200.
-- Send to `TARGET_MAILBOX` returns a 32-char hex `messageID`.
-- Wrong shared key triggers `MeshTransientError` (matching the production "retry on auth failure" semantics — see error classification in 2a.1).
-- `get_message_status` returns a dict with the expected fields.
-- Non-existent client cert path → `MeshTransientError` (TLS handshake failure).
-
-Integration tests are intentionally local-only. CI does not start the sandbox (see `sandbox/README.md`).
-
-### 2a.4 No Wiring
-
-Phase 2a deliberately does not wire the client into any worker. `pdf_worker_main.py` is unchanged. `MESH_DELIVERY=1` still refuses to start.
+`tests/test_mesh_client_integration.py` is a **DB-free** integration test. It
+carries `pytestmark = pytest.mark.integration` (so it stays out of `make test`
+and self-skips in CI) but deliberately **omits the `TEST_DATABASE_URL`
+guardrail**, because it talks to the MESH sandbox over HTTP, not Postgres. It is
+guarded solely on `MESH_BASE_URL` (module-level skip if unset); the remaining
+MESH env vars are read with a direct `os.environ[...]` subscript so a
+half-configured `.env.sandbox` fails loudly. The Phase 3 and Phase 4 sandbox
+integration tests follow the same pattern. This is the one documented exception
+to the "every integration module carries the `TEST_DATABASE_URL` guardrail"
+rule in `docs/arch_testing.md`.
 
 ---
 
@@ -215,7 +225,7 @@ This phase makes `MESH_DELIVERY=1` a startable configuration. The PDF worker wri
 
 (Renamed from `0005_mesh_fhir_schema` since the FHIR builder is no longer in scope.)
 
-Creates the `mesh_jobs` table and adds `is_fallback` to `delivery_jobs`. Single transaction.
+Creates the `mesh_jobs` table and adds `is_fallback` to `delivery_jobs`. Single migration, single transaction — there is no separate practice-mailbox migration (the recipient is an env var, not a `practices` column; see Governing Decisions).
 
 #### `mesh_jobs`
 
@@ -228,7 +238,7 @@ One row per MESH-enabled submission. Created by the PDF worker (via `MeshEnqueue
 | status | TEXT | NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'provider_accepted', 'delivered', 'failed', 'fallback_triggered')) |
 | message_id | TEXT | UNIQUE — set by dispatcher when MESH returns 202 |
 | mex_localid | UUID | NOT NULL DEFAULT gen_random_uuid() — set on row creation for crash-trail correlation |
-| recipient_mailbox_id | TEXT | NOT NULL — copied from practice config at enqueue time |
+| recipient_mailbox_id | TEXT | NOT NULL — copied from the `MESH_RECIPIENT_MAILBOX_ID` env value at enqueue time |
 | attempt_count | INTEGER | NOT NULL DEFAULT 0 |
 | last_error | TEXT | |
 | last_error_code | TEXT | MESH error code from response body, if any |
@@ -241,7 +251,7 @@ One row per MESH-enabled submission. Created by the PDF worker (via `MeshEnqueue
 
 Index on `(status, next_retry_after)` for dispatcher claim queries.
 
-Note: `recipient_mailbox_id` is copied onto the row rather than re-resolved from practice config at dispatch time. This protects against a practice's MESH mailbox being reconfigured between enqueue and dispatch (rare, but cheap to defend against).
+Note: `recipient_mailbox_id` is copied onto the row rather than re-read from the env value at dispatch time. This protects against the `MESH_RECIPIENT_MAILBOX_ID` configuration changing (via redeploy) between enqueue and dispatch (rare, but cheap to defend against).
 
 #### `delivery_jobs.is_fallback`
 
@@ -258,14 +268,17 @@ Methods:
 - `claim_next_pending() -> dict | None` — `SELECT ... FOR UPDATE SKIP LOCKED` claim of the next dispatchable row, used by Phase 3.
 - `mark_sent(*, mesh_job_id, message_id)` — transitions to `sent`, records `message_id` and `sent_at`.
 - `mark_provider_accepted(*, mesh_job_id)`, `mark_delivered(*, mesh_job_id)` — used by Phase 4 tracking poller.
-- `mark_failed(*, mesh_job_id, error, error_code, next_retry_after)` — increments `attempt_count`, records error fields.
+- `mark_failed(*, mesh_job_id, error, error_code, next_retry_after) -> int` — increments `attempt_count`, records the error fields and backoff, and **leaves status as `pending`** (a transient failure is reclaimed when the backoff expires, not moved to a terminal state). Returns the new `attempt_count` so the Phase 3 dispatcher can compare against `MAX_MESH_ATTEMPTS` and decide whether to retry or fall back — the repository does not own that threshold.
 - `mark_fallback_triggered(*, mesh_job_id)` — transitions to `fallback_triggered` when the dispatcher falls through to Mailgun.
+- `get(mesh_job_id) -> dict` — returns the full row; raises `MeshJobNotFound` if absent. The mutating `mark_*` methods also raise `MeshJobNotFound` when the id does not exist.
+
+Note: the `failed` status is reserved for the Phase 4 tracking-time terminal signal (Error / `statusSuccess=FAILED`); the method that sets it is added in Phase 4. In Phase 2b only `create_job` is wired (by `MeshEnqueuer`); the claim and `mark_*` methods are built and integration-tested here but not yet called by any worker.
 
 ### 2b.3 New File: `app/services/delivery/mesh_enqueuer.py`
 
 Class `MeshEnqueuer` implementing the `DownstreamEnqueuer` Protocol from Phase 1a.
 
-Constructor takes `mesh_repo: MeshRepository` and `recipient_mailbox_id: str`. The mailbox ID is resolved once at worker startup from practice config (see 2b.5) and passed in here.
+Constructor takes `mesh_repo: MeshRepository` and `recipient_mailbox_id: str`. The mailbox ID is resolved once at the PDF worker's startup from `MESH_RECIPIENT_MAILBOX_ID` (see 2b.4) and passed in here.
 
 `enqueue(submission_id)` calls `mesh_repo.create_job(submission_id=..., recipient_mailbox_id=self._recipient_mailbox_id)`. Returns `None`.
 
@@ -273,50 +286,47 @@ Note: `MeshEnqueuer` is a thinner adapter than `DeliveryEnqueuer` because the ME
 
 ### 2b.4 `pdf_worker_main.py` Wiring
 
-Replace the current Phase 1a logic:
+Two distinct edits (not a one-for-one swap — the abort and the wiring live in different places):
+
+**Edit A — relax the abort.** The `MESH_DELIVERY=1` abort lives in `_validate_mesh_delivery()`, which runs before any app modules are imported. Remove the abort so `"1"` is accepted; keep the presence and `{"0","1"}` checks. The MESH path's own required config is validated at the point of use in `main()` (Edit B).
+
+**Edit B — wire the downstream in `main()`**, after the repositories are instantiated. The recipient is read from the env (fail-fast) on the MESH branch only; there is no practice lookup and no `app.state` (the worker is a standalone process whose practice context is the optional, cosmetic `PRACTICE_ID` used for PDF headers):
 ```python
+# imports added to the deferred-import block alongside DeliveryEnqueuer:
+#   from app.repositories.mesh_repository import MeshRepository
+#   from app.services.delivery.mesh_enqueuer import MeshEnqueuer
+
 if mesh_delivery == "1":
-    logger.critical("MESH_DELIVERY=1 is not yet supported...")
-    sys.exit(1)
-```
-with:
-```python
-if mesh_delivery == "1":
-    recipient_mailbox_id = practice_repo.get_mesh_mailbox_id(app_state.practice_id)
-    if recipient_mailbox_id is None:
-        logger.critical(
-            "MESH_DELIVERY=1 but practice %s has no MESH mailbox configured",
-            app_state.practice_id,
-        )
-        sys.exit(1)
+    recipient_mailbox_id = _require_env("MESH_RECIPIENT_MAILBOX_ID")
+    mesh_repo = MeshRepository(database_url)
     downstream = MeshEnqueuer(
         mesh_repo=mesh_repo,
         recipient_mailbox_id=recipient_mailbox_id,
     )
-    sentry_sdk.set_tag("downstream_mode", "mesh")
+    downstream_mode = "mesh"
 else:
-    downstream = DeliveryEnqueuer(...)
-    sentry_sdk.set_tag("downstream_mode", "email")
+    downstream = DeliveryEnqueuer(
+        pdf_repo=pdf_repo,
+        submission_repo=submission_repo,
+        delivery_repo=delivery_repo,
+    )
+    downstream_mode = "email"
+
+sentry_sdk.set_tag("downstream_mode", downstream_mode)
 ```
+The startup log line that previously hard-coded `downstream_mode=email` becomes path-dependent.
 
-The same branch is added in `main.py._validate_startup` to assert the practice has a mailbox configured if `MESH_DELIVERY=1`. Fail-fast invariant.
+`main.py` change is limited to removing the `MESH_DELIVERY=1` abort in its `_validate_mesh_delivery()` — no mailbox check there. The recipient is consumed only by the PDF worker (at enqueue time, via `MeshEnqueuer`), not by the web service, so the web tier validates only `MESH_DELIVERY` presence and `{"0","1"}`, consistent with how it already leaves the rest of the MESH transport set to the worker mains.
 
-### 2b.5 Practice Configuration Extension
+### 2b.5 Recipient mailbox configuration
 
-`practices` table gains a `mesh_mailbox_id` column (nullable, since not every practice has MESH provisioned).
-
-Migration: this is a separate migration (`0006_practice_mesh_mailbox.py`) to keep migration 0005 focused on the queue schema. The two migrations land together but as separate files.
-
-`PracticeRepository` gains `get_mesh_mailbox_id(practice_id) -> str | None`.
-
-The `AvailabilityEditor`/`PracticeSettingsTab` admin UI gains a "MESH Mailbox ID" field. Optional. Validated for shape (alphanumeric, NHS-mailbox-formatted) but not for actual existence — that is operator responsibility.
+There is no practice-table column, repository method, or admin UI field for the recipient mailbox. The destination is the deployment-controlled env var `MESH_RECIPIENT_MAILBOX_ID` (see Governing Decisions for the clinical-safety rationale). It is required at PDF worker startup when `MESH_DELIVERY=1` (`_require_env`) and copied onto each `mesh_jobs` row at enqueue time. Changing it requires a redeploy, not a UI action — acceptable because a practice's MESH mailbox is allocated once and essentially never changes.
 
 ### 2b.6 Tests
 
-- `tests/test_mesh_enqueuer.py` (new, unit tests, no DB). Same shape as `test_downstream_enqueuer.py`: mock the repo, assert forwarding.
-- `tests/test_mesh_repository.py` (new, integration tests). Each method tested against a real DB.
-- `tests/test_pipeline_repositories.py` updates: extend with `test_get_mesh_mailbox_id_*` tests.
-- `tests/integration/` updates: a "PDF worker writes to mesh_jobs when MESH_DELIVERY=1" test that exercises the full PDF-worker-through-`MeshEnqueuer` flow with a real DB and no dispatcher.
+- `tests/test_mesh_enqueuer.py` (new, unit tests, no DB). Same shape as `test_downstream_enqueuer.py`: mock the repo, assert forwarding of `submission_id` and the constructor's `recipient_mailbox_id`.
+- `tests/integration/test_mesh_repository.py` (new, integration tests; placed with the other DB integration tests, carries the `integration` marker and the `TEST_DATABASE_URL` guardrail). Each method tested against a real DB.
+- `tests/integration/test_pdf_worker_mesh_path.py` (new, integration test): exercises the full PDF-worker-through-`MeshEnqueuer` flow with a real DB and no dispatcher — asserts a `mesh_jobs` row is written (not a `delivery_jobs` row), the recipient is stamped, the ordering invariant holds, and re-processing is idempotent.
 
 ---
 
@@ -386,6 +396,8 @@ Existing deletion logic uses the `submission_delivery_status` VIEW (or its equiv
 
 Update the VIEW in a migration. The deletion job itself is unchanged in structure — only the eligibility logic changes.
 
+> **To reconcile when Phase 4 is planned:** the statuses above need checking against the real `delivery_jobs` lifecycle. The Mailgun email path reaches `delivered` (via the webhook router), not `sent`; `sent` is the legacy SMTP path, which Known Limitation #9 in `arch_submission.md` says is *never* auto-deleted. So a MESH-to-Mailgun fallback row becomes deletable when its `delivery_jobs` row reaches `delivered`, and the "email-only path" bullet should key off `delivered`, not `sent`. Do not implement 4.3 as written without resolving this.
+
 ### 4.4 Tests
 
 Unit and integration tests for the tracking worker covering each status transition. Integration tests for the new deletion eligibility logic via the VIEW.
@@ -417,7 +429,7 @@ Each script documents its usage in a comment header.
 
 Add a "MESH delivery" section to the deployment checklist:
 - Confirm `MESH_DELIVERY` env var is set consistently across all processes.
-- If `MESH_DELIVERY=1`: confirm all MESH env vars are populated, the practice's mailbox ID is in `practices.mesh_mailbox_id`, and the certs are in place.
+- If `MESH_DELIVERY=1`: confirm all MESH env vars are populated (including `MESH_RECIPIENT_MAILBOX_ID`) and the certs are in place. Verify both `MESH_MAILBOX_ID` (sender) and `MESH_RECIPIENT_MAILBOX_ID` (destination) against the practice's MESH provisioning record — the two are easy to transpose, and a wrong recipient misroutes referrals silently (it does not bounce).
 - Confirm the dispatcher and tracking worker processes are deployed.
 
 ---
@@ -436,10 +448,10 @@ Phase 2a:
 Phase 2b:
 - `app/services/delivery/mesh_enqueuer.py`
 - `app/repositories/mesh_repository.py`
-- `migrations/0005_mesh_schema.py`
-- `migrations/0006_practice_mesh_mailbox.py`
+- `alembic/versions/0005_mesh_schema.py`
 - `tests/test_mesh_enqueuer.py`
-- `tests/test_mesh_repository.py`
+- `tests/integration/test_mesh_repository.py`
+- `tests/integration/test_pdf_worker_mesh_path.py`
 
 Phase 3:
 - `app/services/delivery/mesh_worker.py`
@@ -457,10 +469,9 @@ Phase 5:
 ### Modified Files
 
 Phase 2b:
-- `pdf_worker_main.py` — replace the "MESH_DELIVERY=1 not yet supported" abort with the wiring described in 2b.4.
-- `main.py` — extend `_validate_mesh_delivery` to require a configured mailbox when `MESH_DELIVERY=1`.
-- `practice_repository.py` — add `get_mesh_mailbox_id`.
-- `frontend_admin-ui_src_screens_PracticeSettingsTab.tsx` — add MESH Mailbox ID field.
+- `pdf_worker_main.py` — relax the `_validate_mesh_delivery()` abort so `MESH_DELIVERY=1` is accepted, and wire the downstream branch in `main()` (MESH path requires `MESH_RECIPIENT_MAILBOX_ID` and constructs `MeshEnqueuer`; email path unchanged). See 2b.4.
+- `main.py` — remove the `MESH_DELIVERY=1` abort in `_validate_mesh_delivery()`; no mailbox check (the web tier does not deliver).
+- `app/services/delivery/downstream_enqueuer.py` — docstring cleanup: the future implementation is `MeshEnqueuer`, not the obsolete `PdsEnqueuer` (cosmetic).
 - `arch_submission.md` — add the MESH path to the pipeline diagram, document the new ordering invariant for the MESH path (`save_attachment → mesh_repo.create_job → mark_done` in the PDF worker; `mark_fallback_triggered → delivery_repo.create_job(is_fallback=True)` in the dispatcher).
 
 Phase 3:

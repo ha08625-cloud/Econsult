@@ -8,13 +8,18 @@
 
 Finalizing forms, persisting submission records, auditing, photo storage, PDF generation, attachment storage, and delivering clinical output to the practice via a three-stage async pipeline.
 
-**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `photo_repository.py`, `delivery_service.py`, `delivery_constants.py`, `pdf_formatter.py`, `pdf_repository.py`, `pdf_constants.py`, `delivery_repository.py`, `downstream_enqueuer.py`, `pdf_worker.py`, `pdf_worker_main.py`, `delivery_worker.py`, `worker_main.py`, `deletion_job.py`, `webhook_router.py`
+**Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `photo_repository.py`, `delivery_service.py`, `delivery_constants.py`, `pdf_formatter.py`, `pdf_repository.py`, `pdf_constants.py`, `delivery_repository.py`, `downstream_enqueuer.py`, `mesh_enqueuer.py`, `mesh_repository.py`, `pdf_worker.py`, `pdf_worker_main.py`, `delivery_worker.py`, `worker_main.py`, `deletion_job.py`, `webhook_router.py`
 
 ---
 
 ## Pipeline Architecture
 
-The system uses a three-stage async pipeline. The web request persists the submission and raw photos, the PDF worker generates the PDF and enqueues delivery, and the delivery worker sends the email. Each stage owns its own table and communicates only via job creation.
+The system uses a multi-stage async pipeline. The web request persists the submission and raw photos, the PDF worker generates the PDF and enqueues the next stage, and the final stage delivers the clinical output. Each stage owns its own table and communicates only via job creation.
+
+The pipeline branches at the PDF worker's enqueue step, selected at worker startup by `MESH_DELIVERY` (see "Downstream selection" below):
+
+- **Email path** (`MESH_DELIVERY=0`): PDF worker enqueues `delivery_jobs`; the delivery worker sends via Mailgun/SMTP.
+- **MESH path** (`MESH_DELIVERY=1`): PDF worker enqueues `mesh_jobs`; the MESH dispatcher (Phase 3) sends via the NHS MESH client, with automatic fallback to the email path on terminal failure. The dispatcher and tracking poller are not yet implemented — in the current codebase the MESH path produces `mesh_jobs` rows that nothing yet consumes.
 
 ```
 HTTP request (form_router.py)
@@ -25,10 +30,11 @@ HTTP request (form_router.py)
 PDF worker (pdf_worker.py)
   -> submission_photos (read)
   -> submission_attachments (UPSERT pdf bytes)
-  -> delivery_jobs (enqueue)
+  -> downstream.enqueue          # MESH_DELIVERY=0 -> delivery_jobs
+                                 # MESH_DELIVERY=1 -> mesh_jobs
   -> pdf_jobs (mark done)
 
-Delivery worker (delivery_worker.py)
+[Email path] Delivery worker (delivery_worker.py)
   -> delivery_jobs (claim)
   -> submission_attachments (read pdf bytes)
   -> email send (Mailgun HTTP or SMTP)
@@ -38,10 +44,19 @@ Delivery worker (delivery_worker.py)
 Mailgun webhook (webhook_router.py)
   -> delivery_jobs (mark_delivered or mark_provider_failed, append_provider_event)
 
+[MESH path] MESH dispatcher + tracking poller (Phase 3/4 — NOT YET IMPLEMENTED)
+  -> mesh_jobs (claim)
+  -> submission_attachments (read pdf bytes)
+  -> MESH send via MeshClient; on terminal failure -> delivery_jobs (is_fallback=TRUE)
+  -> mesh_jobs (mark_sent / mark_fallback_triggered)
+  -> mesh_jobs (mark_provider_accepted / mark_delivered — tracking poll)
+
 Deletion cron (deletion_job.py)
   -> submission_photos (delete where delivered)
   -> submission_attachments (delete where delivered)
 ```
+
+> Deletion currently keys off `delivery_jobs.status = 'delivered'` only. Extending it to also delete on `mesh_jobs.status = 'delivered'` is a Phase 4 concern; until then, MESH-delivered submissions are not yet covered by the deletion job.
 
 ---
 
@@ -65,9 +80,16 @@ Within the PDF worker, operations on a single job execute in this order:
 2. `downstream.enqueue` (idempotent — underlying repos use ON CONFLICT DO NOTHING)
 3. `pdf_repo.mark_done`
 
-A downstream queue row can only exist after `save_attachment` has completed successfully. This guarantees the next worker (the delivery worker on the email path, or the PDS worker on the future MESH path) will always find an attachment when it claims its job. There is no need to handle a missing attachment as a normal case in any downstream worker — if the attachment is absent, the invariant has been broken and the error should propagate loudly.
+A downstream queue row can only exist after `save_attachment` has completed successfully. This guarantees the next worker (the delivery worker on the email path, or the MESH dispatcher on the MESH path) will always find an attachment when it claims its job. There is no need to handle a missing attachment as a normal case in any downstream worker — if the attachment is absent, the invariant has been broken and the error should propagate loudly.
 
-The active `downstream` adapter is selected at worker startup by `pdf_worker_main.py` based on `MESH_DELIVERY`. In the email-only configuration, the adapter is `DeliveryEnqueuer`, which dispatches to `delivery_repo.create_job`. The PDF worker itself is downstream-agnostic.
+### Downstream selection
+
+The active `downstream` adapter is selected at worker startup by `pdf_worker_main.py` based on `MESH_DELIVERY` (validated to be exactly `"0"` or `"1"`; no defaulting, per the Fail-Fast Configuration invariant):
+
+- `"0"` -> `DeliveryEnqueuer` -> `delivery_repo.create_job` -> `delivery_jobs`.
+- `"1"` -> `MeshEnqueuer` -> `mesh_repo.create_job` -> `mesh_jobs`. On this path `MESH_RECIPIENT_MAILBOX_ID` is a required env var; a missing value aborts worker startup.
+
+Both adapters satisfy the `DownstreamEnqueuer` Protocol (`enqueue(*, submission_id)`) and both back onto an idempotent `create_job` (`ON CONFLICT (submission_id) DO NOTHING`). The PDF worker itself is downstream-agnostic and unchanged by the choice. `main.py` validates the presence and shape of `MESH_DELIVERY` but leaves MESH transport configuration to the worker entry points, which are the processes that actually deliver.
 
 **Crash recovery at each step:**
 
@@ -116,11 +138,30 @@ The `submission_id` column has a UNIQUE constraint. `create_job` uses ON CONFLIC
 
 `provider_events` (JSONB, append-only) stores the raw payloads of all received Mailgun webhook events for a lossless audit trail.
 
+`is_fallback` (BOOLEAN, default FALSE) marks a row created by the MESH dispatcher (Phase 3) when it abandons MESH and falls through to the email path. The normal PDF-worker email path leaves it FALSE. Added in Migration 0005; not yet written by any code until Phase 3.
+
+### `mesh_jobs`
+
+One row per submission on the MESH path. Created by the PDF worker via `MeshEnqueuer` as the second-to-last step of processing (the `mesh_jobs` analogue of `delivery_jobs`). Consumed by the MESH dispatcher (Phase 3) and tracking poller (Phase 4), neither of which is implemented yet — in the current codebase rows are produced but not consumed.
+
+Mirrors the `delivery_jobs` queue shape: `submission_id` is UNIQUE so `create_job` is idempotent under `ON CONFLICT DO NOTHING`; a `(status, next_retry_after)` index supports the same SKIP LOCKED claim pattern; attempt/error columns support backoff.
+
+Status values: `pending`, `sent`, `provider_accepted`, `delivered`, `failed`, `fallback_triggered`. High-level lifecycle (see `mesh_repository.py` for the per-method detail):
+
+- `pending -> sent` — dispatcher, on MESH 202.
+- `pending -> fallback_triggered` — dispatcher, on terminal MESH failure or after transient attempts are exhausted; immediately followed by a `delivery_jobs` row with `is_fallback=TRUE`.
+- `sent -> provider_accepted -> delivered` — tracking poller, as the recipient downloads then acknowledges.
+- `failed` — reserved for a tracking-time terminal signal (set by a Phase 4 method).
+
+Two columns are specific to the MESH protocol and are read by the dispatcher, not set at enqueue time: `mex_localid` (generated at row creation, sent as the per-message `Mex-LocalID` for crash-trail correlation) and `message_id` (the 32-char uppercase hex MESH messageID, stored verbatim as TEXT and never normalised to a UUID; UNIQUE, NULL until sent).
+
+**Design decision — recipient mailbox as deployment config, not per-practice data.** `recipient_mailbox_id` is copied onto each row at enqueue time from the `MESH_RECIPIENT_MAILBOX_ID` env var (resolved once at worker startup). It is deliberately not stored per-practice in the database or editable via the admin UI. A wrong recipient does not bounce like a mistyped email — it silently misroutes a clinical referral to the wrong NHS mailbox or is rejected as unregistered — and the only feasible validation is shape, not existence. Putting a write-once, clinically-sensitive routing value behind deployment control and `_require_env` fail-fast is the more defensible posture; copying it onto the row at enqueue means a later config change cannot misroute an already-queued referral. The cost (changing it needs a redeploy rather than a UI click) is negligible because a practice's MESH mailbox is allocated once and essentially never changes.
+
 ---
 
 ## Job Claiming (SKIP LOCKED)
 
-Both `PDFRepository.claim_next_pending` and `DeliveryRepository.claim_next_pending` use `SELECT ... FOR UPDATE SKIP LOCKED`. The lock is held only for the duration of the claim transaction, which immediately sets `next_retry_after` to 10 minutes in the future. This moves the job outside the eligible window before the lock is released, preventing a second worker from claiming the same job without requiring a `status = processing` column or a long-held lock.
+Both `PDFRepository.claim_next_pending` and `DeliveryRepository.claim_next_pending` use `SELECT ... FOR UPDATE SKIP LOCKED`. The lock is held only for the duration of the claim transaction, which immediately sets `next_retry_after` to 10 minutes in the future. This moves the job outside the eligible window before the lock is released, preventing a second worker from claiming the same job without requiring a `status = processing` column or a long-held lock. `MeshRepository.claim_next_pending` (Phase 3 consumer) follows the identical pattern.
 
 `claim_next_pending` filters exclusively on `status = 'pending'`. Jobs in `provider_accepted`, `delivered`, `sent`, or `failed` status are never re-claimed. A `provider_accepted` job must not be re-processed by the delivery worker — its status transitions exclusively via the webhook router.
 
