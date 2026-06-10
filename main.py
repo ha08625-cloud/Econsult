@@ -207,11 +207,6 @@ def _validate_mesh_delivery() -> None:
             f"MESH_DELIVERY must be exactly '0' or '1', got: {value!r}. "
             "No other values (including truthy strings) are accepted."
         )
-    if value == "1":
-        raise RuntimeError(
-            "MESH_DELIVERY=1 is not yet supported. Phase 1a only "
-            "implements the email path. Set MESH_DELIVERY=0."
-        )
 
 
 # ---------------------------------------------------------------------------

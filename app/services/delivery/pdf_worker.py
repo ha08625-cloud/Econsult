@@ -21,7 +21,7 @@ Operation ordering invariant (must not be reordered):
 
 A downstream queue row can only exist after save_attachment has completed.
 This guarantees the next worker (delivery worker on the email path, or
-the PDS worker on the future MESH path) will always find an attachment
+the MESH worker on the future MESH path) will always find an attachment
 when it claims its job.
 
 The active downstream is selected at worker startup by pdf_worker_main.py.

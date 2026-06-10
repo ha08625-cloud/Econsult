@@ -6,6 +6,7 @@ Has no connection to the FastAPI application lifecycle.
 
 Responsibilities:
 - Validate required environment variables.
+- Select the downstream queue (email vs MESH) based on MESH_DELIVERY.
 - Instantiate repositories.
 - Look up the practice name from the database for use in PDF headers.
 - Log startup configuration.
@@ -23,10 +24,20 @@ Does not serve HTTP. Does not seed data.
 Environment variables:
     DATABASE_URL                     -- Postgres connection string (required)
     PDF_WORKER_POLL_INTERVAL_SECONDS -- seconds to sleep when queue is empty (required)
-    MESH_DELIVERY                    -- "0" or "1" (required). "1" is reserved for
-                                        the MESH path and is not yet supported in
-                                        Phase 1a; this entry point will refuse to
-                                        start if "1" is set. No defaulting.
+    MESH_DELIVERY                    -- "0" or "1" (required). "0" selects the
+                                        email path (DeliveryEnqueuer). "1"
+                                        selects the MESH path (MeshEnqueuer).
+                                        No defaulting.
+    MESH_RECIPIENT_MAILBOX_ID        -- required only when MESH_DELIVERY=1. The
+                                        destination practice mailbox, a
+                                        deployment-wide value copied onto each
+                                        mesh_jobs row at enqueue time. A wrong
+                                        value misroutes referrals silently, so
+                                        it is deployment-controlled and
+                                        fail-fast, never set via the admin UI.
+    PRACTICE_ID                      -- optional. Used only to look up the
+                                        practice name for PDF headers; the MESH
+                                        path does not depend on it.
 """
 
 import logging
@@ -61,9 +72,9 @@ def _validate_mesh_delivery() -> str:
     a misconfigured deployment must abort at startup per the Fail-Fast
     Configuration project invariant (see architecture.md).
 
-    In Phase 1a only "0" (email path) is implemented. "1" is reserved
-    for Phase 1b onwards and causes startup to abort with a clear
-    message.
+    "0" selects the email path; "1" selects the MESH path. The MESH path's
+    own required configuration (MESH_RECIPIENT_MAILBOX_ID) is validated in
+    main() at the point of use, alongside the rest of the MESH wiring.
 
     Returns the validated value as a string. Exits the process on any
     invalid value.
@@ -82,19 +93,13 @@ def _validate_mesh_delivery() -> str:
             value,
         )
         sys.exit(1)
-    if value == "1":
-        logger.critical(
-            "MESH_DELIVERY=1 is not yet supported. Phase 1a only "
-            "implements the email path. Set MESH_DELIVERY=0."
-        )
-        sys.exit(1)
     return value
 
 
 def main() -> None:
     database_url = _require_env("DATABASE_URL")
     poll_interval_raw = _require_env("PDF_WORKER_POLL_INTERVAL_SECONDS")
-    mesh_delivery = _validate_mesh_delivery()  # exits on invalid; only "0" reached here in Phase 1a
+    mesh_delivery = _validate_mesh_delivery()  # exits on invalid; "0" or "1" reached here
 
     try:
         poll_interval = int(poll_interval_raw)
@@ -121,7 +126,9 @@ def main() -> None:
     from app.repositories.attachment_repository import AttachmentRepository
     from app.repositories.delivery_repository import DeliveryRepository
     from app.repositories.practice_repository import PracticeRepository
+    from app.repositories.mesh_repository import MeshRepository
     from app.services.delivery.downstream_enqueuer import DeliveryEnqueuer
+    from app.services.delivery.mesh_enqueuer import MeshEnqueuer
     from app.services.delivery.pdf_worker import run_worker
 
     pdf_repo = PDFRepository(database_url)
@@ -133,7 +140,8 @@ def main() -> None:
 
     # Look up practice name for PDF headers. Failures here are non-fatal —
     # the worker will run without a practice name in the PDF header rather
-    # than refuse to start over a cosmetic field.
+    # than refuse to start over a cosmetic field. This is independent of the
+    # delivery path: the MESH recipient is configured via env, not PRACTICE_ID.
     practice_name = None
     practice_id = os.environ.get("PRACTICE_ID")
     if practice_id:
@@ -150,22 +158,35 @@ def main() -> None:
             "PDF worker: PRACTICE_ID not set — PDFs will omit the practice name."
         )
 
+    # --- Downstream selection ---
+    # The PDF worker is downstream-agnostic; the adapter is chosen here based on
+    # MESH_DELIVERY. On the MESH path the recipient mailbox is a required,
+    # deployment-controlled env var (fail-fast); a missing value aborts startup.
+    if mesh_delivery == "1":
+        recipient_mailbox_id = _require_env("MESH_RECIPIENT_MAILBOX_ID")
+        mesh_repo = MeshRepository(database_url)
+        downstream = MeshEnqueuer(
+            mesh_repo=mesh_repo,
+            recipient_mailbox_id=recipient_mailbox_id,
+        )
+        downstream_mode = "mesh"
+    else:
+        downstream = DeliveryEnqueuer(
+            pdf_repo=pdf_repo,
+            submission_repo=submission_repo,
+            delivery_repo=delivery_repo,
+        )
+        downstream_mode = "email"
+
+    sentry_sdk.set_tag("downstream_mode", downstream_mode)
+
     logger.info(
-        "PDF worker configuration: poll_interval=%ds practice_name=%r mesh_delivery=%s downstream_mode=email",
+        "PDF worker configuration: poll_interval=%ds practice_name=%r "
+        "mesh_delivery=%s downstream_mode=%s",
         poll_interval,
         practice_name,
         mesh_delivery,
-    )
-
-    # Phase 1a: only the email path is implemented. _validate_mesh_delivery has
-    # already exited the process if MESH_DELIVERY=1, so by this point we are
-    # always wiring the email path.
-    sentry_sdk.set_tag("downstream_mode", "email")
-
-    downstream = DeliveryEnqueuer(
-        pdf_repo=pdf_repo,
-        submission_repo=submission_repo,
-        delivery_repo=delivery_repo,
+        downstream_mode,
     )
 
     run_worker(
