@@ -767,3 +767,76 @@ class TestDeliveryRepositoryGet:
         except DeliveryJobNotFound:
             raised = True
         assert raised, "Expected DeliveryJobNotFound was not raised"
+
+
+# ===========================================================================
+# DeliveryRepository.create_job is_fallback (Phase 3 — MESH fallback path)
+# ===========================================================================
+
+class TestDeliveryRepositoryIsFallback:
+    def test_create_job_defaults_is_fallback_false(self):
+        """The PDF worker's email path never sets the flag."""
+        sid = _uid()
+        repo = DeliveryRepository(DATABASE_URL)
+        try:
+            _create_submission(sid)
+            job_id = repo.create_job(
+                submission_id=sid,
+                to_email="gp@example.com",
+                condition_label="Urinary Tract Infection",
+                submitted_at=datetime.now(timezone.utc),
+            )
+            row = _read_delivery_job(job_id)
+            assert row["is_fallback"] is False
+        finally:
+            _cleanup(sid)
+
+    def test_create_job_persists_is_fallback_true(self):
+        """The MESH dispatcher sets the flag when falling back to email."""
+        sid = _uid()
+        repo = DeliveryRepository(DATABASE_URL)
+        try:
+            _create_submission(sid)
+            job_id = repo.create_job(
+                submission_id=sid,
+                to_email="gp@example.com",
+                condition_label="Urinary Tract Infection",
+                submitted_at=datetime.now(timezone.utc),
+                is_fallback=True,
+            )
+            row = _read_delivery_job(job_id)
+            assert row["is_fallback"] is True
+        finally:
+            _cleanup(sid)
+
+    def test_conflict_path_leaves_existing_is_fallback_untouched(self):
+        """
+        ON CONFLICT DO NOTHING means first write wins. The dispatcher's
+        orphaned-fallback recovery sweep relies on this: re-calling
+        create_job for an already-satisfied fallback must not mutate the
+        existing row.
+        """
+        sid = _uid()
+        repo = DeliveryRepository(DATABASE_URL)
+        try:
+            _create_submission(sid)
+            first_id = repo.create_job(
+                submission_id=sid,
+                to_email="gp@example.com",
+                condition_label="Urinary Tract Infection",
+                submitted_at=datetime.now(timezone.utc),
+                is_fallback=True,
+            )
+            second_id = repo.create_job(
+                submission_id=sid,
+                to_email="other@example.com",
+                condition_label="Urinary Tract Infection",
+                submitted_at=datetime.now(timezone.utc),
+                is_fallback=False,
+            )
+            assert second_id == first_id
+            row = _read_delivery_job(first_id)
+            assert row["is_fallback"] is True
+            assert row["to_email"] == "gp@example.com"
+        finally:
+            _cleanup(sid)

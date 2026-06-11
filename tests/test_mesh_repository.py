@@ -380,3 +380,84 @@ def test_get_returns_full_row_and_raises_when_absent():
             repo.get(str(uuid4()))
     finally:
         _cleanup(sid)
+
+
+# ---------------------------------------------------------------------------
+# list_orphaned_fallbacks (Phase 3 — dispatcher recovery sweep)
+# ---------------------------------------------------------------------------
+
+def _insert_delivery_job(sid: str) -> None:
+    """
+    Insert a minimal delivery_jobs row directly. DeliveryRepository is
+    deliberately not imported here — this file owns mesh_jobs coverage and
+    only needs the FK sibling row to exist.
+    """
+    with get_conn(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO delivery_jobs
+                    (submission_id, to_email, condition_label, submitted_at)
+                VALUES (%s, %s, %s, NOW())
+                """,
+                (sid, "gp@example.com", "Urinary Tract Infection"),
+            )
+
+
+def _delete_delivery_job(sid: str) -> None:
+    with get_conn(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,)
+            )
+
+
+def test_list_orphaned_fallbacks_finds_row_without_delivery_job():
+    """
+    A fallback_triggered mesh_job with no delivery_jobs row is the crash
+    artefact the sweep exists to recover.
+    """
+    repo = MeshRepository(DATABASE_URL)
+    sid = _uid()
+    try:
+        _create_submission(sid)
+        job_id = repo.create_job(submission_id=sid, recipient_mailbox_id=RECIPIENT)
+        repo.mark_fallback_triggered(mesh_job_id=job_id)
+
+        orphans = repo.list_orphaned_fallbacks()
+        matching = [o for o in orphans if str(o["submission_id"]) == sid]
+        assert len(matching) == 1
+        assert str(matching[0]["id"]) == job_id
+    finally:
+        _cleanup(sid)
+
+
+def test_list_orphaned_fallbacks_ignores_satisfied_fallback():
+    """A fallback_triggered row WITH a delivery_jobs row is not an orphan."""
+    repo = MeshRepository(DATABASE_URL)
+    sid = _uid()
+    try:
+        _create_submission(sid)
+        job_id = repo.create_job(submission_id=sid, recipient_mailbox_id=RECIPIENT)
+        repo.mark_fallback_triggered(mesh_job_id=job_id)
+        _insert_delivery_job(sid)
+
+        orphans = repo.list_orphaned_fallbacks()
+        assert all(str(o["submission_id"]) != sid for o in orphans)
+    finally:
+        _delete_delivery_job(sid)
+        _cleanup(sid)
+
+
+def test_list_orphaned_fallbacks_ignores_other_statuses():
+    """A pending row with no delivery_jobs row is queued work, not an orphan."""
+    repo = MeshRepository(DATABASE_URL)
+    sid = _uid()
+    try:
+        _create_submission(sid)
+        repo.create_job(submission_id=sid, recipient_mailbox_id=RECIPIENT)
+
+        orphans = repo.list_orphaned_fallbacks()
+        assert all(str(o["submission_id"]) != sid for o in orphans)
+    finally:
+        _cleanup(sid)

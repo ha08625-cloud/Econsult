@@ -546,3 +546,32 @@ def test_attachment_delete_idempotent():
         att_repo.delete_attachment(sid)  # must not raise
     finally:
         _cleanup_submission(sid)
+
+
+# ---------------------------------------------------------------------------
+# SubmissionRepository.get_delivery_metadata (Phase 3 — MESH fallback path)
+# ---------------------------------------------------------------------------
+
+def test_get_delivery_metadata_returns_only_the_two_fields():
+    """
+    The MESH dispatcher uses this narrow method when falling back to email.
+    It must return exactly condition_label and submitted_at — nothing else,
+    and in particular no clinical JSON (the dispatcher must never hold
+    clinical content for a fallback enqueue).
+    """
+    repo = _make_submission_repo()
+    sid = _uid()
+    try:
+        _create_test_submission(repo, sid)
+        meta = repo.get_delivery_metadata(sid)
+        assert set(meta.keys()) == {"condition_label", "submitted_at"}
+        assert meta["condition_label"] == "Urinary Tract Infection"
+        assert meta["submitted_at"] is not None
+    finally:
+        _cleanup_submission(sid)
+
+
+def test_get_delivery_metadata_raises_for_unknown_submission():
+    repo = _make_submission_repo()
+    with pytest.raises(SubmissionNotFound):
+        repo.get_delivery_metadata("nonexistent_submission_xyz")
