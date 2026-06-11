@@ -13,7 +13,6 @@
 - `deletion_job.py` — Nightly cron one-shot script.
 - `.env` — Local environment variables, not committed.
 - `Dockerfile` — Container build definition (Vite + Python).
-- `build.sh` — Build script used by the container.
 - `railway.toml` — Railway deployment config.
 - `requirements.txt` — Python dependencies.
 - `alembic.ini` — Alembic configuration.
@@ -24,6 +23,7 @@
 - `scripts/` — One-time management commands for deployment and administration.
   - `create_admin_user.py` — Inserts an admin user before first boot. Generates a one-time password setup token and prints the setup URL. Accepts `--create-practice` flag for CI use.
 - `docs/` — Architecture documents and operational guides.
+  - `README.md` — Introductory doc for onboarding new developers.
   - `deployment_checklist.md` — Step-by-step checklist for deploying to a new environment.
 - `sandbox/` — Local-dev MESH sandbox. Never deployed, never run in CI. See `sandbox/README.md`.
   - `docker-compose.yml` — Two-service stack: `mesh_sandbox` (NHSDigital/mesh-sandbox image) behind an `nginx` mTLS-terminating proxy. Internal bridge network; only nginx exposes a host port.
