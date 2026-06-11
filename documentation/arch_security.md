@@ -62,7 +62,7 @@ The system refuses to run in an insecure or partially configured state.
 - **Startup Validation.** The application entry point (`main.py`) validates the presence of all required security, database, and email environment variables before accepting any HTTP requests. Missing critical variables cause the process to abort rather than silently degrade.
 - **Webhook Signing Key Enforcement.** When `MAILGUN_API_KEY` is set, `MAILGUN_SIGNING_KEY` is also required at startup.
 - **The Two-Database Rule.** A hardcoded guardrail at the top of every integration test module prevents tests from running unless a dedicated `TEST_DATABASE_URL` environment variable is set.
-- **Network Boundaries.** The application is a single-container deployment hosted on Railway. The database is isolated within the cloud provider's internal network.
+- **Network Boundaries.** The application runs as four Railway services from a single Docker image (see docs/arch_infrastructure.md, Process Topology).  Containers run as an unprivileged user (appuser); the application filesystem is root-owned and effectively read-only to the process.
 - **Third-Party Observability (Sentry) — PII Lockdown.** Sentry initialisation enforces strict data minimisation controls:
   - **Backend (`telemetry.py`):** `send_default_pii=False`, `request_bodies="never"`, `with_locals=False`.
   - **Frontend (`main.tsx`):** Performance tracing disabled. `BrowserTracing`, `Breadcrumbs`, `GlobalHandlers`, `LinkedErrors`, `HttpContext`, and `Dedupe` integrations explicitly removed. A `beforeBreadcrumb` hook drops request body size for POST requests to `/form/update` and `/form/finish`. The `ErrorBoundary`'s `beforeCapture` hook strips React component props and state.

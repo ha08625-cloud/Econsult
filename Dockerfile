@@ -3,7 +3,7 @@ FROM node:22-slim AS frontend-build
 
 WORKDIR /frontend
 COPY frontend/package*.json ./
-RUN npm install
+RUN npm ci
 COPY frontend/ ./
 # Copy shared JSON constants that are imported by the frontend build.
 # consultation_outcomes.json lives at app/core/ alongside the Python module
@@ -53,5 +53,15 @@ COPY data/ ./data/
 
 # Copy built frontend from build stage
 COPY --from=frontend-build /frontend/dist ./frontend/dist
+
+# Run as an unprivileged user. The application never writes to the container
+# filesystem (PDFs and photos are stored in Postgres, logs go to stdout), so
+# /app can remain root-owned and read-only to this user. A home directory is
+# created so any library that expects a writable $HOME has one. Port 8000 is
+# unprivileged, so no special capability is needed. All four processes (web,
+# delivery worker, PDF worker, deletion job) share this image and therefore
+# all run as this user.
+RUN useradd --system --create-home appuser
+USER appuser
 
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
