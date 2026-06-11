@@ -271,14 +271,141 @@ should be correct for downstream consumers.
 
 ### Workflow IDs
 
-`[NHS docs]` `Mex-WorkflowID` is a free-text string in the protocol but
-must be a registered, agreed-with-recipient workflow ID in production. For
-ITK3 document transfer it identifies the message as containing a FHIR
-ITK3 Bundle.
+`[NHS docs]` `Mex-WorkflowID` is a free-text field at the protocol level but
+must be a registered, agreed-with-recipient value in production. A MESH
+mailbox must be explicitly configured to send or receive each workflow ID
+(rules of the form "Mailbox X is allowed to Send/Receive messages with
+workflow ID Y"). Messages sent with a workflow ID the recipient mailbox is
+not configured for are rejected with a 417 (unregistered recipient).
 
-The sandbox accepts any string. We used `TEST_WORKFLOW` during
-investigation. Production value is `pending` and must be obtained from
-NHS Digital before go-live.
+`[NHS docs]` NHS England publishes an official spreadsheet of all registered
+workflow groups and IDs. The version reviewed here is dated May 2026. Each
+workflow group is a named use case; each group contains one or more
+initiator IDs (sender) and, where acknowledgement is expected, responder
+IDs (receiver, conventionally suffixed `_ACK`).
+
+#### GP Federation group (group 77)
+
+This is the group covering consultation reports sent to GP practices.
+Relevant IDs:
+
+| Workflow ID | Spec version | Purpose |
+|---|---|---|
+| `GPFED_CONSULT_REPORT` | GP Connect Send Document v1.x | Consultation report — ITK3/FHIR payload required |
+| `GPFED_CONSULT_REPORT_ACK` | v1.x | Acknowledgement of the above |
+| `GPCONNECT_SEND_DOCUMENT` | GP Connect Send Document v2.x | Document send (incl. consultation report) — ITK3/FHIR payload required |
+| `GPCONNECT_SEND_DOCUMENT_ACK` | v2.x | Acknowledgement of the above |
+
+The group also contains `GPCONNECT_UPDATE_RECORD` (pharmacy update to GP
+record), which is unrelated to consultation reports.
+
+`[NHS docs]` The two consultation-report initiator IDs are the same
+capability at different spec versions, not different payload formats:
+
+- GP Connect Send Document v1.x uses `GPFED_CONSULT_REPORT`.
+- GP Connect Send Document v2.x (public beta) renamed the workflow IDs:
+  all documents use `GPCONNECT_SEND_DOCUMENT`, and
+  `GPFED_CONSULT_REPORT_ACK` was changed to `GPCONNECT_SEND_DOCUMENT_ACK`.
+  Senders that have not updated to v2.0.0 continue to use the old IDs.
+- Both versions require the message to be a FHIR Message constructed to
+  the ITK3 standard, delivered over MESH. There is no version of GP
+  Connect Send Document that accepts a raw (non-FHIR) document payload.
+- The v2 spec states the NHS is aiming to deprecate the
+  `GPFED_CONSULT_REPORT*` workflow IDs (stated target: 2024). The May 2026
+  registered-workflows spreadsheet nonetheless still lists them outside the
+  deprecated group. Both facts are kept per this document's conventions:
+  the v1 IDs remain in active use for backwards compatibility, but new
+  integrations should target the v2 IDs.
+- Receiving solutions are required to support backwards compatibility for
+  GP Connect Send Document v1.3.1/v1.3.2, i.e. a consultation summary may
+  arrive at a practice under either workflow ID, and practices currently
+  need to support both.
+
+`[NHS docs]` The v1 spec note on scope: the only use case for messages sent
+with a `GPFED_CONSULT_REPORT*` workflow ID is a summary of a consultation
+that took place outside the citizen's regular GP practice. Under the v2 ID,
+the payload could be any document type (including a consultation summary);
+v2 distinguishes document types by SNOMED code rather than by workflow ID.
+
+#### No registered workflow ID for raw PDF delivery
+
+`[NHS docs]` The registered-workflows spreadsheet contains no active,
+non-deprecated workflow ID for delivering a raw (non-ITK3) PDF to a GP
+practice's clinical system. `DISCH_KET` (Discharge Kettering XML) was the
+pre-GP-Connect document-delivery route; it appears in the "Deprecated
+WorkflowIDs" group in the May 2026 spreadsheet and must not be used for new
+integrations. Raw binary delivery over MESH remains possible at the
+transport level, but only under a locally agreed workflow ID that the
+recipient mailbox has been explicitly configured for — i.e. a bespoke
+arrangement with the receiving practice, outside any published NHS
+specification. How (or whether) the practice's clinical system (EMIS,
+SystmOne) surfaces such a message to clinical staff is determined by the
+practice's local MESH client configuration and is not publicly documented.
+Reports exist in NHS developer community forums of raw PDFs arriving in a
+practice's MESH mailbox without becoming visible to the GP — transport
+success without clinical-system processing. Transport-level
+acknowledgement (the MESH tracking endpoint reporting "Acknowledged") is
+therefore not evidence that a document was processed or seen at the
+clinical layer.
+
+#### GP Connect Send Document addressing is patient-based
+
+`[NHS docs]` Under GP Connect Send Document, the `Mex-To` header is not a
+plain destination mailbox ID. It is populated via the MESH endpoint lookup
+convention:
+
+```
+GPPROVIDER_<NhsNumber>_<DateOfBirth>_<Surname>
+```
+
+with `_` as the delimiter and date of birth in `YYYYMMDD` format. The
+message is routed to the patient's registered practice. A spec-conformant
+GP Connect Send Document integration therefore requires the patient's NHS
+number, date of birth, and surname at send time. (The MESH Client
+equivalent populates `To_DTS` in the `.ctl` file with the same pattern.)
+
+`[unverified — industry practice]` Patient-facing online consultation
+products generally do not require patients to enter their NHS number;
+suppliers obtain it server-side by tracing via a PDS demographics search
+(name, date of birth, postcode) after submission. Adopting GP Connect Send
+Document without mandating NHS number entry would therefore imply a PDS
+trace step. Not independently verified against any supplier's
+documentation.
+
+#### Endpoint lookup service
+
+`[NHS docs]` NHS provides an endpoint lookup API that can verify whether a
+specific practice's MESH mailbox is configured to receive messages with a
+given workflow ID:
+
+```
+GET https://mesh-sync.spineservices.nhs.uk/messageexchange/endpointlookup/<ODS_code>/<workflow_id>
+```
+
+This requires both the ODS code and the workflow ID as inputs. It is a
+verification tool, not a discovery tool: it cannot enumerate the workflow
+IDs a mailbox supports without a candidate value to test against. If the
+lookup returns a mailbox, the practice is configured to receive that
+message type. If it returns nothing, the workflow ID is not configured on
+that mailbox and the practice's IT team must be contacted.
+
+`[NHS docs]` GP practices are an exception to the usual rule of one
+workflow group per mailbox. Most GP practice mailboxes are configured for
+multiple workflow groups. It is therefore likely (though not guaranteed)
+that a practice receiving electronic consultation reports has
+`GPFED_CONSULT_REPORT` (and/or `GPCONNECT_SEND_DOCUMENT`) configured. This
+should be verified via the endpoint lookup before the first production
+send to any new practice.
+
+#### Sandbox behaviour
+
+`[sandbox v1.0.54]` The sandbox accepts any string as `Mex-WorkflowID` and
+performs no validation. `TEST_WORKFLOW` was used during initial
+investigation. Subsequent testing should use whichever workflow ID is
+agreed for production (undecided at the time of writing — depends on
+whether the first practice accepts a locally agreed raw-document workflow
+ID or requires GP Connect Send Document) so that `.env.sandbox` mirrors
+production conditions.
 
 ### Useful undocumented observations
 

@@ -4,6 +4,8 @@
 
 This document supersedes a previous version that included a PDS lookup phase. PDS lookup has been removed from the plan entirely; the prior version is retrievable from git history if needed. The receiving GP practice is determined by deployment configuration (the practice owns the deployment that serves the form), not by patient-side lookup. The NHS number, when supplied by the patient, is treated as opaque data attached to the PDF for the GP's reference. It is not validated against PDS.
 
+**Revision (June 2026):** workflow ID research (see `docs/nhs_integration_reference.md`, "Workflow IDs") established that there is no registered, non-deprecated MESH workflow ID for raw PDF delivery to a GP practice's clinical system; the two active consultation-report workflow IDs both belong to GP Connect Send Document and require an ITK3/FHIR payload. The raw-PDF payload built by this plan is therefore **provisional**, contingent on a locally agreed workflow arrangement with the first practice. The dispatcher is insulated from this question via the `MeshPayloadBuilder` seam (Phase 3). Two parallel tickets hedge the alternative outcomes: a dormant PDS client library and a GP Connect Send Document spike + payload builder (see "Out of Scope" below). Production enablement is gated on the practice/NHS Digital answer — see "Production enablement gates" under Phase Sequencing.
+
 ## Sandbox
 
 A local MESH sandbox is installed in `sandbox/` (NHSDigital/mesh-sandbox v1.0.54, run via `make sandbox-up`). It can be used to clarify protocol-level questions as the plan is refined further. See `sandbox/README.md` for usage.
@@ -30,13 +32,16 @@ PDS sandbox investigation (since the prior round) confirmed that PDS lookup adds
   2. **Mailgun HTTPS API** — secondary path. Used as fallback on terminal MESH failure.
   3. **SMTP** — break-glass legacy path only. Activated manually when both MESH and Mailgun are unavailable. Submissions delivered via SMTP are retained, not deleted, so operators can audit them once primary paths recover.
 - The existing `pdf_worker.py` is unchanged in its core logic from Phase 1a. The polymorphic seam (`DownstreamEnqueuer`) gains a second implementation: `MeshEnqueuer`, which writes to `mesh_jobs` rather than `delivery_jobs`. The PDF worker itself remains downstream-agnostic.
-- Sequential pipeline: Router → PDF → MESH (with Mailgun fallback on terminal MESH failure). No PDS hop. No FHIR build hop in the default plan (see "Deferred: FHIR/ITK3 envelope" below).
+- Sequential pipeline: Router → PDF → MESH (with Mailgun fallback on terminal MESH failure). No PDS hop. No FHIR build hop in the default plan (see "Payload status: provisional" below).
+- **Payload construction is behind a seam.** The dispatcher builds its payload via the `MeshPayloadBuilder` interface (Phase 3). `RawPdfPayloadBuilder` is the only implementation this plan ships; `GpConnectSendDocumentPayloadBuilder` is a separate ticket. The dispatcher itself is payload-agnostic: queue handling, retry, fallback, and tracking are unchanged whichever builder is wired.
+- **Mailgun fallback emails are identical to email-path emails** (same subject, same body, same attachment). `is_fallback` is operational metadata only; no code in `delivery_worker.py` or `delivery_service.py` reads it. (Resolves former Open Item 4.)
 - All workers are separate processes for clarity and clean log separation.
 - **Delivery confirmation requires recipient acknowledgement.** The tracking poller transitions `mesh_jobs.status` to `delivered` only when the tracking record shows `status == "Acknowledged" AND statusSuccess == "SUCCESS"`. Clinical referrals are not deleted until we have positive proof of recipient processing.
 
 ## Accepted Limitations
 
 - **Duplicate-send on dispatcher crash.** If the dispatcher POSTs to Spine, Spine accepts (202), but the dispatcher crashes before committing the returned `message_id` to `mesh_jobs`, the next dispatcher run will resend the same submission. The GP practice receives two copies. This is documented and accepted. `Mex-LocalID` is still set per POST so an operator can manually correlate duplicates via the tracking endpoint when investigating.
+- **Transport acknowledgement is not clinical-layer proof.** A MESH tracking status of `Acknowledged` means the recipient's MESH client acknowledged receipt at the transport layer. It does not prove the document was processed by, or is visible in, the practice's clinical system (NHS developer forums document raw PDFs arriving in mailboxes without surfacing to the GP — see `docs/nhs_integration_reference.md`). Mitigation is procedural, not technical: the workflow arrangement is agreed in writing with the practice, and the verified-first-send gate (see Production enablement gates) requires a named human at the practice to confirm visibility before real patient traffic.
 - **Stuck-in-provider_accepted submissions.** If a GP practice's MESH client downloads but never acknowledges, the submission remains in `provider_accepted` indefinitely from our point of view. Detection is by elapsed-time alerting (24h warning, 72h error). Resolution is operator-driven: confirm out-of-band, then transition the row manually using the SQL script in Phase 5.
 
 ## Out of Scope (Explicitly Deferred)
@@ -44,17 +49,18 @@ PDS sandbox investigation (since the prior round) confirmed that PDS lookup adds
 These are intentionally not part of any phase in this document. Each is genuinely useful but separable, and deferring keeps the plan focused.
 
 - **NHS Login.** Patient-side identity verification. If adopted later, an `assurance_level` column on `submission_records` may be needed to record verification confidence. That decision is deferred. The current schema is forward-compatible with adding such a column non-destructively.
-- **GP Connect Send Document compliance.** The accreditation-gated future state in which our MESH messages carry an ITK3 FHIR envelope rather than a raw PDF. See "Deferred: FHIR/ITK3 envelope" below for the design implications when (if) we adopt it.
-- **PDS lookup.** Removed for the reasons stated in the document status note: the destination is already known, so PDS lookup serves no routing purpose; using PDS for enrichment creates clinical-safety issues when patient-entered details and PDS records diverge.
+- **GP Connect Send Document.** Now tracked as a separate ticket (`ticket_gpconnect_payload_builder.md`): a spike to resolve applicability and version, then a `GpConnectSendDocumentPayloadBuilder` behind the Phase 3 seam. ITK3 acknowledgement handling remains deferred beyond that ticket. See "Payload status: provisional" below.
+- **PDS lookup (dormant client library).** Removed from this pipeline for the reasons stated in the document status note. Now additionally tracked as a separate ticket (`ticket_pds_client_library.md`) building an unwired client library only — a hedge against GP Connect's patient-based addressing requirement. The fuzzy-match resolution policy (the clinically hard part) is explicitly out of that ticket's scope.
 - **NHS number client-side validation (Mod-11).** Worthwhile as a frontend UX improvement; tracked as a separate frontend ticket. Not part of this delivery plan.
 
-### Deferred: FHIR/ITK3 envelope
+### Payload status: provisional
 
-The original plan included a FHIR Builder phase that wrapped the PDF in an ITK3 Bundle. The honest position:
+(Supersedes the former "Deferred: FHIR/ITK3 envelope" section. The framing has inverted since the June 2026 workflow ID research — see `docs/nhs_integration_reference.md`, "Workflow IDs".)
 
-- Raw MESH transport does not require any FHIR envelope. A MESH message can carry a binary PDF directly with appropriate workflow ID and MIME type headers. This is what the default plan below does.
-- GP Connect Send Document compliance requires the PDF be embedded in an ITK3-conformant FHIR Message with `Task`, `DocumentReference`, and `Binary` resources, plus a specific MESH workflow ID (`GPFED_CONSULT_REPORT`). Adopting GP Connect compliance is a future, accreditation-gated decision.
-- Therefore the FHIR Builder is not implemented in this plan. If GP Connect compliance is later adopted, a `MeshPayloadBuilder` interface is the right seam: the dispatcher's payload construction becomes pluggable, with implementations `RawPdfPayloadBuilder` (today) and `GpConnectSendDocumentPayloadBuilder` (later). Design Phase 3 with that seam in mind even though only the first implementation ships.
+- Raw MESH transport does not require a FHIR envelope at the transport level. However, there is no registered, non-deprecated workflow ID for raw PDF delivery to a GP practice; the deprecated Kettering XML route (`DISCH_KET`) must not be used. Raw PDF is therefore viable in production **only** under a locally agreed workflow ID arrangement with the receiving practice, with practice-side handling confirmed.
+- The likely production endgame is GP Connect Send Document (or a successor standard — see the scope caveat below). Adopting it drags in three things beyond a payload builder: (1) the ITK3 acknowledgement model — infrastructure and business acks arrive as MESH messages under the `_ACK` responder workflow IDs, which reintroduces inbox handling and changes the Phase 4 tracking design; (2) sender accreditation/assurance; (3) patient-based addressing (`GPPROVIDER_<NhsNo>_<DOB>_<Surname>`), which requires the patient's NHS number, DOB, and surname at send time — implying either mandatory NHS number entry (poor UX, reopens a governing decision) or a server-side PDS trace (see `ticket_pds_client_library.md`; note PDS fuzzy-match brittleness is a known operational reality in practice).
+- **Scope caveat:** GP Connect Send Document v1's stated scope is consultations that took place *outside* the patient's regular practice (federated/hub working). Our use case — a patient submitting to their own practice — does not match that scope; v2 broadens to any document type but is in public beta. Whether GP Connect Send Document, a locally agreed raw-document arrangement, or a different standard altogether is the correct route for practice-own online consultation intake is a question for NHS Digital and the first practice, and cannot be resolved by further desk research.
+- Phase 3 therefore ships the `MeshPayloadBuilder` seam as concrete code with `RawPdfPayloadBuilder` as the provisional implementation. The out-of-band questions (practice IT, NHS Digital / system supplier) start immediately and in parallel with Phase 3 coding; their answers are required before Phase 4 planning (acknowledgement model) and before production enablement (workflow arrangement).
 
 ---
 
@@ -74,11 +80,22 @@ Phase 1a (adapter refactor)              [SHIPPED]
 - Phase 1b is also done. It establishes the local-dev mTLS parity: a dev PKI, an nginx mTLS-terminating proxy in front of the sandbox container, and the documentation/env-var canonicalisation that downstream phases rely on. No application code.
 - Phase 2a is a pure code library — no DB schema, no worker, no wiring. It exercises the MESH protocol against the sandbox in tests and can ship on its own.
 - Phase 2b adds migration 0005 (the `mesh_jobs` table and `delivery_jobs.is_fallback` column), the `MeshEnqueuer` adapter, and the wiring in `pdf_worker_main.py` so `MESH_DELIVERY=1` no longer aborts startup (with `MESH_RECIPIENT_MAILBOX_ID` as a required fail-fast env var). After Phase 2b, the PDF worker can enqueue `mesh_jobs` rows but nothing consumes them yet.
-- Phase 3 adds the dispatcher worker that consumes `mesh_jobs` and POSTs to MESH, including the Mailgun fallback when MESH terminally fails.
+- Phase 3 adds the dispatcher worker that consumes `mesh_jobs` and POSTs to MESH, including the `MeshPayloadBuilder` seam, the Mailgun fallback when MESH terminally fails, and the orphaned-fallback recovery sweep.
 - Phase 4 adds the tracking poller (delivery confirmation) and rewrites `deletion_job.py` to be MESH-status-aware.
 - Phase 5 covers Sentry alerts, operator SQL, and the deployment checklist.
 
 Each phase is independently mergeable and reversible if needed.
+
+### Production enablement gates
+
+Mergeable is not the same as enableable. `MESH_DELIVERY=1` must NOT be set in production until ALL of the following hold:
+
+1. **Phase 4 is deployed.** With Phase 3 alone, MESH-path submissions are never confirmed (rows sit at `sent` forever) and never become deletion-eligible (`deletion_job.py` joins on `delivery_jobs` only), giving unbounded retention of clinical photos and PDFs.
+2. **The workflow arrangement is confirmed in writing** with the first practice: which workflow ID their mailbox is configured for, and what their MESH client / clinical system does with the payload format we send.
+3. **The endpoint lookup check passes** (`/endpointlookup/<ODS>/<workflow_id>` returns the practice's mailbox for the agreed workflow ID).
+4. **A verified first send has completed:** one test referral sent end-to-end, with a named human at the practice confirming the document is visible in their working clinical workflow — not merely that MESH tracking shows `Acknowledged`. This step is permanent deployment-checklist content for every new practice, not a one-off.
+
+Phase 5 should also document a drain procedure: flipping `MESH_DELIVERY` from 1 back to 0 strands any pending `mesh_jobs` rows with no consumer. The email delivery worker must remain deployed while `MESH_DELIVERY=1` — it is the fallback consumer.
 
 ---
 
@@ -332,38 +349,74 @@ There is no practice-table column, repository method, or admin UI field for the 
 
 ## Phase 3 — MESH Dispatcher + Mailgun Fallback
 
-Adds the dispatcher worker that consumes `mesh_jobs` and POSTs to MESH. Includes the fallback to Mailgun on terminal MESH failure.
+Adds the dispatcher worker that consumes `mesh_jobs` and POSTs to MESH via the `MeshPayloadBuilder` seam, with Mailgun fallback on terminal MESH failure and an orphaned-fallback recovery sweep.
 
-### 3.1 New File: `app/services/delivery/mesh_worker.py`
+### 3.1 New File: `app/services/delivery/mesh_payload.py`
 
-Background worker loop. Claims one `mesh_jobs` row per iteration. Reads the attachment from `submission_attachments`. Reads minimal submission metadata (`condition_label`, `submitted_at`) from `submission_records`. Reads `delivery_email` from `pdf_jobs` (needed for the Mailgun fallback path).
+Defines the payload seam:
 
-Operation sequence per claim:
-1. Build the MESH payload. With the FHIR builder deferred, this is the raw PDF bytes with content type `application/pdf` and a workflow ID configured per deployment (e.g. `REFERRAL_LETTER` or whatever the practice's MESH config dictates — see Open Items).
-2. `mesh_client.send_message(...)` with `mex_localid = mesh_job.mex_localid` for idempotency correlation.
-3. On 202: `mesh_repo.mark_sent(mesh_job_id, message_id)`. Job loop continues.
-4. On `MeshTransientError`: `mesh_repo.mark_failed(...)` with `next_retry_after = now + backoff`. Job loop continues. The same job will be reclaimed when backoff expires.
-5. On `MeshTerminalError`, or after `MAX_MESH_ATTEMPTS` transient failures: `mesh_repo.mark_fallback_triggered(...)`, then call `delivery_repo.create_job(...)` with `is_fallback=True` to enqueue the email path. The delivery worker (existing) then sends via Mailgun. Sentry alert fires (Phase 5).
+- `MeshPayload` — a small frozen dataclass: `payload_bytes: bytes`, `content_type: str`.
+- `MeshPayloadBuilder` — a Protocol with one method: `build(*, pdf_bytes: bytes) -> MeshPayload`.
+- `RawPdfPayloadBuilder` — the provisional implementation: returns the PDF bytes unchanged with content type `application/pdf`.
 
-The ordering invariant `mark_fallback_triggered` → `delivery_repo.create_job(is_fallback=True)` is critical. If the worker crashes between them, the next loop iteration will see `status='fallback_triggered'` but no `delivery_jobs` row. A small "find orphaned fallbacks" sweep (similar to the existing PDF worker orphan detection) handles this. Document the invariant and the recovery path in `arch_submission.md`.
+The workflow ID stays env-driven (`MESH_WORKFLOW_ID`, read by the entry point), not a builder concern in this phase. Note for the GP Connect ticket: workflow ID and payload format are coupled in the GP Connect specs, so when a second builder is added, the builder/workflow-ID pairing should be validated at startup rather than left as two independently settable values.
 
-### 3.2 New File: `mesh_worker_main.py`
+### 3.2 New File: `app/services/delivery/mesh_worker.py`
 
-Entry point. Validates env vars including `MESH_BASE_URL`, `MESH_MAILBOX_ID`, `MESH_MAILBOX_PASSWORD`, `MESH_SHARED_KEY`, `MESH_CA_CERT_PATH`, `MESH_CLIENT_CERT_PATH`, `MESH_CLIENT_KEY_PATH`, `MESH_WORKFLOW_ID`. For each of the three cert paths, validates the file exists on disk via `os.path.exists` before instantiating `MeshClient` — fail-fast invariant per `docs/arch_security.md` section 8. Missing env var or missing file aborts startup with a clear log line identifying the missing input. Instantiates `MeshClient`, performs the startup handshake, then runs the worker loop. Fail-fast on missing config, missing cert file, or handshake failure.
+Background worker loop. Each iteration: run the orphaned-fallback sweep, then claim and process one `mesh_jobs` row.
 
-### 3.3 Startup Handshake
+Per-claim sequence:
+1. Read the attachment from `submission_attachments` (guaranteed present by the Phase 2b ordering invariant).
+2. `payload = payload_builder.build(pdf_bytes=...)`.
+3. `mesh_client.send_message(...)` with `recipient_mailbox_id` from the claimed row, `workflow_id` from config, `mex_localid = str(mesh_job.mex_localid)` (the column is a Postgres UUID; the client takes a string), and the payload's bytes and content type.
+4. On 202: `mesh_repo.mark_sent(mesh_job_id, message_id)`. Loop continues.
+5. On `MeshTransientError`: `mesh_repo.mark_failed(...)` with `next_retry_after = now + backoff` per `mesh_constants.py`. If the returned `attempt_count >= MAX_MESH_ATTEMPTS`, treat as exhausted and fall through to step 6; otherwise the row is reclaimed when backoff expires.
+6. On `MeshTerminalError`, or on transient exhaustion: `mesh_repo.mark_fallback_triggered(...)`, then read `to_email` via `PDFRepository.get_delivery_email(submission_id)` and `condition_label`/`submitted_at` via a new narrow `SubmissionRepository` method (see below), then `delivery_repo.create_job(..., is_fallback=True)`. The existing delivery worker sends via Mailgun with an email identical to the email path (Governing Decisions). Sentry alert routing is Phase 5.
 
-Per the sandbox investigation, the first interaction with a mailbox must be a handshake POST to `/messageexchange/<mailbox_id>`. Failing the handshake at startup is the right place to catch credential errors, mailbox misconfiguration, and connectivity issues — long before the first patient submission.
+**Ordering invariant:** `mark_fallback_triggered` → `delivery_repo.create_job(is_fallback=True)`, in that order. Failing safe means a crash between the two leaves an undelivered-but-detectable state, never a double-channel send.
 
-### 3.4 Tests
+**Orphaned-fallback recovery sweep (ships in this phase, not Phase 5):** at the top of each loop iteration, find `fallback_triggered` rows with no matching `delivery_jobs` row and call `delivery_repo.create_job(..., is_fallback=True)` for each — the call is idempotent on `submission_id` (UNIQUE + ON CONFLICT DO NOTHING), so recovery is automatic and safe under races. Log at ERROR when the sweep recovers a row; the Sentry event for it is added in Phase 5. Without this sweep in Phase 3, a dispatcher crash in the invariant window would leave a referral silently undelivered until Phase 5 ships.
 
-- Unit tests of `mesh_worker.py` with mocked `mesh_client` and repos, covering the success, transient-retry, terminal-failure, and fallback paths.
-- Integration test against the sandbox: enqueue a `mesh_jobs` row, run one dispatch tick, assert the sandbox received the message and the row is `sent`.
-- A "fallback triggers delivery_jobs row" integration test that uses a sandbox-simulated terminal failure (or a `MeshClient` mocked to raise `MeshTerminalError`) and asserts the email path picks it up.
+**Metadata access:** the dispatcher does not call `SubmissionRepository.get_submission` (which returns the full row including clinical JSON). A new narrow method `SubmissionRepository.get_delivery_metadata(submission_id) -> dict` returns only `condition_label` and `submitted_at`. This is a deliberate, documented deviation from the delivery worker's stricter "never read submission_records" rule: the email path denormalises at enqueue time, the MESH fallback path reads narrowly at fallback time. Record the deviation in `arch_submission.md`.
+
+### 3.3 New File: `mesh_constants.py`
+
+Mirrors `delivery_constants.py`:
+
+- `MESH_RETRY_BACKOFF_MINUTES: list[int] = [1, 5, 15]`
+- `MAX_MESH_ATTEMPTS: int = len(MESH_RETRY_BACKOFF_MINUTES) + 1  # 4`
+- `HANDSHAKE_RETRY_DELAYS_SECONDS: list[int] = [10, 30, 60, 120, 300]`
+
+The MESH retry window (~21 minutes) is deliberately shorter than the email path's (~71 minutes): a working fallback exists, so prolonged MESH retries only delay the practice receiving the form.
+
+### 3.4 New File: `mesh_worker_main.py`
+
+Entry point. Validates env vars: `MESH_BASE_URL`, `MESH_MAILBOX_ID`, `MESH_MAILBOX_PASSWORD`, `MESH_SHARED_KEY`, `MESH_CA_CERT_PATH`, `MESH_CLIENT_CERT_PATH`, `MESH_CLIENT_KEY_PATH`, `MESH_WORKFLOW_ID`. For each of the three cert paths, validates the file exists on disk before instantiating `MeshClient` (fail-fast per `docs/arch_security.md` section 8). Missing env var or missing file aborts startup with a clear log line identifying the missing input. Sets the Sentry worker tag at startup (consistent with the Phase 1a pattern).
+
+**Startup handshake with bounded retry.** The handshake distinguishes two failure classes that need different treatment:
+- `MeshTerminalError` (e.g. 403 with populated errorCode) → abort immediately. Misconfiguration; the fail-fast invariant applies.
+- `MeshTransientError` → retry in-process per `HANDSHAKE_RETRY_DELAYS_SECONDS`, then abort if still failing. The bound matters: the error classification maps a 403 with an *empty* errorCode (auth/clock skew) to transient, so bad credentials can present as transient — an unbounded retry would mask a credential error forever. With the bound, a genuine Spine blip is absorbed in-process (~8.5 minutes of patience), while persistent failure still aborts and surfaces via the process restart loop. `mesh_jobs` rows are durable throughout; nothing is lost, only delayed.
+
+### 3.5 Modified Files
+
+- `delivery_repository.py` — `create_job` gains an `is_fallback` keyword parameter (default `False`).
+- `submission_repository.py` — new narrow `get_delivery_metadata` method (see 3.2).
+- `Dockerfile` — add `COPY mesh_worker_main.py ./` alongside the existing worker entry points; without it the dispatcher cannot run on Railway. A corresponding Railway service definition is a deployment action, noted in the Phase 5 checklist.
+- `arch_submission.md` — document the dispatcher fallback ordering invariant, the recovery sweep, and the metadata-access deviation.
+
+### 3.6 Tests
+
+- `tests/test_mesh_payload.py` (new, unit): `RawPdfPayloadBuilder` passthrough behaviour.
+- `tests/test_mesh_worker.py` (new, unit, mocked client and repos): success, transient-retry, transient-exhaustion, terminal-failure, fallback ordering, and sweep recovery paths.
+- Sandbox+DB integration test: enqueue a `mesh_jobs` row, run one dispatch tick, assert the sandbox received the message and the row is `sent`. **This is a new hybrid test category**: it needs both Postgres and the sandbox, so unlike the Phase 2a DB-free convention it carries the `integration` marker, the `TEST_DATABASE_URL` guardrail, AND the `MESH_BASE_URL` module-level skip. Document the hybrid category in `docs/arch_testing.md` so the Phase 2a "one documented exception" rule does not silently erode.
+- A "fallback triggers delivery_jobs row" integration test (`MeshClient` mocked to raise `MeshTerminalError`) asserting the email path picks it up with `is_fallback=TRUE`.
+- A sweep integration test: a `fallback_triggered` row with no `delivery_jobs` row is recovered on the next tick.
 
 ---
 
 ## Phase 4 — Tracking Poller and Deletion Job Rewrite
+
+> **Planning gate:** Phase 4's detailed design must wait for the practice/NHS Digital answer on the workflow arrangement. If the outcome is GP Connect Send Document, the confirmation model gains ITK3 infrastructure/business acknowledgements delivered as inbound MESH messages (under the `_ACK` workflow IDs), which changes this phase substantially — tracking-endpoint polling alone would no longer be the whole story.
 
 ### 4.1 New File: `app/services/delivery/mesh_tracking_worker.py`
 
@@ -454,9 +507,13 @@ Phase 2b:
 - `tests/integration/test_pdf_worker_mesh_path.py`
 
 Phase 3:
+- `app/services/delivery/mesh_payload.py`
 - `app/services/delivery/mesh_worker.py`
 - `mesh_worker_main.py`
+- `mesh_constants.py`
+- `tests/test_mesh_payload.py`
 - `tests/test_mesh_worker.py`
+- Sandbox+DB hybrid integration tests (see 3.6 for guardrail requirements)
 
 Phase 4:
 - `app/services/delivery/mesh_tracking_worker.py`
@@ -476,7 +533,10 @@ Phase 2b:
 
 Phase 3:
 - `delivery_repository.py` — `create_job` gains an `is_fallback` parameter (default `False`).
-- `arch_submission.md` — document the dispatcher fallback ordering invariant.
+- `submission_repository.py` — new narrow `get_delivery_metadata` method.
+- `Dockerfile` — `COPY mesh_worker_main.py ./`.
+- `arch_submission.md` — fallback ordering invariant, recovery sweep, metadata-access deviation.
+- `docs/arch_testing.md` — document the hybrid (DB + sandbox) integration test category.
 
 Phase 4:
 - `deletion_job.py` — update eligibility logic.
@@ -492,11 +552,11 @@ Phase 5:
 
 These don't block planning but need answering during implementation:
 
-1. **MESH workflow ID for raw PDF sends.** GP Connect uses `GPFED_CONSULT_REPORT`. For a non-GP-Connect raw-PDF send, the workflow ID is practice-and-use-case specific. Worth confirming with whichever practice goes first what their MESH client expects.
+1. ~~**MESH workflow ID for raw PDF sends.**~~ Superseded by the June 2026 research (see "Payload status: provisional" and `docs/nhs_integration_reference.md`): no registered workflow ID exists for raw PDF sends, so this is no longer an implementation detail to confirm — it is a production enablement gate (written workflow arrangement + endpoint lookup + verified first send). Phase 3 code is unblocked because `MESH_WORKFLOW_ID` is env-driven and the sandbox does not validate it.
 2. ~~**MESH auth header exact format.**~~ Resolved by the Phase 1b sandbox investigation. Authoritative source for Phase 2a is `docs/nhs_integration_reference.md` ("Auth header construction"). If production behaviour diverges from the sandbox, the discrepancy goes into the integration reference and the client is amended.
 3. **Tracking poll cadence.** Starts at 5 minutes per the plan, but practices' MESH clients poll their inboxes on widely different schedules (some 30s, some 30min). Worth measuring against the integration environment before locking the value.
-4. **Mailgun fallback content.** When MESH fails and we fall through to email, do we send the same PDF with the same subject line? Probably yes, but the email body should ideally mention that this is a fallback delivery so the practice doesn't think both channels are independent. Decide before Phase 3 ships.
-5. **`delivery_jobs.is_fallback=TRUE` downstream behaviour.** Does the existing delivery worker do anything different with fallback rows? Probably not — same email, same body. But worth a defensive check in case anything routes on it.
+4. ~~**Mailgun fallback content.**~~ Decided: identical email (same PDF, same subject, same body). No changes to `delivery_worker.py` or `delivery_service.py`. `is_fallback` is operational metadata only.
+5. **`delivery_jobs.is_fallback=TRUE` downstream behaviour.** Per the decision in item 4, the delivery worker must do nothing different with fallback rows. Verify during Phase 3 implementation that nothing in the delivery path or webhook router routes on the new column (expected: nothing does — it is additive with a default).
 
 ---
 

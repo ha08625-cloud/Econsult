@@ -334,6 +334,39 @@ class MeshRepository:
     # Lookup
     # ------------------------------------------------------------------
 
+    def list_orphaned_fallbacks(self) -> list[dict]:
+        """
+        Find mesh_jobs rows in 'fallback_triggered' with no matching
+        delivery_jobs row.
+
+        These are the crash artefacts of the dispatcher's fallback ordering
+        invariant: mark_fallback_triggered committed, but the process died
+        before delivery_repo.create_job ran. Without recovery, the
+        submission is silently undelivered — fallback_triggered is terminal
+        in mesh_jobs and nothing else consumes it.
+
+        Consumed by the dispatcher's recovery sweep (every loop iteration),
+        which re-runs the idempotent delivery_repo.create_job for each
+        orphan. Returns a list of dicts with 'id' and 'submission_id',
+        oldest first; empty list when there are no orphans (the normal
+        case — this query is a cheap LEFT JOIN on two indexed columns).
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT m.id, m.submission_id
+                    FROM mesh_jobs m
+                    LEFT JOIN delivery_jobs d
+                           ON d.submission_id = m.submission_id
+                    WHERE m.status = 'fallback_triggered'
+                      AND d.id IS NULL
+                    ORDER BY m.created_at ASC
+                    """
+                )
+                rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
     def get(self, mesh_job_id: str) -> dict:
         """
         Return the full mesh_jobs row for mesh_job_id.

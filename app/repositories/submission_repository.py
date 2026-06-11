@@ -8,6 +8,16 @@ This module is responsible for:
 - Creating submission records at the point of form completion
 - Retrieving submissions by ID
 
+Delivery status tracking, retry queries, and orphan detection have been
+moved to DeliveryRepository (delivery_repository.py) and PDFRepository
+(pdf_repository.py) as part of the pipeline refactor (Commit 2).
+
+delivery_email and attachment_count are no longer stored on
+submission_records (dropped by Migration 0013). They live on pdf_jobs,
+captured at job creation time by the form router.
+
+Table creation is handled by Alembic migrations at startup.
+
 This module must never:
 - Access clinical engine modules (form_logic, safety_engine, etc.)
 - Send emails (that belongs in delivery_service)
@@ -28,7 +38,9 @@ from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
 # Must be updated whenever a migration adds or removes a column.
 # Do not use SELECT * — new columns would appear silently in returned dicts
 # and make schema changes harder to track.
-
+# Delivery columns (delivery_status, delivery_email, delivered_at,
+# delivery_error, delivery_attempts, last_attempt_at, next_retry_after,
+# attachment_count) were removed by Migration 0013.
 _SUBMISSION_COLUMNS = """
     submission_id,
     practice_id,
@@ -66,6 +78,13 @@ class SubmissionRepository:
         It is stored denormalised for historical fidelity — if the condition
         label is later changed in the ruleset, historical records retain the
         label that was active when the patient submitted.
+
+        submitted_at must be supplied by the caller (form_router.py captures it
+        immediately before calling this function). The database column has no
+        DEFAULT — this is enforced by migration 0005.
+
+        delivery_email and attachment_count are no longer parameters here.
+        They are captured directly on the pdf_jobs row at job creation time.
 
         clinical_output and audit_output are stored as JSONB. psycopg2 does not
         automatically serialise dataclasses, so we convert to dict with asdict()
@@ -130,6 +149,41 @@ class SubmissionRepository:
                 cur.execute(
                     f"""
                     SELECT {_SUBMISSION_COLUMNS}
+                    FROM submission_records
+                    WHERE submission_id = %s
+                    """,
+                    (submission_id,),
+                )
+                row = cur.fetchone()
+
+        if row is None:
+            raise SubmissionNotFound(submission_id)
+        return dict(row)
+
+    def get_delivery_metadata(self, submission_id: str) -> dict:
+        """
+        Return only the delivery metadata for a submission:
+        condition_label and submitted_at.
+
+        Used by the MESH dispatcher when falling back to the email path,
+        which needs these two fields to denormalise onto the delivery_jobs
+        row it creates. This method exists so the dispatcher never calls
+        get_submission, which returns the full row including the clinical
+        JSON — the dispatcher has no business holding clinical content in
+        memory for a fallback enqueue.
+
+        This is a deliberate, documented deviation from the delivery
+        worker's stricter rule of never reading submission_records: the
+        email path denormalises at enqueue time; the MESH fallback path
+        reads narrowly at fallback time. See arch_submission.md.
+
+        Raises SubmissionNotFound if submission_id does not exist.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT condition_label, submitted_at
                     FROM submission_records
                     WHERE submission_id = %s
                     """,

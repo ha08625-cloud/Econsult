@@ -70,6 +70,8 @@ class DeliveryRepository:
         to_email: str,
         condition_label: str,
         submitted_at: datetime,
+        *,
+        is_fallback: bool = False,
     ) -> str:
         """
         Insert a new delivery_jobs row with status = 'pending'.
@@ -77,10 +79,18 @@ class DeliveryRepository:
         The submission_id column has a UNIQUE constraint, so calling this
         twice with the same submission_id is safe: the second call uses
         ON CONFLICT DO NOTHING and the existing row is left untouched.
-        This makes the call idempotent and safe across PDF worker retries.
+        This makes the call idempotent and safe across PDF worker retries
+        and across the MESH dispatcher's orphaned-fallback recovery sweep.
 
         to_email, condition_label, and submitted_at are denormalised here
         so the delivery worker never needs to read submission_records.
+
+        is_fallback is operational metadata only: set True exclusively by
+        the MESH dispatcher when a terminal MESH failure (or transient
+        exhaustion) falls through to the email path. Nothing in the
+        delivery worker or webhook router routes on it — fallback emails
+        are identical to email-path emails by design (see
+        mesh_integration_plan.md, Governing Decisions).
 
         Returns the job UUID as a string (the existing row's id if the
         conflict path was taken).
@@ -93,13 +103,15 @@ class DeliveryRepository:
                         submission_id,
                         to_email,
                         condition_label,
-                        submitted_at
+                        submitted_at,
+                        is_fallback
                     )
                     VALUES (
                         %(submission_id)s,
                         %(to_email)s,
                         %(condition_label)s,
-                        %(submitted_at)s
+                        %(submitted_at)s,
+                        %(is_fallback)s
                     )
                     ON CONFLICT (submission_id) DO NOTHING
                     RETURNING id
@@ -109,6 +121,7 @@ class DeliveryRepository:
                         "to_email": to_email,
                         "condition_label": condition_label,
                         "submitted_at": submitted_at,
+                        "is_fallback": is_fallback,
                     },
                 )
                 row = cur.fetchone()
