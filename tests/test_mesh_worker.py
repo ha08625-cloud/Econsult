@@ -25,7 +25,6 @@ from app.services.delivery.mesh_constants import (
     MESH_RETRY_BACKOFF_MINUTES,
 )
 from app.services.delivery.mesh_payload import RawPdfPayloadBuilder
-from app.services.delivery import mesh_worker
 from app.services.delivery.mesh_worker import (
     _compute_backoff,
     _enqueue_fallback_delivery,
