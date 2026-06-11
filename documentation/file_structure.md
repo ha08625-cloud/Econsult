@@ -1,6 +1,6 @@
 # FILE_STRUCTURE.md
 # LLM reference: actual local directory layout, structural purpose, and import mapping
-# Last updated: 2026-05-31
+# Last updated: 2026-06-10
 
 ---
 
@@ -9,6 +9,7 @@
 - `main.py` — FastAPI entry point. HTTP layer only.
 - `worker_main.py` — Delivery worker entry point. No HTTP server, no migrations.
 - `pdf_worker_main.py` — PDF worker entry point. No HTTP server, no migrations.
+- `mesh_worker_main.py` — MESH dispatcher entry point (Phase 3). Validates the MESH env vars, fail-fasts on missing cert files, performs the bounded-retry startup handshake, then runs the dispatcher loop. No HTTP server, no migrations.
 - `deletion_job.py` — Nightly cron one-shot script.
 - `.env` — Local environment variables, not committed.
 - `Dockerfile` — Container build definition (Vite + Python).
@@ -61,10 +62,14 @@ Business logic and orchestration.
 - `delivery_service.py` — Email delivery implementations. *Imports: no clinical contract imports. Receives pre-rendered PDF bytes.*
 - `admin_delivery_service.py` — Admin MFA and invitation delivery. Implements `send_mfa_code(email, code)` and `send_admin_invitation(email, token)`. The token is embedded in the setup URL as `#reset:{token}`. *Imports: stdlib only.*
 - `delivery_constants.py` — Retry thresholds. *Imports: standalone; no application modules.*
+- `mesh_constants.py` — MESH retry/backoff and handshake-retry thresholds (Phase 3). *Imports: standalone; no application modules.*
 - `pdf_constants.py` — PDF retry thresholds. *Imports: standalone; no application modules.*
 - `delivery_worker.py` — Delivery worker loop. *Imports: delivery_repository, attachment_repository, delivery_service, delivery_constants, sentry_sdk only.*
 - `pdf_worker.py` — PDF generation worker loop. *Imports: pdf_repository, photo_repository, submission_repository, attachment_repository, downstream_enqueuer, pdf_formatter, pdf_constants, sentry_sdk only.*
-- `downstream_enqueuer.py` — Polymorphic seam between the PDF worker and its next-stage queue. Defines `DownstreamEnqueuer` Protocol and `DeliveryEnqueuer` (email path) implementation. Selected at worker startup based on `MESH_DELIVERY`. *Imports: pdf_repository, submission_repository, delivery_repository only.*
+- `downstream_enqueuer.py` — Polymorphic seam between the PDF worker and its next-stage queue. Defines the `DownstreamEnqueuer` Protocol and `DeliveryEnqueuer` (email path) implementation. The MESH-path sibling lives in `mesh_enqueuer.py`. The concrete adapter is selected at worker startup in `pdf_worker_main.py` based on `MESH_DELIVERY`. *Imports: pdf_repository, submission_repository, delivery_repository only.*
+- `mesh_payload.py` — `MeshPayloadBuilder` Protocol, `MeshPayload` dataclass, and the provisional `RawPdfPayloadBuilder` (Phase 3). Pure functions; no I/O. *Imports: stdlib only.*
+- `mesh_worker.py` — MESH dispatcher loop (Phase 3): claims `mesh_jobs`, sends via `MeshClient` through the payload seam, falls back to email on terminal failure/exhaustion (ordering invariant: `mark_fallback_triggered` then idempotent `create_job(is_fallback=True)`), and runs the orphaned-fallback recovery sweep each iteration. Also owns `_handshake_with_retry`. *Imports: mesh_repository, delivery_repository, pdf_repository, submission_repository, attachment_repository, mesh (client library), mesh_payload, mesh_constants, psycopg2.*
+- `mesh_enqueuer.py` — MESH-path implementation of the `DownstreamEnqueuer` Protocol. Thin forwarder to `MeshRepository.create_job`, stamping the deployment-wide recipient mailbox (from `MESH_RECIPIENT_MAILBOX_ID`, passed in at construction) onto each `mesh_jobs` row. Selected by `pdf_worker_main.py` when `MESH_DELIVERY=1`. Builds no payloads and opens no connections — the Phase 3 dispatcher owns that. *Imports: mesh_repository only.*
 
 **`app/services/delivery/mesh/`** (MESH client library — Phase 2a. Pure library: no DB, no worker loop, no wiring.)
 - `__init__.py` — Package init; re-exports `MeshClient`, `MeshError`, `MeshTransientError`, `MeshTerminalError`.
@@ -89,6 +94,7 @@ Database access for persistent records. No business logic.
 - `availability_repository.py` — Owns availability and exception tables.
 - `delivery_repository.py` — Owns `delivery_jobs`. *Imports: db, delivery_constants only.*
 - `pdf_repository.py` — Owns `pdf_jobs`. *Imports: db, pdf_constants only.*
+- `mesh_repository.py` — Owns `mesh_jobs` (the outbound MESH delivery queue). `create_job` (idempotent, ON CONFLICT on submission_id) is wired via `MeshEnqueuer` in Phase 2b; the claim and `mark_*` transition methods are built and tested but consumed only by the Phase 3 dispatcher and Phase 4 tracking poller. Holds no retry policy. *Imports: db only.*
 - `photo_repository.py` — Owns `submission_photos`. *Imports: db only.*
 - `practice_repository.py` — Owns practice records. Includes `lock_practice(practice_id, conn)` which executes `SELECT ... FOR UPDATE` to serialise concurrent user management operations. `conn` is required with no default. *Imports: no service modules.*
 - `runtime_state_repository.py` — Owns session state versions.
@@ -144,6 +150,7 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `alembic/versions/0002_user_management_cascade.py` — Adds `ON DELETE CASCADE` to `admin_sessions.user_id` FK; adds `admin_users.last_login` (nullable TIMESTAMPTZ).
 - `alembic/versions/0003_webhook_tracking.py` — Adds `provider_message_id` (VARCHAR 255, indexed) and `provider_events` (JSONB) to `delivery_jobs`; extends status check constraint to include `provider_accepted` and `delivered`; creates `webhook_tokens` replay protection table.
 - `alembic/versions/0004_password_auth.py` — Adds `hashed_password` (TEXT nullable), `failed_password_attempts` (INTEGER NOT NULL DEFAULT 0), `password_locked_until` (TIMESTAMPTZ nullable), `password_changed_at` (TIMESTAMPTZ nullable) to `admin_users`; creates `admin_password_reset_tokens` table (token_hash PK, user_id FK with ON DELETE CASCADE, UNIQUE(user_id) enforcing one active token per user, expires_at).
+- `alembic/versions/0005_mesh_schema.py` — Creates the `mesh_jobs` table (UUID PK, UNIQUE submission_id FK to submission_records, named status CHECK over the six MESH lifecycle states, message_id TEXT UNIQUE, mex_localid, recipient_mailbox_id, attempt/error/timestamp bookkeeping, `(status, next_retry_after)` claim index); adds `delivery_jobs.is_fallback` (BOOLEAN NOT NULL DEFAULT FALSE), set TRUE only by the Phase 3 MESH dispatcher when it falls through to email.
 
 ---
 
@@ -180,7 +187,7 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `helpers/admin_test_helpers.py` — Shared helpers for the admin sub-router tests. Provides `make_test_app`, `dummy_conn`, and stubs: `StubAuthRepo` (includes no-op password auth methods: `set_password`, `record_failed_password_attempt`, `reset_password_attempts`, `upsert_reset_token`, `get_reset_token_record`, `delete_reset_token`), `StubPracticeRepo` (includes `lock_practice`), `StubAvailabilityRepo`, `StubAuditRepo`, `StubAdminDeliveryService` (tracks `send_mfa_code` calls and `send_admin_invitation(email, token)` calls separately), `StubRegistry`.
 
 **Unit tests (Mocked/In-memory)**
-- `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_downstream_enqueuer.py`, `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`, `test_mesh_client.py` (MESH client library; mocks `requests.Session`, no DB, no network).
+- `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_downstream_enqueuer.py`, `test_mesh_enqueuer.py` (MeshEnqueuer; mocks MeshRepository, no DB), `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`, `test_mesh_client.py` (MESH client library; mocks `requests.Session`, no DB, no network), `test_mesh_payload.py` (payload seam; pure functions), `test_mesh_worker.py` (dispatcher helpers; mocks client and repos, no DB, no network, no real sleeping).
 
 **Admin Sub-Router unit tests (placed in tests/routers/ subfolder)**
 - `test_admin_auth_router.py` — Covers: general auth behaviour, `POST /auth/login` (correct credentials, wrong password, lockout, no password set, missing fields), `POST /auth/verify` (OTP check, unchanged), `POST /auth/request-reset` (registered and unregistered emails), `POST /auth/set-password` (valid token, expired token, unknown token, weak password, token consumed on use), `POST /auth/logout`, SlowAPI rate limiting on all four unauthenticated auth endpoints.
@@ -192,9 +199,13 @@ Schema migration scripts. See code files directly for exact table definitions.
 
 **Integration tests (Live `TEST_DATABASE_URL`, placed in tests/integration/ subfolder)**
 - `test_form_routes.py`, `test_public_routes.py`, `test_repositories.py`, `test_pipeline_repositories.py`, `test_webhook_router.py`.
+- `test_mesh_repository.py` — Exercises every `MeshRepository` method against the `mesh_jobs` table (create idempotency, claim/retry-push, the `mark_*` transitions, `MeshJobNotFound`). No MESH protocol or network.
+- `test_pdf_worker_mesh_path.py` — Calls `pdf_worker._process_job` wired with a `MeshEnqueuer` against a live DB; asserts a `mesh_jobs` row (not a `delivery_jobs` row) is written, the ordering invariant holds, and re-processing is idempotent. No dispatcher runs.
+- `test_mesh_worker_db.py` — Dispatcher fallback path and orphaned-fallback recovery sweep against a live DB with a mocked `MeshClient`: terminal failure produces a `delivery_jobs` row with `is_fallback=TRUE` and correctly denormalised fields; a manufactured orphan is repaired by one sweep pass (idempotently).
 
 **DB-free integration test (sandbox-backed, guarded on `MESH_BASE_URL`, placed flat in `tests/`)**
-- `test_mesh_client_integration.py` — Exercises `MeshClient` against the local MESH sandbox behind its nginx mTLS proxy. Carries the `integration` marker (so it stays out of `make test` and CI) but, uniquely, does NOT carry the `TEST_DATABASE_URL` guardrail because it never touches Postgres. Module-level `pytest.skip` if `MESH_BASE_URL` is unset; the remaining MESH env vars are read with a direct subscript (a missing one is a `KeyError`, not a skip). Recipient hardcoded to the sandbox `TARGET_MAILBOX`. This is the one documented exception to the "every integration module carries the TEST_DATABASE_URL guardrail" convention; see docs/arch_testing.md.
+- `test_mesh_client_integration.py` — Exercises `MeshClient` against the local MESH sandbox behind its nginx mTLS proxy. Carries the `integration` marker (so it stays out of `make test` and CI) but, uniquely, does NOT carry the `TEST_DATABASE_URL` guardrail because it never touches Postgres. Module-level `pytest.skip` if `MESH_BASE_URL` is unset; the remaining MESH env vars are read with a direct subscript (a missing one is a `KeyError`, not a skip). Recipient hardcoded to the sandbox `TARGET_MAILBOX`. This is the documented DB-free exception to the "every integration module carries the TEST_DATABASE_URL guardrail" convention; see docs/arch_testing.md ("Guardrail variants").
+- `test_mesh_worker_sandbox.py` — HYBRID (DB + sandbox) integration test: the full dispatch tick. Carries the `integration` marker, the `TEST_DATABASE_URL` guardrail, AND the `MESH_BASE_URL` module-level skip; remaining MESH env vars (now including `MESH_WORKFLOW_ID`) use direct subscripts. See docs/arch_testing.md ("Guardrail variants").
 
 ---
 

@@ -75,10 +75,6 @@ def _create_submission(sid: str) -> None:
     """
     Insert a minimal valid submission_records row.
 
-    delivery_email and attachment_count are no longer columns on
-    submission_records (dropped by Migration 0013). create_submission
-    no longer accepts those parameters.
-
     Does not create pdf_jobs, delivery_jobs, or submission_photos rows —
     individual tests do that.
     """

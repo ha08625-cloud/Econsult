@@ -19,9 +19,7 @@ The system has two Postgres databases on Railway:
 | Production | Live application data | `DATABASE_URL` |
 | Test | Integration tests only (`test-practice`) | `TEST_DATABASE_URL` |
 
-These must never be the same URL locally. Integration test modules that exercise Postgres enforce this with a hard guardrail at the top of the file: if `TEST_DATABASE_URL` is not set, the entire module is skipped. This guardrail must never be removed, even during development.
-
-Integration tests that exercise a different external dependency (for example, the local MESH sandbox over HTTP rather than Postgres) still carry the `pytest.mark.integration` marker so they stay out of fast feedback runs and out of CI, but they guard module-level on the env var corresponding to the dependency they exercise — not on `TEST_DATABASE_URL`. The underlying principle is the same: if the external dependency isn't configured, the module is skipped. The current example is `tests/test_mesh_client_integration.py`, which guards on `MESH_BASE_URL` and never touches Postgres. Forcing a DB guardrail onto a DB-free test would be a false coupling and would require an unrelated database to be configured for an unrelated test to run.
+These must never be the same URL locally. All integration test modules enforce this with a hard guardrail at the top of the file: if `TEST_DATABASE_URL` is not set, the entire module is skipped. This guardrail must never be removed, even during development.
 
 **CI exception:** In GitHub Actions, `DATABASE_URL` and `TEST_DATABASE_URL` intentionally point at the same ephemeral Postgres container. This is safe because the container is created fresh for each run, contains no real data, and is destroyed when the job completes. The two-database rule exists to protect production data locally — it does not apply to a throwaway CI container.
 
@@ -64,15 +62,25 @@ The `tsc --noEmit` type check is not included in `make test` — it runs in CI o
 ---
 
 ### Integration tests
-Tests that exercise the full request pipeline or repository layer against a live Postgres database, or that exercise an external HTTP service (such as the local MESH sandbox). Identified by the module-level marker:
+Tests that exercise the full request pipeline or repository layer against a live Postgres database. Identified by the module-level marker:
 
 ```python
 pytestmark = pytest.mark.integration
 ```
 
-This line must appear in every integration test file, after the guardrail block at the top (which guards on `TEST_DATABASE_URL` for DB-backed tests and on the relevant external-dependency env var for others — see the Two-Database Rule section above). pytest discovers all integration tests automatically via `-m integration`. No changes to `Makefile` or `ci.yml` are needed when adding a new integration test file — only the marker is required.
+This line must appear in every integration test file, after the `TEST_DATABASE_URL` guardrail block. pytest discovers all integration tests automatically via `-m integration`. No changes to `Makefile` or `ci.yml` are needed when adding a new integration test file — only the marker is required.
 
 The marker is registered in `pytest.ini` at the project root.
+
+### Guardrail variants (MESH sandbox tests)
+
+Three integration-test shapes exist; every integration file is exactly one of them:
+
+1. **Standard (DB-only)** — the default. `TEST_DATABASE_URL` guardrail first, then the marker. Examples: `test_repositories.py`, `test_mesh_repository.py`, `test_mesh_worker_db.py`.
+2. **DB-free sandbox** — talks to the local MESH sandbox over HTTPS, never touches Postgres. Carries the marker and a module-level skip on `MESH_BASE_URL`, but deliberately OMITS the `TEST_DATABASE_URL` guardrail. The remaining MESH env vars are read with direct `os.environ[...]` subscripts so a half-configured `.env.sandbox` fails loudly (a `KeyError`, not a skip). Sole example: `test_mesh_client_integration.py`.
+3. **Hybrid (DB + sandbox)** — needs both Postgres and the sandbox. Carries the marker, the `TEST_DATABASE_URL` guardrail (first, before any app imports), AND the `MESH_BASE_URL` module-level skip; remaining MESH env vars use direct subscripts as in shape 2. Sole example: `test_mesh_worker_sandbox.py` (the Phase 3 dispatch-tick test).
+
+In CI, shapes 2 and 3 self-skip because `MESH_BASE_URL` is unset there; they run locally with `make sandbox-up` and a populated `.env.sandbox` (which must include `MESH_WORKFLOW_ID` from Phase 3 onwards).
 
 Current integration test files:
 
@@ -85,8 +93,6 @@ Current integration test files:
 **`tests/test_pipeline_repositories.py`** — repository layer tests for `PDFRepository`, `DeliveryRepository`, and `PhotoRepository`. Exercises the `pdf_jobs`, `delivery_jobs`, and `submission_photos` tables.
 
 **`tests/test_webhook_router.py`** — integration tests for the Mailgun webhook router. Exercises HMAC signature verification, timestamp staleness, replay protection, and all status transitions (`delivered`, `failed`, `dropped`, informational events). Builds a minimal FastAPI app with the webhook router directly rather than importing `main.py`, so it does not trigger `alembic_upgrade()` or startup validation.
-
-**`tests/test_mesh_client_integration.py`** — DB-free integration tests for MeshClient against the local MESH sandbox (behind its nginx mTLS proxy). Unlike every other integration module, it does not connect to Postgres and therefore does not carry the TEST_DATABASE_URL guardrail. It is guarded module-level on MESH_BASE_URL (skips when unset, so it never runs in CI). The remaining MESH env vars are read with a direct subscript, so a half-configured .env.sandbox fails loudly with a KeyError rather than skipping.
 
 **Run all integration tests with:**
 ```
@@ -193,6 +199,3 @@ The service-layer per-email cooldown in `auth_service.request_mfa_code` raises `
 
 ### Why does test_webhook_router.py build its own FastAPI app rather than importing main.py?
 The webhook router tests exercise only the webhook router in isolation. Importing `main.py` would trigger `alembic_upgrade()`, the full startup validation chain, and the delivery service instantiation — all of which require environment variables and a fully configured database. Building a minimal app with only the webhook router and the required `app.state` fields keeps the tests focused, faster, and free of startup-validation side effects.
-
-### Why test_mesh_client_integration.py omits the TEST_DATABASE_URL guardrail?
-the two-database rule exists to protect Postgres data, this test touches no database, forcing the guardrail would make a DB-free test require an unrelated DB var, the correct guard for a sandbox test is MESH_BASE_URL, and the integration marker is still applied purely to keep it out of the fast make test run and out of CI (the sandbox never runs in CI).

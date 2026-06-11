@@ -41,9 +41,36 @@ Variables marked **Dev only** must not be set in production.
 | `SMTP_PORT` | Optional | SMTP port. Defaults to 587. |
 | `SMTP_TIMEOUT` | Optional | SMTP connection timeout in seconds. Defaults to 30. |
 | `ADMIN_URL` | Required | Full URL of the admin portal (e.g. `https://my-practice.up.railway.app/admin`). Included in admin invitation emails. |
+| `MESH_DELIVERY` | Required | Selects the delivery path. Exactly `0` (email via Mailgun/SMTP) or `1` (NHS MESH). No default; every process (web, delivery worker, PDF worker) aborts at startup if it is missing or any other value. |
+| `MESH_RECIPIENT_MAILBOX_ID` | Required† | Destination practice MESH mailbox. Read by the PDF worker and copied onto each queued job. |
 
 *Either Mailgun or SMTP must be fully configured. Both sets of variables need
 not be present, but one complete set is required.
+
+†Required only when `MESH_DELIVERY=1`. It is read by the **PDF worker** process,
+not the web service, so the web-service startup check in step 6 will not catch a
+missing value — verify it against the running PDF worker. A wrong recipient does
+not bounce like a mistyped email; it silently misroutes a clinical referral to
+the wrong NHS mailbox or is rejected as an unregistered recipient. It is
+therefore deployment-controlled and fail-fast, never editable from the admin UI.
+Take particular care not to transpose it with the sender mailbox ID (introduced
+with the Phase 3 dispatcher): confirm both against the practice's MESH
+provisioning record at deploy time.
+
+The remaining MESH transport configuration is consumed by the **MESH dispatcher**
+process (`mesh_worker_main.py`, Phase 3), which fail-fasts on any missing value
+or missing certificate file: `MESH_BASE_URL`, `MESH_MAILBOX_ID`,
+`MESH_MAILBOX_PASSWORD`, `MESH_SHARED_KEY`, `MESH_CA_CERT_PATH`,
+`MESH_CLIENT_CERT_PATH`, `MESH_CLIENT_KEY_PATH`, `MESH_WORKFLOW_ID`, plus
+`MESH_WORKER_POLL_INTERVAL_SECONDS` and `DATABASE_URL`. The dispatcher runs as
+its own Railway service (the Dockerfile copies `mesh_worker_main.py`). Two
+standing rules: (1) the email delivery worker must REMAIN deployed while
+`MESH_DELIVERY=1` — it is the fallback consumer; (2) do not enable
+`MESH_DELIVERY=1` in production until ALL of the "Production enablement gates"
+in `mesh_integration_plan.md` are satisfied (Phase 4 deployed; written workflow
+arrangement; endpoint lookup check; verified first send confirmed by a named
+human at the practice). The fuller MESH deployment checklist section lands in
+Phase 5.
 
 ---
 
@@ -117,6 +144,11 @@ python -c "from main import app; print('Startup OK')"
 
 If any configuration is missing or the database is not correctly set up, this
 will print a clear error message describing exactly what needs to be fixed.
+
+This check imports the web service only. It validates `MESH_DELIVERY` (shared by
+all processes) but not `MESH_RECIPIENT_MAILBOX_ID`, which is read by the PDF
+worker process. When `MESH_DELIVERY=1`, confirm the PDF worker starts cleanly as
+well — it aborts with a clear error if the recipient mailbox is unset.
 
 Do not proceed until this command exits with `Startup OK`.
 

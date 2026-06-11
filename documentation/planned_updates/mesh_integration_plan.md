@@ -401,6 +401,7 @@ Entry point. Validates env vars: `MESH_BASE_URL`, `MESH_MAILBOX_ID`, `MESH_MAILB
 
 - `delivery_repository.py` — `create_job` gains an `is_fallback` keyword parameter (default `False`).
 - `submission_repository.py` — new narrow `get_delivery_metadata` method (see 3.2).
+- `mesh_repository.py` — new `list_orphaned_fallbacks()` query for the recovery sweep.
 - `Dockerfile` — add `COPY mesh_worker_main.py ./` alongside the existing worker entry points; without it the dispatcher cannot run on Railway. A corresponding Railway service definition is a deployment action, noted in the Phase 5 checklist.
 - `arch_submission.md` — document the dispatcher fallback ordering invariant, the recovery sweep, and the metadata-access deviation.
 
@@ -408,9 +409,8 @@ Entry point. Validates env vars: `MESH_BASE_URL`, `MESH_MAILBOX_ID`, `MESH_MAILB
 
 - `tests/test_mesh_payload.py` (new, unit): `RawPdfPayloadBuilder` passthrough behaviour.
 - `tests/test_mesh_worker.py` (new, unit, mocked client and repos): success, transient-retry, transient-exhaustion, terminal-failure, fallback ordering, and sweep recovery paths.
-- Sandbox+DB integration test: enqueue a `mesh_jobs` row, run one dispatch tick, assert the sandbox received the message and the row is `sent`. **This is a new hybrid test category**: it needs both Postgres and the sandbox, so unlike the Phase 2a DB-free convention it carries the `integration` marker, the `TEST_DATABASE_URL` guardrail, AND the `MESH_BASE_URL` module-level skip. Document the hybrid category in `docs/arch_testing.md` so the Phase 2a "one documented exception" rule does not silently erode.
-- A "fallback triggers delivery_jobs row" integration test (`MeshClient` mocked to raise `MeshTerminalError`) asserting the email path picks it up with `is_fallback=TRUE`.
-- A sweep integration test: a `fallback_triggered` row with no `delivery_jobs` row is recovered on the next tick.
+- `tests/integration/test_mesh_worker_sandbox.py`: enqueue a `mesh_jobs` row, run one dispatch tick, assert the sandbox received the message and the row is `sent` (message_id stored verbatim). **This is a new hybrid test category**: it needs both Postgres and the sandbox, so unlike the Phase 2a DB-free convention it carries the `integration` marker, the `TEST_DATABASE_URL` guardrail, AND the `MESH_BASE_URL` module-level skip. Document the hybrid category in `docs/arch_testing.md` so the Phase 2a "one documented exception" rule does not silently erode.
+- `tests/integration/test_mesh_worker_db.py` (DB-only, `MeshClient` mocked): terminal failure produces a `delivery_jobs` row with `is_fallback=TRUE` and correctly denormalised fields; a manufactured `fallback_triggered` orphan is recovered by one sweep pass, idempotently.
 
 ---
 
@@ -513,7 +513,8 @@ Phase 3:
 - `mesh_constants.py`
 - `tests/test_mesh_payload.py`
 - `tests/test_mesh_worker.py`
-- Sandbox+DB hybrid integration tests (see 3.6 for guardrail requirements)
+- `tests/integration/test_mesh_worker_db.py`
+- `tests/integration/test_mesh_worker_sandbox.py` (hybrid — see 3.6 for guardrail requirements)
 
 Phase 4:
 - `app/services/delivery/mesh_tracking_worker.py`
@@ -534,6 +535,7 @@ Phase 2b:
 Phase 3:
 - `delivery_repository.py` — `create_job` gains an `is_fallback` parameter (default `False`).
 - `submission_repository.py` — new narrow `get_delivery_metadata` method.
+- `mesh_repository.py` — new `list_orphaned_fallbacks()` sweep query.
 - `Dockerfile` — `COPY mesh_worker_main.py ./`.
 - `arch_submission.md` — fallback ordering invariant, recovery sweep, metadata-access deviation.
 - `docs/arch_testing.md` — document the hybrid (DB + sandbox) integration test category.

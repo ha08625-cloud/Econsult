@@ -15,10 +15,6 @@ and manages its own cursor lifecycle.
 RealDictCursor returns RealDictRow objects which inherit from dict.
 Existing dict(row) calls at all call sites continue to work correctly.
 No call site performs isinstance checks against row types.
-
-Known gap (testing): tests currently run against the same Railway Postgres
-instance as the deployed application. A dedicated test database must be
-provisioned if a second dev joins or before real patient data is stored.
 """
 
 import os
