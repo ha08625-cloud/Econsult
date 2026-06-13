@@ -40,10 +40,7 @@ from app.core.telemetry import init_telemetry
 # migration in db.py) are captured by Sentry's default sys.excepthook.
 init_telemetry("http-api")
 
-from fastapi import FastAPI, HTTPException  # noqa: E402
-from fastapi.exception_handlers import http_exception_handler as _default_http_handler  # noqa: E402
-from fastapi.responses import JSONResponse  # noqa: E402
-from slowapi.errors import RateLimitExceeded  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
 from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
 from starlette.staticfiles import StaticFiles  # noqa: E402
 
@@ -51,7 +48,7 @@ from app.core.rate_limit import limiter  # noqa: E402
 from app.core.db import alembic_upgrade  # noqa: E402
 from app.core.settings import load_web_settings  # noqa: E402
 from app.core.wiring import build_container, unpack_container  # noqa: E402
-from app.core.errors import APIError, RateLimitError, ConditionNotFound  # noqa: E402
+from app.core.error_handlers import register_error_handlers  # noqa: E402
 from app.routers.admin_router import router as admin_router  # noqa: E402
 from app.routers.public_router import router as public_router  # noqa: E402
 from app.routers.form_router import router as form_router  # noqa: E402
@@ -129,60 +126,7 @@ app.include_router(webhook_router)
 # Error handling
 # ---------------------------------------------------------------------------
 
-@app.exception_handler(APIError)
-async def api_error_handler(_, exc: APIError):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": {"code": exc.code, "message": exc.message}},
-    )
-
-
-@app.exception_handler(ConditionNotFound)
-async def condition_not_found_handler(_, exc: ConditionNotFound):
-    return JSONResponse(
-        status_code=404,
-        content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}},
-    )
-
-
-@app.exception_handler(RateLimitError)
-async def rate_limit_handler(_, exc: RateLimitError):
-    return JSONResponse(
-        status_code=429,
-        content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": str(exc)}},
-    )
-
-
-@app.exception_handler(RateLimitExceeded)
-async def slowapi_rate_limit_handler(_, exc: RateLimitExceeded):
-    # Catches requests rejected by @limiter.limit() decorators (slowapi).
-    # Returns the same error envelope as the service-layer RateLimitError handler
-    # above so the frontend always receives a consistent 429 response shape.
-    return JSONResponse(
-        status_code=429,
-        content={
-            "error": {
-                "code": "RATE_LIMIT_EXCEEDED",
-                "message": "Too many requests. Please try again later.",
-            }
-        },
-    )
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_envelope_handler(request, exc: HTTPException):
-    # Reshape 401 responses into the standard error envelope so the frontend
-    # has a consistent body shape across all error types. The HTTP status code
-    # is the primary contract for session expiry — this handler is the single
-    # place that enforces the secondary (body) contract for 401s.
-    # All other HTTP exceptions pass through to FastAPI's default handler
-    # unchanged — we do not want to interfere with 404s, 422s from Pydantic, etc.
-    if exc.status_code == 401:
-        return JSONResponse(
-            status_code=401,
-            content={"error": {"code": "UNAUTHORIZED", "message": exc.detail}},
-        )
-    return await _default_http_handler(request, exc)
+register_error_handlers(app)
 
 
 # ---------------------------------------------------------------------------
