@@ -13,19 +13,36 @@ Session-based auth rules:
 - Returns HTTP 401 if the cookie is absent or the session is not found
   or has expired.
 
-This module must never import any project module other than app.core.db.
-Only stdlib, FastAPI, and psycopg2.
+This module is a security boundary kept to a minimal import surface: it
+imports only stdlib, FastAPI, and app.core.state_keys (a leaf module that
+itself imports nothing). It deliberately does NOT import the repository or
+wiring modules. Instead it depends on the AuthProvider abstraction below
+(dependency inversion): require_admin needs only an object that satisfies
+get_session_context, not the concrete AuthRepository or the concrete
+app/core/wiring construction module.
+
+This is a deliberate design choice, not an oversight that it skips the
+app/core/dependencies.get_auth_repo getter. dependencies.py centralises
+app.state access at the cost of importing the full repository-and-service
+closure at module load. For a boundary that may be imported early in the
+startup chain, keeping that closure out is the right tradeoff, and the
+AuthProvider Protocol already supplies the type safety the getter would
+otherwise provide. The one thing the getter would have unified -- the
+app.state attribute name -- is shared via the AUTH_REPO constant in
+app/core/state_keys.py so it cannot drift. tests/test_admin_context.py
+pins this import surface in a subprocess so a future import of the wiring
+closure into this module fails CI.
 
 The AuthProvider Protocol below documents the subset of AuthRepository
-used by this module without importing the repository class itself, which
-would create a circular dependency risk if admin_context is ever imported
-early in the startup chain.
+used by this module without importing the repository class itself.
 """
 
 import logging
 from typing import Optional, Dict, Any, Protocol, runtime_checkable
 
 from fastapi import Request, HTTPException
+
+from app.core.state_keys import AUTH_REPO
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +134,7 @@ async def require_admin(request: Request) -> AdminContext:
         HTTP 401 if no valid session cookie is present or the session has
         expired.
     """
-    auth_repo: AuthProvider = request.app.state.auth_repo
+    auth_repo: AuthProvider = getattr(request.app.state, AUTH_REPO)
 
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
     if not session_id:
