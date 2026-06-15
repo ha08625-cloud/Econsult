@@ -12,9 +12,12 @@ Rules:
 - All values stored in app.state are immutable after startup.
 """
 
+from typing import Optional
+
 from fastapi import Request
 
 from app.core.condition_registry import ConditionRegistry
+from app.core.state_keys import AUTH_REPO
 from app.repositories.practice_repository import PracticeRepository
 from app.repositories.availability_repository import AvailabilityRepository
 from app.repositories.runtime_state_repository import RuntimeStateRepository
@@ -83,7 +86,10 @@ def get_practice_name(request: Request) -> str:
 
 
 def get_auth_repo(request: Request) -> AuthRepository:
-    return request.app.state.auth_repo
+    # Reads via the shared AUTH_REPO constant rather than a literal because
+    # this attribute name is also referenced by app/core/admin_context.py,
+    # which cannot import this module. See app/core/state_keys.py.
+    return getattr(request.app.state, AUTH_REPO)
 
 
 def get_audit_repo(request: Request) -> AuditRepository:
@@ -96,3 +102,15 @@ def get_admin_delivery_service(request: Request) -> AdminDeliveryService:
 
 def get_allowed_admin_domains(request: Request) -> str:
     return request.app.state.allowed_admin_domains
+
+
+def get_database_url(request: Request) -> str:
+    return request.app.state.database_url
+
+
+def get_mailgun_signing_key(request: Request) -> Optional[str]:
+    # Optional by design: None on the SMTP delivery path. Uses getattr with a
+    # None default so a deployment that never set the attribute resolves to
+    # None (and the webhook returns 403) rather than raising AttributeError,
+    # preserving the webhook's misconfiguration-is-403 behaviour.
+    return getattr(request.app.state, "mailgun_signing_key", None)
