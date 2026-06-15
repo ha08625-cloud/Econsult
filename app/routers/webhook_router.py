@@ -10,9 +10,10 @@ Security model:
 
 2. HMAC verification: the signature in the payload is verified against
    MAILGUN_SIGNING_KEY using HMAC-SHA256 over (timestamp + token). Requests
-   that fail verification return 403. The key is read from app.state at
-   startup; startup validation ensures it is present when MAILGUN_API_KEY
-   is set.
+   that fail verification return 403. The key is obtained via
+   app.core.dependencies.get_mailgun_signing_key; startup validation ensures
+   it is present on the Mailgun delivery path. On the SMTP path it is None,
+   and any Mailgun webhook received returns 403.
 
 3. Replay protection: each webhook carries a unique token. The router
    attempts INSERT INTO webhook_tokens ... ON CONFLICT DO NOTHING. If no row
@@ -54,6 +55,11 @@ from fastapi.responses import JSONResponse
 
 from app.repositories.delivery_repository import DeliveryRepository
 from app.core.db import get_conn
+from app.core.dependencies import (
+    get_database_url,
+    get_delivery_repo,
+    get_mailgun_signing_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,10 +165,11 @@ async def mailgun_webhook(request: Request) -> Response:
         return JSONResponse(status_code=200, content={"status": "ok"})
 
     # 2. HMAC verification.
-    signing_key = getattr(request.app.state, "mailgun_signing_key", None)
+    signing_key = get_mailgun_signing_key(request)
     if not signing_key:
-        # Startup validation ensures this is set in production. If it is
-        # somehow absent at request time, refuse rather than skip verification.
+        # None on the SMTP path, or if never configured. Startup validation
+        # guarantees presence on the Mailgun path; if it is somehow absent at
+        # request time, refuse rather than skip verification.
         logger.error("Webhook: MAILGUN_SIGNING_KEY not available in app.state")
         return JSONResponse(status_code=403, content={"error": "misconfigured"})
 
@@ -173,7 +180,7 @@ async def mailgun_webhook(request: Request) -> Response:
         return JSONResponse(status_code=403, content={"error": "invalid signature"})
 
     # 3. Replay protection.
-    database_url: str = request.app.state.database_url
+    database_url: str = get_database_url(request)
     is_fresh = _consume_token(database_url, token)
     if not is_fresh:
         logger.info(
@@ -184,7 +191,7 @@ async def mailgun_webhook(request: Request) -> Response:
         return JSONResponse(status_code=200, content={"status": "ok"})
 
     # All security checks passed. Process the event.
-    delivery_repo: DeliveryRepository = request.app.state.delivery_repo
+    delivery_repo: DeliveryRepository = get_delivery_repo(request)
 
     logger.info(
         "Webhook: processing event=%s provider_message_id=%s",
