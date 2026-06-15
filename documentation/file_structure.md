@@ -13,6 +13,7 @@
 - `deletion_job.py` — Nightly cron one-shot script.
 - `.env` — Local environment variables, not committed.
 - `Dockerfile` — Container build definition (Vite + Python).
+- `build.sh` — Build script used by the container.
 - `railway.toml` — Railway deployment config.
 - `requirements.txt` — Python dependencies.
 - `alembic.ini` — Alembic configuration.
@@ -23,7 +24,6 @@
 - `scripts/` — One-time management commands for deployment and administration.
   - `create_admin_user.py` — Inserts an admin user before first boot. Generates a one-time password setup token and prints the setup URL. Accepts `--create-practice` flag for CI use.
 - `docs/` — Architecture documents and operational guides.
-  - `README.md` — Introductory doc for onboarding new developers.
   - `deployment_checklist.md` — Step-by-step checklist for deploying to a new environment.
 - `sandbox/` — Local-dev MESH sandbox. Never deployed, never run in CI. See `sandbox/README.md`.
   - `docker-compose.yml` — Two-service stack: `mesh_sandbox` (NHSDigital/mesh-sandbox image) behind an `nginx` mTLS-terminating proxy. Internal bridge network; only nginx exposes a host port.
@@ -103,15 +103,19 @@ Database access for persistent records. No business logic.
 ### 2.4 `app/core/`
 Infrastructure concerns only. No clinical logic.
 
-- `admin_context.py` — Admin authentication context/dependencies. *Imports: stdlib and FastAPI only.*
+- `admin_context.py` — Admin authentication context/dependencies. Depends on the `AuthProvider` Protocol, not the wiring closure; reads `app.state.auth_repo` via the `AUTH_REPO` constant from `state_keys.py`. *Imports: stdlib, FastAPI, and `app.core.state_keys` only.*
 - `condition_registry.py` — Ruleset indexer.
 - `consultation_outcomes.py` — Python interface for outcome constants. *Imports: json and os only.*
 - `db.py` — Shared Postgres connection module.
-- `dependencies.py` — Shared FastAPI dependency provider functions.
+- `dependencies.py` — Shared FastAPI dependency provider functions. Each `get_*` reads one `app.state` attribute. The getter <-> `AppContainer` field-name contract is pinned by `tests/test_wiring.py`.
+- `error_handlers.py` — `register_error_handlers(app)`: the four FastAPI exception handlers, attached by `main.py` at startup. *Imports: FastAPI and `app.core.errors` only.*
 - `errors.py` — Shared API, rate limit, and condition-not-found errors. `APIError` carries `status_code: int = 422`. User management errors: `USER_ALREADY_EXISTS` (409), `ACTION_NOT_PERMITTED` (403), `USER_NOT_FOUND` (404). Password auth errors: `INVALID_CREDENTIALS` (422, generic — does not reveal which gate failed), `INVALID_RESET_TOKEN` (422), `WEAK_PASSWORD` (422, message populated from zxcvbn feedback).
 - `rate_limit.py` — SlowAPI Limiter instantiation. *Imports: slowapi, app.utils.http_utils only.*
 - `request_validation.py` — HTTP payload validation.
+- `settings.py` — pydantic-settings models (`EmailSettings`, `MeshSettings`, `WebSettings`) and `load_web_settings()`. Owns all environment-variable validation and `EmailSettings.delivery_mode`. *Imports: pydantic, pydantic-settings, stdlib only.*
+- `state_keys.py` — Leaf module of `app.state` key constants (currently `AUTH_REPO`). Holds only keys read across the wiring import boundary. *Imports: nothing.*
 - `telemetry.py` — Sentry initialisation. Called once at the top of each process entry point. *Imports: stdlib only at module level; sentry_sdk and app.core.errors imported lazily inside the function body. Must NOT import repositories, registries, or db.*
+- `wiring.py` — `AppContainer` (frozen dataclass), `build_container(settings)`, `run_deployment_checks(...)`, and `unpack_container(app, container)`. The construction and DB-startup-check composition root. *Imports: the registry, all repositories, both delivery services, the presentation service, and settings.*
 - `consultation_outcomes.json` — Canonical source for outcome values.
 - `upload_constants.json` — Canonical source for photo upload limits.
 - `upload_constants.py` — Python interface for upload constants.
@@ -130,7 +134,7 @@ HTTP route handlers. No business logic; orchestration only.
 - `public_router.py` — Patient-facing public endpoints (conditions list, availability check).
 - `form_router.py` — Patient form session endpoints (start, answer, finish).
 - `admin_router.py` — Thin orchestrator. Registers the five admin sub-routers. Contains no route handlers.
-- `webhook_router.py` — Mailgun delivery webhook endpoint (`POST /webhooks/mailgun`). Enforces HMAC signature verification, timestamp staleness, and token-based replay protection. Reads `app.state.mailgun_signing_key` and `app.state.database_url`. *Imports: delivery_repository, db, fastapi, hmac, hashlib, time only.*
+- `webhook_router.py` — Mailgun delivery webhook endpoint (`POST /webhooks/mailgun`). Enforces HMAC signature verification, timestamp staleness, and token-based replay protection. Reads the signing key, database URL, and delivery repo via the `app.core.dependencies` getters (called directly in-body to preserve the security-check ordering). *Imports: delivery_repository, db, dependencies, fastapi, hmac, hashlib, time only.*
 
 **`app/routers/admin/`** (Admin sub-router package)
 - `__init__.py` — Package marker.
@@ -187,6 +191,9 @@ Schema migration scripts. See code files directly for exact table definitions.
 - `helpers/admin_test_helpers.py` — Shared helpers for the admin sub-router tests. Provides `make_test_app`, `dummy_conn`, and stubs: `StubAuthRepo` (includes no-op password auth methods: `set_password`, `record_failed_password_attempt`, `reset_password_attempts`, `upsert_reset_token`, `get_reset_token_record`, `delete_reset_token`), `StubPracticeRepo` (includes `lock_practice`), `StubAvailabilityRepo`, `StubAuditRepo`, `StubAdminDeliveryService` (tracks `send_mfa_code` calls and `send_admin_invitation(email, token)` calls separately), `StubRegistry`.
 
 **Unit tests (Mocked/In-memory)**
+- `test_settings.py` — Pure unit coverage of `app/core/settings.py`: requiredness rules, `delivery_mode` selection (complete/partial Mailgun, SMTP, precedence), the conditional signing-key rule, `MESH_DELIVERY` exact-value rejection, and clean error messages. No DB.
+- `test_wiring.py` — Pins the `dependencies.py` getter <-> `AppContainer` field contract: enumerates every `get_*` getter dynamically, unpacks a stub container, and asserts each getter returns the matching field. Also pins frozen-ness and `unpack_container`. No DB.
+- `test_admin_context.py` — Subprocess test asserting `app/core/admin_context.py`'s import surface stays free of the repository/service/wiring closure. Must run in a subprocess (in-process `sys.modules` checks are unreliable under pytest). No DB.
 - `test_delivery_service.py`, `test_delivery_worker.py`, `test_pdf_worker.py`, `test_downstream_enqueuer.py`, `test_mesh_enqueuer.py` (MeshEnqueuer; mocks MeshRepository, no DB), `test_pdf_generation.py`, `test_image_sanitizer.py`, `test_practice_endpoint.py`, `test_request_validation.py`, `test_upload_constants.py`, `test_sanitise_signposting.py`, `test_mesh_client.py` (MESH client library; mocks `requests.Session`, no DB, no network), `test_mesh_payload.py` (payload seam; pure functions), `test_mesh_worker.py` (dispatcher helpers; mocks client and repos, no DB, no network, no real sleeping).
 
 **Admin Sub-Router unit tests (placed in tests/routers/ subfolder)**
@@ -220,7 +227,8 @@ These structural boundaries MUST NOT be crossed:
 * `presentation_service` **must NOT** import `RuntimeState`, `safety_engine`, `encoder_*`, or `form_logic`.
 * Any file in `app/routers/admin/` **must NOT** import engine modules, `presentation_service`, `serialisation`, `projection`, or `runtime_state`.
 * `admin_router.py` (orchestrator) **must NOT** import anything other than FastAPI and the five admin sub-routers.
-* `admin_context.py` **must NOT** import any project module other than stdlib and FastAPI.
+* `admin_context.py` **must NOT** import any project module other than `app.core.state_keys` (a leaf module that itself imports nothing). It depends on the `AuthProvider` Protocol rather than concrete repositories or the wiring module, keeping its import surface minimal. Pinned by `tests/test_admin_context.py`.
+* `state_keys.py` **must NOT** import anything at all (not stdlib, not FastAPI, not any project module). Its sole purpose is to be a dependency-free home for shared `app.state` key constants.
 * `auth_service.py` **must NOT** access any repository or database module directly.
 * `auth_repository.py` **must NOT** import `auth_service`, `admin_delivery_service`, or any service module.
 * `user_service.py` **must NOT** access the database directly or handle email delivery.

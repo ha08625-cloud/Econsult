@@ -8,7 +8,7 @@
 
 Railway deployment, multi-stage Docker build, process topology, static file serving, Postgres + psycopg2, Alembic migrations.
 
-**Key files:** `Dockerfile`, `railway.toml`, `main.py`, `worker_main.py`, `pdf_worker_main.py`, `deletion_job.py`, `db.py`, `alembic.ini`, `alembic/env.py`, migration files in `alembic/versions/`
+**Key files:** `Dockerfile`, `railway.toml`, `main.py`, `app/core/settings.py`, `app/core/wiring.py`, `worker_main.py`, `pdf_worker_main.py`, `deletion_job.py`, `db.py`, `alembic.ini`, `alembic/env.py`, migration files in `alembic/versions/`
 
 ---
 
@@ -26,7 +26,7 @@ Railway deployment, multi-stage Docker build, process topology, static file serv
 
 ## Process Topology
 
-Four processes run from the same Docker image, as separate Railway services:
+Four processes are deployed from the same Docker image, as separate Railway services (a fifth entry point exists but is dormant in Phase 1a — see below):
 
 | Process | Entry point | Started by |
 |---|---|---|
@@ -34,6 +34,8 @@ Four processes run from the same Docker image, as separate Railway services:
 | Delivery worker | `python worker_main.py` | Railway start command override |
 | PDF worker | `python pdf_worker_main.py` | Railway start command override |
 | Deletion job (nightly) | `python deletion_job.py` | Railway cron |
+
+A fifth entry point, the MESH dispatcher (`python mesh_worker_main.py`), exists in the codebase but is **not deployed in Phase 1a**. It is the consumer for the `mesh_jobs` queue and only runs once MESH delivery is enabled in a later phase. The four processes above are the complete deployed topology today.
 
 Design decisions and constraints:
 
@@ -71,26 +73,32 @@ Current migrations:
 - `0002_user_management_cascade.py` — `ON DELETE CASCADE` on `admin_sessions.user_id` FK; `admin_users.last_login` nullable `TIMESTAMPTZ`.
 - `0003_webhook_tracking.py` — `provider_message_id` and `provider_events` on `delivery_jobs`; extended status check constraint; `webhook_tokens` replay protection table.
 - `0004_password_auth.py` — password columns on `admin_users` (`hashed_password`, `failed_password_attempts`, `password_locked_until`, `password_changed_at`); `admin_password_reset_tokens` table.
+- `0005_mesh_schema.py` — `mesh_jobs` table (outbound MESH delivery queue, one row per MESH-enabled submission); `is_fallback` boolean on `delivery_jobs`. Applied by `alembic upgrade head` like every other migration; the schema objects sit dormant until MESH is enabled in a later phase.
 
 ---
 
 ## Startup Validation (Fail-Fast)
 
-`_validate_startup()` and module-level checks in `main.py` run at import time and abort if:
+Validation runs at import time in `main.py` and aborts with a `RuntimeError` on any failure. It is split by what each check needs:
 
-- `DATABASE_URL` env var is missing
-- `PRACTICE_ID` env var is missing
-- The practice record does not exist in the database (**there is no automatic seeding** — the record must be inserted manually before first startup; see `docs/deployment_checklist.md`)
-- The practice record has no email configured
-- The database contains more than one practice (single-tenant invariant)
-- `EMAIL_FROM` is missing
-- Neither a complete Mailgun configuration (`MAILGUN_API_KEY` + `MAILGUN_DOMAIN`) nor a complete SMTP configuration (`SMTP_HOST` + `SMTP_USER` + `SMTP_PASSWORD`) is present
-- Mailgun is configured but `MAILGUN_SIGNING_KEY` is not set (webhook signature verification would be impossible)
-- `MESH_DELIVERY` is missing, is not exactly `"0"` or `"1"`, or is `"1"` (not yet supported in Phase 1a — no defaulting is permitted)
-- `ALLOWED_ADMIN_DOMAINS` is missing
-- No admin user exists for the practice (the first user must be created via `scripts/create_admin_user.py`; see `docs/deployment_checklist.md`)
+**Environment variables — `app/core/settings.py`** (`load_web_settings()`, no database access):
 
-The only row the application inserts automatically at startup is the **default availability row** (`availability_repo.init_availability`), which is created if absent after validation passes. The practice record and first admin user are never auto-created.
+- `DATABASE_URL`, `PRACTICE_ID`, `ALLOWED_ADMIN_DOMAINS` must be set
+- `EMAIL_FROM` must be set
+- A complete email path must be present: a complete Mailgun configuration (`MAILGUN_API_KEY` + `MAILGUN_DOMAIN`) or a complete SMTP configuration (`SMTP_HOST` + `SMTP_USER` + `SMTP_PASSWORD`)
+- `MAILGUN_SIGNING_KEY` must be set when the Mailgun path is selected (otherwise webhook signature verification would be impossible)
+- `MESH_DELIVERY` must be present and exactly `"0"` or `"1"`; `"1"` is rejected in Phase 1a (no defaulting is permitted)
+
+`EmailSettings.delivery_mode` is the single predicate that decides Mailgun vs SMTP: it returns `"mailgun"` only for a complete Mailgun configuration. A **partial** Mailgun configuration (one of `MAILGUN_API_KEY` / `MAILGUN_DOMAIN` but not both) is treated as not-Mailgun: if SMTP is complete the deployment falls through to SMTP and logs a warning so the demotion is visible in Railway logs; if SMTP is incomplete, startup aborts. This deliberately replaced two inconsistent legacy predicates that could select a broken Mailgun path at send time.
+
+**Database state — `app/core/wiring.py`** (`run_deployment_checks`, inside `build_container`):
+
+- The practice record must exist (**no automatic seeding** — insert it manually before first startup; see `docs/deployment_checklist.md`)
+- The practice record must have a non-empty email
+- The database must contain exactly one practice (single-tenant invariant)
+- At least one admin user must exist (created via `scripts/create_admin_user.py`)
+
+The only row the application inserts automatically at startup is the **default availability row** (`availability_repo.init_availability`), created if absent after all checks pass. The practice record and first admin user are never auto-created.
 
 The practice name used in generated PDFs is captured once at startup. If it is changed via the admin interface, the running web service uses the old name until the next restart.
 
