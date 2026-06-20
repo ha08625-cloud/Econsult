@@ -8,7 +8,7 @@
 
 Ruleset loading, RuntimeState lifecycle, applying patient answers, orchestrating the engine pipeline. This is the deterministic functional core of the system.
 
-**Key files:** `form_logic.py`, `runtime_state.py`, `ruleset.py`, `condition_registry.py`, `engine_adapters.py`
+**Key files:** `form_logic.py`, `runtime_state.py`, `ruleset.py`, `condition_registry.py`, `pipeline.py`
 
 ---
 
@@ -50,7 +50,7 @@ Defines `RuntimeState`, `AnswerState`, `SafetyEvaluation`, and `AnswerSource` li
 
 Loads rulesets from JSON, validates schema and invariants, computes the ruleset hash, and extracts encoder definitions (answer_key + encoder_prompt pairs). Rulesets are the authoritative source; all mappings are explicit and precomputed.
 
-### `engine_adapters.py` — Orchestration layer
+### `pipeline.py` — Orchestration layer
 
 The only module permitted to coordinate across engine boundaries. Defines three entry points matching the three API phases: `init_runtime_state`, `apply_update_and_evaluate`, `finish_runtime_state`.
 
