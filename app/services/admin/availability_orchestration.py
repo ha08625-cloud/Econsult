@@ -8,7 +8,7 @@ This module exists because availability_service.py is pure logic (no database
 access), and the repository layer has no awareness of the service. Something
 must fetch the data and call the service. That something is this module.
 
-This is the same pattern as engine_adapters.py: services contain pure logic,
+This is the same pattern as pipeline.py: services contain pure logic,
 orchestration lives in a dedicated calling layer.
 
 Fail-open rule: callers are responsible for catching exceptions from
