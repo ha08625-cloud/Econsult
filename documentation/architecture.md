@@ -1,8 +1,8 @@
 # Econsult System Architecture (Hub)
 
-**LLM INSTRUCTIONS:** This is the master map of the system. Do NOT assume architectural details. Use this document to understand the global invariants and locate the specific domain documentation (Spokes). Read the codebase files directly for implementation details (function signatures, schemas, etc.).  All codebase files exist in Claude's project files and are directly accessible.  Claude project files mostly have flat file names for simplicity - full paths are used only if there is ambiguity e.g. frontend/index.html vs frontend/admin-ui/index.html.  See file_structure.md for the definitive file structure
+This is the master map of the system. Do NOT assume architectural details. Use this document to understand the global invariants and locate the specific domain documentation (Spokes). Read the codebase files directly for implementation details (function signatures, schemas, etc.).  All codebase files exist in Claude's project files and are directly accessible.  Claude project files mostly have flat file names for simplicity - full paths are used only if there is ambiguity e.g. frontend/index.html vs frontend/admin-ui/index.html.  See file_structure.md for the definitive file structure
 
-## 1. Project-Level Invariants (Strictly Enforced)
+## 1. Project-Level Invariants
 
 These rules apply universally and MUST NOT be violated by any new feature or refactor:
 
@@ -30,7 +30,7 @@ When modifying or adding features, locate the relevant capability below to ident
 ### 3.1 Core Engine & Clinical Logic
 * **Scope:** Contains core data flows for form initialization and submission, ruleset loading, applying patient answers, projecting state. 
 * **Domain Doc:** `docs/arch_core_engine.md`
-* **Key Files:** `form_logic.py`, `runtime_state.py`, `ruleset.py`, `condition_registry.py`, `engine_adapters.py`
+* **Key Files:** `form_logic.py`, `runtime_state.py`, `ruleset.py`, `condition_registry.py`, `pipeline.py`
 
 ### 3.2 Clinical Safety & Projection
 * **Scope:** Evaluating explicit patient answers against safety rules, blocking submissions.
