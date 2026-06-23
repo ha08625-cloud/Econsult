@@ -49,7 +49,7 @@ Defines the **only** data structures permitted to cross the boundary between an 
 
 - No business logic beyond output validation.
 - No imports from any engine module.
-- Imported by `encoder_mapping.py` and `engine_adapters.py` only.
+- Imported by `encoder_mapping.py` and `pipeline.py` only.
 
 ### `encoder_stub.py` — Replaceable encoder facade
 
