@@ -27,9 +27,15 @@ The shape and constraints of the JSON ruleset files that define clinical behavio
       "question_id": "<string>",       // unique within ruleset
       "question": "<string>",          // human-facing question text
       "answer_key": "<string>",        // unique identifier; used everywhere (answers, safety rules, encoder)
-      "answer_type": "Boolean" | "text",
+      "answer_type": "Boolean" | "text" | "Number",
       "send_to_encoder": true | false,
-      "encoder_prompt": "<string>" | null  // required if send_to_encoder; null otherwise
+      "encoder_prompt": "<string>" | null,  // required if send_to_encoder; null otherwise
+
+      // Number questions only (omit these four for Boolean and text):
+      "decimal_places": <non-negative integer>,  // 0 = whole numbers only
+      "min": <number>,                            // advisory lower bound
+      "max": <number>,                            // advisory upper bound; min < max
+      "range_warning_text": "<string>" | null     // optional; shown when value is outside min/max
     }
   ],
 
@@ -57,6 +63,10 @@ The shape and constraints of the JSON ruleset files that define clinical behavio
 **Coupled wording.** `question` (human-facing) and `encoder_prompt` (ML-facing) are different wordings of the same clinical concept. They must stay in sync when either is edited.
 
 **Encoder questions must be Boolean.** `send_to_encoder: true` requires `answer_type: "Boolean"` and a non-null `encoder_prompt`. Non-Boolean questions must have `send_to_encoder: false` and `encoder_prompt: null`. This is validated at startup by `ruleset.py`.
+
+**Answer types are a closed set.** `answer_type` must be present and one of `"Boolean"`, `"text"`, or `"Number"`. An unknown or missing type aborts startup. (Runtime state lowercases the type, so the client view reports `"number"`.)
+
+**Number questions carry their own precision and bounds.** A `"Number"` question requires `decimal_places` (a non-negative integer; `0` means whole numbers only) and numeric `min`/`max` with `min < max`. Neither bound may have more decimal places than `decimal_places`. `range_warning_text` is optional (string or null). The two constraints behave differently: `decimal_places` is a **hard** submission constraint — a value with more decimal places is rejected at `/form/update` with `INVALID_PAYLOAD` — whereas `min`/`max` are **advisory**, driving only a non-blocking, client-side out-of-range notice (rendered when `range_warning_text` is authored and the value falls outside the bounds) and never blocking submission. Number values are transported on the wire as JSON numbers, parsed with decimal precision at the request boundary, and stored as exact canonical strings (e.g. `"70.5"`). Validated at startup by `ruleset.py`.
 
 **Safety rules use `"any"` (OR) semantics.** A rule fires if **any** clause in its `"any"` list is satisfied. This is the correct clinical behaviour: a single red flag answer should trigger the rule. The key must be `"any"`, not `"all"` — both the validator in `ruleset.py` and the engine in `safety_engine.py` read this key.
 

@@ -115,6 +115,15 @@ def _build_answers(client_state: dict) -> dict:
     for q in client_state["questions"]:
         if q["answer_type"] == "boolean":
             answers[q["answer_key"]] = True
+        elif q["answer_type"] == "number":
+            # An integer always satisfies the question's precision; choose one
+            # near the middle of the allowed range so the generic flow tests do
+            # not trip an out-of-range warning. Sent as a JSON number.
+            lo = q.get("min")
+            hi = q.get("max")
+            answers[q["answer_key"]] = (
+                int(round((lo + hi) / 2)) if lo is not None and hi is not None else 1
+            )
         else:
             answers[q["answer_key"]] = "test answer"
     return answers
@@ -716,3 +725,73 @@ def test_finish_without_photos_and_no_tier_returns_200():
             f"Expected 200 for text-only submission with no tier field, "
             f"got {finish_res.status_code}: {finish_res.text}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Number answer type — boundary behaviour at /form/update
+#
+# These target the numeric_capability_demo condition (a temporary demo ruleset
+# with a single Number question, patient_weight_kg, decimal_places=1). Remove
+# them together with the demo ruleset at the end of the numeric epic — see the
+# removal checklist in the ticket.
+# ---------------------------------------------------------------------------
+
+NUMERIC_DEMO_CONDITION_ID = "numeric_capability_demo"
+NUMERIC_DEMO_ANSWER_KEY = "patient_weight_kg"
+
+
+def _init_numeric_demo(client: TestClient) -> tuple[str, int]:
+    """Init the demo condition directly by id (works regardless of search_tags)."""
+    res = client.post("/form/init", json={
+        "condition_id": NUMERIC_DEMO_CONDITION_ID,
+        "free_text": "Numeric capability demo",
+    })
+    assert res.status_code == 200, res.text
+    body = res.json()
+    return body["runtime_id"], body["version"]
+
+
+def test_update_rejects_number_with_too_many_decimals():
+    """
+    A value finer than the question's decimal_places is rejected at the
+    boundary as 422 INVALID_PAYLOAD. This also exercises the raw-body
+    parse_float=Decimal path: 70.55 must be read exactly (as Decimal), so the
+    precision check sees two decimal places rather than a lossy float.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _init_numeric_demo(client)
+        res = client.post("/form/update", json={
+            "runtime_id": runtime_id,
+            "base_version": version,
+            "answers": {NUMERIC_DEMO_ANSWER_KEY: 70.55},
+            "additional_text": None,
+        })
+        assert res.status_code == 422, res.text
+        assert res.json()["error"]["code"] == "INVALID_PAYLOAD"
+
+
+def test_update_accepts_number_at_allowed_precision():
+    """A value at exactly decimal_places is accepted and the session advances."""
+    with TestClient(app) as client:
+        runtime_id, version = _init_numeric_demo(client)
+        res = client.post("/form/update", json={
+            "runtime_id": runtime_id,
+            "base_version": version,
+            "answers": {NUMERIC_DEMO_ANSWER_KEY: 70.5},
+            "additional_text": None,
+        })
+        assert res.status_code == 200, res.text
+        assert res.json()["version"] == version + 1
+
+
+def test_update_accepts_whole_number_for_number_question():
+    """A whole number carries no fractional part and is always within precision."""
+    with TestClient(app) as client:
+        runtime_id, version = _init_numeric_demo(client)
+        res = client.post("/form/update", json={
+            "runtime_id": runtime_id,
+            "base_version": version,
+            "answers": {NUMERIC_DEMO_ANSWER_KEY: 70},
+            "additional_text": None,
+        })
+        assert res.status_code == 200, res.text

@@ -30,6 +30,7 @@ from app.services.engine.form_logic import (
     apply_patient_answers,
     normalise_encoder_provenance,
     validate_required_answers,
+    normalise_number_answers,
 )
 from app.models.api_models import SafetyMessage
 
@@ -90,7 +91,12 @@ def apply_update_and_evaluate(
 
     normalise_encoder_provenance(runtime_state)
 
-    validate_required_answers(runtime_state)
+    validate_required_answers(runtime_state, ruleset)
+
+    # Convert validated Number answers (int/Decimal) to their canonical string
+    # form before the state is serialised or persisted. Must run after
+    # validation (which needs the exact numeric type) and before serialisation.
+    normalise_number_answers(runtime_state)
 
     explicit_answers = project_explicit_answers(runtime_state)
     safety_rules = ruleset.get("safety", {}).get("rules", {})

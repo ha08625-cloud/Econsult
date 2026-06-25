@@ -1,14 +1,24 @@
 // Frontend-visible contracts only
 
-export type AnswerType = "boolean" | "text";
+export type AnswerType = "boolean" | "text" | "number";
 
 export interface ClientQuestion {
   answer_key: string;
   question_text: string;
   answer_type: AnswerType;
+  // For "number" questions the server sends the value as its canonical string
+  // (e.g. "70.5"), which is why this stays string-or-null rather than widening
+  // to number. The string is held verbatim in the edit form so trailing-zero
+  // precision errors can be detected; it is converted to a number only when the
+  // /form/update payload is built.
   current_value: boolean | string | null;
   required: boolean;
   suggested: boolean;
+  // Number questions only. Absent for boolean and text questions.
+  decimal_places?: number;
+  min?: number;
+  max?: number;
+  range_warning_text?: string | null;
 }
 
 export interface ClientStateView {
@@ -21,7 +31,9 @@ export interface ClientStateView {
 export interface ClientAnswerReturn {
   runtime_id: string;
   base_version: number;
-  answers: Record<string, boolean | string | null>;
+  // Number answers travel on the wire as JSON numbers; the backend parses them
+  // with Decimal precision. boolean and text answers travel as before.
+  answers: Record<string, boolean | string | number | null>;
   additional_text: string | null;
 }
 

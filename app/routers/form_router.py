@@ -21,6 +21,7 @@ Architecture rules:
 import json
 import logging
 import uuid
+from decimal import Decimal
 from dataclasses import replace
 from datetime import date, datetime, timezone
 
@@ -62,6 +63,7 @@ from app.repositories.runtime_state_repository import (
     VersionConflict,
 )
 from app.services.admin.availability_orchestration import check_availability
+from app.services.engine.form_logic import AnswerValidationError
 from app.services.engine.pipeline import (
     apply_update_and_evaluate,
     finish_runtime_state,
@@ -153,7 +155,12 @@ async def form_update(
     registry=Depends(get_registry),
     runtime_repo=Depends(get_runtime_repo),
 ):
-    payload = await request.json()
+    # Parse with parse_float=Decimal (Starlette's request.json() cannot pass it)
+    # so Number answers arrive as exact Decimals rather than lossy floats. The
+    # only float-bearing field in this payload is "answers"; runtime_id and
+    # additional_text are strings and base_version is an integer token.
+    raw_body = await request.body()
+    payload = json.loads(raw_body, parse_float=Decimal)
     validate_update_payload(payload)
 
     runtime_id = payload["runtime_id"]
@@ -177,13 +184,20 @@ async def form_update(
     except ConditionNotFound:
         raise INVALID_PAYLOAD(f"Unknown condition_id: {runtime_state.condition_id}")
 
-    new_state, new_client_state, safety_messages = apply_update_and_evaluate(
-        runtime_state=runtime_state,
-        answers=answers,
-        additional_text=additional_text,
-        ruleset_path=ruleset_path,
-        condition_label=condition_label,
-    )
+    try:
+        new_state, new_client_state, safety_messages = apply_update_and_evaluate(
+            runtime_state=runtime_state,
+            answers=answers,
+            additional_text=additional_text,
+            ruleset_path=ruleset_path,
+            condition_label=condition_label,
+        )
+    except AnswerValidationError as exc:
+        # A submitted answer failed type/precision validation. Translate the
+        # core exception to a 422 here at the boundary. Catching the subclass
+        # specifically means a plain ValueError raised deeper in the pipeline
+        # (e.g. load_ruleset) still surfaces as a logged 500, not a 422.
+        raise INVALID_PAYLOAD(str(exc))
 
     try:
         new_version = runtime_repo.insert_new_version(

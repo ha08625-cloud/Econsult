@@ -318,7 +318,7 @@ describe("EditScreen — file input per tier", () => {
     await userEvent.upload(input, newFile);
 
     // Count error must be shown
-    expect(screen.getAllByText(/maximum of 1 photo/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/maximum of 1 photo/i)).toBeTruthy();
     // Photos must not be updated
     expect(onPhotosChange).not.toHaveBeenCalled();
   });
@@ -357,7 +357,7 @@ describe("EditScreen — file input per tier", () => {
     );
     await userEvent.upload(input, newFile);
 
-    expect(screen.getAllByText(/maximum of 5 photos/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/maximum of 5 photos/i)).toBeTruthy();
     expect(onPhotosChange).not.toHaveBeenCalled();
   });
 });
@@ -464,5 +464,94 @@ describe("EditScreen — photo guide modal", () => {
         screen.getByRole("button", { name: /close guidance/i })
       );
     });
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Number questions
+// ---------------------------------------------------------------------------
+
+const numberQuestion = {
+  answer_key: "patient_weight_kg",
+  question_text: "What is your weight in kg?",
+  answer_type: "number" as const,
+  current_value: null,
+  required: true,
+  suggested: false,
+  decimal_places: 1,
+  min: 2,
+  max: 400,
+  range_warning_text:
+    "That weight is outside the usual range. Please check you entered it correctly.",
+};
+
+const numberClientState: ClientStateView = {
+  ...baseClientState,
+  questions: [numberQuestion],
+};
+
+function renderNumber(value: string | null) {
+  return render(
+    <EditScreen
+      {...defaultProps}
+      clientState={numberClientState}
+      editableAnswers={{ patient_weight_kg: value }}
+    />
+  );
+}
+
+describe("EditScreen — number questions", () => {
+  it("renders a number input associated with its label", () => {
+    renderNumber("");
+    const input = screen.getByLabelText(/what is your weight in kg/i) as HTMLInputElement;
+    expect(input.tagName).toBe("INPUT");
+    expect(input.type).toBe("number");
+  });
+
+  it("shows an inline precision error and disables Continue when too many decimals are entered", () => {
+    renderNumber("70.55");
+    expect(screen.getByText(/at most 1 decimal place/i)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
+    ).toBe(true);
+  });
+
+  it("treats a typed trailing zero as too precise (string is held verbatim)", () => {
+    renderNumber("70.50");
+    expect(screen.getByText(/at most 1 decimal place/i)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
+    ).toBe(true);
+  });
+
+  it("accepts a value at the allowed precision and enables Continue", () => {
+    renderNumber("70.5");
+    expect(screen.queryByText(/at most 1 decimal place/i)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
+    ).toBe(false);
+  });
+
+  it("accepts a whole number and enables Continue", () => {
+    renderNumber("70");
+    expect(screen.queryByText(/at most 1 decimal place/i)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
+    ).toBe(false);
+  });
+
+  it("shows the range notice for an out-of-range value but does NOT block Continue", () => {
+    renderNumber("500"); // within precision (whole number), above max of 400
+    expect(screen.getByText(/outside the usual range/i)).toBeTruthy();
+    // Range is advisory only: Continue stays enabled.
+    expect(
+      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
+    ).toBe(false);
+  });
+
+  it("does not show the range notice for an in-range value", () => {
+    renderNumber("70.5");
+    expect(screen.queryByText(/outside the usual range/i)).toBeNull();
   });
 });

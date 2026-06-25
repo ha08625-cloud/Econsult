@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { PageShell, InlineError } from "../layout";
 import { updateForm } from "../api";
 import { friendlyErrorMessage } from "../api";
@@ -100,15 +100,62 @@ export default function EditScreen({
     return v !== null && v !== undefined && v !== "";
   });
 
+  // Per-question precision errors for Number questions, derived from the current
+  // answers on every render (not set on keystroke) so the gate stays correct
+  // across remounts and Back/forward navigation. The raw string is held verbatim
+  // in editableAnswers, so a typed trailing zero (e.g. "70.50" when one decimal
+  // is allowed) is flagged here even though it would be sent as 70.5.
+  const numberPrecisionErrors = useMemo(() => {
+    const errs: Record<string, string> = {};
+    for (const q of clientState.questions) {
+      if (q.answer_type !== "number") continue;
+      const raw = editableAnswers[q.answer_key];
+      if (raw === null || raw === undefined || raw === "") continue;
+      const valueStr = String(raw);
+      const dp = q.decimal_places ?? 0;
+      const dot = valueStr.indexOf(".");
+      const decimals = dot === -1 ? 0 : valueStr.length - dot - 1;
+      if (decimals > dp) {
+        errs[q.answer_key] =
+          dp === 0
+            ? "Please enter a whole number."
+            : `Please enter a number with at most ${dp} decimal ${dp === 1 ? "place" : "places"}.`;
+      }
+    }
+    return errs;
+  }, [clientState.questions, editableAnswers]);
+
+  const hasPrecisionError = Object.keys(numberPrecisionErrors).length > 0;
+
   async function handleContinue() {
     setScreenError(null);
     setPhotoError(null);
     setIsSubmitting(true);
     try {
+      // Number answers are held as strings in editableAnswers (so the input and
+      // the precision check see exactly what was typed). Convert them to JSON
+      // numbers on the wire here; an empty number field becomes null. All other
+      // answers pass through unchanged.
+      const numberKeys = new Set(
+        clientState.questions
+          .filter((q) => q.answer_type === "number")
+          .map((q) => q.answer_key)
+      );
+      const answersPayload: Record<string, boolean | string | number | null> = {};
+      for (const [k, v] of Object.entries(editableAnswers)) {
+        if (!numberKeys.has(k)) {
+          answersPayload[k] = v;
+        } else if (v === null || v === undefined || v === "") {
+          answersPayload[k] = null;
+        } else {
+          answersPayload[k] = Number(v);
+        }
+      }
+
       const payload: ClientAnswerReturn = {
         runtime_id: runtimeId,
         base_version: version,
-        answers: editableAnswers,
+        answers: answersPayload,
         additional_text: additionalText.trim() || null,
       };
       const res = await updateForm(payload);
@@ -289,6 +336,71 @@ export default function EditScreen({
                     </label>
                   </div>
                 </fieldset>
+              );
+            }
+
+            if (q.answer_type === "number") {
+              const raw = editableAnswers[q.answer_key];
+              const valueStr =
+                raw === null || raw === undefined ? "" : String(raw);
+              const dp = q.decimal_places ?? 0;
+              const step = dp > 0 ? `0.${"0".repeat(Math.max(0, dp - 1))}1` : "1";
+              const precisionError = numberPrecisionErrors[q.answer_key];
+              const numeric = valueStr === "" ? NaN : Number(valueStr);
+              // Non-blocking out-of-range notice: shown only when the question
+              // authored range_warning_text and the value is outside min/max.
+              // It never disables Continue; that is solely the precision gate.
+              const showRangeNotice =
+                q.range_warning_text != null &&
+                valueStr !== "" &&
+                !Number.isNaN(numeric) &&
+                ((q.min != null && numeric < q.min) ||
+                  (q.max != null && numeric > q.max));
+
+              return (
+                <div
+                  key={q.answer_key}
+                  className={`field ${precisionError ? "has-error" : ""}`}
+                >
+                  <label htmlFor={inputId}>
+                    {q.question_text}{" "}
+                    {!q.required && (
+                      <span className="field-label-optional">(optional)</span>
+                    )}
+                  </label>
+
+                  <input
+                    id={inputId}
+                    type="number"
+                    inputMode="decimal"
+                    step={step}
+                    min={q.min}
+                    max={q.max}
+                    aria-invalid={!!precisionError}
+                    value={valueStr}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      onAnswersChange({
+                        ...editableAnswers,
+                        [q.answer_key]: next === "" ? null : next,
+                      });
+                      if (screenError) setScreenError(null);
+                    }}
+                  />
+
+                  {precisionError && <InlineError message={precisionError} />}
+
+                  {showRangeNotice && (
+                    <div
+                      className="alert alert-info"
+                      style={{ marginTop: "var(--space-sm)", padding: "8px 12px" }}
+                    >
+                      <p style={{ margin: 0, fontSize: "14px" }}>
+                        {q.range_warning_text}
+                      </p>
+                    </div>
+                  )}
+                </div>
               );
             }
 
@@ -500,7 +612,7 @@ export default function EditScreen({
           </button>
           <button
             className="btn btn-primary"
-            disabled={!allRequiredAnswered || isSubmitting}
+            disabled={!allRequiredAnswered || hasPrecisionError || isSubmitting}
             onClick={handleContinue}
           >
             {isSubmitting ? "Please wait\u2026" : "Review answers"}

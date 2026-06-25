@@ -29,6 +29,12 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
     Output shape matches frontend types.ts ClientStateView.
     additional_text is included so the frontend can pre-populate
     the field if the patient navigates back to EDIT.
+
+    Number questions additionally carry decimal_places, min, max and an
+    optional range_warning_text so the client can set the input step/min/max,
+    perform its own precision check, and render a non-blocking out-of-range
+    notice. No range computation happens here: the value passes through as the
+    stored string and the client decides when to warn.
     """
 
     questions = []
@@ -36,14 +42,22 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
         answer_key = q["answer_key"]
         answer = runtime.answers[answer_key]
 
-        questions.append({
+        question_dict = {
             "answer_key": answer_key,
             "question_text": q["question"],
             "answer_type": answer.answer_type,
             "current_value": answer.value,
             "required": True,  # MVP: all questions required
             "suggested": answer.source == "encoder",
-        })
+        }
+
+        if q["answer_type"] == "Number":
+            question_dict["decimal_places"] = q["decimal_places"]
+            question_dict["min"] = q["min"]
+            question_dict["max"] = q["max"]
+            question_dict["range_warning_text"] = q.get("range_warning_text")
+
+        questions.append(question_dict)
 
     return {
         "condition_label": condition_label,

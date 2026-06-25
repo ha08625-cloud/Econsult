@@ -1,0 +1,28 @@
+{
+  "condition_id": "numeric_capability_demo",
+
+  "presentation": {
+    "label": "Numeric capability demo",
+    "free_text_prompt": "This is a temporary demo condition for testing numeric answers. Please describe anything you like.",
+    "search_tags": ["numeric demo", "weight test", "number demo"]
+  },
+
+  "questions": [
+    {
+      "question_id": "numeric_capability_demo_1",
+      "question": "What is your current weight, in kilograms?",
+      "answer_key": "patient_weight_kg",
+      "answer_type": "Number",
+      "decimal_places": 1,
+      "min": 2,
+      "max": 400,
+      "range_warning_text": "That weight is outside the usual range. Please check you have entered it correctly.",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {}
+  }
+}

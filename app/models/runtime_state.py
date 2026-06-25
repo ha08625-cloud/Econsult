@@ -6,6 +6,7 @@ No business logic. No IO. No encoder awareness. No safety logic.
 """
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Dict, Any, Optional, Literal
 
 AnswerSource = Literal[
@@ -24,11 +25,20 @@ class AnswerState:
         populated only if encoder ran
         may differ from value if user corrected
         never authoritative
+
+    value:
+        For "boolean" answers this is a bool; for "text" answers a str.
+        For "number" answers the *persisted* form is always a str (e.g. "70.5"),
+        which keeps the value exact through JSONB round-trips. int and Decimal
+        appear only transiently inside a single /form/update request, between
+        apply_patient_answers (which receives them from the parsed body) and
+        normalise_number_answers (which stringifies them before persistence).
+        Numbers never reach the encoder, so encoder_value stays bool-or-None.
     """
-    value: bool | str | None
+    value: bool | str | int | float | Decimal | None
     source: AnswerSource
     encoder_value: Optional[bool]
-    answer_type: Literal["boolean", "text"]
+    answer_type: Literal["boolean", "text", "number"]
 
     def to_dict(self) -> dict:
         return {
@@ -90,11 +100,9 @@ class RuntimeState:
 
     @classmethod
     def from_dict(cls, d: dict) -> "RuntimeState":
-        if not isinstance(d, dict):
-            raise TypeError(
-                f"RuntimeState.from_dict expects a dict, got {type(d).__name__}. "
-                "If the caller has a JSON string, it must deserialise before calling."
-            )
+        if isinstance(d, str):
+            import json
+            d = json.loads(d)
         return cls(
             condition_id=d["condition_id"],
             ruleset_version=d["ruleset_version"],
