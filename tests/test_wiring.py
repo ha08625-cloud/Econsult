@@ -11,20 +11,24 @@ a container field named X. This test enumerates the getters dynamically,
 so adding a getter to dependencies.py without adding the matching
 container field fails CI -- nobody has to remember to update this file.
 
-build_container itself is not unit-tested here: it constructs real
+build_container's DB phase is not unit-tested here: it constructs real
 repositories and runs DB-backed checks, and is exercised end-to-end by
 the existing integration tests that import main (test_public_routes.py,
-test_form_routes.py).
+test_form_routes.py). Its ruleset-validation phase, however, runs before
+any repository is constructed, so it IS unit-tested below without a
+database.
 """
 
 import dataclasses
 import inspect
+import json
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 
 import app.core.dependencies as dependencies
-from app.core.wiring import AppContainer, unpack_container
+from app.core.wiring import AppContainer, build_container, unpack_container
 
 
 def _stub_container() -> AppContainer:
@@ -92,3 +96,106 @@ def test_container_is_frozen():
     except dataclasses.FrozenInstanceError:
         return
     raise AssertionError("AppContainer must be frozen")
+
+
+# ---------------------------------------------------------------------------
+# Startup ruleset validation
+# ---------------------------------------------------------------------------
+#
+# These tests prove that build_container validates the full clinical ruleset
+# at startup, before any repository is constructed. The invalid-ruleset case
+# must abort startup; the valid case must get past validation and only then
+# fail later when it reaches the database (which these unit tests do not
+# provide). Both assertions rely on the validation running in the config-file
+# phase, ahead of DB access.
+
+
+# A ruleset whose presentation block is valid (so ConditionRegistry accepts it
+# at construction) but whose clinical body is invalid: the safety rule points
+# at an answer_key that no question declares. validate_ruleset rejects this.
+_CLINICALLY_INVALID_RULESET = {
+    "condition_id": "broken_demo",
+    "presentation": {"label": "Broken Demo"},
+    "questions": [
+        {
+            "question_id": "q1",
+            "question": "Do you have a fever?",
+            "answer_key": "has_fever",
+            "answer_type": "Boolean",
+            "send_to_encoder": False,
+            "encoder_prompt": None,
+        }
+    ],
+    "safety": {
+        "rules": {
+            "r1": {
+                "any": [{"is_true": "key_that_does_not_exist"}],
+                "message": "unreachable",
+            }
+        }
+    },
+}
+
+_VALID_RULESET = {
+    "condition_id": "valid_demo",
+    "presentation": {"label": "Valid Demo"},
+    "questions": [
+        {
+            "question_id": "q1",
+            "question": "Do you have a fever?",
+            "answer_key": "has_fever",
+            "answer_type": "Boolean",
+            "send_to_encoder": False,
+            "encoder_prompt": None,
+        }
+    ],
+    "safety": {"rules": {}},
+}
+
+
+def _write_ruleset(directory, ruleset: dict) -> None:
+    path = directory / f"{ruleset['condition_id']}.json"
+    path.write_text(json.dumps(ruleset))
+
+
+def _settings_for(data_dir) -> SimpleNamespace:
+    # build_container reads DATABASE_URL and PRACTICE_ID before constructing
+    # the registry, and data_dir when constructing it. Nothing else is touched
+    # before ruleset validation runs, so a lightweight stub is sufficient and
+    # keeps these tests free of a real WebSettings and its environment.
+    return SimpleNamespace(
+        DATABASE_URL="postgresql://unused/unused",
+        PRACTICE_ID="test_practice",
+        data_dir=str(data_dir),
+    )
+
+
+def test_build_container_aborts_on_clinically_invalid_ruleset(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _write_ruleset(data_dir, _CLINICALLY_INVALID_RULESET)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        build_container(_settings_for(data_dir))
+
+    message = str(excinfo.value)
+    # The condition is named so an operator can find the offending file, and
+    # the underlying validate_ruleset reason is preserved.
+    assert "broken_demo" in message
+    assert "key_that_does_not_exist" in message
+
+
+def test_build_container_passes_ruleset_validation_for_valid_rulesets(tmp_path):
+    # A valid ruleset must survive the validation phase. We cannot assert a
+    # successful build here (that needs a database), so we assert that the
+    # failure, if any, is NOT a ruleset validation failure -- i.e. execution
+    # got past validate_rulesets and only stumbled later, at repository or
+    # DB-backed construction.
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _write_ruleset(data_dir, _VALID_RULESET)
+
+    with pytest.raises(Exception) as excinfo:
+        build_container(_settings_for(data_dir))
+
+    assert "Ruleset validation failed" not in str(excinfo.value)
