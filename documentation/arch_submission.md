@@ -311,7 +311,7 @@ Abstract base class (`DeliveryService`) with three concrete implementations:
 - **`EmailDeliveryService`** — alternative (unlikely to be needed). SMTP configuration read from environment variables at instantiation time. Returns `None` — no webhook tracking available on the SMTP path.
 - **`ConsoleDeliveryService`** — development only. Raises `RuntimeError` at instantiation if `DEV_MODE` is not set. Returns `None`.
 
-Service selection in `main.py` and `worker_main.py`: `DEV_MODE=1` -> Console; `MAILGUN_API_KEY` set -> Mailgun HTTP; otherwise -> SMTP.
+Service selection differs by entry point. main.py (via wiring.py's build_container) selects on settings.email.delivery_mode, which requires a complete Mailgun pair (MAILGUN_API_KEY + MAILGUN_DOMAIN); see docs/arch_http_boundary.md, "Delivery Service Instantiation," for the full predicate. worker_main.py currently selects on MAILGUN_API_KEY alone, which is inconsistent with the web path — a partial Mailgun configuration (key set, domain missing) causes the worker to attempt Mailgun and crash-loop at MailgunHttpDeliveryService.__init__, where the web path would fall through to SMTP. This divergence is tracked for a fix
 
 `send_clinical_output` returns `str | None`. The delivery worker branches on this: a string triggers `mark_as_accepted` (Mailgun path); `None` triggers `mark_sent` (SMTP/legacy path).
 
