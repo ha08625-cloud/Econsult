@@ -7,7 +7,13 @@ unavoidable and is the standard Alembic pattern.
 
 No SQLAlchemy ORM models are used. target_metadata is None.
 
-Advisory lock is enabled by default — do not disable. See architecture.md.
+No locking is performed here, and Alembic has no built-in guard against
+concurrent migrations — this file does not add one either. This is only
+safe as long as a single web service instance runs migrations at a time;
+if the web service is ever scaled to multiple replicas, or two deploys
+briefly overlap, two instances could run `alembic upgrade head` against
+the same database concurrently with no protection. Flagged here as an
+open risk, not a verified-safe pattern.
 """
 
 import os
@@ -31,7 +37,7 @@ target_metadata = None
 # ---------------------------------------------------------------------------
 
 database_url = os.environ.get("DATABASE_URL")
-if not database_url:
+if not database_url or not database_url.strip():
     raise RuntimeError("DATABASE_URL environment variable is not set")
 
 config.set_main_option("sqlalchemy.url", database_url)
