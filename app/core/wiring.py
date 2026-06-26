@@ -1,25 +1,6 @@
 """
 Application wiring: container construction and startup deployment checks.
 
-Constructs every long-lived object the web service needs (repositories,
-services, registry) plus the startup-derived scalars, and runs the
-DB-backed deployment checks. For the full startup sequence, the
-app.state field table, and the delivery service selection rules, see
-docs/arch_http_boundary.md -- this docstring covers only what isn't
-already there.
-
-Design:
-
-- AppContainer is a frozen dataclass: constructing it IS the startup-time
-  completeness check, so a wiring bug that forgets a repository fails at
-  startup, not at first request. See the AppContainer docstring below for
-  the field-name contract with app/core/dependencies.py.
-
-- build_container's construction order is load-bearing for error
-  precedence: repositories, then the DB-backed deployment checks, then
-  the practice name lookup, then the delivery services (whose
-  constructors validate their own environment variables, e.g. ADMIN_URL).
-  This keeps "practice not found" surfacing before "ADMIN_URL missing".
 """
 
 import logging
@@ -30,6 +11,7 @@ from fastapi import FastAPI
 
 from app.core.condition_registry import ConditionRegistry
 from app.core.settings import WebSettings
+from app.services.engine.ruleset import load_ruleset
 from app.repositories.practice_repository import PracticeRepository
 from app.repositories.availability_repository import AvailabilityRepository
 from app.repositories.runtime_state_repository import RuntimeStateRepository
@@ -145,6 +127,40 @@ def run_deployment_checks(
 
 
 # ---------------------------------------------------------------------------
+# Clinical ruleset validation (config-file phase, no database required)
+# ---------------------------------------------------------------------------
+
+def validate_rulesets(registry: ConditionRegistry) -> None:
+    """
+    Validate every condition's full clinical ruleset at startup.
+
+    ConditionRegistry validates only the presentation block when it loads
+    each file. The clinical body of a ruleset -- questions, answer types,
+    encoder constraints, and safety-rule key references -- is validated here
+    by load_ruleset (which calls validate_ruleset). Running it at startup
+    means a clinically invalid ruleset aborts boot rather than failing on the
+    first patient request that selects that condition, honouring the
+    Fail-Fast Configuration invariant.
+
+    Only ValueError (the failure validate_ruleset raises) is treated as a
+    ruleset problem. Malformed JSON and missing files cannot occur here:
+    ConditionRegistry has already parsed every file from the same directory
+    at construction, so any such fault aborts startup earlier.
+
+    Raises RuntimeError on the first invalid ruleset, naming the condition.
+    """
+    for condition in registry.list_conditions():
+        condition_id = condition["id"]
+        try:
+            load_ruleset(registry.get_ruleset_path(condition_id))
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Ruleset validation failed for condition '{condition_id}': "
+                f"{exc}. Aborting startup."
+            ) from exc
+
+
+# ---------------------------------------------------------------------------
 # Construction
 # ---------------------------------------------------------------------------
 
@@ -152,16 +168,22 @@ def build_container(settings: WebSettings) -> AppContainer:
     """
     Instantiate every long-lived object and return the completed container.
 
-    Runs the DB-backed deployment checks after repository construction and
-    before delivery service construction, preserving the legacy startup
-    error precedence. Raises RuntimeError on any deployment check failure;
-    delivery service constructors raise RuntimeError on their own missing
-    environment variables (e.g. ADMIN_URL).
+    Validates all clinical rulesets immediately after the registry is
+    constructed and before any repository is built, so a malformed ruleset
+    aborts startup during the config-file phase, before the database is
+    touched.
+
+    Then runs the DB-backed deployment checks after repository construction
+    and before delivery service construction, preserving the legacy startup
+    error precedence. Raises RuntimeError on any ruleset or deployment check
+    failure; delivery service constructors raise RuntimeError on their own
+    missing environment variables (e.g. ADMIN_URL).
     """
     database_url = settings.DATABASE_URL
     practice_id = settings.PRACTICE_ID
 
     registry = ConditionRegistry(settings.data_dir)
+    validate_rulesets(registry)
 
     practice_repo = PracticeRepository(database_url)
     availability_repo = AvailabilityRepository(database_url)
