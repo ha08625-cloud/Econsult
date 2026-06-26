@@ -1,15 +1,19 @@
 """
 Centralised environment variable settings for the web service.
 
-Stage 1 of the configuration refactor: this module is deliberately inert.
-Nothing imports it yet. Stage 2 wires it into main.py via app/core/wiring.py.
+Imported directly by main.py (load_web_settings), whose return value is
+then passed into app/core/wiring.py to construct the AppContainer. For
+the full startup sequence and the complete environment variable rules
+enforced here, see docs/arch_http_boundary.md -- this docstring covers
+only implementation detail not visible from reading the validators
+themselves.
 
 Design rules:
 
-- All requiredness and cross-field rules previously enforced by main.py's
-  _require_env, _validate_email_config and _validate_mesh_delivery are
-  enforced here with the SAME operator-facing error messages. Startup
-  error text must not regress.
+- All requiredness and cross-field rules formerly enforced inline in
+  main.py (_require_env, _validate_email_config, _validate_mesh_delivery,
+  since removed) are enforced here with the SAME operator-facing error
+  messages. Startup error text must not regress.
 
 - Empty or whitespace-only environment variables are treated as unset,
   matching the truthiness semantics of the original os.environ.get checks.
@@ -18,28 +22,25 @@ Design rules:
   with its repr shown, not silently accepted).
 
 - EmailSettings.delivery_mode is the single definition of which email path
-  is configured. main.py previously used two different predicates: the
-  startup validator required MAILGUN_API_KEY + MAILGUN_DOMAIN, while the
-  service selection branch checked MAILGUN_API_KEY alone. This property
-  replaces both. Consequence (deliberate, decided 2026-06): a partial
-  Mailgun configuration (one of the pair set, not both) no longer selects
-  the Mailgun services. If SMTP is complete, the deployment falls through
-  to SMTP and a warning is logged so the demotion is visible in Railway
-  logs; if SMTP is not complete, startup aborts. When both configurations
-  are complete, Mailgun wins, preserving the original precedence.
+  is configured, replacing two previously inconsistent predicates (see
+  docs/arch_http_boundary.md, "Delivery Service Instantiation"). Consequence
+  (deliberate, decided 2026-06): a partial Mailgun configuration (one of
+  the pair set, not both) falls through to SMTP with a logged warning if
+  SMTP is complete, or aborts startup if it is not. When both
+  configurations are complete, Mailgun wins.
 
 - Validators raise ValueError (per the pydantic contract). load_web_settings
   converts the resulting ValidationError into a RuntimeError whose message
   is the bare validator text, with pydantic's "Value error, " boilerplate
-  stripped, so operators see the same clean messages as before. Note that
-  pydantic's ValidationError is itself a ValueError subclass, so nested
-  settings construction goes through _construct_clean to prevent doubled
+  stripped, so operators see clean messages. Note that pydantic's
+  ValidationError is itself a ValueError subclass, so nested settings
+  construction goes through _construct_clean to prevent doubled
   boilerplate when an inner model fails inside an outer validator.
 
 DATABASE-DEPENDENT startup checks (practice exists, single tenant, practice
 email present, admin user exists) are NOT here. They require repositories
-and remain in the main.py startup sequence (Stage 2 moves them into a
-function taking the container, unchanged in logic).
+and live in app/core/wiring.py (run_deployment_checks), called from
+build_container after this module's checks pass.
 """
 
 import logging
