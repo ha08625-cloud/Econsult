@@ -1,4 +1,8 @@
 ### Updates
+- impetial measurements for numbers
+- calculations
+gp connect and MESH (defer)
+- direct GP connect input for weight/height BP codes
 - papertrail logging
 - background worker heartbeat
 - remove submissions after 7 days
