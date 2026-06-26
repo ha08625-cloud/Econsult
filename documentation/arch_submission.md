@@ -6,7 +6,7 @@
 
 ## Scope
 
-Finalizing forms, persisting submission records, auditing, photo storage, PDF generation, attachment storage, and delivering clinical output to the practice via a three-stage async pipeline.
+Finalizing forms, persisting submission records, auditing, photo storage, PDF generation, attachment storage, and delivering clinical output to the practice via a three-stage async pipeline (email path). The NHS MESH transport path is documented separately in `docs/arch_mesh.md`.
 
 **Key files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `photo_repository.py`, `delivery_service.py`, `delivery_constants.py`, `pdf_formatter.py`, `pdf_repository.py`, `pdf_constants.py`, `delivery_repository.py`, `downstream_enqueuer.py`, `pdf_worker.py`, `pdf_worker_main.py`, `delivery_worker.py`, `worker_main.py`, `deletion_job.py`, `webhook_router.py`
 
@@ -82,26 +82,9 @@ There is no crash point that leaves the system in an irrecoverable state without
 
 ---
 
-## MESH Dispatcher (Phase 3)
+## MESH Dispatcher
 
-`app/services/delivery/mesh_worker.py`, entry point `mesh_worker_main.py`. Claims `mesh_jobs` rows, builds the payload via the `MeshPayloadBuilder` seam (`mesh_payload.py` — only `RawPdfPayloadBuilder` ships; it is provisional, see `mesh_integration_plan.md` "Payload status: provisional"), and POSTs to MESH. The workflow ID is env-driven (`MESH_WORKFLOW_ID`).
-
-### Fallback Ordering Invariant (MESH Dispatcher)
-
-**This invariant must never be broken by future changes.**
-
-On terminal MESH failure, or transient exhaustion (`MAX_MESH_ATTEMPTS`), the dispatcher executes in this order:
-
-1. `mesh_repo.mark_fallback_triggered`
-2. `delivery_repo.create_job(..., is_fallback=True)` (idempotent — ON CONFLICT DO NOTHING)
-
-The order fails safe: a crash between the two leaves the submission undelivered but detectable (a `fallback_triggered` row with no `delivery_jobs` row), never double-sent on both channels. The **orphaned-fallback recovery sweep** at the top of every dispatcher loop iteration repairs exactly that state by re-running the idempotent `create_job`, logging at ERROR per recovery. The reverse order would risk double-channel delivery and is forbidden.
-
-Fallback emails are IDENTICAL to email-path emails (same subject, body, attachment). `is_fallback` is operational metadata only; nothing in the delivery worker or webhook router reads it.
-
-### Metadata Access Deviation (MESH Dispatcher)
-
-The delivery worker never reads `submission_records` (its metadata is denormalised onto `delivery_jobs` at enqueue time). The MESH dispatcher deviates deliberately: at fallback time it reads `to_email` from `pdf_jobs` (`PDFRepository.get_delivery_email`) and `condition_label`/`submitted_at` via the narrow `SubmissionRepository.get_delivery_metadata` — never `get_submission`, which returns clinical JSON the dispatcher has no business holding. The deviation is acceptable because `submission_records` rows are the permanent clinical record (never deleted) and the read happens only on the rare fallback path.
+The MESH dispatch path (NHS transport alternative to the Mailgun email path below), its fallback-to-email ordering invariant, and its metadata access deviation are documented in `docs/arch_mesh.md`. The PDF worker's `downstream.enqueue` step (see "Ordering Invariant" above) is the boundary between this document and that one — everything before it is shared between the email and MESH paths; everything from `mesh_jobs` creation onward is MESH-specific and lives in `arch_mesh.md`.
 
 ## Job Tables
 
@@ -141,7 +124,7 @@ The `submission_id` column has a UNIQUE constraint. `create_job` uses ON CONFLIC
 
 ### `mesh_jobs`
 
-One row per MESH-enabled submission. Created by the PDF worker via `MeshEnqueuer`; consumed by the MESH dispatcher (send) and, from Phase 4, the tracking poller (confirmation). Status lifecycle and column semantics are documented in `mesh_repository.py` and migration `0005_mesh_schema.py`. The recipient mailbox is stamped onto each row at enqueue time so a config change between enqueue and dispatch cannot misroute a queued referral.
+MESH-specific. See `docs/arch_mesh.md`, "`mesh_jobs` Table."
 
 ## Job Claiming (SKIP LOCKED)
 
@@ -161,9 +144,9 @@ Both `PDFRepository.claim_next_pending` and `DeliveryRepository.claim_next_pendi
 
 `MAX_ATTEMPTS = 4` (derived from `len(RETRY_BACKOFF_MINUTES) + 1`). Backoff: `[1, 10, 60]` minutes. Total retry window: 71 minutes. This is deliberately short for clinical safety.
 
-### MESH jobs (`mesh_constants.py`)
+### MESH jobs
 
-`MAX_MESH_ATTEMPTS = 4` (derived from `len(MESH_RETRY_BACKOFF_MINUTES) + 1`). Backoff: `[1, 5, 15]` minutes — deliberately shorter than the email path because a working fallback exists; on exhaustion the dispatcher falls back to email rather than parking the job. The startup handshake retries transient failures per `HANDSHAKE_RETRY_DELAYS_SECONDS` then aborts (bounded because empty-errorCode 403s classify as transient, so bad credentials must not retry forever).
+MESH-specific. See `docs/arch_mesh.md`, "Retry Schedule."
 
 ---
 
@@ -200,7 +183,7 @@ All events append the raw payload to `provider_events` regardless of whether a s
 
 Photos (`submission_photos`) and PDF attachments (`submission_attachments`) are deleted nightly by `deletion_job.py` for all submissions where `delivery_jobs.status = 'delivered'`.
 
-**MESH path (Phase 3 interim):** pure-MESH submissions have no `delivery_jobs` row, so they are never deletion-eligible until the Phase 4 deletion-job rewrite makes the VIEW MESH-status-aware. This is one of the reasons `MESH_DELIVERY=1` must not be enabled in production before Phase 4 — see "Production enablement gates" in `mesh_integration_plan.md`. MESH-to-Mailgun fallback submissions DO get a `delivery_jobs` row and follow the normal webhook-confirmed deletion path.
+**MESH path (Phase 3 interim):** pure-MESH submissions are never deletion-eligible until Phase 4 ships — this is a production enablement gate, not a cosmetic limitation. See `docs/arch_mesh.md`, "Data Retention — Interim Limitation," for the detail and the rationale.
 
 - Minimum retention: ~5.25 hours (submission at 6:45pm grace window close, delivered webhook received, deletion at midnight).
 - Maximum retention: ~24 hours (submission at practice open, delivered webhook received next day, deletion next midnight).
@@ -316,17 +299,6 @@ Service selection differs by entry point. main.py (via wiring.py's build_contain
 `send_clinical_output` returns `str | None`. The delivery worker branches on this: a string triggers `mark_as_accepted` (Mailgun path); `None` triggers `mark_sent` (SMTP/legacy path).
 
 Must never: access the database, update delivery status, import engine modules, generate PDFs, or retry on failure.
-
----
-
-## What Was Removed in Commit 2
-
-- `delivery_orchestration.py` — synchronous delivery logic, no longer used.
-- `delivery_events.py` — string constants used only by `delivery_orchestration.py`.
-- `PendingDelivery` dataclass from `submission_repository.py`.
-- `delivery_status`, `delivery_email`, `delivered_at`, `delivery_error`, `delivery_attempts`, `last_attempt_at`, `next_retry_after`, `attachment_count` columns from `submission_records` (Migration 0013).
-- `list_retryable`, `list_orphans`, `record_attempt_outcome`, `get_pending_delivery`, `update_delivery_status` methods from `SubmissionRepository`.
-- `test_delivery_orchestration.py`.
 
 ---
 
