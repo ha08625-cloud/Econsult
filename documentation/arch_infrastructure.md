@@ -26,7 +26,7 @@ Railway deployment, multi-stage Docker build, process topology, static file serv
 
 ## Process Topology
 
-Four processes are deployed from the same Docker image, as separate Railway services (a fifth entry point exists but is dormant in Phase 1a — see below):
+Four processes are deployed from the same Docker image, as separate Railway services (a fifth entry point exists but is currently dormant):
 
 | Process | Entry point | Started by |
 |---|---|---|
@@ -35,7 +35,7 @@ Four processes are deployed from the same Docker image, as separate Railway serv
 | PDF worker | `python pdf_worker_main.py` | Railway start command override |
 | Deletion job (nightly) | `python deletion_job.py` | Railway cron |
 
-A fifth entry point, the MESH dispatcher (`python mesh_worker_main.py`), exists in the codebase but is **not deployed in Phase 1a**. It is the consumer for the `mesh_jobs` queue and only runs once MESH delivery is enabled in a later phase. The four processes above are the complete deployed topology today.
+A fifth entry point, the MESH dispatcher (`python mesh_worker_main.py`), exists in the codebase but is **not completed and not deployed**. It is the consumer for the `mesh_jobs` queue and only runs once MESH delivery is enabled (requires onboarding with NHS digital, cant be built in isolation). The four processes above are the complete deployed topology today.
 
 Design decisions and constraints:
 
