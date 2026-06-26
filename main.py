@@ -1,31 +1,18 @@
 """
-HTTP layer/imperative shell
+HTTP layer / imperative shell.
 
 Application entry point: settings loading, migrations, container
 construction, router registration, error handling, and static file
 serving. No clinical logic, no form session handling.
 
-Configuration and construction are delegated:
-- app/core/settings.py validates every environment variable and owns
-  EmailSettings.delivery_mode, the single definition of which email path
-  is configured (Mailgun only when MAILGUN_API_KEY + MAILGUN_DOMAIN are
-  both set; otherwise SMTP).
-- app/core/wiring.py constructs the AppContainer (registry, repositories,
-  services, startup-derived scalars), runs the DB-backed deployment
-  checks, and unpacks the container onto app.state, where the getters in
-  app/core/dependencies.py read it.
+Configuration is delegated to app/core/settings.py and construction to
+app/core/wiring.py. For the full startup sequence, the single-tenant
+deployment invariants, and the environment variable rules enforced
+across both modules, see docs/arch_infrastructure.md -- this docstring
+is intentionally not a second copy of that document.
 
-Single-tenant deployment invariants (enforced in settings.py and
-wiring.run_deployment_checks):
-- PRACTICE_ID, DATABASE_URL, ALLOWED_ADMIN_DOMAINS, EMAIL_FROM required
-- A complete Mailgun or SMTP configuration required
-- MESH_DELIVERY must be exactly "0" (Phase 1a)
-- The practice must exist in the database with a valid email
-- The database must contain exactly one practice
-- At least one admin user must exist for the practice
-
-Everything runs at module import time so that the deployment dry-run
-(python -c "from main import app") and the integration tests
+Everything below runs at module import time so that the deployment
+dry-run (python -c "from main import app") and the integration tests
 (test_public_routes.py, test_form_routes.py) exercise the full startup
 sequence.
 """
@@ -96,10 +83,11 @@ sentry_sdk.set_tag("phase", "startup")
 container = build_container(settings)
 sentry_sdk.set_tag("phase", "running")
 
-# Expose every container field as a flat app.state attribute, which is
-# where app/core/dependencies.py getters (and, until Stage 4, the webhook
-# router and admin_context) read them. tests/test_wiring.py pins the
-# getter <-> field contract.
+# Expose every container field as a flat app.state attribute. Most
+# consumers read it via the app/core/dependencies.py getters; the
+# webhook router and admin_context are documented exceptions that read
+# app.state directly (see docs/arch_http_boundary.md).
+# tests/test_wiring.py pins the getter <-> field contract.
 unpack_container(app, container)
 
 # Insert default availability row if absent.
