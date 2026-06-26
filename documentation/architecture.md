@@ -48,7 +48,7 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Key Files:** `availability_service.py`, `availability_repository.py`, `availability_models.py`
 
 ### 3.5 Submission, Serialization & Delivery
-* **Scope:** Finalizing forms, auditing, persisting submission records, PDF generation, attachment storage, sending emails.
+* **Scope:** Finalizing forms, auditing, persisting submission records, PDF generation, attachment storage, sending emails (Mailgun/SMTP path). NHS MESH transport is a separate spoke — see 3.14.
 * **Domain Doc:** `docs/arch_submission.md`
 * **Key Files:** `serialisation.py`, `serialisation_contracts.py`, `submission_repository.py`, `attachment_repository.py`, `delivery_service.py`, `pdf_formatter.py`
 
@@ -91,6 +91,11 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Scope:** Access control, MFA, fail-fast configuration boundaries, data retention, file upload security (CDR), input sanitization, rate limiting, dependency patching, and image vulnerability scanning. Maps technical controls to Cyber Essentials Plus audit requirements.
 * **Domain Doc:** `docs/arch_security.md`
 * **Key Files:** `dependencies.py`, `admin_router.py`, `auth_repository.py`, `auth_service.py`, `deletion_job.py`, `request_validation.py`, `image_sanitizer.py`, `form_router.py`, `rate_limit.py`
+
+### 3.14 MESH Dispatcher & NHS Delivery
+* **Scope:** Dispatching clinical PDFs to a GP practice over NHS MESH, fallback to the Mailgun email path on terminal MESH failure, and the `mesh_jobs` lifecycle. mTLS transport security is covered in 3.13 (`arch_security.md` section 8); phased rollout and NHS protocol facts are in `mesh_integration_plan.md` and `nhs_integration_reference.md`, not this spoke.
+* **Domain Doc:** `docs/arch_mesh.md`
+* **Key Files:** `client.py`, `mesh_enqueuer.py`, `mesh_payload.py`, `mesh_repository.py`, `mesh_constants.py`, `mesh_worker.py`, `mesh_worker_main.py`
 
 ## 4. Other reference files
 
