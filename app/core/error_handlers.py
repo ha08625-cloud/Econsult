@@ -1,13 +1,11 @@
 """
 Centralised exception handler registration for the FastAPI app.
 
-Stage 3 of the configuration refactor: a pure relocation. The four
-handlers below were moved verbatim from main.py. register_error_handlers
-attaches them to the app in place of the previous @app.exception_handler
-decorators; behaviour, status codes, and response envelopes are unchanged.
-
-The error envelope contract (status code primary, body shape secondary)
-is described per-handler below and is unchanged from the original.
+register_error_handlers(app) attaches the four handlers below at startup
+(called once from main.py). This is the single place that defines the
+error envelope contract: status code is the primary contract, the
+{"error": {"code": ..., "message": ...}} body shape is the secondary
+contract, described per-handler below.
 """
 
 from fastapi import FastAPI, HTTPException
