@@ -538,13 +538,17 @@ def set_new_password(
     """
     Validate password strength and store a new bcrypt hash for the user.
 
+    The password is validated and hashed exactly as submitted — it is never
+    stripped or otherwise normalised. verify_login_credentials does not
+    strip the typed password at login either, so normalising it here would
+    let a user set a password they could never successfully retype.
+
     Validation steps:
-    1. Strip leading/trailing whitespace.
-    2. Enforce length constraints (12–128 characters).
-    3. Run zxcvbn strength check — require score >= _PASSWORD_MIN_ZXCVBN_SCORE.
+    1. Enforce length constraints (12–128 characters).
+    2. Run zxcvbn strength check — require score >= _PASSWORD_MIN_ZXCVBN_SCORE.
        If the score is too low, raise WEAK_PASSWORD with the first actionable
        suggestion zxcvbn provides.
-    4. Hash with bcrypt and persist via auth_repo.set_password, which also
+    3. Hash with bcrypt and persist via auth_repo.set_password, which also
        sets password_changed_at and resets the lockout state atomically.
 
     Raises INVALID_PAYLOAD if the password is outside the length bounds.
@@ -553,8 +557,6 @@ def set_new_password(
     # Import here to keep the module-level import surface minimal.
     # zxcvbn is only used in this function.
     from zxcvbn import zxcvbn  # type: ignore[import]
-
-    password = password.strip()
 
     if len(password) < _PASSWORD_MIN_LENGTH:
         raise INVALID_PAYLOAD(
