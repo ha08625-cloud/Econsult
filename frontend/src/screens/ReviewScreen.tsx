@@ -42,10 +42,8 @@ export default function ReviewScreen({
                 <span style={{ color: "var(--text-muted)" }}>
                   Not answered
                 </span>
-              ) : String(q.current_value) === "true" ? (
-                "Yes"
-              ) : String(q.current_value) === "false" ? (
-                "No"
+              ) : q.answer_type === "boolean" ? (
+                q.current_value === true ? "Yes" : "No"
               ) : (
                 String(q.current_value)
               )}
