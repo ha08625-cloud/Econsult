@@ -48,6 +48,12 @@ export default function ConditionCombobox({
   });
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  // True once the patient has actually typed a character since this
+  // component mounted. A mount-time prefill (above) sets inputValue without
+  // this becoming true, so opening the list right after mounting shows every
+  // condition rather than immediately filtering down to the one match for
+  // the prefilled label. Once they type, filtering behaves as before.
+  const [hasTyped, setHasTyped] = useState<boolean>(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -59,10 +65,11 @@ export default function ConditionCombobox({
   const optionId = (conditionId: string) => `${baseId}-option-${conditionId}`;
 
   // Derived — never stored in state. Always computed from the full canonical list.
-  const filteredConditions: ConditionSummary[] = filterConditions(
-    conditions,
-    inputValue
-  );
+  // Filtering is skipped until the patient has typed (see hasTyped above),
+  // so a mount-time label prefill doesn't pre-filter the list to one match.
+  const filteredConditions: ConditionSummary[] = hasTyped
+    ? filterConditions(conditions, inputValue)
+    : conditions;
 
   // True when the user has typed something but no tags/labels matched,
   // so filterConditions fell back to the full list.
@@ -108,6 +115,7 @@ export default function ConditionCombobox({
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = e.target.value;
     setInputValue(value);
+    setHasTyped(true);
     setIsOpen(true);
     setActiveIndex(null);
     // Typing invalidates any previous selection.
