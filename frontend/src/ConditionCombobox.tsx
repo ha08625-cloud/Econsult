@@ -1,3 +1,4 @@
+// File path: frontend/src/ConditionCombobox.tsx
 /**
  * ConditionCombobox.tsx
  *
@@ -11,6 +12,10 @@
  * - Blur: closes list after short delay to allow click events to fire first
  * - On selection: input shows condition label, onChange called with condition id
  * - On typing after selection: selection is cleared (onChange called with null)
+ * - On mount: if selectedId is provided, the input is pre-filled with that
+ *   condition's label. This is a one-time lookup, not a live sync — if the
+ *   parent needs the displayed text to re-sync to a changed selectedId after
+ *   mount, it must remount this component (e.g. via a changing `key` prop).
  *
  * Filtering is always from the full canonical conditions list, never incremental.
  */
@@ -32,7 +37,15 @@ export default function ConditionCombobox({
   selectedId,
   onChange,
 }: ConditionComboboxProps) {
-  const [inputValue, setInputValue] = useState<string>("");
+  // One-time lookup on mount: if selectedId is already set (e.g. the patient
+  // is returning to this screen having previously picked a condition), show
+  // its label immediately instead of starting blank. This does not re-run
+  // on prop changes — only on mount — by design of useState's lazy initialiser.
+  const [inputValue, setInputValue] = useState<string>(() => {
+    if (selectedId === null) return "";
+    const match = conditions.find((c) => c.id === selectedId);
+    return match ? match.label : "";
+  });
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
