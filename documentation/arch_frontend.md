@@ -67,11 +67,32 @@ It is consumed by:
 
 **`photoTier` state:** `photoTier: PhotoTier | null` follows the same ownership pattern as `photos` — owned by `App.tsx`, passed as a prop to `EditScreen` (read/write) and `ContactScreen` (read-only, forwarded to `finishForm`). The `PhotoTier` type is exported from `EditScreen.tsx` and imported by `App.tsx` and `ContactScreen.tsx`. It is reset to `null` alongside `photos` on back navigation from EDIT to FREE_TEXT.
 
+**Condition selection state:** `selectedConditionId` and `confirmedConditionId` are deliberately separate state, not one value doing two jobs. `selectedConditionId` gates the `SELECT_CONDITION` screen's Continue button and drives the `FREE_TEXT` presentation fetch; `ConditionCombobox` nulls it transiently on every keystroke while the patient is mid-search (see the `ConditionCombobox` section below). `confirmedConditionId` records which condition the patient's current `freeText` was actually written against, and is only ever set at the point free text starts being written for a condition — `SELECT_CONDITION`'s `onContinue`, `onBlankForm`, and the "Switch condition" confirmation in "Condition Change Warning" below. Conflating these two into one value was the root cause of free text being silently wiped by the act of touching the search box on back navigation — see "Condition Change Warning".
+
 The `triggerFatalError` function in `App.tsx` is the single entry point for fatal errors. It fires `Sentry.captureMessage` before calling `setFatalError`, ensuring the event is captured even if the component subsequently unmounts. Direct calls to `setFatalError` from the render path are banned — all five render-guard fatal paths use `triggerFatalError`. The conditions fetch failure in the `useEffect` is the one exception: it calls `setFatalError` directly because the underlying server error has already been captured by `api.ts`, and double-reporting must be avoided.
 
 The fatal error reset button uses `window.location.reload()` rather than a manual enumeration of state setters. This guarantees object URL revocation (the browser destroys the JS context), eliminates the need to keep a reset list in sync with new `useState` declarations, and provides the cleanest possible slate after a React tree collapse. The state checklist comment in `App.tsx` no longer requires a parallel reset block entry — it is a record of state variables only.
 
 **Dedicated error variable:** `App.tsx` uses `safetyWarningFetchState` for safety warning fetch failures. This is the only fetch that lives in `App.tsx` rather than inside a screen component, so it needs its own error variable. All other fetch errors are owned locally by the screen component that makes the call.
+
+---
+
+## Condition Change Warning
+
+Switching condition on `SELECT_CONDITION` after free text has already been written against the previous condition would silently destroy that text. This is the scenario the `selectedConditionId` / `confirmedConditionId` split above exists to prevent.
+
+`onConditionChange` in `App.tsx` distinguishes three cases for an incoming id from `ConditionCombobox`:
+
+- **`null` (mid-typing), or matches `confirmedConditionId`** (the patient re-selected the condition their free text already belongs to): commit directly, no warning.
+- **Genuinely different and `freeText` is non-empty:** hold it as `pendingConditionId` and show the warning modal rather than committing immediately.
+- **Genuinely different but `freeText` is empty:** nothing to lose, commit directly.
+
+The modal text is: "Switching conditions will clear the answer you've already typed." It offers two choices:
+
+- **"Keep my answer"** — discards the pending id, restores `selectedConditionId` to `confirmedConditionId` (it may already have been nulled by typing before the switch was proposed, so this restoration is not a no-op), and bumps `comboboxResetKey`. That counter is passed to `SelectConditionScreen` as a prop and used as `ConditionCombobox`'s `key`, forcing it to remount so its displayed text re-syncs to the restored id — the same remount-to-resync mechanism the `ConditionCombobox` section below documents.
+- **"Switch condition"** — clears `freeText`, then commits the pending id to both `selectedConditionId` and `confirmedConditionId`. No remount is needed here: `ConditionCombobox`'s own local input state already shows the new condition's label from the moment it was picked, before `App.tsx` decided what to do with it.
+
+**`onBlankForm`** sets `confirmedConditionId` to `GENERAL_CONSULTATION_ID` alongside `selectedConditionId`, for the same reason `onContinue` does. It does **not** clear `freeText` — "Use blank form" has never been wired to do so, and that is intentional: it is a fallback path with its own looser semantics, not a condition switch.
 
 ---
 
@@ -158,6 +179,8 @@ Wire-format types (server contracts) live in `frontend/src/types.ts`. UI-only ty
 ## ConditionCombobox
 
 The input `id` is generated dynamically via React's `useId()` — do not target it by a stable string in tests. Query by label text instead.
+
+On mount, the input's displayed text is initialised from `selectedId` via a one-time lookup against the `conditions` list (a lazy `useState` initialiser) — if the patient returns to this screen with a condition already selected, the label is shown immediately rather than starting blank. This is a one-time lookup, not a live sync: if `selectedId` changes after mount without the component remounting, the displayed text does not follow it. The only consumer of this today is the "Keep my answer" path in "Condition Change Warning" above, which forces a resync by remounting via a changing `key` rather than by making this component fully controlled.
 
 All visual styles live in `index.css` under the `/* Condition Combobox */` section. The class names are: `.combobox-wrapper`, `.combobox-input`, `.combobox-listbox`, `.combobox-info-item`, `.combobox-option`, `.combobox-option--active`, `.combobox-option--selected`. Do not add inline styles to this component — the CSS section is the single source of truth.
 
