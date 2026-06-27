@@ -1,5 +1,12 @@
 from dataclasses import dataclass
 
+# Naming convention: the UPPER_CASE names below are not constants — they are
+# lambda factories that construct a fresh exception instance on each call.
+# Always call them at the raise site, e.g. `raise INVALID_PAYLOAD()` or
+# `raise INVALID_PAYLOAD("custom message")`, never `raise INVALID_PAYLOAD`.
+# UPPER_CASE is used here to keep call sites read as named, fixed error
+# codes rather than ad-hoc constructor calls.
+
 
 class ConditionNotFound(Exception):
     pass
@@ -15,8 +22,6 @@ class APIError(Exception):
 INVALID_PAYLOAD = lambda msg="Invalid payload": APIError("INVALID_PAYLOAD", msg)
 UNKNOWN_RUNTIME_ID = lambda: APIError("UNKNOWN_RUNTIME_ID", "Unknown runtime_id")
 VERSION_CONFLICT = lambda: APIError("VERSION_CONFLICT", "Version conflict")
-INCOMPLETE_ANSWERS = lambda: APIError("INCOMPLETE_ANSWERS", "Incomplete answers")
-RULESET_VALIDATION_FAILURE = lambda msg: APIError("RULESET_VALIDATION_FAILURE", msg)
 SESSION_CLOSED = lambda: APIError("SESSION_CLOSED", "Session already closed")
 
 # Admin-specific errors
