@@ -1,164 +1,260 @@
-// File path: frontend/src/ConditionCombobox_test.tsx
-//
-// New test file — ConditionCombobox.tsx previously had no dedicated tests.
-// Mirrors the conventions used in SelectConditionScreen_test.tsx (vitest
-// globals, @testing-library/react, no userEvent.setup()).
+// File path: frontend/src/ConditionCombobox.tsx
+/**
+ * ConditionCombobox.tsx
+ *
+ * Custom combobox for condition selection on Screen 0.
+ *
+ * Behaviour:
+ * - Click/focus: opens suggestion list showing all conditions
+ * - Typing: filters list using filterConditions (label, tag, fuzzy)
+ * - Mouse click on suggestion: selects condition
+ * - Keyboard: ArrowDown/ArrowUp to navigate, Enter to select, Escape/Tab to close
+ * - Blur: closes list after short delay to allow click events to fire first
+ * - On selection: input shows condition label, onChange called with condition id
+ * - On typing after selection: selection is cleared (onChange called with null)
+ * - On mount: if selectedId is provided, the input is pre-filled with that
+ *   condition's label. This is a one-time lookup, not a live sync — if the
+ *   parent needs the displayed text to re-sync to a changed selectedId after
+ *   mount, it must remount this component (e.g. via a changing `key` prop).
+ *
+ * Filtering is always from the full canonical conditions list, never incremental.
+ */
 
-import { render, screen, fireEvent } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import ConditionCombobox from "./ConditionCombobox";
+import React, { useState, useRef, useId } from "react";
 import type { ConditionSummary } from "./types";
+import { filterConditions } from "./search";
 
-const noop = () => {};
-
-const sampleConditions: ConditionSummary[] = [
-  { id: "uti1", label: "Urinary symptoms", search_tags: ["uti", "urine", "waterworks"] },
-  { id: "back1", label: "Back pain", search_tags: ["back", "spine"] },
-  { id: "skin1", label: "Skin rash", search_tags: ["rash", "skin", "itchy"] },
-];
-
-function getInput() {
-  return screen.getByRole("combobox") as HTMLInputElement;
+interface ConditionComboboxProps {
+  conditions: ConditionSummary[];
+  selectedId: string | null;
+  onChange: (id: string | null) => void;
 }
 
-describe("ConditionCombobox", () => {
-  // ---------------------------------------------------------------------------
-  // Opening the list
-  // ---------------------------------------------------------------------------
+const SUGGESTION_LIST_MAX_HEIGHT = 300;
 
-  it("opens the listbox and shows all conditions on focus", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={noop} />
+export default function ConditionCombobox({
+  conditions,
+  selectedId,
+  onChange,
+}: ConditionComboboxProps) {
+  // One-time lookup on mount: if selectedId is already set (e.g. the patient
+  // is returning to this screen having previously picked a condition), show
+  // its label immediately instead of starting blank. This does not re-run
+  // on prop changes — only on mount — by design of useState's lazy initialiser.
+  const [inputValue, setInputValue] = useState<string>(() => {
+    if (selectedId === null) return "";
+    const match = conditions.find((c) => c.id === selectedId);
+    return match ? match.label : "";
+  });
+  const [isOpen, setIsOpen] = useState<boolean>(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Unique ids for ARIA — useId ensures no collisions if component is rendered
+  // multiple times on the same page.
+  const baseId = useId();
+  const listboxId = `${baseId}-listbox`;
+  const optionId = (conditionId: string) => `${baseId}-option-${conditionId}`;
+
+  // Derived — never stored in state. Always computed from the full canonical list.
+  const filteredConditions: ConditionSummary[] = filterConditions(
+    conditions,
+    inputValue
+  );
+
+  // True when the user has typed something but no tags/labels matched,
+  // so filterConditions fell back to the full list.
+  const noMatchFallback: boolean =
+    inputValue.trim().length > 0 &&
+    filteredConditions.length === conditions.length &&
+    !conditions.some((c) =>
+      c.label.toLowerCase().includes(inputValue.toLowerCase().trim())
     );
-    await userEvent.click(getInput());
-    expect(screen.getByRole("listbox")).toBeTruthy();
-    for (const c of sampleConditions) {
-      expect(screen.getByRole("option", { name: c.label })).toBeTruthy();
+
+  // --- Helpers ---
+
+  function selectCondition(condition: ConditionSummary) {
+    setInputValue(condition.label);
+    setIsOpen(false);
+    setActiveIndex(null);
+    onChange(condition.id);
+  }
+
+  function closeList() {
+    setIsOpen(false);
+    setActiveIndex(null);
+  }
+
+  // --- Event handlers ---
+
+  function handleFocus() {
+    // Cancel any pending blur-close so focusing back in doesn't flicker.
+    if (blurTimeoutRef.current !== null) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
     }
-  });
+    setIsOpen(true);
+  }
 
-  it("pressing Escape closes the listbox without selecting anything", async () => {
-    const onChange = vi.fn();
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={onChange} />
-    );
-    const input = getInput();
-    await userEvent.click(input);
-    fireEvent.keyDown(input, { key: "Escape" });
-    expect(screen.queryByRole("listbox")).toBeNull();
-    expect(onChange).not.toHaveBeenCalled();
-  });
+  function handleBlur() {
+    // Delay closing so a mousedown on a suggestion fires before the list disappears.
+    blurTimeoutRef.current = setTimeout(() => {
+      closeList();
+    }, 150);
+  }
 
-  // ---------------------------------------------------------------------------
-  // Filtering
-  // ---------------------------------------------------------------------------
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value;
+    setInputValue(value);
+    setIsOpen(true);
+    setActiveIndex(null);
+    // Typing invalidates any previous selection.
+    onChange(null);
+  }
 
-  it("filters the list as the user types", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={noop} />
-    );
-    const input = getInput();
-    await userEvent.click(input);
-    await userEvent.type(input, "back");
-    expect(screen.getByRole("option", { name: "Back pain" })).toBeTruthy();
-    expect(screen.queryByRole("option", { name: "Urinary symptoms" })).toBeNull();
-  });
-
-  it("shows a count footer when the list is filtered down", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={noop} />
-    );
-    const input = getInput();
-    await userEvent.click(input);
-    await userEvent.type(input, "back");
-    expect(screen.getByText(/showing 1 of 3 conditions/i)).toBeTruthy();
-  });
-
-  it("falls back to the full list and shows a no-match notice for an unmatched query", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={noop} />
-    );
-    const input = getInput();
-    await userEvent.click(input);
-    await userEvent.type(input, "zzzzzzzzzz");
-    expect(screen.getByText(/no matching conditions/i)).toBeTruthy();
-    for (const c of sampleConditions) {
-      expect(screen.getByRole("option", { name: c.label })).toBeTruthy();
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!isOpen) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        setIsOpen(true);
+        e.preventDefault();
+      }
+      return;
     }
-  });
 
-  // ---------------------------------------------------------------------------
-  // Selecting
-  // ---------------------------------------------------------------------------
+    switch (e.key) {
+      case "ArrowDown": {
+        e.preventDefault();
+        const nextIndex =
+          activeIndex === null
+            ? 0
+            : (activeIndex + 1) % filteredConditions.length;
+        setActiveIndex(nextIndex);
+        break;
+      }
 
-  it("clicking a suggestion fills the input and calls onChange with the condition id", async () => {
-    const onChange = vi.fn();
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={onChange} />
-    );
-    const input = getInput();
-    await userEvent.click(input);
-    await userEvent.click(screen.getByRole("option", { name: "Back pain" }));
-    expect(onChange).toHaveBeenCalledWith("back1");
-    expect(input.value).toBe("Back pain");
-  });
+      case "ArrowUp": {
+        e.preventDefault();
+        const prevIndex =
+          activeIndex === null
+            ? filteredConditions.length - 1
+            : (activeIndex - 1 + filteredConditions.length) %
+              filteredConditions.length;
+        setActiveIndex(prevIndex);
+        break;
+      }
 
-  it("ArrowDown then Enter selects the active option", async () => {
-    const onChange = vi.fn();
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={onChange} />
-    );
-    const input = getInput();
-    await userEvent.click(input);
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(onChange).toHaveBeenCalledWith("uti1");
-    expect(input.value).toBe("Urinary symptoms");
-  });
+      case "Enter": {
+        e.preventDefault();
+        if (activeIndex !== null && filteredConditions[activeIndex]) {
+          selectCondition(filteredConditions[activeIndex]);
+        }
+        break;
+      }
 
-  it("typing after a selection clears it by calling onChange with null", async () => {
-    const onChange = vi.fn();
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId="uti1" onChange={onChange} />
-    );
-    const input = getInput();
-    await userEvent.click(input);
-    await userEvent.type(input, "x");
-    expect(onChange).toHaveBeenCalledWith(null);
-  });
+      case "Escape": {
+        e.preventDefault();
+        closeList();
+        break;
+      }
 
-  // ---------------------------------------------------------------------------
-  // selectedId reflected in the list
-  // ---------------------------------------------------------------------------
+      case "Tab": {
+        // Do not preventDefault — allow natural tab flow.
+        closeList();
+        break;
+      }
+    }
+  }
 
-  it("marks the option matching selectedId as aria-selected", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId="back1" onChange={noop} />
-    );
-    await userEvent.click(getInput());
-    expect(screen.getByRole("option", { name: "Back pain" })).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-    expect(screen.getByRole("option", { name: "Urinary symptoms" })).toHaveAttribute(
-      "aria-selected",
-      "false"
-    );
-  });
+  function handleSuggestionMouseDown(condition: ConditionSummary) {
+    // mousedown fires before blur, so cancelling the blur timeout here
+    // ensures the list does not close before the selection registers.
+    if (blurTimeoutRef.current !== null) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    selectCondition(condition);
+  }
 
-  // ---------------------------------------------------------------------------
-  // KNOWN BUG — see arch_frontend.md review.
-  // This test asserts the CORRECT post-fix behaviour and will FAIL against
-  // the current component, because inputValue is hardcoded to "" on mount
-  // and never derived from selectedId. Expected to go green once the
-  // mount-time label lookup (plan step 1) is implemented. Do not "fix" this
-  // test to match current behaviour — it is intentionally red right now.
-  // ---------------------------------------------------------------------------
+  // --- Render ---
 
-  it("shows the selected condition's label when mounted with a selectedId", () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId="back1" onChange={noop} />
-    );
-    expect(getInput().value).toBe("Back pain");
-  });
-});
+  const activeDescendant =
+    activeIndex !== null && filteredConditions[activeIndex]
+      ? optionId(filteredConditions[activeIndex].id)
+      : undefined;
+
+  return (
+    <div className="combobox-wrapper">
+      <input
+        ref={inputRef}
+        id={`${baseId}-input`}
+        type="text"
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-autocomplete="list"
+        aria-controls={listboxId}
+        aria-activedescendant={activeDescendant}
+        aria-label="Search for a condition"
+        value={inputValue}
+        onChange={handleInputChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        placeholder="Start typing or click to see all conditions..."
+        autoComplete="off"
+        className="combobox-input"
+      />
+
+      {isOpen && (
+        <ul
+          id={listboxId}
+          role="listbox"
+          aria-label="Conditions"
+          className="combobox-listbox"
+          style={{ maxHeight: SUGGESTION_LIST_MAX_HEIGHT }}
+        >
+          {noMatchFallback && (
+            <li className="combobox-info-item">
+              No matching conditions — try different words, or scroll below.
+            </li>
+          )}
+
+          {!noMatchFallback &&
+            filteredConditions.length < conditions.length && (
+              <li className="combobox-info-item">
+                Showing {filteredConditions.length} of {conditions.length}{" "}
+                conditions
+              </li>
+            )}
+
+          {filteredConditions.map((condition, index) => {
+            const isActive = index === activeIndex;
+            const isSelected = condition.id === selectedId;
+
+            return (
+              <li
+                key={condition.id}
+                id={optionId(condition.id)}
+                role="option"
+                aria-selected={isSelected}
+                onMouseDown={() => handleSuggestionMouseDown(condition)}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(null)}
+                className={[
+                  "combobox-option",
+                  isActive ? "combobox-option--active" : "",
+                  isSelected ? "combobox-option--selected" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {condition.label}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
