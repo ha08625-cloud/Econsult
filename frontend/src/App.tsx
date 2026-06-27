@@ -107,9 +107,20 @@ export default function App() {
 
 
   function triggerFatalError(errorMsg: string) {
-    Sentry.captureMessage(`Fatal UI Error: ${errorMsg}`, "fatal");
     setFatalError(errorMsg);
   }
+
+  // Sentry reporting is deliberately kept out of triggerFatalError itself.
+  // triggerFatalError is called from the render path (the four render-guard
+  // fatal branches below), and calling Sentry.captureMessage there would run
+  // a side effect during render - a React purity violation that would
+  // double-fire under StrictMode in development. Running it here instead
+  // means it fires once, after commit, for each actual transition into a
+  // fatal state.
+  useEffect(() => {
+    if (fatalError === null) return;
+    Sentry.captureMessage(`Fatal UI Error: ${fatalError}`, "fatal");
+  }, [fatalError]);
 
   useEffect(() => {
     if (screen !== "SAFETY_WARNING") return;
