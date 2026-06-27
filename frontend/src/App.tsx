@@ -210,7 +210,7 @@ export default function App() {
     }
     fetchPresentation();
     return () => { cancelled = true; };
-  }, [selectedConditionId, presentationFetchTrigger]);
+  }, [screen, selectedConditionId, presentationFetchTrigger]);
 
   if (fatalError) {
     return (
