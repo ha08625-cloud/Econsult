@@ -114,7 +114,9 @@ class SpyAuthRepo(StubAuthRepo):
         self.deleted_tokens.append(token_hash)
 
     def set_password(self, user_id, hashed_password, conn=None):
-        self.passwords_set.append({"user_id": user_id})
+        self.passwords_set.append(
+            {"user_id": user_id, "hashed_password": hashed_password}
+        )
 
 
 def _make_user(hashed_password=None, failed_attempts=0, locked_until=None):
@@ -541,6 +543,39 @@ class TestSetPassword(unittest.TestCase):
             json={"token": raw_token, "password": "short"},
         )
         self.assertEqual(res.status_code, 422)
+
+    def test_whitespace_is_not_stripped_before_hashing(self):
+        """
+        Regression test for the whitespace-strip asymmetry bug.
+
+        verify_login_credentials does not strip the typed password at
+        login, so set_new_password must not strip it either. If it did,
+        a password containing leading/trailing whitespace would be stored
+        as the stripped version but checked against the raw typed version
+        at login, permanently locking the user out.
+        """
+        repo, raw_token = self._valid_token_repo()
+        client = self._make_client(auth_repo=repo)
+        submitted_password = "  CorrectHorseBatteryStaple1!  "
+
+        res = client.post(
+            "/admin/auth/set-password",
+            json={"token": raw_token, "password": submitted_password},
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(repo.passwords_set), 1)
+        stored_hash = repo.passwords_set[0]["hashed_password"]
+
+        # The stored hash must verify against the password exactly as typed.
+        self.assertTrue(
+            bcrypt.checkpw(submitted_password.encode(), stored_hash.encode())
+        )
+        # It must NOT verify against a stripped version — proving the
+        # service no longer normalises the password before hashing.
+        self.assertFalse(
+            bcrypt.checkpw(submitted_password.strip().encode(), stored_hash.encode())
+        )
 
     def test_missing_token_returns_422(self):
         client = self._make_client()
