@@ -19,13 +19,20 @@ Does not serve HTTP. Does not seed data.
 Environment variables:
     DATABASE_URL                   -- Postgres connection string (required)
     WORKER_POLL_INTERVAL_SECONDS   -- seconds to sleep when queue is empty (required)
-    MAILGUN_API_KEY                -- if set, uses Mailgun HTTP delivery
-    MAILGUN_DOMAIN                 -- required when MAILGUN_API_KEY is set
+    MAILGUN_API_KEY                -- Mailgun HTTP delivery; only takes effect together
+                                       with MAILGUN_DOMAIN -- see "Service selection" below
+    MAILGUN_DOMAIN                 -- Mailgun HTTP delivery; only takes effect together
+                                       with MAILGUN_API_KEY
     EMAIL_FROM                     -- required in production
 
 Service selection:
-    MAILGUN_API_KEY  -> MailgunHttpDeliveryService
-    otherwise        -> EmailDeliveryService (SMTP)
+    Delegates to app.core.email_mode.select_email_delivery_mode -- the same
+    predicate the web service uses via app/core/settings.py.EmailSettings.
+    Mailgun is selected only when BOTH MAILGUN_API_KEY and MAILGUN_DOMAIN
+    are set (non-blank); otherwise SMTP is selected. A partial Mailgun
+    configuration (one set, not both) logs a warning and falls through to
+    SMTP, matching the web's behaviour, rather than attempting Mailgun and
+    failing inside MailgunHttpDeliveryService.__init__.
 """
 
 import logging
@@ -74,6 +81,7 @@ def main() -> None:
 
     # Import application modules after env validation so import errors are not
     # confused with missing configuration.
+    from app.core.email_mode import has_partial_mailgun, select_email_delivery_mode
     from app.repositories.delivery_repository import DeliveryRepository
     from app.repositories.attachment_repository import AttachmentRepository
     from app.services.delivery.delivery_service import (
@@ -85,10 +93,23 @@ def main() -> None:
     delivery_repo = DeliveryRepository(database_url)
     attachment_repo = AttachmentRepository(database_url)
 
-    if os.environ.get("MAILGUN_API_KEY"):
+    mailgun_api_key = os.environ.get("MAILGUN_API_KEY")
+    mailgun_domain = os.environ.get("MAILGUN_DOMAIN")
+
+    if select_email_delivery_mode(mailgun_api_key, mailgun_domain) == "mailgun":
         delivery_service = MailgunHttpDeliveryService()
         logger.info("Delivery worker: Mailgun HTTP API selected")
     else:
+        if has_partial_mailgun(mailgun_api_key, mailgun_domain):
+            # Deliberate fall-through to SMTP, but never silently: a typo in
+            # MAILGUN_DOMAIN must not invisibly demote this worker to SMTP
+            # without an operator-visible signal. Mirrors the warning logged
+            # by app/core/settings.py on the web side.
+            logger.warning(
+                "Partial Mailgun configuration detected (one of MAILGUN_API_KEY / "
+                "MAILGUN_DOMAIN is set, but not both). Falling through to SMTP "
+                "delivery. If Mailgun was intended, set both variables."
+            )
         delivery_service = EmailDeliveryService()
         logger.info("Delivery worker: SMTP selected")
 

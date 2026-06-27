@@ -38,9 +38,13 @@ Configuration (EmailDeliveryService):
 Configuration (MailgunHttpDeliveryService):
     MAILGUN_API_KEY, MAILGUN_DOMAIN, EMAIL_FROM
 
-Service selection (main.py):
-    If MAILGUN_API_KEY is set, MailgunHttpDeliveryService is used.
-    Otherwise EmailDeliveryService (SMTP) is used.
+Service selection:
+    Not decided by this module or by main.py. Both entry points that
+    construct these classes -- app/core/wiring.py (web, via build_container)
+    and worker_main.py (delivery worker) -- select on
+    app.core.email_mode.select_email_delivery_mode (the web reaches it via
+    settings.email.delivery_mode; the worker calls it directly). Mailgun is
+    selected only when BOTH MAILGUN_API_KEY and MAILGUN_DOMAIN are set.
 """
 
 import logging

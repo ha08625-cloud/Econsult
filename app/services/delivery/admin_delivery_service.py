@@ -17,9 +17,14 @@ Strict boundaries:
 - The decision of whether to send is made entirely by the caller.
   This service is called only after that decision has been made.
 
-Service selection (main.py):
-    If MAILGUN_API_KEY is set, MailgunHttpAdminDeliveryService is used.
-    Otherwise AdminDeliveryService (SMTP) is used.
+Service selection:
+    Decided by app/core/wiring.py (build_container), on
+    settings.email.delivery_mode -- the same predicate used for the
+    clinical delivery service in delivery_service.py, ultimately defined
+    in app.core.email_mode.select_email_delivery_mode. Mailgun is selected
+    only when BOTH MAILGUN_API_KEY and MAILGUN_DOMAIN are set. This is a
+    web-only concern: the delivery worker (worker_main.py) never sends
+    admin emails and does not select this service.
 
 Configuration is read from environment variables at instantiation time.
 A missing variable raises RuntimeError at startup rather than silently
