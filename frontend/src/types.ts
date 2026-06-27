@@ -57,17 +57,6 @@ export type SafetyWarningFetchState =
   | { status: "success"; text: string }
   | { status: "error"; message: string };
 
-// Discriminated union for the practice name fetch lifecycle.
-// Stored as a single state variable in App.tsx.
-// Guard: if (practiceNameFetchState.status === "success") return — prevents re-fetch.
-// Retry: reset to { status: "loading" } to trigger a new fetch.
-// The practice name fetch is fail-closed: the Continue button on SafetyWarningScreen
-// is disabled until this reaches "success".
-export type PracticeNameFetchState =
-  | { status: "loading" }
-  | { status: "success"; name: string }
-  | { status: "error"; message: string };
-
 // --- Availability (Screen 0) ---
 
 export interface AvailabilityResult {
