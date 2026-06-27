@@ -1,3 +1,4 @@
+// File path: frontend/src/App.tsx
 import { useState, useEffect, useRef } from "react";
 import * as Sentry from "@sentry/react";
 import {
@@ -69,6 +70,21 @@ export default function App() {
   const [doctorsFetched, setDoctorsFetched] = useState<boolean>(false);
   const [conditions, setConditions] = useState<ConditionSummary[] | null>(null);
   const [selectedConditionId, setSelectedConditionId] = useState<string | null>(null);
+  // The condition the current freeText was actually written against. Distinct
+  // from selectedConditionId, which is also nulled transiently while the
+  // patient is mid-typing in the combobox (see ConditionCombobox.tsx). Only
+  // ever set at the point free text starts being written for a condition:
+  // SELECT_CONDITION's onContinue, onBlankForm, and the "Switch condition"
+  // confirmation below. Used to tell a genuine condition switch apart from
+  // a no-op re-selection of the condition already in progress.
+  const [confirmedConditionId, setConfirmedConditionId] = useState<string | null>(null);
+  // Holds a candidate condition id while the condition-change warning modal
+  // is open, awaiting the patient's choice.
+  const [pendingConditionId, setPendingConditionId] = useState<string | null>(null);
+  const [showConditionChangeWarning, setShowConditionChangeWarning] = useState(false);
+  // Bumped to force ConditionCombobox to remount when "Keep my answer" is
+  // chosen, so its displayed text re-syncs to the restored selectedConditionId.
+  const [comboboxResetKey, setComboboxResetKey] = useState(0);
   const [presentationState, setPresentationState] = useState<PresentationState>({ status: "loading" });
   const [presentationFetchTrigger, setPresentationFetchTrigger] = useState(0);
   const [freeText, setFreeText] = useState<string>("");
@@ -254,27 +270,79 @@ export default function App() {
 
   if (screen === "SELECT_CONDITION") {
     return (
-      <SelectConditionScreen
-        practiceName={practiceName}
-        conditions={conditions ? conditions.filter((c) => c.id !== GENERAL_CONSULTATION_ID) : null}
-        selectedConditionId={selectedConditionId}
-        onConditionChange={(newId) => {
-          if (newId !== selectedConditionId) setFreeText("");
-          setSelectedConditionId(newId);
-        }}
-        onContinue={() => {
-          setPresentationState({ status: "loading" });
-          setPresentationFetchTrigger((k) => k + 1);
-          setScreen("FREE_TEXT");
-        }}
-        onBlankForm={() => {
-          setSelectedConditionId(GENERAL_CONSULTATION_ID);
-          setPresentationState({ status: "loading" });
-          setPresentationFetchTrigger((k) => k + 1);
-          setScreen("FREE_TEXT");
-        }}
-        onBack={() => setScreen("OUTCOME")}
-      />
+      <>
+        {showConditionChangeWarning && (
+          <div className="modal-overlay">
+            <div className="screen-card" style={{ maxWidth: '400px' }}>
+              <p>Switching conditions will clear the answer you've already typed.</p>
+              <div className="btn-row">
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setShowConditionChangeWarning(false);
+                    setPendingConditionId(null);
+                    // Restore selectedConditionId to the last confirmed pick —
+                    // necessary because it may already have been nulled by
+                    // typing before the pending switch was proposed.
+                    setSelectedConditionId(confirmedConditionId);
+                    setComboboxResetKey((k) => k + 1);
+                  }}
+                >
+                  Keep my answer
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setFreeText("");
+                    setSelectedConditionId(pendingConditionId);
+                    setConfirmedConditionId(pendingConditionId);
+                    setPendingConditionId(null);
+                    setShowConditionChangeWarning(false);
+                  }}
+                >
+                  Switch condition
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        <SelectConditionScreen
+          practiceName={practiceName}
+          conditions={conditions ? conditions.filter((c) => c.id !== GENERAL_CONSULTATION_ID) : null}
+          selectedConditionId={selectedConditionId}
+          comboboxResetKey={comboboxResetKey}
+          onConditionChange={(newId) => {
+            // Mid-typing (null) or re-confirming the condition the current
+            // free text already belongs to: commit directly, nothing to lose.
+            if (newId === null || newId === confirmedConditionId) {
+              setSelectedConditionId(newId);
+              return;
+            }
+            // Genuinely different condition. Only worth warning about if
+            // there is free text written against the previous one to lose.
+            if (freeText !== "") {
+              setPendingConditionId(newId);
+              setShowConditionChangeWarning(true);
+              return;
+            }
+            setSelectedConditionId(newId);
+          }}
+          onContinue={() => {
+            setConfirmedConditionId(selectedConditionId);
+            setPresentationState({ status: "loading" });
+            setPresentationFetchTrigger((k) => k + 1);
+            setScreen("FREE_TEXT");
+          }}
+          onBlankForm={() => {
+            setSelectedConditionId(GENERAL_CONSULTATION_ID);
+            setConfirmedConditionId(GENERAL_CONSULTATION_ID);
+            setPresentationState({ status: "loading" });
+            setPresentationFetchTrigger((k) => k + 1);
+            setScreen("FREE_TEXT");
+          }}
+          onBack={() => setScreen("OUTCOME")}
+        />
+      </>
     );
   }
 
