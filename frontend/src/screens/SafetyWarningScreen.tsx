@@ -1,39 +1,32 @@
 import { PageShell, InlineError } from "../layout";
-import type { SafetyWarningFetchState, PracticeNameFetchState } from "../types";
+import type { SafetyWarningFetchState } from "../types";
 
-export type { SafetyWarningFetchState, PracticeNameFetchState };
+export type { SafetyWarningFetchState };
 
 interface SafetyWarningScreenProps {
   safetyWarningFetchState: SafetyWarningFetchState;
-  practiceNameFetchState: PracticeNameFetchState;
+  practiceName: string | null;
   safetyConfirmed: boolean;
   practiceIsOpen: boolean | null;
   availabilityClosedMessage: string | null;
   afterHoursNotice: string | null;
   onConfirmChange: (confirmed: boolean) => void;
   onRetry: () => void;
-  onPracticeRetry: () => void;
   onContinue: () => void;
 }
 
 export default function SafetyWarningScreen({
   safetyWarningFetchState,
-  practiceNameFetchState,
+  practiceName,
   safetyConfirmed,
   practiceIsOpen,
   availabilityClosedMessage,
   afterHoursNotice,
   onConfirmChange,
   onRetry,
-  onPracticeRetry,
   onContinue,
 }: SafetyWarningScreenProps) {
   const isClosed = practiceIsOpen === false;
-
-  const practiceName =
-    practiceNameFetchState.status === "success"
-      ? practiceNameFetchState.name
-      : null;
 
   // Logic to handle string splitting for the safety warning
   const safetyLines = safetyWarningFetchState.status === "success" 
@@ -105,17 +98,6 @@ export default function SafetyWarningScreen({
             </div>
           )}
 
-          {practiceNameFetchState.status === "error" && (
-            <div style={{ marginBottom: "24px" }}>
-              <InlineError message={practiceNameFetchState.message} />
-              <div className="btn-row">
-                <button className="btn btn-secondary" onClick={onPracticeRetry}>
-                  Retry loading practice name
-                </button>
-              </div>
-            </div>
-          )}
-
           <div className="confirm-checkbox-row">
             <label className="confirm-checkbox-label">
               <input
@@ -138,10 +120,7 @@ export default function SafetyWarningScreen({
           <div className="btn-row">
             <button
               className="btn btn-primary"
-              disabled={
-                !safetyConfirmed ||
-                practiceNameFetchState.status !== "success"
-              }
+              disabled={!safetyConfirmed}
               onClick={onContinue}
             >
               Continue
