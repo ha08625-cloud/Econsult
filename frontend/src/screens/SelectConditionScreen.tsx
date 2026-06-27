@@ -1,3 +1,4 @@
+// File path: frontend/src/screens/SelectConditionScreen.tsx
 import { useRef, useEffect } from "react";
 import { PageShell } from "../layout";
 import ConditionCombobox from "../ConditionCombobox";
@@ -8,6 +9,11 @@ interface SelectConditionScreenProps {
   // null means the condition list has not yet loaded
   conditions: ConditionSummary[] | null;
   selectedConditionId: string | null;
+  // Bumped by App.tsx to force ConditionCombobox to remount (and re-run its
+  // mount-time label lookup) when the parent needs the displayed text to
+  // revert to selectedConditionId without changing selectedConditionId's
+  // identity-based React reconciliation otherwise wouldn't catch.
+  comboboxResetKey: number;
   onConditionChange: (id: string | null) => void;
   onContinue: () => void;
   onBlankForm: () => void;
@@ -18,6 +24,7 @@ export default function SelectConditionScreen({
   practiceName,
   conditions,
   selectedConditionId,
+  comboboxResetKey,
   onConditionChange,
   onContinue,
   onBlankForm,
@@ -52,6 +59,7 @@ export default function SelectConditionScreen({
               What is your consultation about?
             </label>
             <ConditionCombobox
+              key={comboboxResetKey}
               conditions={conditions}
               selectedId={selectedConditionId}
               onChange={onConditionChange}
