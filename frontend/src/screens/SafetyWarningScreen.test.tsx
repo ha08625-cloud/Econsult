@@ -3,14 +3,13 @@ import SafetyWarningScreen from "./SafetyWarningScreen";
 
 const baseProps = {
   safetyWarningFetchState: { status: "success" as const, text: "Call 999 if...\nSymptom A\nSymptom B" },
-  practiceNameFetchState: { status: "success" as const, name: "Elm Tree Surgery" },
+  practiceName: "Elm Tree Surgery" as string | null,
   safetyConfirmed: false,
   practiceIsOpen: true,
   availabilityClosedMessage: null,
   afterHoursNotice: null,
   onConfirmChange: () => {},
   onRetry: () => {},
-  onPracticeRetry: () => {},
   onContinue: () => {},
 };
 
@@ -32,17 +31,17 @@ test("Continue is enabled when safetyConfirmed is true and practice name loaded"
   expect(screen.getByRole("button", { name: /continue/i })).not.toBeDisabled();
 });
 
-test("Practice error block renders with 'Error:' prefix for screen readers", () => {
-  render(
-    <SafetyWarningScreen
-      {...baseProps}
-      practiceNameFetchState={{ status: "error", message: "Could not load practice" }}
-    />
-  );
-  // textContent check spans the sr-only span and visible message text
-  expect(screen.getByText((_, element) => {
-    return element?.tagName === "P" && element?.textContent === "Error: Could not load practice";
-  })).toBeInTheDocument();
+test("Continue is enabled when safetyConfirmed is true even though practice name failed to load", () => {
+  // practiceName fails open: a cosmetic header value must never block the patient.
+  render(<SafetyWarningScreen {...baseProps} safetyConfirmed={true} practiceName={null} />);
+  expect(screen.getByRole("button", { name: /continue/i })).not.toBeDisabled();
+});
+
+test("No practice name error or retry control is shown when practice name is unavailable", () => {
+  // There is no separate error/retry UI for practice name — it fails open silently,
+  // the same way availability and doctors do.
+  render(<SafetyWarningScreen {...baseProps} practiceName={null} />);
+  expect(screen.queryByText(/retry loading practice name/i)).not.toBeInTheDocument();
 });
 
 test("Safety gate hint renders as a plain paragraph with warning text when not confirmed", () => {
