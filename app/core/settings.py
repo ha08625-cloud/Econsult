@@ -27,7 +27,14 @@ Design rules:
   (deliberate, decided 2026-06): a partial Mailgun configuration (one of
   the pair set, not both) falls through to SMTP with a logged warning if
   SMTP is complete, or aborts startup if it is not. When both
-  configurations are complete, Mailgun wins.
+  configurations are complete, Mailgun wins. The underlying boolean logic
+  (complete / partial / mode selection) now lives in the leaf module
+  app/core/email_mode.py, also consumed directly by worker_main.py, so the
+  web and the delivery worker cannot drift apart on this predicate again.
+  EmailSettings still owns blank-vs-unset normalisation for its own fields
+  via the field_validator below; email_mode.py re-implements that same
+  normalisation internally so it works correctly when worker_main.py calls
+  it with raw os.environ values that have not been pre-normalised.
 
 - Validators raise ValueError (per the pydantic contract). load_web_settings
   converts the resulting ValidationError into a RuntimeError whose message
@@ -49,6 +56,8 @@ from typing import Optional, Type, TypeVar
 
 from pydantic import ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core import email_mode
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +150,7 @@ class EmailSettings(BaseSettings):
 
     @property
     def has_complete_mailgun(self) -> bool:
-        return bool(self.MAILGUN_API_KEY and self.MAILGUN_DOMAIN)
+        return email_mode.has_complete_mailgun(self.MAILGUN_API_KEY, self.MAILGUN_DOMAIN)
 
     @property
     def has_complete_smtp(self) -> bool:
@@ -150,10 +159,7 @@ class EmailSettings(BaseSettings):
     @property
     def has_partial_mailgun(self) -> bool:
         """One of the Mailgun pair is set, but not both."""
-        return (
-            bool(self.MAILGUN_API_KEY or self.MAILGUN_DOMAIN)
-            and not self.has_complete_mailgun
-        )
+        return email_mode.has_partial_mailgun(self.MAILGUN_API_KEY, self.MAILGUN_DOMAIN)
 
     @property
     def delivery_mode(self) -> str:
@@ -164,7 +170,9 @@ class EmailSettings(BaseSettings):
         otherwise "smtp". Validation guarantees that whichever mode this
         returns is complete by the time the model is constructed.
         """
-        return "mailgun" if self.has_complete_mailgun else "smtp"
+        return email_mode.select_email_delivery_mode(
+            self.MAILGUN_API_KEY, self.MAILGUN_DOMAIN
+        )
 
     # --- Cross-field rules --------------------------------------------------
 
