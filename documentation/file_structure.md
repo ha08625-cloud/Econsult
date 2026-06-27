@@ -77,7 +77,7 @@ Business logic and orchestration.
 - `errors.py` — `MeshError` base with `MeshTransientError` (retryable: transport, 5xx, 403/empty-errorCode auth failures) and `MeshTerminalError` (non-retryable: 4xx with populated errorCode, other 4xx, malformed responses). The dispatcher (Phase 3) branches on the type. *Imports: standalone; no application modules.*
 
 **`app/services/admin/`** (admin portal concerns - mirrors app/routers/admin/ subfolder)
-- `auth_service.py` — MFA and password authentication business logic. Implements: `request_mfa_code`, `verify_mfa_code`, `verify_login_credentials` (timing-safe password check with dummy-hash path), `generate_reset_token`, `verify_reset_token`, `set_new_password` (zxcvbn strength enforcement, score >= 3). *Imports: bcrypt, zxcvbn, hashlib, secrets, time, datetime, errors. DB/delivery via interfaces only.*
+- `auth_service.py` — MFA and password authentication business logic. Implements: `verify_mfa_code`, `verify_login_credentials` (timing-safe password check with dummy-hash path), `generate_reset_token`, `verify_reset_token`, `set_new_password` (zxcvbn strength enforcement, score >= 3). Also defines `request_mfa_code` (per-email cooldown check, generate, upsert, send) — this is currently dead code; `admin_auth_router.login` generates and dispatches the OTP inline rather than calling it. *Imports: bcrypt, zxcvbn, hashlib, secrets, time, datetime, errors. DB/delivery via interfaces only.*
 - `user_service.py` — Admin user management business logic (add, remove, resend invitation). *Imports: errors, auth_service.validate_admin_domain, email_utils. Receives repositories and conn as arguments — no direct DB access.*
 - `availability_orchestration.py` — Wires repository and service.
 - `availability_service.py` — Availability business logic.
@@ -108,7 +108,7 @@ Infrastructure concerns only. No clinical logic.
 - `consultation_outcomes.py` — Python interface for outcome constants. *Imports: json and os only.*
 - `db.py` — Shared Postgres connection module.
 - `dependencies.py` — Shared FastAPI dependency provider functions. Each `get_*` reads one `app.state` attribute. The getter <-> `AppContainer` field-name contract is pinned by `tests/test_wiring.py`.
-- `error_handlers.py` — `register_error_handlers(app)`: the four FastAPI exception handlers, attached by `main.py` at startup. *Imports: FastAPI, `slowapi.errors`, and `app.core.errors` only.*
+- `error_handlers.py` — `register_error_handlers(app)`: the four FastAPI exception handlers, attached by `main.py` at startup. *Imports: FastAPI and `app.core.errors` only.*
 - `errors.py` — Shared API, rate limit, and condition-not-found errors. `APIError` carries `status_code: int = 422`. User management errors: `USER_ALREADY_EXISTS` (409), `ACTION_NOT_PERMITTED` (403), `USER_NOT_FOUND` (404). Password auth errors: `INVALID_CREDENTIALS` (422, generic — does not reveal which gate failed), `INVALID_RESET_TOKEN` (422), `WEAK_PASSWORD` (422, message populated from zxcvbn feedback).
 - `rate_limit.py` — SlowAPI Limiter instantiation. *Imports: slowapi, app.utils.http_utils only.*
 - `request_validation.py` — HTTP payload validation.
