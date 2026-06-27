@@ -147,12 +147,7 @@ describe("ConditionCombobox", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // KNOWN BUG — see arch_frontend.md review.
-  // This test asserts the CORRECT post-fix behaviour and will FAIL against
-  // the current component, because inputValue is hardcoded to "" on mount
-  // and never derived from selectedId. Expected to go green once the
-  // mount-time label lookup (plan step 1) is implemented. Do not "fix" this
-  // test to match current behaviour — it is intentionally red right now.
+  // selectedId reflected on mount
   // ---------------------------------------------------------------------------
 
   it("shows the selected condition's label when mounted with a selectedId", () => {
