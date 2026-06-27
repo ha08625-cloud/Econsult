@@ -20,7 +20,7 @@
  * Filtering is always from the full canonical conditions list, never incremental.
  */
 
-import React, { useState, useRef, useId } from "react";
+import React, { useState, useRef, useId, useEffect } from "react";
 import type { ConditionSummary } from "./types";
 import { filterConditions } from "./search";
 
@@ -57,6 +57,18 @@ export default function ConditionCombobox({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear any pending blur-close timeout if the component unmounts before
+  // it fires (e.g. the patient navigates away mid-blur-delay). Without this,
+  // the timeout still fires after unmount and calls closeList(), which is a
+  // no-op in React 18+ but is still a leftover timer with nothing left to do.
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current !== null) {
+        clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Unique ids for ARIA — useId ensures no collisions if component is rendered
   // multiple times on the same page.
@@ -134,6 +146,7 @@ export default function ConditionCombobox({
     switch (e.key) {
       case "ArrowDown": {
         e.preventDefault();
+        if (filteredConditions.length === 0) break;
         const nextIndex =
           activeIndex === null
             ? 0
@@ -144,6 +157,7 @@ export default function ConditionCombobox({
 
       case "ArrowUp": {
         e.preventDefault();
+        if (filteredConditions.length === 0) break;
         const prevIndex =
           activeIndex === null
             ? filteredConditions.length - 1
