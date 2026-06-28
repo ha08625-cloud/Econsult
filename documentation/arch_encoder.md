@@ -18,26 +18,48 @@ The encoder runs **once**, on initial free text, before the patient sees any que
 
 - **Advisory only.** Encoder output is non-authoritative. It surfaces suggestions to the patient; the patient confirms or corrects them.
 - **Blind.** The encoder never sees rules, questions, existing answers, or `RuntimeState`. It receives only free text and `EncoderSignalDefinition` objects (answer key + clinical prompt string). The `encoder_prompt` is a clinical definition, not an instruction.
-- **Frozen at extraction time.** Encoder-derived values are fixed when applied. On submission, any remaining encoder-derived values are treated as explicitly confirmed or corrected.
+- **Frozen at extraction time.** Encoder-derived values are fixed when applied. On submission, any remaining raw encoder values are promoted to `encoder_correct` (see Provenance Model below).
 - **Audit-only provenance.** Encoder provenance is retained in `runtime.metadata["audit"]` for debugging only. It is never exposed to safety logic or clinical outputs.
 
 ---
 
-## Provenance State Machine
+## Provenance Model
 
-An answer's `source` field must follow these transitions. Any other transition is a violation.
+`source` is a **pure function of `(value, encoder_value)`**, recomputed on every
+`apply_patient_answers` call. It is therefore idempotent — re-applying the same
+value yields the same source — which is what lets the client round-trip the
+entire answers map on every update without provenance drifting.
 
-| From | To | Allowed |
-|---|---|---|
-| `unanswered` | `encoder` | yes |
-| `unanswered` | `patient` | yes |
-| `encoder` | `encoder_confirmed` | yes |
-| `encoder` | `encoder_corrected` | yes |
-| `encoder_confirmed` | `encoder_corrected` | yes |
-| `patient` | `encoder` | **no** |
-| `patient` | `encoder_confirmed` | **no** |
+| Condition | `source` |
+|---|---|
+| `encoder_value is None` | `patient` |
+| `value == encoder_value` | `encoder_correct` |
+| `value != encoder_value` | `encoder_incorrect` |
 
-The hard rule: **encoder output must never overwrite a patient answer.** This is enforced in `encoder_mapping.py`.
+On submission, `normalise_encoder_provenance` promotes any still-raw `encoder`
+answer (one the patient never touched) to `encoder_correct`; its value still
+equals `encoder_value` by construction, so this is consistent with the rule above.
+
+Because source is recomputed each call, there is no transition table to enforce.
+The **one surviving invariant** is:
+
+> An answer with `encoder_value is None` (patient-owned) can never become
+> encoder-derived.
+
+This holds for a single reason: `encoder_value` is written **once**, in
+`encoder_mapping.apply_encoder_output`, and is never mutated afterwards.
+`apply_patient_answers` must never write it. The hard rule that **encoder output
+must never overwrite a patient answer** remains enforced in `encoder_mapping.py`
+(it only populates `unanswered` fields).
+
+**Persistence note:** `source` is persisted verbatim inside the `state_json`
+JSONB blob and is not validated against the `AnswerSource` Literal on read. The
+rename from `encoder_confirmed`/`encoder_corrected` is therefore **not**
+backward-compatible with already-persisted sessions: an old value would fall
+outside `EXPLICIT_SOURCES` and be silently dropped from safety projection. This
+is accepted because the system is pre-live with no durable sessions. **If the
+system goes live, a read-time compatibility shim in `AnswerState.from_dict` (or a
+session drain on deploy) becomes mandatory.**
 
 ---
 
