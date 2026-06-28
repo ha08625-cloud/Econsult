@@ -3,6 +3,7 @@
 import json
 import hashlib
 from decimal import Decimal
+from functools import lru_cache
 from typing import Dict, Any, List
 
 
@@ -11,7 +12,19 @@ from typing import Dict, Any, List
 VALID_ANSWER_TYPES = {"Boolean", "text", "Number"}
 
 
+@lru_cache(maxsize=None)
 def load_ruleset(path: str) -> Dict[str, Any]:
+    """
+    Loads, validates, and caches a ruleset by its file path.
+
+    Cached for the lifetime of the process: rulesets only change via a
+    redeploy (which starts a fresh process), never via a live edit while
+    sessions are open, so re-reading and re-validating the same file on
+    every request has no benefit. The first call for a given path does the
+    real work (this is what wiring.py's startup validation exercises);
+    every call after that returns the same cached dict. A failed load is
+    not cached -- a path that raises will be retried on the next call.
+    """
     with open(path, "r") as f:
         ruleset = json.load(f)
     validate_ruleset(ruleset)
