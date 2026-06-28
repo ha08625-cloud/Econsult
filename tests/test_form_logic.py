@@ -14,6 +14,8 @@ from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
 from app.services.engine.form_logic import (
     validate_required_answers,
     normalise_number_answers,
+    apply_patient_answers,
+    normalise_encoder_provenance,
     AnswerValidationError,
 )
 
@@ -185,3 +187,110 @@ def test_normalise_ignores_non_number_answers():
     normalise_number_answers(rt)
     assert rt.answers["has_pain"].value is True
     assert rt.answers["notes"].value == "hello"
+
+
+# ---------------------------------------------------------------------------
+# apply_patient_answers / normalise_encoder_provenance — provenance
+#
+# source is a pure function of (value, encoder_value):
+#   encoder_value is None        -> "patient"
+#   value == encoder_value       -> "encoder_correct"
+#   value != encoder_value       -> "encoder_incorrect"
+# ---------------------------------------------------------------------------
+
+def _bool_runtime(source, encoder_value, value=None):
+    """Single-boolean RuntimeState for provenance tests."""
+    return RuntimeState(
+        condition_id="demo",
+        ruleset_version="hash",
+        free_text="",
+        additional_text=None,
+        answers={
+            "flag": AnswerState(
+                value=value,
+                source=source,
+                encoder_value=encoder_value,
+                answer_type="boolean",
+            )
+        },
+        safety_evaluation=SafetyEvaluation(),
+        metadata={},
+    )
+
+
+def _apply(source, encoder_value, value):
+    rt = _bool_runtime(source=source, encoder_value=encoder_value)
+    apply_patient_answers(rt, {"flag": value})
+    return rt.answers["flag"]
+
+
+def test_apply_no_encoder_suggestion_is_patient():
+    # encoder_value None: answer is patient-owned regardless of value.
+    assert _apply(source="unanswered", encoder_value=None, value=True).source == "patient"
+
+
+def test_apply_value_matches_true_suggestion_is_correct():
+    assert _apply(source="encoder", encoder_value=True, value=True).source == "encoder_correct"
+
+
+def test_apply_value_differs_from_true_suggestion_is_incorrect():
+    assert _apply(source="encoder", encoder_value=True, value=False).source == "encoder_incorrect"
+
+
+def test_apply_value_matches_false_suggestion_is_correct():
+    assert _apply(source="encoder", encoder_value=False, value=False).source == "encoder_correct"
+
+
+def test_apply_value_differs_from_false_suggestion_is_incorrect():
+    assert _apply(source="encoder", encoder_value=False, value=True).source == "encoder_incorrect"
+
+
+def test_apply_revert_to_matching_value_returns_to_correct():
+    # Headline behaviour this ticket adds: an answer previously recorded as
+    # encoder_incorrect, re-set to match the encoder's suggestion, becomes
+    # encoder_correct. Under the old event model this transition was impossible.
+    rt = _bool_runtime(source="encoder_incorrect", encoder_value=True)
+    apply_patient_answers(rt, {"flag": True})
+    assert rt.answers["flag"].source == "encoder_correct"
+
+
+def test_apply_is_idempotent():
+    # Re-applying the same value yields the same source. This is what makes the
+    # client round-tripping the whole answers map every update safe.
+    rt = _bool_runtime(source="encoder", encoder_value=True)
+    apply_patient_answers(rt, {"flag": False})
+    first = rt.answers["flag"].source
+    apply_patient_answers(rt, {"flag": False})
+    assert rt.answers["flag"].source == first == "encoder_incorrect"
+
+
+def test_apply_does_not_mutate_encoder_value():
+    # The surviving invariant: a patient answer can never become encoder-derived,
+    # which holds only because apply_patient_answers never writes encoder_value.
+    rt = _bool_runtime(source="encoder", encoder_value=True)
+    apply_patient_answers(rt, {"flag": False})
+    assert rt.answers["flag"].encoder_value is True
+
+
+def test_apply_unknown_answer_key_raises_keyerror():
+    rt = _bool_runtime(source="unanswered", encoder_value=None)
+    with pytest.raises(KeyError):
+        apply_patient_answers(rt, {"does_not_exist": True})
+
+
+def test_normalise_promotes_raw_encoder_to_correct():
+    rt = _bool_runtime(source="encoder", encoder_value=True, value=True)
+    normalise_encoder_provenance(rt)
+    assert rt.answers["flag"].source == "encoder_correct"
+
+
+def test_normalise_leaves_patient_untouched():
+    rt = _bool_runtime(source="patient", encoder_value=None, value=True)
+    normalise_encoder_provenance(rt)
+    assert rt.answers["flag"].source == "patient"
+
+
+def test_normalise_leaves_encoder_incorrect_untouched():
+    rt = _bool_runtime(source="encoder_incorrect", encoder_value=True, value=False)
+    normalise_encoder_provenance(rt)
+    assert rt.answers["flag"].source == "encoder_incorrect"
