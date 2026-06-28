@@ -4,14 +4,6 @@ from typing import Any, Dict, Optional
 from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
 from app.services.engine.ruleset import ruleset_hash
 
-VALID_ANSWER_SOURCES = {
-    "unanswered",
-    "encoder",
-    "encoder_confirmed",
-    "encoder_corrected",
-    "patient",
-}
-
 
 class AnswerValidationError(ValueError):
     """
@@ -52,27 +44,6 @@ def initialise_runtime_state(
             "timestamp": datetime.now(timezone.utc).isoformat(),
         },
     )
-
-def hydrate_runtime_state(
-    incoming: RuntimeState,
-    ruleset: dict,
-) -> RuntimeState:
-    """Validates that existing state is compatible with the current ruleset."""
-    expected_hash = ruleset_hash(ruleset)
-    if incoming.ruleset_version != expected_hash:
-        raise ValueError(f"Ruleset mismatch: state={incoming.ruleset_version}, ruleset={expected_hash}")
-
-    rule_keys = {q["answer_key"] for q in ruleset["questions"]}
-    state_keys = set(incoming.answers.keys())
-
-    if rule_keys != state_keys:
-        raise ValueError(f"Key mismatch. Missing: {rule_keys - state_keys}, Extra: {state_keys - rule_keys}")
-
-    for key, a in incoming.answers.items():
-        if a.source not in VALID_ANSWER_SOURCES:
-            raise ValueError(f"Invalid source '{a.source}' for key '{key}'")
-
-    return incoming
 
 def apply_additional_text(runtime: RuntimeState, additional_text: Optional[str]) -> None:
     """Updates the optional patient narrative, normalizing empty strings to None."""
