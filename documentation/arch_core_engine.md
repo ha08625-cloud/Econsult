@@ -40,7 +40,7 @@ Ruleset schema violations, duplicate `condition_id` across rulesets, missing or 
 
 ### `form_logic.py` — Deterministic functional core
 
-The pure inner core. Contains no encoder access, no IO, no serialisation, no sequencing. Can be fully unit tested in isolation. Functions initialise, hydrate, and mutate RuntimeState (patient answers and encoder provenance) and validate required-answer completeness before submission.
+The pure inner core. Contains no encoder access, no IO, no serialisation, no sequencing. Can be fully unit tested in isolation. Functions initialise and mutate RuntimeState (patient answers and encoder provenance) and validate required-answer completeness before submission.
 
 ### `runtime_state.py` — Data contracts for in-flight state
 
