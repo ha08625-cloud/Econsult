@@ -6,10 +6,11 @@ unknown/missing answer_type must raise. Pure unit tests — no integration marke
 """
 
 import copy
+import json
 
 import pytest
 
-from app.services.engine.ruleset import validate_ruleset
+from app.services.engine.ruleset import load_ruleset, validate_ruleset
 
 
 def _base_ruleset():
@@ -122,3 +123,22 @@ def test_rejects_bound_finer_than_decimal_places():
 def test_rejects_non_string_range_warning_text():
     with pytest.raises(ValueError):
         validate_ruleset(_with(range_warning_text=123))
+
+
+# ---------------------------------------------------------------------------
+# Caching
+# ---------------------------------------------------------------------------
+
+def test_load_ruleset_caches_by_path(tmp_path):
+    """
+    Two loads of the same path must return the same object, not just an
+    equal one -- this is what proves the file was read from disk once,
+    not re-parsed on the second call.
+    """
+    path = tmp_path / "demo.json"
+    path.write_text(json.dumps(_base_ruleset()))
+
+    first = load_ruleset(str(path))
+    second = load_ruleset(str(path))
+
+    assert first is second
