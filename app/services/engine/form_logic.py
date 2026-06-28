@@ -51,8 +51,22 @@ def apply_additional_text(runtime: RuntimeState, additional_text: Optional[str])
 
 def apply_patient_answers(runtime: RuntimeState, answers: Dict[str, Any]) -> None:
     """
-    Applies patient-provided answers and updates provenance.
-    If an answer was previously provided by an encoder, it is marked as 'corrected'.
+    Applies patient-provided answers and recomputes provenance.
+
+    `source` is a pure function of the current value relative to the encoder's
+    suggestion (`encoder_value`), so it is idempotent: re-applying the same value
+    yields the same source. This is what lets the client round-trip the whole
+    answers map on every update without provenance drifting.
+
+    - encoder_value is None (encoder never suggested this answer, e.g. number/text
+      questions or an encoder that returned null): the answer is patient-owned.
+    - value matches encoder_value: the encoder's suggestion currently stands
+      ("encoder_correct").
+    - value differs from encoder_value: the current answer departs from the
+      encoder's suggestion ("encoder_incorrect").
+
+    encoder_value is never written here; it is set once in encoder_mapping and is
+    the reason a patient-owned answer can never become encoder-derived.
     """
     for answer_key, value in answers.items():
         if answer_key not in runtime.answers:
@@ -60,13 +74,25 @@ def apply_patient_answers(runtime: RuntimeState, answers: Dict[str, Any]) -> Non
 
         a = runtime.answers[answer_key]
         a.value = value
-        a.source = "encoder_corrected" if a.source == "encoder" else "patient"
+        if a.encoder_value is None:
+            a.source = "patient"
+        elif value == a.encoder_value:
+            a.source = "encoder_correct"
+        else:
+            a.source = "encoder_incorrect"
 
 def normalise_encoder_provenance(runtime: RuntimeState) -> None:
-    """Promotes uncorrected encoder answers to 'confirmed' status upon submission."""
+    """
+    Promotes any still-raw encoder answer to 'encoder_correct' on submission.
+
+    A raw "encoder" answer is one the patient never touched, so its value still
+    equals encoder_value by construction; recording it as encoder_correct keeps
+    source consistent with the value-vs-encoder_value rule used everywhere else.
+    Acts only on raw "encoder"; all other sources are left unchanged.
+    """
     for a in runtime.answers.values():
         if a.source == "encoder":
-            a.source = "encoder_confirmed"
+            a.source = "encoder_correct"
 
 def validate_required_answers(runtime: RuntimeState, ruleset: dict) -> None:
     """
