@@ -12,8 +12,8 @@ from typing import Dict, Any, Optional, Literal
 AnswerSource = Literal[
     "unanswered",
     "encoder",
-    "encoder_confirmed",
-    "encoder_corrected",
+    "encoder_correct",
+    "encoder_incorrect",
     "patient",
 ]
 
