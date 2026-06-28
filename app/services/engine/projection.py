@@ -1,18 +1,20 @@
 from typing import Dict
 from app.models.runtime_state import RuntimeState
-from app.models.explicit_answers import ExplicitAnswers
+from app.services.explicit_answers import ExplicitAnswers
 
 EXPLICIT_SOURCES = {
     "patient",
-    "encoder_confirmed",
-    "encoder_corrected",
+    "encoder_correct",
+    "encoder_incorrect",
 }
 
 
 def project_explicit_answers(runtime: RuntimeState) -> ExplicitAnswers:
     """
     Strict allow-list projection.
-    Only patient and encoder_confirmed answers are included and sent to safety_engine.py for evaluation
+    Only patient, encoder_correct and encoder_incorrect answers are included and
+    sent to safety_engine.py for evaluation. All other sources (raw "encoder",
+    "unanswered") are projected as None.
     """
 
     projected: Dict[str, bool | None] = {}
