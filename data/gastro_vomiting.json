@@ -77,7 +77,7 @@
   "safety": {
     "rules": {
       "severe_stomach_pain_safety": {
-        "all": [
+        "any": [
           { "is_true": "severe_stomach_pain" },
           { "is_false": "fluids_tolerated" }
         ],
