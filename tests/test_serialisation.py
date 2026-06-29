@@ -4,10 +4,13 @@ Unit tests for Number-field passthrough in serialize_client_state.
 Asserts the client view carries decimal_places/min/max/range_warning_text for
 Number questions, omits them for other types, and exposes the stored string as
 current_value. No range computation happens server-side. Pure unit tests.
+
+Also asserts the change_count audit counter surfaces in the lossless
+AuditOutput (and only there).
 """
 
 from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
-from app.services.engine.serialisation import serialize_client_state
+from app.services.engine.serialisation import serialize_client_state, audit_output
 
 
 def _ruleset(range_warning_text="Please check this value."):
@@ -99,3 +102,34 @@ def test_non_number_question_omits_number_fields():
     assert "min" not in notes
     assert "max" not in notes
     assert "range_warning_text" not in notes
+
+
+# ---------------------------------------------------------------------------
+# change_count exposure
+#
+# change_count lives only in the lossless AuditOutput, reached via
+# runtime.to_dict(). It does not appear in ClientStateView (serialize_client_state
+# exposes only value/source) or ClinicalOutput (which keeps only value). This is
+# the real exposure path, so it is the one guarded here.
+# ---------------------------------------------------------------------------
+
+def test_audit_output_exposes_change_count():
+    rt = RuntimeState(
+        condition_id="demo",
+        ruleset_version="hash",
+        free_text="",
+        additional_text=None,
+        answers={
+            "flag": AnswerState(
+                value=False,
+                source="encoder_incorrect",
+                encoder_value=True,
+                answer_type="boolean",
+                change_count=2,
+            ),
+        },
+        safety_evaluation=SafetyEvaluation(),
+        metadata={},
+    )
+    audit = audit_output(rt)
+    assert audit.runtime_state["answers"]["flag"]["change_count"] == 2
