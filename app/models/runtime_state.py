@@ -34,11 +34,24 @@ class AnswerState:
         apply_patient_answers (which receives them from the parsed body) and
         normalise_number_answers (which stringifies them before persistence).
         Numbers never reach the encoder, so encoder_value stays bool-or-None.
+
+    change_count:
+        Net change events recorded for this answer, accumulated across submits.
+        Maintained only for encoder-suggested answers (encoder_value is not
+        None); it stays 0 for text and number answers and for encoder-null
+        booleans. The baseline is the encoder prefill (count starts at 0, since
+        the prefill is not a patient change), and it increments by at most one
+        per submit, only when the submitted value differs from the currently
+        committed value (see form_logic.apply_patient_answers). It rides in the
+        state_json JSONB blob (no migration) and surfaces only in the lossless
+        AuditOutput. Because each increment on a boolean is a flip, parity is an
+        invariant: even count <-> encoder_correct, odd count <-> encoder_incorrect.
     """
     value: bool | str | int | float | Decimal | None
     source: AnswerSource
     encoder_value: Optional[bool]
     answer_type: Literal["boolean", "text", "number"]
+    change_count: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -46,6 +59,7 @@ class AnswerState:
             "source": self.source,
             "encoder_value": self.encoder_value,
             "answer_type": self.answer_type,
+            "change_count": self.change_count,
         }
 
     @classmethod
@@ -55,6 +69,9 @@ class AnswerState:
             source=d["source"],
             encoder_value=d["encoder_value"],
             answer_type=d["answer_type"],
+            # Default to 0 so already-persisted states that predate the field
+            # deserialise cleanly.
+            change_count=d.get("change_count", 0),
         )
 
 
