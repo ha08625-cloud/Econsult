@@ -139,7 +139,18 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
 
     if "safety" in ruleset:
         for rule_id, rule in ruleset["safety"]["rules"].items():
-            for clause in rule.get("any", []):
+            # "any" must be present, a list, and non-empty. Previously a missing
+            # key, a typo'd key (e.g. "all"), or an empty list all fell through
+            # rule.get("any", []) unnoticed -- the rule validated cleanly and
+            # then silently never fired in safety_engine.py.
+            if "any" not in rule:
+                raise ValueError(f"Safety rule '{rule_id}' missing required 'any' key")
+            if not isinstance(rule["any"], list):
+                raise ValueError(f"Safety rule '{rule_id}' has 'any' that is not a list")
+            if not rule["any"]:
+                raise ValueError(f"Safety rule '{rule_id}' has an empty 'any' list")
+
+            for clause in rule["any"]:
                 key = clause.get("is_true") or clause.get("is_false")
                 if key not in seen_answer_keys:
                     raise ValueError(
