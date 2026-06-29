@@ -63,6 +63,55 @@ session drain on deploy) becomes mandatory.**
 
 ---
 
+## Change Auditing
+
+`AnswerState.change_count` records how much a **single encoder-suggested answer
+churned** over the life of a session. It complements `source` rather than
+duplicating it: `source` says where the answer *ended up* (agreeing with the
+encoder or not); `change_count` says how many times it *moved* to get there.
+
+**What increments it.** Inside `apply_patient_answers`, before the value is
+overwritten, an answer increments by one when **both** hold:
+
+- `encoder_value is not None` (the answer was encoder-suggested — always a
+  boolean), and
+- the submitted value differs from the currently committed value.
+
+Number and text answers (`encoder_value is None`) and encoder-null booleans are
+out of scope and never increment. The read-before-write is structural: the
+increment sits one line ahead of the value assignment in the same loop iteration,
+so it cannot be defeated by reordering elsewhere in the pipeline.
+
+**Granularity.** One `/form/update` is one commit. The counter measures
+**committed deltas across review cycles**, not in-screen toggling — the server
+never sees intermediate UI state, only the value committed at each Edit → Review
+transition. A no-op submit (value unchanged) adds nothing, so the same-value
+idempotency of `apply_patient_answers` extends to `change_count`.
+
+**Baseline.** The encoder prefill is the baseline (count starts at 0); applying
+the encoder's own value is not a patient change.
+
+**Parity invariant.** Because every increment on a boolean is a flip between
+`true` and `false`, and a required boolean can never be persisted as `None`,
+parity is exact for any tracked answer:
+
+> even `change_count` ⟺ value equals `encoder_value` ⟺ `encoder_correct`
+> odd `change_count` ⟺ value differs from `encoder_value` ⟺ `encoder_incorrect`
+
+A consequence worth stating for anyone reading the audit: a **high count does not
+mean disagreement**. An answer overridden and then reverted ends at the encoder's
+value (`encoder_correct`) with `change_count = 2`. `change_count` must therefore
+be read **together with** `source`, never alone.
+
+**Persistence and exposure.** `change_count` rides in the `state_json` JSONB blob
+(no migration; `from_dict` defaults a missing key to 0 so pre-existing states
+deserialise cleanly). It surfaces **only** in the lossless `AuditOutput` (via
+`runtime.to_dict()`); it is deliberately absent from `ClientStateView` and
+`ClinicalOutput`. It is captured now for the audit record; no consumer renders it
+yet.
+
+---
+
 ## Module Responsibilities & Boundaries
 
 ### `encoder_contracts.py` — Boundary contracts
