@@ -150,6 +150,15 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
             if not rule["any"]:
                 raise ValueError(f"Safety rule '{rule_id}' has an empty 'any' list")
 
+            # "message" is read with a direct dict access (rule["message"]) in
+            # safety_engine.py once a rule fires -- without this check, a rule
+            # authored without it validates fine at startup and then raises
+            # KeyError mid-request the first time a patient actually triggers it.
+            if "message" not in rule:
+                raise ValueError(f"Safety rule '{rule_id}' missing required 'message' key")
+            if not isinstance(rule["message"], str) or not rule["message"].strip():
+                raise ValueError(f"Safety rule '{rule_id}' has an empty or non-string 'message'")
+
             for clause in rule["any"]:
                 key = clause.get("is_true") or clause.get("is_false")
                 if key not in seen_answer_keys:
