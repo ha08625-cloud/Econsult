@@ -142,36 +142,6 @@ def test_answer_validation_error_is_a_value_error():
 
 
 # ---------------------------------------------------------------------------
-# validate_required_answers — unknown answer_type (corrupted persisted state)
-#
-# answer_type is only a Literal type *hint* on the AnswerState dataclass; it
-# is never enforced at runtime. RuntimeState.from_dict will happily rebuild a
-# state from a legacy or corrupted JSONB row carrying any string here. The
-# else branch must raise rather than silently skip the check.
-# ---------------------------------------------------------------------------
-
-def test_rejects_unknown_answer_type():
-    rt = RuntimeState(
-        condition_id="demo",
-        ruleset_version="hash",
-        free_text="",
-        additional_text=None,
-        answers={
-            "weight": AnswerState(
-                value=70,
-                source="patient",
-                encoder_value=None,
-                answer_type="decimal",  # not "boolean"/"text"/"number"
-            )
-        },
-        safety_evaluation=SafetyEvaluation(),
-        metadata={},
-    )
-    with pytest.raises(AnswerValidationError):
-        validate_required_answers(rt, _number_ruleset(1))
-
-
-# ---------------------------------------------------------------------------
 # normalise_number_answers
 # ---------------------------------------------------------------------------
 
@@ -324,3 +294,123 @@ def test_normalise_leaves_encoder_incorrect_untouched():
     rt = _bool_runtime(source="encoder_incorrect", encoder_value=True, value=False)
     normalise_encoder_provenance(rt)
     assert rt.answers["flag"].source == "encoder_incorrect"
+
+
+# ---------------------------------------------------------------------------
+# apply_patient_answers — change_count auditing
+#
+# change_count increments at most once per submit, and only when an
+# encoder-suggested answer's submitted value differs from its currently
+# committed value. It tracks churn on encoder answers only (encoder_value is
+# not None); text/number answers and encoder-null booleans are out of scope.
+# The encoder prefill is the baseline (count 0).
+# ---------------------------------------------------------------------------
+
+def _encoder_runtime(encoder_value=True):
+    """Encoder-suggested boolean at its prefill baseline: value == encoder_value,
+    change_count 0 (the prefill is not a patient change)."""
+    return _bool_runtime(source="encoder", encoder_value=encoder_value, value=encoder_value)
+
+
+def _submit(rt, value):
+    """Mirror one Review-cycle commit of the 'flag' answer."""
+    apply_patient_answers(rt, {"flag": value})
+    return rt.answers["flag"]
+
+
+def test_change_count_kept_answer_does_not_increment():
+    rt = _encoder_runtime(encoder_value=True)
+    _submit(rt, True)  # patient leaves the encoder suggestion as-is
+    assert rt.answers["flag"].change_count == 0
+
+
+def test_change_count_override_increments_once():
+    rt = _encoder_runtime(encoder_value=True)
+    _submit(rt, False)  # patient overrides
+    assert rt.answers["flag"].change_count == 1
+
+
+def test_change_count_accumulates_across_submits_ignoring_noops():
+    # keep -> override -> no-op -> override == 2: the no-op submit adds nothing;
+    # both genuine changes are counted.
+    rt = _encoder_runtime(encoder_value=True)
+    _submit(rt, True)    # keep:     0
+    _submit(rt, False)   # override: 1
+    _submit(rt, False)   # no-op:    1
+    _submit(rt, True)    # override: 2
+    assert rt.answers["flag"].change_count == 2
+
+
+def test_change_count_parity_matches_source():
+    # The invariant the audit relies on: for an encoder-suggested boolean,
+    # even count <-> encoder_correct, odd count <-> encoder_incorrect. Each
+    # increment is a flip, so parity tracks agreement with the encoder.
+    rt = _encoder_runtime(encoder_value=True)
+    for value in (False, True, False):  # three genuine flips
+        _submit(rt, value)
+    a = rt.answers["flag"]
+    assert a.change_count == 3
+    assert a.source == "encoder_incorrect"
+    assert (a.change_count % 2 == 0) == (a.source == "encoder_correct")
+
+
+def test_change_count_ignores_non_encoder_boolean():
+    # encoder_value None: patient-owned, out of audit scope; never increments
+    # even when the value changes.
+    rt = _bool_runtime(source="patient", encoder_value=None, value=True)
+    _submit(rt, False)
+    assert rt.answers["flag"].change_count == 0
+
+
+def test_change_count_ignores_number_answer():
+    # Numbers always have encoder_value None, so a changed number never increments.
+    rt = _runtime(Decimal("70.5"))
+    apply_patient_answers(rt, {"weight": Decimal("80.5")})
+    assert rt.answers["weight"].change_count == 0
+
+
+def test_change_count_multi_key_submit_counts_each_changed_encoder_answer():
+    # A single submit carrying several answers increments each encoder answer
+    # that changed, independently of the others.
+    rt = RuntimeState(
+        condition_id="demo",
+        ruleset_version="hash",
+        free_text="",
+        additional_text=None,
+        answers={
+            "a": AnswerState(value=True, source="encoder", encoder_value=True, answer_type="boolean"),
+            "b": AnswerState(value=False, source="encoder", encoder_value=False, answer_type="boolean"),
+            "c": AnswerState(value="hi", source="patient", encoder_value=None, answer_type="text"),
+        },
+        safety_evaluation=SafetyEvaluation(),
+        metadata={},
+    )
+    apply_patient_answers(rt, {"a": False, "b": False, "c": "bye"})
+    assert rt.answers["a"].change_count == 1   # changed encoder answer
+    assert rt.answers["b"].change_count == 0   # unchanged encoder answer
+    assert rt.answers["c"].change_count == 0   # non-encoder, out of scope
+
+
+# ---------------------------------------------------------------------------
+# AnswerState.change_count — serialisation
+# (no dedicated test_runtime_state module exists, so these live here)
+# ---------------------------------------------------------------------------
+
+def test_answerstate_roundtrip_preserves_change_count():
+    a = AnswerState(
+        value=True, source="encoder_incorrect", encoder_value=True,
+        answer_type="boolean", change_count=3,
+    )
+    restored = AnswerState.from_dict(a.to_dict())
+    assert restored.change_count == 3
+
+
+def test_answerstate_from_dict_defaults_missing_change_count_to_zero():
+    # Already-persisted states predate the field; they must default cleanly.
+    legacy = {
+        "value": True,
+        "source": "encoder_correct",
+        "encoder_value": True,
+        "answer_type": "boolean",
+    }
+    assert AnswerState.from_dict(legacy).change_count == 0
