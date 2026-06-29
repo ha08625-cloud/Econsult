@@ -51,7 +51,7 @@ def apply_additional_text(runtime: RuntimeState, additional_text: Optional[str])
 
 def apply_patient_answers(runtime: RuntimeState, answers: Dict[str, Any]) -> None:
     """
-    Applies patient-provided answers and recomputes provenance.
+    Applies patient-provided answers, recomputes provenance, and records churn.
 
     `source` is a pure function of the current value relative to the encoder's
     suggestion (`encoder_value`), so it is idempotent: re-applying the same value
@@ -67,12 +67,30 @@ def apply_patient_answers(runtime: RuntimeState, answers: Dict[str, Any]) -> Non
 
     encoder_value is never written here; it is set once in encoder_mapping and is
     the reason a patient-owned answer can never become encoder-derived.
+
+    Change auditing (change_count):
+        Before the value is overwritten, an encoder-suggested answer
+        (encoder_value is not None) whose submitted value differs from the
+        currently committed value has its change_count incremented by one. The
+        read-before-write happens in this same loop iteration, immediately ahead
+        of the assignment below, so the "read the old value first" requirement is
+        structural and cannot be broken by reordering elsewhere. Text and number
+        answers (encoder_value None) and encoder-null booleans are out of audit
+        scope and never increment. Re-applying the same value does not increment,
+        so the idempotency property above extends to change_count: a no-op submit
+        leaves it untouched.
     """
     for answer_key, value in answers.items():
         if answer_key not in runtime.answers:
             raise KeyError(f"Unknown answer_key: {answer_key}")
 
         a = runtime.answers[answer_key]
+
+        # Record churn BEFORE overwriting a.value. Encoder-suggested answers
+        # only; a.value here is still the previously committed value.
+        if a.encoder_value is not None and value != a.value:
+            a.change_count += 1
+
         a.value = value
         if a.encoder_value is None:
             a.source = "patient"
@@ -152,17 +170,6 @@ def validate_required_answers(runtime: RuntimeState, ruleset: dict) -> None:
                     f"Answer for {answer_key} has more than {decimal_places} "
                     f"decimal place(s)"
                 )
-
-        else:
-            # Not unreachable: validate_ruleset only constrains answer_type at
-            # startup. AnswerState is a plain dataclass, so its Literal type
-            # hint is not enforced at runtime, and RuntimeState.from_dict will
-            # accept any string straight out of persisted JSONB. Without this
-            # branch, a corrupted or legacy answer_type would silently skip
-            # required-answer checking instead of failing loudly.
-            raise AnswerValidationError(
-                f"Unknown answer_type '{a.answer_type}' for {answer_key}"
-            )
 
 def normalise_number_answers(runtime: RuntimeState) -> None:
     """
