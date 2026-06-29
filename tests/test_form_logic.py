@@ -142,6 +142,36 @@ def test_answer_validation_error_is_a_value_error():
 
 
 # ---------------------------------------------------------------------------
+# validate_required_answers — unknown answer_type (corrupted persisted state)
+#
+# answer_type is only a Literal type *hint* on the AnswerState dataclass; it
+# is never enforced at runtime. RuntimeState.from_dict will happily rebuild a
+# state from a legacy or corrupted JSONB row carrying any string here. The
+# else branch must raise rather than silently skip the check.
+# ---------------------------------------------------------------------------
+
+def test_rejects_unknown_answer_type():
+    rt = RuntimeState(
+        condition_id="demo",
+        ruleset_version="hash",
+        free_text="",
+        additional_text=None,
+        answers={
+            "weight": AnswerState(
+                value=70,
+                source="patient",
+                encoder_value=None,
+                answer_type="decimal",  # not "boolean"/"text"/"number"
+            )
+        },
+        safety_evaluation=SafetyEvaluation(),
+        metadata={},
+    )
+    with pytest.raises(AnswerValidationError):
+        validate_required_answers(rt, _number_ruleset(1))
+
+
+# ---------------------------------------------------------------------------
 # normalise_number_answers
 # ---------------------------------------------------------------------------
 
