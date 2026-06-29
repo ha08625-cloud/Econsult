@@ -153,6 +153,17 @@ def validate_required_answers(runtime: RuntimeState, ruleset: dict) -> None:
                     f"decimal place(s)"
                 )
 
+        else:
+            # Not unreachable: validate_ruleset only constrains answer_type at
+            # startup. AnswerState is a plain dataclass, so its Literal type
+            # hint is not enforced at runtime, and RuntimeState.from_dict will
+            # accept any string straight out of persisted JSONB. Without this
+            # branch, a corrupted or legacy answer_type would silently skip
+            # required-answer checking instead of failing loudly.
+            raise AnswerValidationError(
+                f"Unknown answer_type '{a.answer_type}' for {answer_key}"
+            )
+
 def normalise_number_answers(runtime: RuntimeState) -> None:
     """
     Convert validated Number answers to their canonical string form for
