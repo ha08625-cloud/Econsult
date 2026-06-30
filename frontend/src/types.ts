@@ -2,6 +2,25 @@
 
 export type AnswerType = "boolean" | "text" | "number";
 
+export type UnitSystem = "metric" | "imperial";
+
+// Server -> client shape for a quantity (unit-toggle) question's current value.
+// Components are strings, matching the scalar-Number convention: the value is
+// held verbatim in the edit form so trailing-zero precision errors can be
+// detected, and converted to JSON numbers only when the /form/update payload is
+// built. Keys depend on the system ("kg" for metric; "st" and "lb" for imperial).
+export interface QuantityValueView {
+  system: UnitSystem;
+  components: Record<string, string>;
+}
+
+// Client -> server shape for a quantity answer in the /form/update payload.
+// Components are JSON numbers; the backend parses them with Decimal precision.
+export interface QuantityAnswerPayload {
+  system: UnitSystem;
+  components: Record<string, number>;
+}
+
 export interface ClientQuestion {
   answer_key: string;
   question_text: string;
@@ -11,7 +30,10 @@ export interface ClientQuestion {
   // to number. The string is held verbatim in the edit form so trailing-zero
   // precision errors can be detected; it is converted to a number only when the
   // /form/update payload is built.
-  current_value: boolean | string | null;
+  //
+  // For a quantity (unit-toggle) Number question, current_value is instead a
+  // QuantityValueView ({system, components}) when answered, or null when not.
+  current_value: boolean | string | QuantityValueView | null;
   required: boolean;
   suggested: boolean;
   // Number questions only. Absent for boolean and text questions.
@@ -19,6 +41,12 @@ export interface ClientQuestion {
   min?: number;
   max?: number;
   range_warning_text?: string | null;
+  // Quantity (unit-toggle) Number questions only. Absent otherwise.
+  // allowed_systems lists the systems the patient may choose between;
+  // default_system seeds the toggle before any answer is given.
+  quantity?: boolean;
+  allowed_systems?: UnitSystem[];
+  default_system?: UnitSystem;
 }
 
 export interface ClientStateView {
@@ -32,8 +60,9 @@ export interface ClientAnswerReturn {
   runtime_id: string;
   base_version: number;
   // Number answers travel on the wire as JSON numbers; the backend parses them
-  // with Decimal precision. boolean and text answers travel as before.
-  answers: Record<string, boolean | string | number | null>;
+  // with Decimal precision. boolean and text answers travel as before. A
+  // quantity answer travels as a QuantityAnswerPayload ({system, components}).
+  answers: Record<string, boolean | string | number | QuantityAnswerPayload | null>;
   additional_text: string | null;
 }
 
