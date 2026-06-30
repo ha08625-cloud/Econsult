@@ -10,7 +10,12 @@ AuditOutput (and only there).
 """
 
 from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
-from app.services.engine.serialisation import serialize_client_state, audit_output
+from app.models.serialisation_contracts import ClinicalOutput, PatientDetails
+from app.services.engine.serialisation import (
+    serialize_client_state,
+    clinical_output,
+    audit_output,
+)
 
 
 def _ruleset(range_warning_text="Please check this value."):
@@ -133,3 +138,191 @@ def test_audit_output_exposes_change_count():
     )
     audit = audit_output(rt)
     assert audit.runtime_state["answers"]["flag"]["change_count"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Quantity (unit-toggle) questions — client view
+# ---------------------------------------------------------------------------
+
+def _quantity_ruleset(allowed=("metric", "imperial"), default="metric", decimal_places=1):
+    return {
+        "condition_id": "demo",
+        "questions": [
+            {
+                "question_id": "q1",
+                "question": "What is your current weight?",
+                "answer_key": "weight",
+                "answer_type": "Number",
+                "decimal_places": decimal_places,
+                "min": 2,
+                "max": 400,
+                "range_warning_text": "Please check this value.",
+                "send_to_encoder": False,
+                "encoder_prompt": None,
+                "quantity": True,
+                "allowed_systems": list(allowed),
+                "default_system": default,
+            }
+        ],
+        "safety": {"rules": {}},
+    }
+
+
+def _quantity_runtime(value, raw_components, unit_system):
+    return RuntimeState(
+        condition_id="demo",
+        ruleset_version="hash",
+        free_text="",
+        additional_text=None,
+        answers={
+            "weight": AnswerState(
+                value=value,
+                source="patient",
+                encoder_value=None,
+                answer_type="number",
+                raw_components=raw_components,
+            ),
+        },
+        safety_evaluation=SafetyEvaluation(),
+        metadata={},
+        unit_system=unit_system,
+    )
+
+
+def test_quantity_question_emits_toggle_fields():
+    view = serialize_client_state(
+        _quantity_runtime("74.8", {"st": 11, "lb": 11}, "imperial"),
+        _quantity_ruleset(),
+        "Demo",
+    )
+    q = _weight_question(view)
+    assert q["quantity"] is True
+    assert q["allowed_systems"] == ["metric", "imperial"]
+    assert q["default_system"] == "metric"
+
+
+def test_quantity_answered_imperial_current_value():
+    view = serialize_client_state(
+        _quantity_runtime("74.8", {"st": 11, "lb": 11}, "imperial"),
+        _quantity_ruleset(),
+        "Demo",
+    )
+    cv = _weight_question(view)["current_value"]
+    assert cv == {"system": "imperial", "components": {"st": "11", "lb": "11"}}
+
+
+def test_quantity_answered_metric_current_value():
+    view = serialize_client_state(
+        _quantity_runtime("70.5", {"kg": "70.5"}, "metric"),
+        _quantity_ruleset(),
+        "Demo",
+    )
+    cv = _weight_question(view)["current_value"]
+    assert cv == {"system": "metric", "components": {"kg": "70.5"}}
+
+
+def test_quantity_components_are_strings_on_the_wire():
+    # Components travel as strings outbound (same convention as a scalar Number's
+    # string current_value), even though they persist as ints for st/lb.
+    view = serialize_client_state(
+        _quantity_runtime("74.8", {"st": 11, "lb": 11}, "imperial"),
+        _quantity_ruleset(),
+        "Demo",
+    )
+    comps = _weight_question(view)["current_value"]["components"]
+    assert all(isinstance(v, str) for v in comps.values())
+
+
+def test_quantity_unanswered_current_value_is_null_but_fields_present():
+    view = serialize_client_state(
+        _quantity_runtime(None, None, None),
+        _quantity_ruleset(),
+        "Demo",
+    )
+    q = _weight_question(view)
+    assert q["current_value"] is None
+    assert q["quantity"] is True
+    assert q["default_system"] == "metric"
+
+
+# ---------------------------------------------------------------------------
+# Quantity questions — clinical output
+# ---------------------------------------------------------------------------
+
+def _patient_details():
+    return PatientDetails(
+        patient_for="me",
+        first_name="Joe",
+        last_name="Bloggs",
+        date_of_birth="1990-03-15",
+        postcode="SW1A 1AA",
+        gender="male",
+    )
+
+
+def test_clinical_output_records_unit_system():
+    out = clinical_output(
+        _quantity_runtime("74.8", {"st": 11, "lb": 11}, "imperial"),
+        _quantity_ruleset(),
+        _patient_details(),
+    )
+    assert out.unit_system == "imperial"
+
+
+def test_clinical_output_quantity_answers_sidecar():
+    out = clinical_output(
+        _quantity_runtime("74.8", {"st": 11, "lb": 11}, "imperial"),
+        _quantity_ruleset(),
+        _patient_details(),
+    )
+    assert out.quantity_answers == {
+        "weight": {"raw_components": {"st": 11, "lb": 11}, "decimal_places": 1}
+    }
+
+
+def test_clinical_output_answer_is_canonical_kg_string():
+    out = clinical_output(
+        _quantity_runtime("74.8", {"st": 11, "lb": 11}, "imperial"),
+        _quantity_ruleset(),
+        _patient_details(),
+    )
+    # answers[key] stays the canonical kg string; raw input lives in the sidecar.
+    assert out.answers["weight"] == "74.8"
+
+
+def test_clinical_output_from_dict_roundtrip_preserves_quantity_fields():
+    out = clinical_output(
+        _quantity_runtime("70.5", {"kg": "70.5"}, "metric"),
+        _quantity_ruleset(),
+        _patient_details(),
+    )
+    # Simulate JSONB round-trip via the dataclass dict form.
+    from dataclasses import asdict
+    restored = ClinicalOutput.from_dict(asdict(out))
+    assert restored.unit_system == "metric"
+    assert restored.quantity_answers == {
+        "weight": {"raw_components": {"kg": "70.5"}, "decimal_places": 1}
+    }
+
+
+def test_clinical_output_from_dict_defaults_for_legacy_record():
+    # A record predating quantity support has neither key.
+    legacy = {
+        "condition_id": "demo",
+        "free_text": "",
+        "additional_text": None,
+        "answers": {"has_pain": True},
+        "safety_messages": [],
+        "question_labels": {"has_pain": "Pain?"},
+        "patient_details": {
+            "patient_for": "me",
+            "first_name": "Joe",
+            "last_name": "Bloggs",
+            "date_of_birth": "1990-03-15",
+            "postcode": "SW1A 1AA",
+            "gender": "male",
+        },
+    }
+    restored = ClinicalOutput.from_dict(legacy)
+    assert restored.unit_system is None
+    assert restored.quantity_answers == {}
