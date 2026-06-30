@@ -28,6 +28,7 @@ from app.services.engine.form_logic import (
     initialise_runtime_state,
     apply_additional_text,
     apply_patient_answers,
+    convert_unit_answers,
     normalise_encoder_provenance,
     validate_required_answers,
     normalise_number_answers,
@@ -88,6 +89,12 @@ def apply_update_and_evaluate(
     apply_additional_text(runtime_state, additional_text)
 
     apply_patient_answers(runtime_state, answers)
+
+    # Resolve quantity-bearing answers (unit toggle) from the transient client
+    # dict into a canonical kg Decimal before provenance/validation/normalise.
+    # Must run before validate_required_answers (which would reject a dict) and
+    # before normalise_number_answers (which stringifies the Decimal it leaves).
+    convert_unit_answers(runtime_state, ruleset)
 
     normalise_encoder_provenance(runtime_state)
 
