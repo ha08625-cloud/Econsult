@@ -16,6 +16,49 @@ class AnswerValidationError(ValueError):
     """
 
 
+def _validate_number_value(value: Any, decimal_places: int, answer_key: str) -> None:
+    """
+    Validate that `value` is a finite number (int or Decimal) carrying no more
+    than `decimal_places` decimal places. Raises AnswerValidationError on any
+    violation, with answer_key in the message.
+
+    This is the number-acceptance ladder shared by every place that accepts a
+    numeric quantity from the wire. It deliberately does NOT handle None: a
+    missing value means different things to different callers (an unanswered
+    question vs a malformed component of a compound answer), so each caller
+    checks for None first and raises its own context-specific message.
+
+    The checks run most-specific-true first:
+      - bool is excluded before the int/Decimal check because isinstance(True,
+        int) is True, so True/False would otherwise be read as 1/0.
+      - Decimal NaN/Infinity never arise from the wire (json parses those
+        constants as float, which fails the int/Decimal check), but the finite
+        guard ensures a non-finite value can never reach the exponent check.
+      - An int has no fractional part and is always acceptable. A Decimal's
+        negative exponent is its number of decimal places.
+    """
+    if isinstance(value, bool):
+        raise AnswerValidationError(
+            f"Answer must be a number, not a boolean: {answer_key}"
+        )
+
+    if not isinstance(value, (int, Decimal)):
+        raise AnswerValidationError(
+            f"Answer must be a number: {answer_key}"
+        )
+
+    if isinstance(value, Decimal) and not value.is_finite():
+        raise AnswerValidationError(
+            f"Answer must be a finite number: {answer_key}"
+        )
+
+    if isinstance(value, Decimal) and value.as_tuple().exponent < -decimal_places:
+        raise AnswerValidationError(
+            f"Answer for {answer_key} has more than {decimal_places} "
+            f"decimal place(s)"
+        )
+
+
 def initialise_runtime_state(
     ruleset: dict,
     free_text: str,
@@ -117,10 +160,11 @@ def validate_required_answers(runtime: RuntimeState, ruleset: dict) -> None:
     Ensures every question has been answered acceptably for its type.
 
     Raises AnswerValidationError on the first failure. For Number answers the
-    tiers are checked most-specific-true first: missing, then wrong type
-    (the bool exclusion is explicit because isinstance(True, int) is True),
-    then precision. Range (min/max) is deliberately NOT enforced here — it is
-    a non-blocking warning surfaced in the client, never a submission blocker.
+    tiers are checked most-specific-true first: missing, then the shared
+    number-acceptance ladder (wrong type, non-finite, precision) in
+    _validate_number_value. Range (min/max) is deliberately NOT enforced here —
+    it is a non-blocking warning surfaced in the client, never a submission
+    blocker.
 
     `ruleset` is required because Number precision validation needs each
     question's decimal_places.
@@ -143,33 +187,7 @@ def validate_required_answers(runtime: RuntimeState, ruleset: dict) -> None:
             if value is None:
                 raise AnswerValidationError(f"Missing number answer: {answer_key}")
 
-            # bool is a subclass of int, so exclude it before the int/Decimal
-            # acceptance check, or True/False would be read as 1/0.
-            if isinstance(value, bool):
-                raise AnswerValidationError(
-                    f"Answer must be a number, not a boolean: {answer_key}"
-                )
-
-            if not isinstance(value, (int, Decimal)):
-                raise AnswerValidationError(
-                    f"Answer must be a number: {answer_key}"
-                )
-
-            # Decimal NaN/Infinity never arise from the wire (json parses those
-            # constants as float, which fails the int/Decimal check above), but
-            # guard anyway so a non-finite value can never reach the exponent check.
-            if isinstance(value, Decimal) and not value.is_finite():
-                raise AnswerValidationError(
-                    f"Answer must be a finite number: {answer_key}"
-                )
-
-            # Precision: an int has no fractional part and is always acceptable.
-            # A Decimal's negative exponent is its number of decimal places.
-            if isinstance(value, Decimal) and value.as_tuple().exponent < -decimal_places:
-                raise AnswerValidationError(
-                    f"Answer for {answer_key} has more than {decimal_places} "
-                    f"decimal place(s)"
-                )
+            _validate_number_value(value, decimal_places, answer_key)
 
 def normalise_number_answers(runtime: RuntimeState) -> None:
     """
