@@ -15,6 +15,7 @@ from app.services.engine.form_logic import (
     validate_required_answers,
     normalise_number_answers,
     apply_patient_answers,
+    convert_unit_answers,
     normalise_encoder_provenance,
     AnswerValidationError,
     _validate_number_value,
@@ -426,3 +427,224 @@ def test_answerstate_from_dict_defaults_missing_change_count_to_zero():
         "answer_type": "boolean",
     }
     assert AnswerState.from_dict(legacy).change_count == 0
+
+
+# ---------------------------------------------------------------------------
+# convert_unit_answers
+#
+# Resolves a quantity-bearing Number answer from the transient client dict
+# {"system", "components"} into a canonical kg Decimal, recording raw_components
+# and runtime.unit_system. Metric rejects over-precision; imperial rounds.
+# ---------------------------------------------------------------------------
+
+def _quantity_ruleset(decimal_places=1, allowed=("metric", "imperial")):
+    return {
+        "condition_id": "demo",
+        "questions": [
+            {
+                "question_id": "q1",
+                "question": "What is your weight?",
+                "answer_key": "weight",
+                "answer_type": "Number",
+                "decimal_places": decimal_places,
+                "min": 2,
+                "max": 400,
+                "send_to_encoder": False,
+                "encoder_prompt": None,
+                "quantity": True,
+                "allowed_systems": list(allowed),
+                "default_system": "metric",
+            }
+        ],
+        "safety": {"rules": {}},
+    }
+
+
+def _convert(value, ruleset=None):
+    rt = _runtime(value)
+    convert_unit_answers(rt, ruleset or _quantity_ruleset())
+    return rt
+
+
+# --- metric ---
+
+def test_convert_metric_decimal():
+    rt = _convert({"system": "metric", "components": {"kg": Decimal("70.5")}})
+    a = rt.answers["weight"]
+    assert a.value == Decimal("70.5")
+    assert a.raw_components == {"kg": "70.5"}
+    assert rt.unit_system == "metric"
+
+
+def test_convert_metric_whole_int_kg():
+    rt = _convert({"system": "metric", "components": {"kg": 70}})
+    a = rt.answers["weight"]
+    assert a.value == Decimal("70")
+    assert a.raw_components == {"kg": "70"}
+
+
+def test_convert_metric_rejects_over_precision():
+    with pytest.raises(AnswerValidationError, match="more than 1 decimal"):
+        _convert({"system": "metric", "components": {"kg": Decimal("70.55")}})
+
+
+def test_convert_metric_rejects_string_component():
+    with pytest.raises(AnswerValidationError, match="must be a number"):
+        _convert({"system": "metric", "components": {"kg": "70.5"}})
+
+
+def test_convert_metric_rejects_bool_component():
+    with pytest.raises(AnswerValidationError, match="not a boolean"):
+        _convert({"system": "metric", "components": {"kg": True}})
+
+
+# --- imperial ---
+
+def test_convert_imperial_rounds_to_decimal_places():
+    rt = _convert({"system": "imperial", "components": {"st": 11, "lb": 11}})
+    a = rt.answers["weight"]
+    assert a.value == Decimal("74.8")          # 74.84274105 rounded to 1 dp
+    assert a.raw_components == {"st": 11, "lb": 11}
+    assert rt.unit_system == "imperial"
+
+
+def test_convert_imperial_rounds_half_up_to_whole():
+    rt = _convert(
+        {"system": "imperial", "components": {"st": 11, "lb": 11}},
+        ruleset=_quantity_ruleset(decimal_places=0),
+    )
+    assert rt.answers["weight"].value == Decimal("75")   # 74.84 -> 75
+
+
+def test_convert_imperial_accepts_decimal_whole_components():
+    rt = _convert({"system": "imperial", "components": {"st": Decimal("11"), "lb": Decimal("0")}})
+    # 11 st = 154 lb; 154 * 0.45359237 = 69.85322498 -> 69.9 at 1 dp
+    assert rt.answers["weight"].value == Decimal("69.9")
+    assert rt.answers["weight"].raw_components == {"st": 11, "lb": 0}
+
+
+def test_convert_imperial_rejects_fractional_pounds():
+    with pytest.raises(AnswerValidationError, match="whole number"):
+        _convert({"system": "imperial", "components": {"st": 11, "lb": Decimal("11.5")}})
+
+
+def test_convert_imperial_rejects_negative():
+    with pytest.raises(AnswerValidationError, match="negative"):
+        _convert({"system": "imperial", "components": {"st": -1, "lb": 0}})
+
+
+# --- shape / system guards ---
+
+def test_convert_skips_unanswered():
+    rt = _convert(None)
+    assert rt.answers["weight"].value is None
+    assert rt.answers["weight"].raw_components is None
+    assert rt.unit_system is None
+
+
+def test_convert_rejects_bare_number_for_quantity_question():
+    with pytest.raises(AnswerValidationError, match="system, components"):
+        _convert(Decimal("70"))
+
+
+def test_convert_rejects_unknown_system():
+    with pytest.raises(AnswerValidationError, match="unsupported unit system"):
+        _convert({"system": "nautical", "components": {"kg": Decimal("70")}})
+
+
+def test_convert_rejects_system_not_in_allowed():
+    with pytest.raises(AnswerValidationError, match="unsupported unit system"):
+        _convert(
+            {"system": "imperial", "components": {"st": 11, "lb": 0}},
+            ruleset=_quantity_ruleset(allowed=("metric",)),
+        )
+
+
+def test_convert_rejects_wrong_component_keys():
+    with pytest.raises(AnswerValidationError, match="requires exactly"):
+        _convert({"system": "metric", "components": {"st": 11, "lb": 11}})
+
+
+def test_convert_rejects_extra_component_key():
+    with pytest.raises(AnswerValidationError, match="requires exactly"):
+        _convert({"system": "metric", "components": {"kg": Decimal("70"), "x": 1}})
+
+
+def test_convert_rejects_missing_components():
+    with pytest.raises(AnswerValidationError, match="missing its components"):
+        _convert({"system": "metric"})
+
+
+def test_convert_rejects_non_dict_components():
+    with pytest.raises(AnswerValidationError, match="missing its components"):
+        _convert({"system": "metric", "components": "nope"})
+
+
+def test_convert_ignores_non_quantity_number_question():
+    # A plain number question (no quantity flag) is left untouched by convert.
+    rt = _runtime(Decimal("70.5"))
+    convert_unit_answers(rt, _number_ruleset(1))
+    assert rt.answers["weight"].value == Decimal("70.5")
+    assert rt.answers["weight"].raw_components is None
+    assert rt.unit_system is None
+
+
+# ---------------------------------------------------------------------------
+# Pure pipeline sequence: apply -> convert -> provenance -> validate -> normalise
+# Proves the ordering and the final persisted shape, without a database.
+# ---------------------------------------------------------------------------
+
+def _run_sequence(submitted_value, ruleset):
+    rt = _runtime(None)  # starts unanswered
+    rt.answers["weight"].source = "unanswered"
+    apply_patient_answers(rt, {"weight": submitted_value})
+    convert_unit_answers(rt, ruleset)
+    normalise_encoder_provenance(rt)
+    validate_required_answers(rt, ruleset)
+    normalise_number_answers(rt)
+    return rt
+
+
+def test_sequence_imperial_end_state():
+    rt = _run_sequence(
+        {"system": "imperial", "components": {"st": 11, "lb": 11}},
+        _quantity_ruleset(1),
+    )
+    a = rt.answers["weight"]
+    assert a.value == "74.8"                       # canonical kg string, persisted
+    assert a.raw_components == {"st": 11, "lb": 11}
+    assert a.source == "patient"
+    assert a.change_count == 0
+    assert rt.unit_system == "imperial"
+
+
+def test_sequence_metric_end_state():
+    rt = _run_sequence(
+        {"system": "metric", "components": {"kg": Decimal("70.5")}},
+        _quantity_ruleset(1),
+    )
+    a = rt.answers["weight"]
+    assert a.value == "70.5"
+    assert a.raw_components == {"kg": "70.5"}
+    assert a.source == "patient"
+    assert rt.unit_system == "metric"
+
+
+def test_sequence_metric_whole_number_persists_cleanly():
+    rt = _run_sequence(
+        {"system": "metric", "components": {"kg": 70}},
+        _quantity_ruleset(1),
+    )
+    assert rt.answers["weight"].value == "70"
+
+
+# ---------------------------------------------------------------------------
+# normalise_number_answers defensive guard
+# ---------------------------------------------------------------------------
+
+def test_normalise_raises_on_unresolved_dict():
+    # A dict reaching normalise means convert was skipped / ran out of order.
+    # This is an internal error (RuntimeError -> 500), not bad client input.
+    rt = _runtime({"system": "metric", "components": {"kg": Decimal("70")}})
+    with pytest.raises(RuntimeError, match="Unresolved quantity components"):
+        normalise_number_answers(rt)
