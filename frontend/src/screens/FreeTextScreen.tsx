@@ -2,7 +2,7 @@ import { useState } from "react";
 import DOMPurify from "dompurify";
 import { PageShell, InlineError } from "../layout";
 import { initForm, friendlyErrorMessage } from "../api";
-import { initialiseEditableAnswers } from "../helpers";
+import { initialiseEditableAnswers, type EditableAnswers } from "../helpers";
 import { SIGNPOSTING_PURIFY_CONFIG } from "../constants";
 import type { PresentationState, ClientStateView } from "../types";
 
@@ -16,7 +16,7 @@ interface FreeTextScreenProps {
     runtimeId: string;
     version: number;
     clientState: ClientStateView;
-    editableAnswers: Record<string, boolean | string | null>;
+    editableAnswers: EditableAnswers;
     additionalText: string;
   }) => void;
   onBack: () => void;
