@@ -35,6 +35,13 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
     perform its own precision check, and render a non-blocking out-of-range
     notice. No range computation happens here: the value passes through as the
     stored string and the client decides when to warn.
+
+    A quantity (unit-toggle) Number question additionally carries quantity,
+    allowed_systems and default_system. Its current_value is overridden to
+    {"system", "components"} when answered (else null). Components are emitted as
+    strings -- the same convention as a scalar Number's string current_value --
+    so the client holds them verbatim while editing and converts to JSON numbers
+    only at payload-build time.
     """
 
     questions = []
@@ -56,6 +63,20 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
             question_dict["min"] = q["min"]
             question_dict["max"] = q["max"]
             question_dict["range_warning_text"] = q.get("range_warning_text")
+
+            if q.get("quantity"):
+                question_dict["quantity"] = True
+                question_dict["allowed_systems"] = q["allowed_systems"]
+                question_dict["default_system"] = q["default_system"]
+                if answer.raw_components is not None:
+                    question_dict["current_value"] = {
+                        "system": runtime.unit_system,
+                        "components": {
+                            k: str(v) for k, v in answer.raw_components.items()
+                        },
+                    }
+                else:
+                    question_dict["current_value"] = None
 
         questions.append(question_dict)
 
@@ -81,6 +102,22 @@ def clinical_output(
         for q in ruleset["questions"]
     }
 
+    # Sidecar for quantity (unit-toggle) answers: the lossless raw input plus a
+    # snapshot of decimal_places, so the PDF formatter (which has no ruleset) can
+    # render "11 st 11 lb (74.8 kg)". answers[key] still holds the canonical kg
+    # string for these keys, unchanged.
+    quantity_answers = {}
+    for q in ruleset["questions"]:
+        if not q.get("quantity"):
+            continue
+        key = q["answer_key"]
+        a = runtime.answers[key]
+        if a.raw_components is not None:
+            quantity_answers[key] = {
+                "raw_components": a.raw_components,
+                "decimal_places": q["decimal_places"],
+            }
+
     return ClinicalOutput(
         condition_id=runtime.condition_id,
         free_text=runtime.free_text,
@@ -90,6 +127,8 @@ def clinical_output(
         question_labels=question_labels,
         patient_details=patient_details,
         contact_preferences=contact_preferences,
+        unit_system=runtime.unit_system,
+        quantity_answers=quantity_answers,
     )
 
 
