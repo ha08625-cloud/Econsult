@@ -430,3 +430,70 @@ def test_nhs_number_absent_when_not_set(submission_kwargs):
     result = generate_pdf(clinical_output=output, **submission_kwargs)
     pdf_text = extract_pdf_text(result)
     assert "NHS number:" not in pdf_text
+
+
+# ---------------------------------------------------------------------------
+# Quantity (unit-toggle) answer rendering
+#
+# Imperial renders "11 st 11 lb (74.8 kg)"; metric renders the typed kilograms
+# verbatim. The canonical value is already rounded; the formatter renders it at
+# decimal_places. Extraction asserts the raw and kg fragments separately, since
+# they are robust to any cell-internal text chunking.
+# ---------------------------------------------------------------------------
+
+def _quantity_output(unit_system, answer_value, raw_components, decimal_places=1):
+    return ClinicalOutput(
+        condition_id="numeric_capability_demo",
+        free_text="symptoms",
+        additional_text=None,
+        answers={"patient_weight_kg": answer_value},
+        safety_messages=[],
+        question_labels={"patient_weight_kg": "What is your current weight?"},
+        patient_details=_make_patient(),
+        contact_preferences=None,
+        unit_system=unit_system,
+        quantity_answers={
+            "patient_weight_kg": {
+                "raw_components": raw_components,
+                "decimal_places": decimal_places,
+            }
+        },
+    )
+
+
+def test_imperial_quantity_renders_stones_pounds_and_kg(submission_kwargs):
+    output = _quantity_output("imperial", "74.8", {"st": 11, "lb": 11})
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    assert "11 st 11 lb" in pdf_text
+    assert "74.8 kg" in pdf_text
+
+
+def test_imperial_quantity_zero_decimal_places_rounds_whole(submission_kwargs):
+    output = _quantity_output("imperial", "75", {"st": 11, "lb": 11}, decimal_places=0)
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    assert "11 st 11 lb" in pdf_text
+    assert "75 kg" in pdf_text
+
+
+def test_metric_quantity_renders_kilograms_verbatim(submission_kwargs):
+    output = _quantity_output("metric", "70.5", {"kg": "70.5"})
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    assert "70.5 kg" in pdf_text
+    # No imperial render: the " lb (" marker only appears in the stones/pounds form.
+    assert " lb (" not in pdf_text
+
+
+def test_non_quantity_answer_still_renders_yes_no(submission_kwargs):
+    # Regression: a normal boolean answer is unaffected by the quantity branch.
+    output = ClinicalOutput(
+        condition_id="test_condition",
+        free_text="symptoms",
+        additional_text=None,
+        answers={"q1": True},
+        safety_messages=[],
+        question_labels={"q1": "Do you have a fever?"},
+        patient_details=_make_patient(),
+        contact_preferences=None,
+    )
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    assert "Yes" in pdf_text
