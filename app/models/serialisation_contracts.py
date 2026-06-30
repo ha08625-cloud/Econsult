@@ -26,6 +26,15 @@ class ClinicalOutput:
     question_labels: Dict[str, str]  # answer_key -> question text at submission time
     patient_details: PatientDetails
     contact_preferences: Optional[Dict[str, Any]] = field(default=None)
+    # The form-wide unit system chosen by the patient, or None for a submission
+    # with no quantity question. answers[key] always holds the canonical kg
+    # string regardless; this records which unit the patient actually used.
+    unit_system: Optional[str] = field(default=None)
+    # Per quantity answer_key: {"raw_components": {...}, "decimal_places": int}.
+    # raw_components is the lossless input ({"kg": "70.5"} or {"st": 11, "lb": 11})
+    # and decimal_places is snapshotted so the PDF (which has no ruleset) can
+    # format the canonical value. One sidecar dict, mirroring question_labels.
+    quantity_answers: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "ClinicalOutput":
@@ -39,7 +48,9 @@ class ClinicalOutput:
 
         Raises KeyError if required fields are absent, which surfaces the
         schema mismatch as an immediate loud error rather than a silent wrong
-        value.
+        value. unit_system and quantity_answers are read with .get() so records
+        predating quantity support deserialise cleanly, same as
+        photo_quality_tier on AuditOutput.
         """
         patient_details_raw = data["patient_details"]
         patient_details = PatientDetails(
@@ -63,6 +74,8 @@ class ClinicalOutput:
             question_labels=data["question_labels"],
             patient_details=patient_details,
             contact_preferences=data.get("contact_preferences"),
+            unit_system=data.get("unit_system"),
+            quantity_answers=data.get("quantity_answers") or {},
         )
 
 
