@@ -17,6 +17,7 @@ from app.services.engine.form_logic import (
     apply_patient_answers,
     normalise_encoder_provenance,
     AnswerValidationError,
+    _validate_number_value,
 )
 
 
@@ -84,8 +85,6 @@ def test_accepts_integer_when_decimals_allowed():
 
 
 def test_range_is_not_enforced_here():
-    # min/max are a non-blocking client warning; validation must not reject
-    # an out-of-range value.
     validate_required_answers(_runtime(Decimal("999.9")), _number_ruleset(1))
 
 
@@ -104,8 +103,6 @@ def test_rejects_string_value():
 
 
 def test_rejects_bool_value():
-    # isinstance(True, int) is True in Python; the bool exclusion must be
-    # explicit, so this is asserted directly.
     with pytest.raises(AnswerValidationError):
         validate_required_answers(_runtime(True), _number_ruleset(1))
 
@@ -136,9 +133,59 @@ def test_rejects_non_finite_decimal():
 
 
 def test_answer_validation_error_is_a_value_error():
-    # Subclassing ValueError keeps existing `pytest.raises(ValueError)` green.
     with pytest.raises(ValueError):
         validate_required_answers(_runtime(None), _number_ruleset(1))
+
+
+# ---------------------------------------------------------------------------
+# _validate_number_value — direct
+#
+# The shared number-acceptance ladder, pinned independently of its callers
+# because the unit-conversion metric branch calls it directly. It is NOT
+# None-aware by design: a None reaches the int/Decimal check and is rejected as
+# "must be a number". That is exactly why every caller checks for None first
+# and raises its own context-specific message ("Missing ...", or a malformed
+# component error) before delegating here.
+# ---------------------------------------------------------------------------
+
+def test_helper_accepts_int():
+    _validate_number_value(70, 1, "weight")
+
+
+def test_helper_accepts_decimal_within_precision():
+    _validate_number_value(Decimal("70.5"), 1, "weight")
+    _validate_number_value(Decimal("70"), 1, "weight")
+
+
+def test_helper_rejects_bool():
+    with pytest.raises(AnswerValidationError, match="not a boolean"):
+        _validate_number_value(True, 1, "weight")
+
+
+def test_helper_rejects_non_number():
+    with pytest.raises(AnswerValidationError, match="must be a number"):
+        _validate_number_value("70.5", 1, "weight")
+
+
+def test_helper_rejects_non_finite():
+    with pytest.raises(AnswerValidationError, match="finite"):
+        _validate_number_value(Decimal("Infinity"), 1, "weight")
+
+
+def test_helper_rejects_over_precision():
+    with pytest.raises(AnswerValidationError, match="more than 1 decimal"):
+        _validate_number_value(Decimal("70.55"), 1, "weight")
+
+
+def test_helper_zero_decimal_places_rejects_fraction():
+    with pytest.raises(AnswerValidationError, match="more than 0 decimal"):
+        _validate_number_value(Decimal("70.5"), 0, "weight")
+
+
+def test_helper_is_not_none_aware():
+    # Documents the contract that justifies the caller-side None pre-check.
+    with pytest.raises(AnswerValidationError, match="must be a number"):
+        _validate_number_value(None, 1, "weight")
 
 
 # ---------------------------------------------------------------------------
@@ -191,15 +238,9 @@ def test_normalise_ignores_non_number_answers():
 
 # ---------------------------------------------------------------------------
 # apply_patient_answers / normalise_encoder_provenance — provenance
-#
-# source is a pure function of (value, encoder_value):
-#   encoder_value is None        -> "patient"
-#   value == encoder_value       -> "encoder_correct"
-#   value != encoder_value       -> "encoder_incorrect"
 # ---------------------------------------------------------------------------
 
 def _bool_runtime(source, encoder_value, value=None):
-    """Single-boolean RuntimeState for provenance tests."""
     return RuntimeState(
         condition_id="demo",
         ruleset_version="hash",
@@ -225,7 +266,6 @@ def _apply(source, encoder_value, value):
 
 
 def test_apply_no_encoder_suggestion_is_patient():
-    # encoder_value None: answer is patient-owned regardless of value.
     assert _apply(source="unanswered", encoder_value=None, value=True).source == "patient"
 
 
@@ -246,17 +286,12 @@ def test_apply_value_differs_from_false_suggestion_is_incorrect():
 
 
 def test_apply_revert_to_matching_value_returns_to_correct():
-    # Headline behaviour this ticket adds: an answer previously recorded as
-    # encoder_incorrect, re-set to match the encoder's suggestion, becomes
-    # encoder_correct. Under the old event model this transition was impossible.
     rt = _bool_runtime(source="encoder_incorrect", encoder_value=True)
     apply_patient_answers(rt, {"flag": True})
     assert rt.answers["flag"].source == "encoder_correct"
 
 
 def test_apply_is_idempotent():
-    # Re-applying the same value yields the same source. This is what makes the
-    # client round-tripping the whole answers map every update safe.
     rt = _bool_runtime(source="encoder", encoder_value=True)
     apply_patient_answers(rt, {"flag": False})
     first = rt.answers["flag"].source
@@ -265,8 +300,6 @@ def test_apply_is_idempotent():
 
 
 def test_apply_does_not_mutate_encoder_value():
-    # The surviving invariant: a patient answer can never become encoder-derived,
-    # which holds only because apply_patient_answers never writes encoder_value.
     rt = _bool_runtime(source="encoder", encoder_value=True)
     apply_patient_answers(rt, {"flag": False})
     assert rt.answers["flag"].encoder_value is True
@@ -298,55 +331,41 @@ def test_normalise_leaves_encoder_incorrect_untouched():
 
 # ---------------------------------------------------------------------------
 # apply_patient_answers — change_count auditing
-#
-# change_count increments at most once per submit, and only when an
-# encoder-suggested answer's submitted value differs from its currently
-# committed value. It tracks churn on encoder answers only (encoder_value is
-# not None); text/number answers and encoder-null booleans are out of scope.
-# The encoder prefill is the baseline (count 0).
 # ---------------------------------------------------------------------------
 
 def _encoder_runtime(encoder_value=True):
-    """Encoder-suggested boolean at its prefill baseline: value == encoder_value,
-    change_count 0 (the prefill is not a patient change)."""
     return _bool_runtime(source="encoder", encoder_value=encoder_value, value=encoder_value)
 
 
 def _submit(rt, value):
-    """Mirror one Review-cycle commit of the 'flag' answer."""
     apply_patient_answers(rt, {"flag": value})
     return rt.answers["flag"]
 
 
 def test_change_count_kept_answer_does_not_increment():
     rt = _encoder_runtime(encoder_value=True)
-    _submit(rt, True)  # patient leaves the encoder suggestion as-is
+    _submit(rt, True)
     assert rt.answers["flag"].change_count == 0
 
 
 def test_change_count_override_increments_once():
     rt = _encoder_runtime(encoder_value=True)
-    _submit(rt, False)  # patient overrides
+    _submit(rt, False)
     assert rt.answers["flag"].change_count == 1
 
 
 def test_change_count_accumulates_across_submits_ignoring_noops():
-    # keep -> override -> no-op -> override == 2: the no-op submit adds nothing;
-    # both genuine changes are counted.
     rt = _encoder_runtime(encoder_value=True)
-    _submit(rt, True)    # keep:     0
-    _submit(rt, False)   # override: 1
-    _submit(rt, False)   # no-op:    1
-    _submit(rt, True)    # override: 2
+    _submit(rt, True)
+    _submit(rt, False)
+    _submit(rt, False)
+    _submit(rt, True)
     assert rt.answers["flag"].change_count == 2
 
 
 def test_change_count_parity_matches_source():
-    # The invariant the audit relies on: for an encoder-suggested boolean,
-    # even count <-> encoder_correct, odd count <-> encoder_incorrect. Each
-    # increment is a flip, so parity tracks agreement with the encoder.
     rt = _encoder_runtime(encoder_value=True)
-    for value in (False, True, False):  # three genuine flips
+    for value in (False, True, False):
         _submit(rt, value)
     a = rt.answers["flag"]
     assert a.change_count == 3
@@ -355,23 +374,18 @@ def test_change_count_parity_matches_source():
 
 
 def test_change_count_ignores_non_encoder_boolean():
-    # encoder_value None: patient-owned, out of audit scope; never increments
-    # even when the value changes.
     rt = _bool_runtime(source="patient", encoder_value=None, value=True)
     _submit(rt, False)
     assert rt.answers["flag"].change_count == 0
 
 
 def test_change_count_ignores_number_answer():
-    # Numbers always have encoder_value None, so a changed number never increments.
     rt = _runtime(Decimal("70.5"))
     apply_patient_answers(rt, {"weight": Decimal("80.5")})
     assert rt.answers["weight"].change_count == 0
 
 
 def test_change_count_multi_key_submit_counts_each_changed_encoder_answer():
-    # A single submit carrying several answers increments each encoder answer
-    # that changed, independently of the others.
     rt = RuntimeState(
         condition_id="demo",
         ruleset_version="hash",
@@ -386,14 +400,13 @@ def test_change_count_multi_key_submit_counts_each_changed_encoder_answer():
         metadata={},
     )
     apply_patient_answers(rt, {"a": False, "b": False, "c": "bye"})
-    assert rt.answers["a"].change_count == 1   # changed encoder answer
-    assert rt.answers["b"].change_count == 0   # unchanged encoder answer
-    assert rt.answers["c"].change_count == 0   # non-encoder, out of scope
+    assert rt.answers["a"].change_count == 1
+    assert rt.answers["b"].change_count == 0
+    assert rt.answers["c"].change_count == 0
 
 
 # ---------------------------------------------------------------------------
 # AnswerState.change_count — serialisation
-# (no dedicated test_runtime_state module exists, so these live here)
 # ---------------------------------------------------------------------------
 
 def test_answerstate_roundtrip_preserves_change_count():
@@ -406,7 +419,6 @@ def test_answerstate_roundtrip_preserves_change_count():
 
 
 def test_answerstate_from_dict_defaults_missing_change_count_to_zero():
-    # Already-persisted states predate the field; they must default cleanly.
     legacy = {
         "value": True,
         "source": "encoder_correct",
