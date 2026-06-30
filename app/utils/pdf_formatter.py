@@ -7,6 +7,7 @@ No database access. No imports from routers or delivery service.
 
 import io
 from datetime import date, datetime
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from fpdf import FPDF
@@ -28,6 +29,38 @@ def _format_answer(value) -> str:
     if value is None:
         return "(not answered)"
     return str(value)
+
+
+def _format_kg(canonical_value, decimal_places: int) -> str:
+    """
+    Render the canonical kilogram value at exactly decimal_places, in plain
+    (non-exponential) notation. The stored value is already rounded by
+    convert_unit_answers; quantizing again with explicit ROUND_HALF_UP is
+    idempotent and guarantees consistent trailing digits on the document.
+    """
+    d = Decimal(str(canonical_value))
+    quantum = Decimal(1).scaleb(-decimal_places)
+    return format(d.quantize(quantum, rounding=ROUND_HALF_UP), "f")
+
+
+def _format_quantity_answer(
+    canonical_value, raw_components: dict, unit_system: Optional[str], decimal_places: int
+) -> str:
+    """
+    Format a quantity (unit-toggle) answer for the document.
+
+    Imperial shows the patient's stones and pounds with the converted kilograms
+    in parentheses, e.g. "11 st 11 lb (74.8 kg)". Metric shows the kilograms the
+    patient typed directly, e.g. "70.5 kg" -- no parenthetical, since the raw
+    input already is the canonical unit.
+    """
+    if unit_system == "imperial":
+        st = raw_components.get("st")
+        lb = raw_components.get("lb")
+        kg_display = _format_kg(canonical_value, decimal_places)
+        return f"{st} st {lb} lb ({kg_display} kg)"
+    # metric: the patient typed kilograms; show them verbatim.
+    return f"{raw_components.get('kg')} kg"
 
 
 def _dob_display(dob_iso: str) -> str:
@@ -310,7 +343,17 @@ def generate_pdf(
     pdf.section_heading("ANSWERS")
     for key, value in clinical_output.answers.items():
         label = clinical_output.question_labels.get(key, key)
-        pdf.row(f"{label}:", _format_answer(value))
+        if key in clinical_output.quantity_answers:
+            qa = clinical_output.quantity_answers[key]
+            formatted = _format_quantity_answer(
+                value,
+                qa["raw_components"],
+                clinical_output.unit_system,
+                qa["decimal_places"],
+            )
+        else:
+            formatted = _format_answer(value)
+        pdf.row(f"{label}:", formatted)
 
     # --- Additional information ---
     if clinical_output.additional_text:
