@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, Optional
 from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
 from app.services.engine.ruleset import ruleset_hash
+from app.services.engine.unit_conversion import imperial_weight_to_kg
 
 
 class AnswerValidationError(ValueError):
@@ -14,6 +15,16 @@ class AnswerValidationError(ValueError):
     translates it to a 422, while a plain ValueError raised elsewhere in the
     pipeline (e.g. a ruleset load failure) still surfaces as a logged 500.
     """
+
+
+# Strict component-key sets per unit system. Hardcoded to weight (kilograms, or
+# stones+pounds) because weight is the only quantity kind today. A second
+# quantity type (height, temperature, ...) would drive these from the question's
+# `quantity` value instead; that belongs to the deferred multi-quantity epic.
+_COMPONENT_KEYS = {
+    "metric": {"kg"},
+    "imperial": {"st", "lb"},
+}
 
 
 def _validate_number_value(value: Any, decimal_places: int, answer_key: str) -> None:
@@ -142,6 +153,111 @@ def apply_patient_answers(runtime: RuntimeState, answers: Dict[str, Any]) -> Non
         else:
             a.source = "encoder_incorrect"
 
+
+def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
+    """
+    Resolve quantity-bearing Number answers (those with a unit toggle) from the
+    transient client dict {"system", "components"} into a canonical kilogram
+    Decimal, recording the patient's raw input in raw_components and the chosen
+    system in runtime.unit_system.
+
+    Ordering (enforced by pipeline.apply_update_and_evaluate): runs after
+    apply_patient_answers, which placed the dict in a.value, and before
+    validate_required_answers and normalise_number_answers. It MUST precede
+    validate_required_answers, which would otherwise see a dict and reject it as
+    "not a number"; it leaves a.value as a Decimal that normalise_number_answers
+    then stringifies like any other Number. normalise_encoder_provenance is
+    unaffected: a quantity question is a Number, so it is never send_to_encoder
+    (ruleset validation enforces encoder questions are Boolean) and its source is
+    always "patient".
+
+    Per-question behaviour:
+      - Unanswered (a.value is None): skipped, left to validate_required_answers'
+        missing-answer check.
+      - Metric: the patient typed kilograms directly, so over-precision is a real
+        input error -- the value goes through the shared number-acceptance ladder
+        and is rejected if it exceeds decimal_places. The canonical value is the
+        typed kilograms.
+      - Imperial: stones and pounds are converted to an exact kg Decimal, then
+        ROUND_HALF_UP to decimal_places. The exact-but-long conversion artifact
+        never persists; raw_components keeps the patient's "11 st 11 lb" as the
+        lossless record.
+
+    A malformed payload (wrong dict shape, unknown system, bad component) raises
+    AnswerValidationError so the HTTP boundary returns 422.
+
+    With a single quantity question runtime.unit_system is set to that question's
+    chosen system. A form-wide consistency check across multiple quantity
+    questions is intentionally out of scope until a second one exists.
+    """
+    questions_by_key = {q["answer_key"]: q for q in ruleset["questions"]}
+
+    for q in ruleset["questions"]:
+        if not q.get("quantity"):
+            continue
+
+        answer_key = q["answer_key"]
+        a = runtime.answers[answer_key]
+
+        if a.value is None:
+            continue  # unanswered; validate_required_answers handles it
+
+        if not isinstance(a.value, dict):
+            raise AnswerValidationError(
+                f"Quantity answer {answer_key} must be a "
+                f"{{system, components}} object"
+            )
+
+        allowed_systems = q.get("allowed_systems", [])
+        system = a.value.get("system")
+        if system not in allowed_systems:
+            raise AnswerValidationError(
+                f"Quantity answer {answer_key} has an unsupported unit "
+                f"system: {system!r}"
+            )
+
+        components = a.value.get("components")
+        if not isinstance(components, dict):
+            raise AnswerValidationError(
+                f"Quantity answer {answer_key} is missing its components"
+            )
+
+        # system is guaranteed to be in _COMPONENT_KEYS: ruleset validation
+        # restricts allowed_systems to the known set, and system is in
+        # allowed_systems by the check above.
+        expected_keys = _COMPONENT_KEYS[system]
+        if set(components.keys()) != expected_keys:
+            raise AnswerValidationError(
+                f"Quantity answer {answer_key} for system {system!r} requires "
+                f"exactly the components {sorted(expected_keys)}"
+            )
+
+        decimal_places = questions_by_key[answer_key]["decimal_places"]
+
+        if system == "metric":
+            kg = components["kg"]
+            _validate_number_value(kg, decimal_places, answer_key)
+            canonical = Decimal(kg)
+            # Persisted kg is a string for the same exactness reason as value.
+            a.raw_components = {"kg": format(canonical, "f")}
+        else:  # imperial
+            try:
+                exact = imperial_weight_to_kg(components["st"], components["lb"])
+            except ValueError as exc:
+                raise AnswerValidationError(
+                    f"Quantity answer {answer_key}: {exc}"
+                )
+            quantum = Decimal(1).scaleb(-decimal_places)
+            canonical = exact.quantize(quantum, rounding=ROUND_HALF_UP)
+            # Stones and pounds are whole numbers; persist as ints.
+            a.raw_components = {
+                "st": int(components["st"]),
+                "lb": int(components["lb"]),
+            }
+
+        a.value = canonical
+        runtime.unit_system = system
+
 def normalise_encoder_provenance(runtime: RuntimeState) -> None:
     """
     Promotes any still-raw encoder answer to 'encoder_correct' on submission.
@@ -162,9 +278,14 @@ def validate_required_answers(runtime: RuntimeState, ruleset: dict) -> None:
     Raises AnswerValidationError on the first failure. For Number answers the
     tiers are checked most-specific-true first: missing, then the shared
     number-acceptance ladder (wrong type, non-finite, precision) in
-    _validate_number_value. Range (min/max) is deliberately NOT enforced here —
+    _validate_number_value. Range (min/max) is deliberately NOT enforced here --
     it is a non-blocking warning surfaced in the client, never a submission
     blocker.
+
+    Quantity-bearing Number answers have already been resolved to a canonical kg
+    Decimal by convert_unit_answers (metric values are <= decimal_places by the
+    same ladder; imperial values were rounded to decimal_places), so they pass
+    this check with no special-casing.
 
     `ruleset` is required because Number precision validation needs each
     question's decimal_places.
@@ -201,9 +322,20 @@ def normalise_number_answers(runtime: RuntimeState) -> None:
     so a value entered as "7e1" by a direct API client is stored as "70" rather
     than "7E+1". Whole numbers arrive as int and stringify directly.
     """
-    for a in runtime.answers.values():
+    for answer_key, a in runtime.answers.items():
         if a.answer_type != "number" or a.value is None:
             continue
+        if isinstance(a.value, dict):
+            # A quantity dict must have been resolved by convert_unit_answers
+            # before this point. A dict here means the pipeline ran out of order
+            # or convert skipped a question it should have handled; fail loud as
+            # an internal error (500) rather than persist "{'kg': ...}" into a
+            # clinical record. This is not an AnswerValidationError (not a 422):
+            # it is a programming/ordering bug, not bad client input.
+            raise RuntimeError(
+                f"Unresolved quantity components for answer {answer_key}: "
+                f"convert_unit_answers must run before normalise_number_answers"
+            )
         if isinstance(a.value, Decimal):
             a.value = format(a.value, "f")
         else:
