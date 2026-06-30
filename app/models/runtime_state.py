@@ -35,6 +35,22 @@ class AnswerState:
         normalise_number_answers (which stringifies them before persistence).
         Numbers never reach the encoder, so encoder_value stays bool-or-None.
 
+        For a quantity-bearing Number question (one with a unit toggle), there is
+        a second transient form: a dict {"system": ..., "components": {...}} as
+        submitted by the client. It exists only between apply_patient_answers and
+        convert_unit_answers, which replaces it with the canonical kg Decimal (and
+        populates raw_components). It never persists -- by the time the state is
+        serialised, value is the canonical kg string like any other Number.
+
+    raw_components:
+        None for every answer except a quantity-bearing Number question that has
+        been answered. For those it holds the patient's input in the unit they
+        actually used, as the lossless display/audit record that frees the
+        canonical value from having to be lossless. Persisted types are pinned to
+        stay JSONB-safe and exact: kg is stored as a string ({"kg": "70.5"}, same
+        exactness reason as value), while stones and pounds are whole numbers and
+        stored as ints ({"st": 11, "lb": 11}). The mixed shape is deliberate.
+
     change_count:
         Net change events recorded for this answer, accumulated across submits.
         Maintained only for encoder-suggested answers (encoder_value is not
@@ -47,11 +63,12 @@ class AnswerState:
         AuditOutput. Because each increment on a boolean is a flip, parity is an
         invariant: even count <-> encoder_correct, odd count <-> encoder_incorrect.
     """
-    value: bool | str | int | float | Decimal | None
+    value: bool | str | int | float | Decimal | dict | None
     source: AnswerSource
     encoder_value: Optional[bool]
     answer_type: Literal["boolean", "text", "number"]
     change_count: int = 0
+    raw_components: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +77,7 @@ class AnswerState:
             "encoder_value": self.encoder_value,
             "answer_type": self.answer_type,
             "change_count": self.change_count,
+            "raw_components": self.raw_components,
         }
 
     @classmethod
@@ -72,6 +90,9 @@ class AnswerState:
             # Default to 0 so already-persisted states that predate the field
             # deserialise cleanly.
             change_count=d.get("change_count", 0),
+            # Default to None for the same reason: records predating quantity
+            # support have no raw_components key.
+            raw_components=d.get("raw_components"),
         )
 
 
@@ -103,6 +124,11 @@ class RuntimeState:
     answers: Dict[str, AnswerState]
     safety_evaluation: SafetyEvaluation
     metadata: Dict[str, Any]
+    # The form-wide unit system, set once a quantity-bearing answer is processed
+    # in a submission. None until then. With a single quantity question this is
+    # effectively that question's chosen system; it is a form-level field rather
+    # than per-answer because the toggle is global.
+    unit_system: Optional[Literal["metric", "imperial"]] = None
 
     def to_dict(self) -> dict:
         return {
@@ -113,6 +139,7 @@ class RuntimeState:
             "answers": {k: v.to_dict() for k, v in self.answers.items()},
             "safety_evaluation": self.safety_evaluation.to_dict(),
             "metadata": self.metadata,
+            "unit_system": self.unit_system,
         }
 
     @classmethod
@@ -128,4 +155,7 @@ class RuntimeState:
             answers={k: AnswerState.from_dict(v) for k, v in d["answers"].items()},
             safety_evaluation=SafetyEvaluation.from_dict(d["safety_evaluation"]),
             metadata=d["metadata"],
+            # Default to None so records predating quantity support deserialise
+            # cleanly.
+            unit_system=d.get("unit_system"),
         )
