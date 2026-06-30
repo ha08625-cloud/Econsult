@@ -11,6 +11,11 @@ from typing import Dict, Any, List
 # ruleset's original (capitalised-Boolean) casing; runtime lowercases it.
 VALID_ANSWER_TYPES = {"Boolean", "text", "Number"}
 
+# The unit systems a quantity (unit-toggle) question may offer. convert_unit_answers
+# relies on system membership here, so this allow-list is enforced fail-fast at
+# startup rather than discovered mid-request.
+VALID_UNIT_SYSTEMS = {"metric", "imperial"}
+
 
 @lru_cache(maxsize=None)
 def load_ruleset(path: str) -> Dict[str, Any]:
@@ -91,6 +96,70 @@ def _validate_number_question(q: Dict[str, Any]) -> None:
         )
 
 
+def _validate_quantity_fields(q: Dict[str, Any]) -> None:
+    """
+    Validate the unit-toggle fields (quantity / allowed_systems / default_system).
+
+    These fields are only meaningful together and only on a Number question, so
+    they are enforced fail-fast at startup:
+
+      - quantity, if present, must be a bool.
+      - When quantity is True: answer_type must be "Number"; allowed_systems must
+        be a non-empty list drawn from VALID_UNIT_SYSTEMS with no duplicates; and
+        default_system must be present and one of allowed_systems.
+      - When quantity is not True: allowed_systems and default_system must be
+        absent, so an author who sets them but forgets the quantity flag (which
+        would otherwise be silently ignored) fails loudly instead. This mirrors
+        the existing "non-encoder question must not have encoder_prompt" rule.
+
+    Note: min/max on a quantity question are expressed in the canonical unit
+    (kilograms) and are validated by _validate_number_question like any other
+    Number bound; nothing unit-specific is checked here.
+    """
+    key = q["answer_key"]
+    quantity = q.get("quantity")
+
+    if quantity is not None and not isinstance(quantity, bool):
+        raise ValueError(
+            f"Question '{key}' has a non-boolean quantity: {quantity!r}"
+        )
+
+    if quantity is True:
+        if q.get("answer_type") != "Number":
+            raise ValueError(
+                f"Question '{key}' sets quantity but is not a Number question"
+            )
+
+        allowed = q.get("allowed_systems")
+        if not isinstance(allowed, list) or not allowed:
+            raise ValueError(
+                f"Quantity question '{key}' requires a non-empty allowed_systems list"
+            )
+        unknown = [s for s in allowed if s not in VALID_UNIT_SYSTEMS]
+        if unknown:
+            raise ValueError(
+                f"Quantity question '{key}' has unknown allowed_systems {unknown}; "
+                f"allowed: {sorted(VALID_UNIT_SYSTEMS)}"
+            )
+        if len(set(allowed)) != len(allowed):
+            raise ValueError(
+                f"Quantity question '{key}' has duplicate allowed_systems: {allowed}"
+            )
+
+        default_system = q.get("default_system")
+        if default_system not in allowed:
+            raise ValueError(
+                f"Quantity question '{key}' default_system {default_system!r} must "
+                f"be one of allowed_systems {allowed}"
+            )
+    else:
+        for unit_field in ("allowed_systems", "default_system"):
+            if q.get(unit_field) is not None:
+                raise ValueError(
+                    f"Non-quantity question '{key}' must not set {unit_field}"
+                )
+
+
 def validate_ruleset(ruleset: Dict[str, Any]) -> None:
     if "condition_id" not in ruleset:
         raise ValueError("Ruleset missing required field: condition_id")
@@ -120,6 +189,8 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
 
         if answer_type == "Number":
             _validate_number_question(q)
+
+        _validate_quantity_fields(q)
 
         if q.get("send_to_encoder"):
             if q.get("encoder_prompt") is None:
