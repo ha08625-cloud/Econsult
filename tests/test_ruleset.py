@@ -126,6 +126,96 @@ def test_rejects_non_string_range_warning_text():
 
 
 # ---------------------------------------------------------------------------
+# Quantity (unit-toggle) field validation
+# ---------------------------------------------------------------------------
+
+def test_accepts_valid_quantity_question():
+    validate_ruleset(
+        _with(
+            quantity=True,
+            allowed_systems=["metric", "imperial"],
+            default_system="metric",
+        )
+    )
+
+
+def test_accepts_quantity_with_single_system():
+    validate_ruleset(
+        _with(quantity=True, allowed_systems=["metric"], default_system="metric")
+    )
+
+
+def test_accepts_quantity_false_without_unit_fields():
+    # Explicit quantity=False is fine as long as the unit fields are absent.
+    validate_ruleset(_with(quantity=False))
+
+
+def test_rejects_non_boolean_quantity():
+    with pytest.raises(ValueError, match="non-boolean quantity"):
+        validate_ruleset(_with(quantity="yes"))
+
+
+def test_rejects_quantity_on_non_number_question():
+    with pytest.raises(ValueError, match="not a Number question"):
+        validate_ruleset(
+            _with(
+                answer_type="text",
+                quantity=True,
+                allowed_systems=["metric"],
+                default_system="metric",
+            )
+        )
+
+
+def test_rejects_quantity_missing_allowed_systems():
+    with pytest.raises(ValueError, match="non-empty allowed_systems"):
+        validate_ruleset(_with(quantity=True, default_system="metric"))
+
+
+def test_rejects_quantity_empty_allowed_systems():
+    with pytest.raises(ValueError, match="non-empty allowed_systems"):
+        validate_ruleset(_with(quantity=True, allowed_systems=[], default_system="metric"))
+
+
+def test_rejects_unknown_allowed_system():
+    with pytest.raises(ValueError, match="unknown allowed_systems"):
+        validate_ruleset(
+            _with(quantity=True, allowed_systems=["metric", "nautical"], default_system="metric")
+        )
+
+
+def test_rejects_duplicate_allowed_systems():
+    with pytest.raises(ValueError, match="duplicate allowed_systems"):
+        validate_ruleset(
+            _with(quantity=True, allowed_systems=["metric", "metric"], default_system="metric")
+        )
+
+
+def test_rejects_default_system_not_in_allowed():
+    with pytest.raises(ValueError, match="default_system"):
+        validate_ruleset(
+            _with(quantity=True, allowed_systems=["metric"], default_system="imperial")
+        )
+
+
+def test_rejects_missing_default_system():
+    with pytest.raises(ValueError, match="default_system"):
+        validate_ruleset(_with(quantity=True, allowed_systems=["metric"]))
+
+
+def test_rejects_allowed_systems_on_non_quantity_question():
+    # Unit fields set without the quantity flag would be silently ignored, so
+    # they are rejected outright.
+    with pytest.raises(ValueError, match="must not set allowed_systems"):
+        validate_ruleset(_with(allowed_systems=["metric"]))
+
+
+def test_rejects_default_system_on_non_quantity_question():
+    with pytest.raises(ValueError, match="must not set default_system"):
+        validate_ruleset(_with(default_system="metric"))
+
+
+# ---------------------------------------------------------------------------
 # Caching
 # ---------------------------------------------------------------------------
 
