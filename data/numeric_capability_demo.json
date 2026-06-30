@@ -10,7 +10,7 @@
   "questions": [
     {
       "question_id": "numeric_capability_demo_1",
-      "question": "What is your current weight, in kilograms?",
+      "question": "What is your current weight?",
       "answer_key": "patient_weight_kg",
       "answer_type": "Number",
       "decimal_places": 1,
@@ -18,7 +18,10 @@
       "max": 400,
       "range_warning_text": "That weight is outside the usual range. Please check you have entered it correctly.",
       "send_to_encoder": false,
-      "encoder_prompt": null
+      "encoder_prompt": null,
+      "quantity": true,
+      "allowed_systems": ["metric", "imperial"],
+      "default_system": "metric"
     }
   ],
 
