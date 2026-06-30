@@ -23,7 +23,7 @@ import type { PhotoAttachment } from "./uiTypes";
 import type { PhotoTier } from "./screens/EditScreen";
 import { GENERAL_CONSULTATION_ID } from './constants';
 import { PageShell } from "./layout";
-import { initialiseEditableAnswers } from "./helpers";
+import { initialiseEditableAnswers, type EditableAnswers } from "./helpers";
 import DoneScreen from "./screens/DoneScreen";
 import SafetyWarningScreen from "./screens/SafetyWarningScreen";
 import PatientDetailsScreen from "./screens/PatientDetailsScreen";
@@ -50,7 +50,7 @@ export default function App() {
   const [runtimeId, setRuntimeId] = useState<string | null>(null);
   const [version, setVersion] = useState<number | null>(null);
   const [clientState, setClientState] = useState<ClientStateView | null>(null);
-  const [editableAnswers, setEditableAnswers] = useState<Record<string, boolean | string | null> | null>(null);
+  const [editableAnswers, setEditableAnswers] = useState<EditableAnswers | null>(null);
   const [additionalText, setAdditionalText] = useState<string>("");
   const [safetyMessages, setSafetyMessages] = useState<SafetyMessage[]>([]);
   const [patientDetails, setPatientDetails] = useState<PatientDetails | null>(null);
