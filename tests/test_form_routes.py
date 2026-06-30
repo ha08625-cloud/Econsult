@@ -728,12 +728,15 @@ def test_finish_without_photos_and_no_tier_returns_200():
 
 
 # ---------------------------------------------------------------------------
-# Number answer type — boundary behaviour at /form/update
+# Quantity (unit-toggle) Number answer — boundary behaviour at /form/update
 #
-# These target the numeric_capability_demo condition (a temporary demo ruleset
-# with a single Number question, patient_weight_kg, decimal_places=1). Remove
-# them together with the demo ruleset at the end of the numeric epic — see the
-# removal checklist in the ticket.
+# These target the numeric_capability_demo condition: a single quantity Number
+# question (patient_weight_kg, decimal_places=1, metric+imperial). The patient
+# submits {"system", "components"}; the server converts to a canonical kg value.
+# They exercise real precision rejection (metric), imperial conversion/rounding,
+# and the shape/system guards, end to end through the raw-body parse_float=Decimal
+# path. (They predate Step E's response serialisation, so they assert status and
+# version only, not the response current_value shape.)
 # ---------------------------------------------------------------------------
 
 NUMERIC_DEMO_CONDITION_ID = "numeric_capability_demo"
@@ -751,47 +754,91 @@ def _init_numeric_demo(client: TestClient) -> tuple[str, int]:
     return body["runtime_id"], body["version"]
 
 
+def _metric(kg):
+    return {"system": "metric", "components": {"kg": kg}}
+
+
+def _imperial(st, lb):
+    return {"system": "imperial", "components": {"st": st, "lb": lb}}
+
+
+def _update_weight(client, runtime_id, version, value):
+    return client.post("/form/update", json={
+        "runtime_id": runtime_id,
+        "base_version": version,
+        "answers": {NUMERIC_DEMO_ANSWER_KEY: value},
+        "additional_text": None,
+    })
+
+
 def test_update_rejects_number_with_too_many_decimals():
     """
-    A value finer than the question's decimal_places is rejected at the
-    boundary as 422 INVALID_PAYLOAD. This also exercises the raw-body
-    parse_float=Decimal path: 70.55 must be read exactly (as Decimal), so the
-    precision check sees two decimal places rather than a lossy float.
+    A metric value finer than the question's decimal_places is rejected at the
+    boundary as 422 INVALID_PAYLOAD. Also exercises the raw-body
+    parse_float=Decimal path: the nested 70.55 must be read exactly (as Decimal),
+    so the precision check sees two decimal places rather than a lossy float.
     """
     with TestClient(app) as client:
         runtime_id, version = _init_numeric_demo(client)
-        res = client.post("/form/update", json={
-            "runtime_id": runtime_id,
-            "base_version": version,
-            "answers": {NUMERIC_DEMO_ANSWER_KEY: 70.55},
-            "additional_text": None,
-        })
+        res = _update_weight(client, runtime_id, version, _metric(70.55))
         assert res.status_code == 422, res.text
         assert res.json()["error"]["code"] == "INVALID_PAYLOAD"
 
 
 def test_update_accepts_number_at_allowed_precision():
-    """A value at exactly decimal_places is accepted and the session advances."""
+    """A metric value at exactly decimal_places is accepted and the session advances."""
     with TestClient(app) as client:
         runtime_id, version = _init_numeric_demo(client)
-        res = client.post("/form/update", json={
-            "runtime_id": runtime_id,
-            "base_version": version,
-            "answers": {NUMERIC_DEMO_ANSWER_KEY: 70.5},
-            "additional_text": None,
-        })
+        res = _update_weight(client, runtime_id, version, _metric(70.5))
         assert res.status_code == 200, res.text
         assert res.json()["version"] == version + 1
 
 
 def test_update_accepts_whole_number_for_number_question():
-    """A whole number carries no fractional part and is always within precision."""
+    """A whole metric kg carries no fractional part and is always within precision."""
     with TestClient(app) as client:
         runtime_id, version = _init_numeric_demo(client)
-        res = client.post("/form/update", json={
-            "runtime_id": runtime_id,
-            "base_version": version,
-            "answers": {NUMERIC_DEMO_ANSWER_KEY: 70},
-            "additional_text": None,
-        })
+        res = _update_weight(client, runtime_id, version, _metric(70))
         assert res.status_code == 200, res.text
+
+
+def test_update_rejects_bare_number_for_quantity_question():
+    """
+    The pre-toggle payload shape (a bare JSON number) is no longer valid for a
+    quantity question: the server requires {system, components}.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _init_numeric_demo(client)
+        res = _update_weight(client, runtime_id, version, 70.5)
+        assert res.status_code == 422, res.text
+        assert res.json()["error"]["code"] == "INVALID_PAYLOAD"
+
+
+def test_update_accepts_imperial_components():
+    """Imperial stones/pounds are accepted, converted, and the session advances."""
+    with TestClient(app) as client:
+        runtime_id, version = _init_numeric_demo(client)
+        res = _update_weight(client, runtime_id, version, _imperial(11, 11))
+        assert res.status_code == 200, res.text
+        assert res.json()["version"] == version + 1
+
+
+def test_update_rejects_imperial_fractional_pounds():
+    """Stones/pounds must be whole numbers; a fractional pound is rejected as 422."""
+    with TestClient(app) as client:
+        runtime_id, version = _init_numeric_demo(client)
+        res = _update_weight(client, runtime_id, version, _imperial(11, 11.5))
+        assert res.status_code == 422, res.text
+        assert res.json()["error"]["code"] == "INVALID_PAYLOAD"
+
+
+def test_update_rejects_unknown_unit_system():
+    """A system outside the question's allowed_systems is rejected as 422."""
+    with TestClient(app) as client:
+        runtime_id, version = _init_numeric_demo(client)
+        res = _update_weight(
+            client, runtime_id, version,
+            {"system": "nautical", "components": {"kg": 70}},
+        )
+        assert res.status_code == 422, res.text
+        assert res.json()["error"]["code"] == "INVALID_PAYLOAD"
