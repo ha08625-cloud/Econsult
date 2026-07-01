@@ -30,7 +30,7 @@ When modifying or adding features, locate the relevant capability below to ident
 ### 3.1 Core Engine & Clinical Logic
 * **Scope:** Contains core data flows for form initialization and submission, ruleset loading, applying patient answers, projecting state. 
 * **Domain Doc:** `docs/arch_core_engine.md`
-* **Key Files:** `form_logic.py`, `runtime_state.py`, `ruleset.py`, `condition_registry.py`, `pipeline.py`
+* **Key Files:** `form_logic.py`, `runtime_state.py`, `ruleset.py`, `condition_registry.py`, `pipeline.py`, `unit_conversion.py`
 
 ### 3.2 Clinical Safety & Projection
 * **Scope:** Evaluating explicit patient answers against safety rules, blocking submissions.
