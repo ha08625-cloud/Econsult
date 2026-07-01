@@ -8,7 +8,7 @@
 
 Ruleset loading, RuntimeState lifecycle, applying patient answers, orchestrating the engine pipeline. This is the deterministic functional core of the system.
 
-**Key files:** `form_logic.py`, `runtime_state.py`, `ruleset.py`, `condition_registry.py`, `pipeline.py`
+**Key files:** `form_logic.py`, `runtime_state.py`, `ruleset.py`, `condition_registry.py`, `pipeline.py`, `unit_conversion.py`
 
 ---
 
@@ -26,13 +26,22 @@ Load ruleset → Initialise RuntimeState → Extract encoder definitions → Run
 
 ### Form Submission Flow
 
-Load latest RuntimeState version → Validate version consistency (optimistic concurrency) → Apply patient updates → Normalise encoder provenance → Validate completeness of required answers → Project RuntimeState → ExplicitAnswers → Evaluate safety rules → If safety triggered: block submission, return safety messages → Persist new versioned RuntimeState → Generate ClientStateView projection
+Load latest RuntimeState version → Validate version consistency (optimistic concurrency) → Apply patient updates → Resolve quantity (unit-toggle) answers to canonical kg → Normalise encoder provenance → Validate completeness of required answers → Project RuntimeState → ExplicitAnswers → Evaluate safety rules → If safety triggered: block submission, return safety messages → Persist new versioned RuntimeState → Generate ClientStateView projection
 
 Each submission produces **exactly one** new RuntimeState version and **exactly one** safety evaluation.
 
 ### Fail-Fast Validation (startup aborts)
 
 Ruleset schema violations, duplicate `condition_id` across rulesets, missing or invalid presentation blocks, and unexpected presentation keys all abort startup. See `condition_registry.py` and `ruleset.py` for the full list. Version mismatch and submission-after-closure are runtime errors, not startup errors.
+
+### Quantity answers (unit toggle)
+
+A quantity question (`quantity: true` in the ruleset — see `arch_ruleset_schema.md`) lets the patient enter a value in metric or imperial. The core resolves both to a single canonical unit, **kilograms**, so nothing downstream (safety, projection, clinical output, delivery) has to know a unit was ever chosen.
+
+- **Canonical value vs. lossless raw input.** `convert_unit_answers` writes the canonical kg value to `AnswerState.value` and preserves the patient's exact input in `AnswerState.raw_components` (kg as a string, or whole stones/pounds as ints). The canonical value therefore does not need to be lossless — `raw_components` is the audit-grade record — which is what lets imperial be rounded (see below) without losing information. The chosen system is recorded once per form in `RuntimeState.unit_system`.
+- **Metric rejects, imperial rounds.** For metric the patient typed kilograms directly, so over-precision is a genuine input error and is rejected via the shared number-acceptance ladder. For imperial the exact conversion (stones+pounds → kg) is a long artifact, so it is rounded HALF_UP to the question's `decimal_places`. Consequence: the canonical value is always already at `decimal_places` for both systems, so `validate_required_answers` needs no unit-specific branch, and the PDF's displayed kg matches the stored/structured kg (no divergence).
+- **Pipeline placement.** `convert_unit_answers` runs after `apply_patient_answers` (which places the transient client `{system, components}` dict in `value`) and before both `validate_required_answers` (which would otherwise reject a dict) and `normalise_number_answers` (which stringifies the Decimal it leaves). It never touches encoder provenance: a Number question is never `send_to_encoder`.
+- **Deferred.** Cross-question unit consistency and a second quantity kind are out of scope until a second quantity question exists; the client toggle is form-wide and seeds from the first quantity question.
 
 ---
 
@@ -45,6 +54,10 @@ The pure inner core. Contains no encoder access, no IO, no serialisation, no seq
 ### `runtime_state.py` — Data contracts for in-flight state
 
 Defines `RuntimeState`, `AnswerState`, `SafetyEvaluation`, and `AnswerSource` literals. Contains no business logic, no IO, no encoder awareness, no safety logic. Defines what state can exist, not how it is used.
+
+### `unit_conversion.py` — Pure unit arithmetic
+
+Stones/pounds → kilograms conversion only. Knows nothing about RuntimeState, rulesets, or the domain's `AnswerValidationError`; it raises plain `ValueError` on invalid components and does no rounding. Callers (`form_logic.convert_unit_answers`) translate its errors and apply rounding. Fully unit-testable in isolation.
 
 ### `ruleset.py` — Clinical definitions
 
