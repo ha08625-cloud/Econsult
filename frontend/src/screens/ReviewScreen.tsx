@@ -1,6 +1,23 @@
 import { PageShell } from "../layout";
-import type { ClientStateView, SafetyMessage } from "../types";
+import type {
+  ClientStateView,
+  SafetyMessage,
+  QuantityValueView,
+} from "../types";
 import type { PhotoAttachment } from "../uiTypes";
+
+// Render a quantity (unit-toggle) answer in the patient's chosen unit, e.g.
+// "11 st 11 lb" or "70.5 kg". This is what the patient typed; the kg conversion
+// for imperial appears on the clinical PDF, not here on the confirmation screen.
+function formatQuantityAnswer(value: QuantityValueView): string {
+  if (value.system === "imperial") {
+    const st = value.components.st ?? "";
+    const lb = value.components.lb ?? "";
+    return `${st} st ${lb} lb`;
+  }
+  const kg = value.components.kg ?? "";
+  return `${kg} kg`;
+}
 
 interface ReviewScreenProps {
   practiceName: string | null;
@@ -42,6 +59,8 @@ export default function ReviewScreen({
                 <span style={{ color: "var(--text-muted)" }}>
                   Not answered
                 </span>
+              ) : q.quantity && typeof q.current_value === "object" ? (
+                formatQuantityAnswer(q.current_value)
               ) : q.answer_type === "boolean" ? (
                 q.current_value === true ? "Yes" : "No"
               ) : (
