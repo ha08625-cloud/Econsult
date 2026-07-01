@@ -17,10 +17,10 @@ from app.services.delivery.mesh_payload import (
     RawPdfPayloadBuilder,
 )
 
-
 # ---------------------------------------------------------------------------
 # Protocol structural compliance
 # ---------------------------------------------------------------------------
+
 
 def test_raw_pdf_builder_has_protocol_shape():
     """
@@ -38,6 +38,7 @@ def test_raw_pdf_builder_has_protocol_shape():
 # ---------------------------------------------------------------------------
 # Behaviour
 # ---------------------------------------------------------------------------
+
 
 def test_raw_pdf_builder_passes_bytes_through_unchanged():
     """
@@ -68,6 +69,7 @@ def test_raw_pdf_builder_handles_empty_bytes():
 # ---------------------------------------------------------------------------
 # MeshPayload dataclass contract
 # ---------------------------------------------------------------------------
+
 
 def test_mesh_payload_is_frozen():
     """

@@ -23,6 +23,7 @@ from contextlib import contextmanager
 import psycopg2
 import psycopg2.extras
 from alembic.config import Config
+
 from alembic import command
 
 # ---------------------------------------------------------------------------
@@ -46,9 +47,7 @@ def alembic_upgrade() -> None:
     behaviour. A failed migration must prevent startup.
     """
     if not os.path.isfile(_ALEMBIC_INI):
-        raise RuntimeError(
-            f"alembic.ini not found at expected location: {_ALEMBIC_INI}"
-        )
+        raise RuntimeError(f"alembic.ini not found at expected location: {_ALEMBIC_INI}")
     cfg = Config(_ALEMBIC_INI)
     command.upgrade(cfg, "head")
 
@@ -56,6 +55,7 @@ def alembic_upgrade() -> None:
 # ---------------------------------------------------------------------------
 # Connection context manager
 # ---------------------------------------------------------------------------
+
 
 @contextmanager
 def get_conn(database_url: str):

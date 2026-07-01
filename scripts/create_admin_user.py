@@ -81,9 +81,9 @@ def main() -> None:
     # ---------------------------------------------------------------------------
     # Import app modules only after path setup and env checks.
     # ---------------------------------------------------------------------------
-    from app.repositories.practice_repository import PracticeRepository
     from app.repositories.auth_repository import AuthRepository
-    from app.services.admin.auth_service import validate_admin_domain, generate_reset_token
+    from app.repositories.practice_repository import PracticeRepository
+    from app.services.admin.auth_service import generate_reset_token, validate_admin_domain
 
     practice_repo = PracticeRepository(database_url)
     auth_repo = AuthRepository(database_url)
@@ -154,8 +154,7 @@ def main() -> None:
     new_user = auth_repo.get_user_by_email(email)
     if new_user is None:
         print(
-            "ERROR: User was inserted but could not be re-fetched. "
-            "Cannot generate setup token.",
+            "ERROR: User was inserted but could not be re-fetched. Cannot generate setup token.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -172,14 +171,9 @@ def _print_setup_instructions(email: str, raw_token: str, admin_url: str) -> Non
         print(f"  {setup_url}")
         print("\nForward this URL to the user so they can set their password.")
     else:
-        print(
-            "\nWARNING: ADMIN_URL is not set. Cannot construct a full setup URL."
-        )
+        print("\nWARNING: ADMIN_URL is not set. Cannot construct a full setup URL.")
         print(f"Raw token for '{email}' (expires in 1 hour): {raw_token}")
-        print(
-            "Construct the setup URL manually: "
-            "<ADMIN_URL>#reset:<token>"
-        )
+        print("Construct the setup URL manually: <ADMIN_URL>#reset:<token>")
 
 
 if __name__ == "__main__":

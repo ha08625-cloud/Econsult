@@ -9,10 +9,10 @@ Run from project root:
 
 import unittest
 
-
 # ---------------------------------------------------------------------------
 # Stubs
 # ---------------------------------------------------------------------------
+
 
 class StubPracticeRepo:
     def __init__(self, practice=None):
@@ -26,8 +26,10 @@ class StubPracticeRepo:
 # App factory
 # ---------------------------------------------------------------------------
 
+
 def make_test_app(practice=None, practice_id="test_practice"):
     from fastapi import FastAPI
+
     from app.routers.public_router import router as public_router
 
     app = FastAPI()
@@ -40,12 +42,18 @@ def make_test_app(practice=None, practice_id="test_practice"):
     # These are never called by the /practice endpoint but must exist to
     # satisfy FastAPI's dependency injection at app build time.
     class _StubRegistry:
-        def list_conditions(self): return []
-        def has_condition(self, _): return False
+        def list_conditions(self):
+            return []
+
+        def has_condition(self, _):
+            return False
 
     class _StubPresentationService:
-        def get_universal_safety_warning(self): return ""
-        def get_patient_presentation(self, *_): return {}
+        def get_universal_safety_warning(self):
+            return ""
+
+        def get_patient_presentation(self, *_):
+            return {}
 
     class _StubAvailabilityRepo:
         pass
@@ -61,11 +69,18 @@ def make_test_app(practice=None, practice_id="test_practice"):
 # Tests
 # ---------------------------------------------------------------------------
 
-class TestGetPracticeEndpoint(unittest.TestCase):
 
+class TestGetPracticeEndpoint(unittest.TestCase):
     def test_returns_200_and_practice_name(self):
         from fastapi.testclient import TestClient
-        app = make_test_app(practice={"practice_id": "test_practice", "name": "Elm Tree Surgery", "email": "test@example.com"})
+
+        app = make_test_app(
+            practice={
+                "practice_id": "test_practice",
+                "name": "Elm Tree Surgery",
+                "email": "test@example.com",
+            }
+        )
         client = TestClient(app, raise_server_exceptions=True)
 
         res = client.get("/practice")
@@ -75,6 +90,7 @@ class TestGetPracticeEndpoint(unittest.TestCase):
 
     def test_returns_500_when_practice_not_found(self):
         from fastapi.testclient import TestClient
+
         app = make_test_app(practice=None)
         client = TestClient(app, raise_server_exceptions=False)
 

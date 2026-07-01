@@ -21,9 +21,9 @@ Architecture rules:
 import json
 import logging
 import uuid
-from decimal import Decimal
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
@@ -45,6 +45,7 @@ from app.core.errors import (
     VERSION_CONFLICT,
     ConditionNotFound,
 )
+from app.core.rate_limit import limiter
 from app.core.request_validation import (
     validate_finish_payload,
     validate_init_payload,
@@ -69,7 +70,6 @@ from app.services.engine.pipeline import (
     finish_runtime_state,
     init_runtime_state,
 )
-from app.core.rate_limit import limiter
 from app.utils.image_sanitizer import ImageTooLargeError, sanitize_image
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ _VALID_TIERS = {"high", "standard"}
 # ---------------------------------------------------------------------------
 # POST /form/init
 # ---------------------------------------------------------------------------
+
 
 @router.post("/form/init")
 @limiter.limit("30/minute")
@@ -96,9 +97,7 @@ async def form_init(
     # If the check fails for any reason, log and proceed as if open.
     # A database failure must never lock patients out.
     try:
-        result = check_availability(
-            availability_repo, practice_id, datetime.now(timezone.utc)
-        )
+        result = check_availability(availability_repo, practice_id, datetime.now(UTC))
         if not result.is_open:
             return JSONResponse(
                 status_code=503,
@@ -147,6 +146,7 @@ async def form_init(
 # ---------------------------------------------------------------------------
 # POST /form/update
 # ---------------------------------------------------------------------------
+
 
 @router.post("/form/update")
 @limiter.limit("30/minute")
@@ -213,16 +213,14 @@ async def form_update(
         "runtime_id": runtime_id,
         "version": new_version,
         "client_state": new_client_state,
-        "safety_messages": [
-            {"rule_id": m.rule_id, "message": m.message}
-            for m in safety_messages
-        ],
+        "safety_messages": [{"rule_id": m.rule_id, "message": m.message} for m in safety_messages],
     }
 
 
 # ---------------------------------------------------------------------------
 # POST /form/finish
 # ---------------------------------------------------------------------------
+
 
 @router.post("/form/finish")
 @limiter.limit("30/minute")
@@ -248,17 +246,11 @@ async def form_finish(
 
     for i, b in enumerate(photo_bytes):
         if len(b) > MAX_FILE_SIZE_BYTES:
-            raise INVALID_PAYLOAD(
-                f"Photo {i + 1} exceeds the {MAX_FILE_SIZE_BYTES} byte limit"
-            )
+            raise INVALID_PAYLOAD(f"Photo {i + 1} exceeds the {MAX_FILE_SIZE_BYTES} byte limit")
     if sum(len(b) for b in photo_bytes) > MAX_TOTAL_SIZE_BYTES:
-        raise INVALID_PAYLOAD(
-            f"Combined photo size exceeds the {MAX_TOTAL_SIZE_BYTES} byte limit"
-        )
+        raise INVALID_PAYLOAD(f"Combined photo size exceeds the {MAX_TOTAL_SIZE_BYTES} byte limit")
     if len(photo_bytes) > MAX_FILE_COUNT:
-        raise INVALID_PAYLOAD(
-            f"Too many photos: maximum is {MAX_FILE_COUNT}"
-        )
+        raise INVALID_PAYLOAD(f"Too many photos: maximum is {MAX_FILE_COUNT}")
 
     # Tier validation.
     #
@@ -273,8 +265,7 @@ async def form_finish(
     if photo_bytes:
         if tier not in _VALID_TIERS:
             raise INVALID_PAYLOAD(
-                f"photo_quality_tier must be one of {sorted(_VALID_TIERS)} "
-                "when photos are included"
+                f"photo_quality_tier must be one of {sorted(_VALID_TIERS)} when photos are included"
             )
 
     # Image CDR (Content Disarm and Reconstruction).
@@ -396,7 +387,7 @@ async def form_finish(
     # Capture the authoritative submission timestamp here, immediately before
     # persisting. This same value is passed to create_submission and
     # pdf_repo.create_job so the DB record and the PDF carry identical timestamps.
-    submitted_at = datetime.now(timezone.utc)
+    submitted_at = datetime.now(UTC)
 
     # Persistence ordering (steps below are deliberate and must not be reordered):
     #

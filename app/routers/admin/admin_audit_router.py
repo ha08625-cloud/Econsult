@@ -7,9 +7,10 @@ other sub-routers; this router only reads.
 
 All endpoints require a valid session cookie via require_admin.
 """
+
 import datetime
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.admin_context import AdminContext, require_admin
 from app.core.dependencies import get_audit_repo

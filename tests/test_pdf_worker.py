@@ -28,26 +28,25 @@ DeliveryEnqueuer and is covered by test_downstream_enqueuer.py.
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from app.services.delivery.downstream_enqueuer import DownstreamEnqueuer
+from app.services.delivery.pdf_constants import MAX_PDF_ATTEMPTS, PDF_RETRY_BACKOFF_MINUTES
 from app.services.delivery.pdf_worker import (
     ORPHAN_LOG_INTERVAL_SECONDS,
-    ORPHAN_THRESHOLD_MINUTES,
     _check_orphans,
     _compute_backoff,
     _process_job,
     run_worker,
 )
-from app.services.delivery.pdf_constants import MAX_PDF_ATTEMPTS, PDF_RETRY_BACKOFF_MINUTES
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_pdf_repo(job_sequence=None, orphan_sequence=None):
     """
@@ -97,7 +96,7 @@ def _make_photo_repo(photos=None):
 def _make_submission_repo(condition_label="UTI", submitted_at=None):
     repo = MagicMock()
     if submitted_at is None:
-        submitted_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        submitted_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
     repo.get_submission.return_value = {
         "condition_label": condition_label,
         "submitted_at": submitted_at,
@@ -160,11 +159,12 @@ def _run_worker_n_sleeps(
         if sleep_call_count[0] >= n_sleeps:
             raise StopIteration
 
-    with patch(
-        "app.services.delivery.pdf_worker.time.sleep", side_effect=fake_sleep
-    ) as mock_sleep, patch(
-        "app.services.delivery.pdf_worker.generate_pdf", return_value=b"%PDF-fake"
-    ) as mock_generate:
+    with (
+        patch("app.services.delivery.pdf_worker.time.sleep", side_effect=fake_sleep) as mock_sleep,
+        patch(
+            "app.services.delivery.pdf_worker.generate_pdf", return_value=b"%PDF-fake"
+        ) as mock_generate,
+    ):
         try:
             run_worker(
                 pdf_repo=pdf_repo,
@@ -184,6 +184,7 @@ def _run_worker_n_sleeps(
 # ---------------------------------------------------------------------------
 # _process_job: successful path
 # ---------------------------------------------------------------------------
+
 
 def test_process_job_fetches_photos_and_generates_pdf():
     """
@@ -310,6 +311,7 @@ def test_process_job_calls_downstream_with_submission_id_only():
 # _process_job: photo count mismatch
 # ---------------------------------------------------------------------------
 
+
 def test_process_job_fails_immediately_on_photo_count_mismatch():
     """
     When len(photos) != job.attachment_count, _process_job must raise ValueError
@@ -319,19 +321,19 @@ def test_process_job_fails_immediately_on_photo_count_mismatch():
     photo_repo = _make_photo_repo(photos=[b"only-one"])  # 1 photo, expected 2
     downstream = _make_downstream()
 
-    with patch(
-        "app.services.delivery.pdf_worker.generate_pdf"
-    ) as mock_gen:
-        with pytest.raises(ValueError, match="Photo count mismatch"):
-            _process_job(
-                job=job,
-                pdf_repo=MagicMock(),
-                photo_repo=photo_repo,
-                submission_repo=_make_submission_repo(),
-                attachment_repo=_make_attachment_repo(),
-                downstream=downstream,
-                practice_name=None,
-            )
+    with (
+        patch("app.services.delivery.pdf_worker.generate_pdf") as mock_gen,
+        pytest.raises(ValueError, match="Photo count mismatch"),
+    ):
+        _process_job(
+            job=job,
+            pdf_repo=MagicMock(),
+            photo_repo=photo_repo,
+            submission_repo=_make_submission_repo(),
+            attachment_repo=_make_attachment_repo(),
+            downstream=downstream,
+            practice_name=None,
+        )
 
     mock_gen.assert_not_called()
     downstream.enqueue.assert_not_called()
@@ -341,6 +343,7 @@ def test_process_job_fails_immediately_on_photo_count_mismatch():
 # _process_job: no photos (attachment_count=0)
 # ---------------------------------------------------------------------------
 
+
 def test_process_job_succeeds_with_zero_photos():
     """
     A submission with attachment_count=0 must succeed when get_photos returns [].
@@ -349,9 +352,7 @@ def test_process_job_succeeds_with_zero_photos():
     job = _make_job(attachment_count=0)
     photo_repo = _make_photo_repo(photos=[])
 
-    with patch(
-        "app.services.delivery.pdf_worker.generate_pdf", return_value=b"%PDF"
-    ) as mock_gen:
+    with patch("app.services.delivery.pdf_worker.generate_pdf", return_value=b"%PDF") as mock_gen:
         _process_job(
             job=job,
             pdf_repo=MagicMock(),
@@ -369,6 +370,7 @@ def test_process_job_succeeds_with_zero_photos():
 # ---------------------------------------------------------------------------
 # run_worker: queue and sleep behaviour
 # ---------------------------------------------------------------------------
+
 
 def test_worker_sleeps_when_queue_is_empty():
     """
@@ -417,11 +419,12 @@ def test_worker_marks_job_failed_on_exception():
     job = _make_job(attachment_count=1, attempt_count=0)
     pdf_repo = _make_pdf_repo(job_sequence=[job, None])
 
-    with patch(
-        "app.services.delivery.pdf_worker.generate_pdf",
-        side_effect=RuntimeError("PDF library crash"),
-    ), patch(
-        "app.services.delivery.pdf_worker.time.sleep", side_effect=[None, StopIteration]
+    with (
+        patch(
+            "app.services.delivery.pdf_worker.generate_pdf",
+            side_effect=RuntimeError("PDF library crash"),
+        ),
+        patch("app.services.delivery.pdf_worker.time.sleep", side_effect=[None, StopIteration]),
     ):
         try:
             run_worker(
@@ -452,11 +455,12 @@ def test_worker_does_not_enqueue_downstream_on_failed_generation():
     pdf_repo = _make_pdf_repo(job_sequence=[job, None])
     downstream = _make_downstream()
 
-    with patch(
-        "app.services.delivery.pdf_worker.generate_pdf",
-        side_effect=RuntimeError("crash"),
-    ), patch(
-        "app.services.delivery.pdf_worker.time.sleep", side_effect=[None, StopIteration]
+    with (
+        patch(
+            "app.services.delivery.pdf_worker.generate_pdf",
+            side_effect=RuntimeError("crash"),
+        ),
+        patch("app.services.delivery.pdf_worker.time.sleep", side_effect=[None, StopIteration]),
     ):
         try:
             run_worker(
@@ -478,11 +482,12 @@ def test_worker_does_not_enqueue_downstream_on_failed_generation():
 # _compute_backoff
 # ---------------------------------------------------------------------------
 
+
 def test_compute_backoff_first_failure_uses_first_schedule_entry():
     result = _compute_backoff(attempt_count=0)
     assert result is not None
     expected_minutes = PDF_RETRY_BACKOFF_MINUTES[0]
-    diff = (result - datetime.now(timezone.utc)).total_seconds()
+    diff = (result - datetime.now(UTC)).total_seconds()
     # Allow a 5-second window for test execution time.
     assert abs(diff - expected_minutes * 60) < 5
 
@@ -491,7 +496,7 @@ def test_compute_backoff_second_failure_uses_second_schedule_entry():
     result = _compute_backoff(attempt_count=1)
     assert result is not None
     expected_minutes = PDF_RETRY_BACKOFF_MINUTES[1]
-    diff = (result - datetime.now(timezone.utc)).total_seconds()
+    diff = (result - datetime.now(UTC)).total_seconds()
     assert abs(diff - expected_minutes * 60) < 5
 
 
@@ -507,6 +512,7 @@ def test_compute_backoff_returns_none_when_exhausted():
 # ---------------------------------------------------------------------------
 # Orphan detection
 # ---------------------------------------------------------------------------
+
 
 def test_orphan_detection_logs_critical_when_orphans_found(caplog):
     pdf_repo = MagicMock()
@@ -534,9 +540,7 @@ def test_orphan_detection_rate_limits_critical_log(caplog):
     pdf_repo = MagicMock()
     pdf_repo.list_orphaned_submissions.return_value = ["orphan-aaa"]
 
-    last_log_at = _check_orphans(
-        pdf_repo, last_log_at=None, interval=ORPHAN_LOG_INTERVAL_SECONDS
-    )
+    last_log_at = _check_orphans(pdf_repo, last_log_at=None, interval=ORPHAN_LOG_INTERVAL_SECONDS)
     assert last_log_at is not None
 
     caplog.clear()
@@ -555,8 +559,6 @@ def test_orphan_detection_emits_again_after_interval(caplog):
     expired_log_at = time.monotonic() - ORPHAN_LOG_INTERVAL_SECONDS - 1
 
     with caplog.at_level(logging.CRITICAL, logger="app.services.delivery.pdf_worker"):
-        _check_orphans(
-            pdf_repo, last_log_at=expired_log_at, interval=ORPHAN_LOG_INTERVAL_SECONDS
-        )
+        _check_orphans(pdf_repo, last_log_at=expired_log_at, interval=ORPHAN_LOG_INTERVAL_SECONDS)
 
     assert any(r.levelno == logging.CRITICAL for r in caplog.records)

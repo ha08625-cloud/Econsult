@@ -53,8 +53,7 @@ Duplicate delivery risk:
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 import sentry_sdk
 
@@ -117,7 +116,9 @@ def run_worker(
                 )
             except EmailDeliveryError as exc:
                 next_retry = _compute_backoff(job["attempt_count"])
-                is_exhausted = delivery_repo.mark_failed(job_id, str(exc), next_retry_after=next_retry)
+                is_exhausted = delivery_repo.mark_failed(
+                    job_id, str(exc), next_retry_after=next_retry
+                )
                 logger.error(
                     "Delivery worker: send failure submission_id=%s job_id=%s "
                     "attempt=%d next_retry_after=%s error=%s",
@@ -144,8 +145,7 @@ def run_worker(
                 # Unexpected error (e.g. AttachmentNotFound — ordering invariant broken,
                 # or a repository bug). Log at CRITICAL and skip — do not swallow silently.
                 logger.critical(
-                    "Delivery worker: unhandled exception submission_id=%s job_id=%s "
-                    "error=%s",
+                    "Delivery worker: unhandled exception submission_id=%s job_id=%s error=%s",
                     submission_id,
                     job_id,
                     exc,
@@ -210,7 +210,7 @@ def _process_job(
         )
 
 
-def _compute_backoff(attempt_count: int) -> Optional[datetime]:
+def _compute_backoff(attempt_count: int) -> datetime | None:
     """
     Compute next_retry_after for a failed delivery attempt.
 
@@ -228,4 +228,4 @@ def _compute_backoff(attempt_count: int) -> Optional[datetime]:
         minutes = RETRY_BACKOFF_MINUTES[backoff_index]
     else:
         minutes = RETRY_BACKOFF_MINUTES[-1]
-    return datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    return datetime.now(UTC) + timedelta(minutes=minutes)

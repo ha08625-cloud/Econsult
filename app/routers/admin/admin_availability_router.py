@@ -32,30 +32,30 @@ This module must never import:
 # On any exception inside the with block, psycopg2's context manager rolls
 # back, and the endpoint returns HTTP 500.
 """
+
 import datetime
 import logging
-from datetime import timezone
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.admin_context import AdminContext, require_admin
-from app.services.admin.availability_service import (
-    validate_availability_config,
-    validate_override,
-    validate_exception,
-    deactivation_clears_override,
+from app.core.db import get_conn
+from app.core.dependencies import (
+    get_audit_repo,
+    get_availability_repo,
 )
-from app.models.availability_models import LONDON_TZ
 from app.core.errors import (
-    INVALID_PAYLOAD,
     INVALID_DATE_FORMAT,
     INVALID_FIELD_TYPE,
+    INVALID_PAYLOAD,
 )
-from app.core.dependencies import (
-    get_availability_repo,
-    get_audit_repo,
+from app.models.availability_models import LONDON_TZ
+from app.services.admin.availability_service import (
+    deactivation_clears_override,
+    validate_availability_config,
+    validate_exception,
+    validate_override,
 )
-from app.core.db import get_conn
 from app.utils.http_utils import extract_ip
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
 
 def _format_availability_response(config: dict) -> dict:
     """
@@ -112,7 +113,9 @@ def _serialise_availability_for_audit(config: dict) -> dict:
         "close_time": config["close_time"].strftime("%H:%M") if config.get("close_time") else None,
         "closed_message": config.get("closed_message"),
         "override_status": config.get("override_status"),
-        "override_expires_at": config["override_expires_at"].isoformat() if config.get("override_expires_at") else None,
+        "override_expires_at": config["override_expires_at"].isoformat()
+        if config.get("override_expires_at")
+        else None,
         "override_message": config.get("override_message"),
     }
 
@@ -137,6 +140,7 @@ def _serialise_exception_for_audit(exc: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Availability
 # ---------------------------------------------------------------------------
+
 
 @router.get("/availability")
 async def get_availability(
@@ -280,9 +284,15 @@ async def put_availability(
                 # set_availability does not touch them. If is_active is
                 # False, clear_override has nulled them within this
                 # transaction, so reflect that explicitly.
-                "override_status": None if deactivation_clears_override(is_active) else before_config.get("override_status"),
-                "override_expires_at": None if deactivation_clears_override(is_active) else before_config.get("override_expires_at"),
-                "override_message": None if deactivation_clears_override(is_active) else before_config.get("override_message"),
+                "override_status": None
+                if deactivation_clears_override(is_active)
+                else before_config.get("override_status"),
+                "override_expires_at": None
+                if deactivation_clears_override(is_active)
+                else before_config.get("override_expires_at"),
+                "override_message": None
+                if deactivation_clears_override(is_active)
+                else before_config.get("override_message"),
             }
 
             audit_repo.log_event(
@@ -322,6 +332,7 @@ async def put_availability(
 # ---------------------------------------------------------------------------
 # Override
 # ---------------------------------------------------------------------------
+
 
 @router.post("/availability/override")
 async def post_override(
@@ -387,7 +398,7 @@ async def post_override(
 
     # --- Validate via service layer ---
 
-    now_utc = datetime.datetime.now(timezone.utc)
+    now_utc = datetime.datetime.now(datetime.UTC)
     try:
         validate_override(
             status=status,
@@ -427,7 +438,9 @@ async def post_override(
                 detail={
                     "before": {
                         "override_status": before_config.get("override_status"),
-                        "override_expires_at": before_config["override_expires_at"].isoformat() if before_config.get("override_expires_at") else None,
+                        "override_expires_at": before_config["override_expires_at"].isoformat()
+                        if before_config.get("override_expires_at")
+                        else None,
                         "override_message": before_config.get("override_message"),
                     },
                     "after": {
@@ -487,7 +500,9 @@ async def delete_override(
                 detail={
                     "before": {
                         "override_status": before_config.get("override_status"),
-                        "override_expires_at": before_config["override_expires_at"].isoformat() if before_config.get("override_expires_at") else None,
+                        "override_expires_at": before_config["override_expires_at"].isoformat()
+                        if before_config.get("override_expires_at")
+                        else None,
                         "override_message": before_config.get("override_message"),
                     },
                 },
@@ -508,6 +523,7 @@ async def delete_override(
 # Per-date exceptions
 # ---------------------------------------------------------------------------
 
+
 @router.get("/availability/exceptions")
 async def list_exceptions(
     admin: AdminContext = Depends(require_admin),
@@ -519,7 +535,7 @@ async def list_exceptions(
     Includes today's exception if one exists — the admin needs to verify
     what is currently active. Ordered by date ascending.
     """
-    today_london = datetime.datetime.now(timezone.utc).astimezone(LONDON_TZ).date()
+    today_london = datetime.datetime.now(datetime.UTC).astimezone(LONDON_TZ).date()
     rows = availability_repo.get_exceptions(admin.practice_id, today_london)
     return {
         "exceptions": [_format_exception_response(r) for r in rows],
@@ -718,7 +734,9 @@ async def delete_exception(
                 resource=exception_date.isoformat(),
                 ip_address=ip_address,
                 session_id=admin.session_id,
-                detail={"before": _serialise_exception_for_audit(before_exc) if before_exc else None},
+                detail={
+                    "before": _serialise_exception_for_audit(before_exc) if before_exc else None
+                },
                 conn=conn,
             )
     except Exception:

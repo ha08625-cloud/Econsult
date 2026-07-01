@@ -13,10 +13,10 @@ import pytest
 
 from app.services.engine.unit_conversion import imperial_weight_to_kg
 
-
 # ---------------------------------------------------------------------------
 # Exact conversion
 # ---------------------------------------------------------------------------
+
 
 def test_zero_is_zero():
     assert imperial_weight_to_kg(0, 0) == Decimal("0")
@@ -50,6 +50,7 @@ def test_int_and_decimal_inputs_agree():
 # ---------------------------------------------------------------------------
 # Component guards
 # ---------------------------------------------------------------------------
+
 
 def test_rejects_bool_stones():
     with pytest.raises(ValueError, match="stones"):

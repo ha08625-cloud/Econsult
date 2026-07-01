@@ -29,11 +29,9 @@ import os
 _HERE = os.path.dirname(__file__)
 _JSON_PATH = os.path.join(_HERE, "consultation_outcomes.json")
 
-with open(_JSON_PATH, "r", encoding="utf-8") as _f:
+with open(_JSON_PATH, encoding="utf-8") as _f:
     _data = json.load(_f)
 
 CONSULTATION_OUTCOMES: list[dict] = _data
 
-VALID_OUTCOME_VALUES: frozenset[str] = frozenset(
-    entry["value"] for entry in CONSULTATION_OUTCOMES
-)
+VALID_OUTCOME_VALUES: frozenset[str] = frozenset(entry["value"] for entry in CONSULTATION_OUTCOMES)

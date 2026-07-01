@@ -50,6 +50,7 @@ def _without(key):
 # Accept
 # ---------------------------------------------------------------------------
 
+
 def test_accepts_valid_number_question():
     validate_ruleset(_base_ruleset())
 
@@ -66,6 +67,7 @@ def test_accepts_decimal_places_zero():
 # answer_type allow-list
 # ---------------------------------------------------------------------------
 
+
 def test_rejects_unknown_answer_type():
     with pytest.raises(ValueError):
         validate_ruleset(_with(answer_type="Integer"))
@@ -79,6 +81,7 @@ def test_rejects_missing_answer_type():
 # ---------------------------------------------------------------------------
 # Number field validation
 # ---------------------------------------------------------------------------
+
 
 def test_rejects_missing_decimal_places():
     with pytest.raises(ValueError):
@@ -129,6 +132,7 @@ def test_rejects_non_string_range_warning_text():
 # Quantity (unit-toggle) field validation
 # ---------------------------------------------------------------------------
 
+
 def test_accepts_valid_quantity_question():
     validate_ruleset(
         _with(
@@ -140,9 +144,7 @@ def test_accepts_valid_quantity_question():
 
 
 def test_accepts_quantity_with_single_system():
-    validate_ruleset(
-        _with(quantity=True, allowed_systems=["metric"], default_system="metric")
-    )
+    validate_ruleset(_with(quantity=True, allowed_systems=["metric"], default_system="metric"))
 
 
 def test_accepts_quantity_false_without_unit_fields():
@@ -218,6 +220,7 @@ def test_rejects_default_system_on_non_quantity_question():
 # ---------------------------------------------------------------------------
 # Caching
 # ---------------------------------------------------------------------------
+
 
 def test_load_ruleset_caches_by_path(tmp_path):
     """

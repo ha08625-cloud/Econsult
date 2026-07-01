@@ -16,10 +16,10 @@ import datetime
 from datetime import timedelta
 
 from app.models.availability_models import (
+    LONDON_TZ,
     AvailabilityConfig,
     AvailabilityException,
     AvailabilityResult,
-    LONDON_TZ,
 )
 
 VALID_DAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
@@ -52,9 +52,7 @@ def validate_availability_config(
         )
 
     if open_time == close_time:
-        raise ValueError(
-            f"open_time and close_time must not be equal (both are {open_time})"
-        )
+        raise ValueError(f"open_time and close_time must not be equal (both are {open_time})")
 
     if open_time >= close_time:
         raise ValueError(
@@ -81,9 +79,7 @@ def validate_override(
     The valid window is: now_utc < expires_at <= now_utc + 24 hours.
     """
     if status not in ("open", "closed"):
-        raise ValueError(
-            f"override status must be 'open' or 'closed', got '{status}'"
-        )
+        raise ValueError(f"override status must be 'open' or 'closed', got '{status}'")
 
     if expires_at is None:
         raise ValueError("override expires_at is required")
@@ -95,15 +91,11 @@ def validate_override(
         )
 
     if expires_at <= now_utc:
-        raise ValueError(
-            "override expires_at must be in the future"
-        )
+        raise ValueError("override expires_at must be in the future")
 
     max_expiry = now_utc + timedelta(hours=24)
     if expires_at > max_expiry:
-        raise ValueError(
-            "override expires_at must not exceed 24 hours from now"
-        )
+        raise ValueError("override expires_at must not exceed 24 hours from now")
 
 
 def validate_exception(
@@ -128,13 +120,9 @@ def validate_exception(
 
     if exception_type == "custom_hours":
         if open_time is None or close_time is None:
-            raise ValueError(
-                "custom_hours exception requires both open_time and close_time"
-            )
+            raise ValueError("custom_hours exception requires both open_time and close_time")
         if open_time == close_time:
-            raise ValueError(
-                f"open_time and close_time must not be equal (both are {open_time})"
-            )
+            raise ValueError(f"open_time and close_time must not be equal (both are {open_time})")
         if open_time >= close_time:
             raise ValueError(
                 f"open_time ({open_time}) must be before close_time ({close_time}). "
@@ -143,9 +131,7 @@ def validate_exception(
 
     if exception_type == "closed":
         if open_time is not None or close_time is not None:
-            raise ValueError(
-                "closed exception must not have open_time or close_time"
-            )
+            raise ValueError("closed exception must not have open_time or close_time")
 
 
 def deactivation_clears_override(is_active: bool) -> bool:
@@ -279,6 +265,5 @@ def _build_after_hours_notice(close_time: datetime.time) -> str:
     """
     formatted = close_time.strftime("%H:%M")
     return (
-        f"Please note: forms submitted after {formatted} "
-        f"will be reviewed on the next working day."
+        f"Please note: forms submitted after {formatted} will be reviewed on the next working day."
     )

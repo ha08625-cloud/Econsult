@@ -19,7 +19,7 @@ import os
 _HERE = os.path.dirname(__file__)
 _JSON_PATH = os.path.join(_HERE, "upload_constants.json")
 
-with open(_JSON_PATH, "r", encoding="utf-8") as _f:
+with open(_JSON_PATH, encoding="utf-8") as _f:
     _data = json.load(_f)
 
 ALLOWED_MIME_TYPES: list[str] = _data["ALLOWED_MIME_TYPES"]

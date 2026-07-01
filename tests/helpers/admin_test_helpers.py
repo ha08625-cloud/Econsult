@@ -3,22 +3,21 @@ tests/helpers/admin_test_helpers.py
 
 Shared stubs and app factory for admin router tests.
 """
-import os
+
 import datetime
-from datetime import timezone
 from contextlib import contextmanager
+
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from app.routers.admin_router import router as admin_router
-from app.core.errors import APIError, RateLimitError, ConditionNotFound
+from app.core.errors import APIError, ConditionNotFound, RateLimitError
 from app.repositories.practice_repository import (
-    sanitise_signposting_html,
-    InvalidDoctorListError,
-    MAX_DOCTOR_NAME_LENGTH,
     MAX_DOCTOR_LIST_LENGTH,
+    MAX_DOCTOR_NAME_LENGTH,
+    InvalidDoctorListError,
+    sanitise_signposting_html,
 )
-
+from app.routers.admin_router import router as admin_router
 
 # ---------------------------------------------------------------------------
 # Minimal stubs
@@ -26,11 +25,11 @@ from app.repositories.practice_repository import (
 
 TEST_SESSION_COOKIE = {"session_id": "test-session-id"}
 
+
 class StubRegistry:
     def __init__(self, condition_ids):
         self._conditions = {
-            cid: {"id": cid, "label": cid.replace("_", " ").title()}
-            for cid in condition_ids
+            cid: {"id": cid, "label": cid.replace("_", " ").title()} for cid in condition_ids
         }
 
     def list_conditions(self):
@@ -57,15 +56,16 @@ class StubPracticeRepo:
     signatures. The conn value is ignored — the stub operates on
     in-memory state only.
     """
+
     def __init__(self):
         self.database_url = "stub://not-a-real-db"
-        self._signposting = {}   # (practice_id, condition_id) -> str | None
+        self._signposting = {}  # (practice_id, condition_id) -> str | None
         self._practice = {
             "practice_id": "test_practice",
             "name": "Test Practice",
             "email": "test@nhs.net",
         }
-        self._doctors = []       # list of str, in display order
+        self._doctors = []  # list of str, in display order
 
     # --- Practice ---
 
@@ -81,6 +81,7 @@ class StubPracticeRepo:
 
     def _validate_email(self, email):
         from app.repositories.practice_repository import InvalidEmailError
+
         if not isinstance(email, str):
             raise InvalidEmailError(f"Email must be a string, got {type(email).__name__}")
         if email != email.strip():
@@ -126,9 +127,7 @@ class StubPracticeRepo:
             )
         for i, name in enumerate(names):
             if not isinstance(name, str) or not name.strip():
-                raise InvalidDoctorListError(
-                    f"Doctor name at index {i} must be a non-empty string"
-                )
+                raise InvalidDoctorListError(f"Doctor name at index {i} must be a non-empty string")
             if len(name) > MAX_DOCTOR_NAME_LENGTH:
                 raise InvalidDoctorListError(
                     f"Doctor name at index {i} exceeds {MAX_DOCTOR_NAME_LENGTH} characters"
@@ -140,6 +139,7 @@ class StubAvailabilityRepo:
     In-memory stub for availability repository.
     Mimics database behavior for config, overrides, and exceptions.
     """
+
     def __init__(self):
         self.database_url = "stub://not-a-real-db"
         self._config = {
@@ -158,30 +158,45 @@ class StubAvailabilityRepo:
     def get_availability(self, practice_id):
         return dict(self._config)
 
-    def set_availability(self, practice_id, is_active, weekly_open_days,
-                         open_time, close_time, closed_message, conn=None):
-        self._config.update({
-            "is_active": is_active,
-            "weekly_open_days": weekly_open_days,
-            "open_time": open_time,
-            "close_time": close_time,
-            "closed_message": closed_message,
-        })
+    def set_availability(
+        self,
+        practice_id,
+        is_active,
+        weekly_open_days,
+        open_time,
+        close_time,
+        closed_message,
+        conn=None,
+    ):
+        self._config.update(
+            {
+                "is_active": is_active,
+                "weekly_open_days": weekly_open_days,
+                "open_time": open_time,
+                "close_time": close_time,
+                "closed_message": closed_message,
+            }
+        )
 
-    def set_override(self, practice_id, override_status, override_expires_at,
-                     override_message, conn=None):
-        self._config.update({
-            "override_status": override_status,
-            "override_expires_at": override_expires_at,
-            "override_message": override_message,
-        })
+    def set_override(
+        self, practice_id, override_status, override_expires_at, override_message, conn=None
+    ):
+        self._config.update(
+            {
+                "override_status": override_status,
+                "override_expires_at": override_expires_at,
+                "override_message": override_message,
+            }
+        )
 
     def clear_override(self, practice_id, conn=None):
-        self._config.update({
-            "override_status": None,
-            "override_expires_at": None,
-            "override_message": None,
-        })
+        self._config.update(
+            {
+                "override_status": None,
+                "override_expires_at": None,
+                "override_message": None,
+            }
+        )
 
     def get_exceptions(self, practice_id, from_date):
         return [exc for date, exc in sorted(self._exceptions.items()) if date >= from_date]
@@ -189,8 +204,9 @@ class StubAvailabilityRepo:
     def get_exception(self, practice_id, exception_date):
         return self._exceptions.get(exception_date)
 
-    def set_exception(self, practice_id, exception_date, exception_type,
-                      open_time, close_time, note, conn=None):
+    def set_exception(
+        self, practice_id, exception_date, exception_type, open_time, close_time, note, conn=None
+    ):
         self._exceptions[exception_date] = {
             "exception_date": exception_date,
             "exception_type": exception_type,
@@ -214,19 +230,24 @@ class StubAuthRepo:
     password authentication should use SpyAuthRepo (defined per test module)
     or construct a user dict with the appropriate password fields.
     """
+
     def __init__(self, users=None):
         # users: list of dicts with at least {id, email, created_at, last_login}.
         # Defaults to a single user matching the test session context.
-        self._users = users if users is not None else [
-            {
-                "id": "00000000-0000-0000-0000-000000000001",
-                "email": "admin@nhs.net",
-                "created_at": datetime.datetime(2024, 1, 1, tzinfo=timezone.utc),
-                "last_login": None,
-            }
-        ]
-        self._inserted = []   # records (email, practice_id, role) from insert_user
-        self._deleted = []    # records user_id from delete_user
+        self._users = (
+            users
+            if users is not None
+            else [
+                {
+                    "id": "00000000-0000-0000-0000-000000000001",
+                    "email": "admin@nhs.net",
+                    "created_at": datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC),
+                    "last_login": None,
+                }
+            ]
+        )
+        self._inserted = []  # records (email, practice_id, role) from insert_user
+        self._deleted = []  # records user_id from delete_user
 
     def get_session_context(self, session_id):
         if session_id == "test-session-id":
@@ -305,19 +326,45 @@ class StubAuditRepo:
     No-op audit repo stub. Records calls to log_event so tests can assert
     it was called if needed, but never touches the database.
     """
+
     def __init__(self):
         self.logged = []
 
-    def log_event(self, *, practice_id, actor_email, action, resource=None,
-                  detail=None, ip_address=None, session_id=None, conn=None):
-        self.logged.append({
-            "practice_id": practice_id, "actor_email": actor_email, "action": action,
-            "resource": resource, "detail": detail, "ip_address": ip_address,
-            "session_id": session_id,
-        })
+    def log_event(
+        self,
+        *,
+        practice_id,
+        actor_email,
+        action,
+        resource=None,
+        detail=None,
+        ip_address=None,
+        session_id=None,
+        conn=None,
+    ):
+        self.logged.append(
+            {
+                "practice_id": practice_id,
+                "actor_email": actor_email,
+                "action": action,
+                "resource": resource,
+                "detail": detail,
+                "ip_address": ip_address,
+                "session_id": session_id,
+            }
+        )
 
-    def list_events(self, *, practice_id, cursor=None, from_date=None,
-                    to_date=None, actor=None, action_prefix=None, limit=50):
+    def list_events(
+        self,
+        *,
+        practice_id,
+        cursor=None,
+        from_date=None,
+        to_date=None,
+        actor=None,
+        action_prefix=None,
+        limit=50,
+    ):
         return {"events": [], "next_cursor": None}
 
 
@@ -329,6 +376,7 @@ class StubAdminDeliveryService:
     simulate delivery failure. Allows tests to assert that email_sent: false is
     returned by the router without a real SMTP/Mailgun call.
     """
+
     def __init__(self, invitation_raises: bool = False):
         self.calls = []
         self.invitation_calls = []
@@ -347,6 +395,7 @@ class StubAdminDeliveryService:
 # App factory & dummy connection
 # ---------------------------------------------------------------------------
 
+
 @contextmanager
 def dummy_conn(_database_url):
     """
@@ -361,8 +410,14 @@ def dummy_conn(_database_url):
     yield "stub-conn"
 
 
-def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
-                  audit_repo=None, availability_repo=None, with_rate_limiting=False):
+def make_test_app(
+    condition_ids=None,
+    auth_repo=None,
+    delivery_service=None,
+    audit_repo=None,
+    availability_repo=None,
+    with_rate_limiting=False,
+):
     """
     Build a bare FastAPI app with the admin router registered and
     app.state populated. Does not run the normal startup validation.
@@ -381,7 +436,9 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
     if with_rate_limiting:
         from slowapi.errors import RateLimitExceeded
         from slowapi.middleware import SlowAPIMiddleware
+
         from app.core.rate_limit import limiter
+
         app.state.limiter = limiter
         app.add_middleware(SlowAPIMiddleware)
 
@@ -400,7 +457,9 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
     async def condition_not_found_handler(_, exc: ConditionNotFound):
         return JSONResponse(
             status_code=404,
-            content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}},
+            content={
+                "error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}
+            },
         )
 
     @app.exception_handler(APIError)
@@ -424,7 +483,12 @@ def make_test_app(condition_ids=None, auth_repo=None, delivery_service=None,
         async def slowapi_rate_limit_handler(_, exc: RateLimitExceeded):
             return JSONResponse(
                 status_code=429,
-                content={"error": {"code": "RATE_LIMIT_EXCEEDED", "message": "Too many requests. Please try again later."}},
+                content={
+                    "error": {
+                        "code": "RATE_LIMIT_EXCEEDED",
+                        "message": "Too many requests. Please try again later.",
+                    }
+                },
             )
 
     return app

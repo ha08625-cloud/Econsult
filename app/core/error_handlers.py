@@ -13,7 +13,7 @@ from fastapi.exception_handlers import http_exception_handler as _default_http_h
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
-from app.core.errors import APIError, RateLimitError, ConditionNotFound
+from app.core.errors import APIError, ConditionNotFound, RateLimitError
 
 
 def register_error_handlers(app: FastAPI) -> None:
@@ -30,7 +30,9 @@ def register_error_handlers(app: FastAPI) -> None:
     async def condition_not_found_handler(_, exc: ConditionNotFound):
         return JSONResponse(
             status_code=404,
-            content={"error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}},
+            content={
+                "error": {"code": "CONDITION_NOT_FOUND", "message": f"Unknown condition: {exc}"}
+            },
         )
 
     @app.exception_handler(RateLimitError)

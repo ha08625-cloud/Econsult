@@ -32,11 +32,10 @@ This router is registered with no prefix in main.py so all routes sit at root.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from app.core.errors import ConditionNotFound
 from app.core.dependencies import (
     get_availability_repo,
     get_practice_id,
@@ -97,7 +96,7 @@ async def get_availability(
     If the database raises an exception, the exception propagates and FastAPI
     returns HTTP 500. The frontend treats any non-200 as fail-open.
     """
-    result = check_availability(availability_repo, practice_id, datetime.now(timezone.utc))
+    result = check_availability(availability_repo, practice_id, datetime.now(UTC))
     return {
         "is_open": result.is_open,
         "closed_message": result.closed_message,

@@ -42,8 +42,7 @@ class DownstreamEnqueuer(Protocol):
     itself is downstream-agnostic.
     """
 
-    def enqueue(self, *, submission_id: str) -> None:
-        ...
+    def enqueue(self, *, submission_id: str) -> None: ...
 
 
 class DeliveryEnqueuer:

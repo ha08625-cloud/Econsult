@@ -58,9 +58,7 @@ def has_complete_mailgun(api_key: str | None, domain: str | None) -> bool:
 
 def has_partial_mailgun(api_key: str | None, domain: str | None) -> bool:
     """True if exactly one of the Mailgun pair is set, but not both."""
-    return (
-        _is_set(api_key) or _is_set(domain)
-    ) and not has_complete_mailgun(api_key, domain)
+    return (_is_set(api_key) or _is_set(domain)) and not has_complete_mailgun(api_key, domain)
 
 
 def select_email_delivery_mode(api_key: str | None, domain: str | None) -> str:

@@ -86,9 +86,7 @@ def _require_file(path: str, env_name: str) -> None:
     first request.
     """
     if not os.path.exists(path):
-        logger.critical(
-            "Certificate file configured in %s does not exist: %s", env_name, path
-        )
+        logger.critical("Certificate file configured in %s does not exist: %s", env_name, path)
         sys.exit(1)
 
 
@@ -128,6 +126,7 @@ def main() -> None:
     # Import application modules after env validation so import errors are not
     # confused with missing configuration.
     import sentry_sdk
+
     from app.repositories.attachment_repository import AttachmentRepository
     from app.repositories.delivery_repository import DeliveryRepository
     from app.repositories.mesh_repository import MeshRepository
@@ -173,8 +172,7 @@ def main() -> None:
         _handshake_with_retry(mesh_client)
     except MeshError as exc:
         logger.critical(
-            "MESH dispatcher: startup handshake failed after bounded retry — "
-            "aborting. error=%s",
+            "MESH dispatcher: startup handshake failed after bounded retry — aborting. error=%s",
             exc,
         )
         sys.exit(1)

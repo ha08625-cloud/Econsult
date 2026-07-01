@@ -11,10 +11,10 @@ engine modules, presentation_service, or patient-facing runtime states.
 from fastapi import APIRouter
 
 from app.routers.admin import (
+    admin_audit_router,
     admin_auth_router,
     admin_availability_router,
     admin_practice_router,
-    admin_audit_router,
     admin_user_router,
 )
 

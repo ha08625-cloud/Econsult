@@ -48,7 +48,6 @@ dispatcher decision that calls mark_fallback_triggered.
 """
 
 from datetime import datetime
-from typing import Optional
 
 from psycopg2.extras import RealDictCursor
 
@@ -57,6 +56,7 @@ from app.core.db import get_conn
 
 class MeshJobNotFound(Exception):
     """Raised when a mesh_job_id does not exist in mesh_jobs."""
+
     pass
 
 
@@ -85,39 +85,38 @@ class MeshRepository:
         Returns the row's id as a string (the existing row's id if the conflict
         path was taken).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO mesh_jobs (submission_id, recipient_mailbox_id)
                     VALUES (%(submission_id)s, %(recipient_mailbox_id)s)
                     ON CONFLICT (submission_id) DO NOTHING
                     RETURNING id
                     """,
-                    {
-                        "submission_id": submission_id,
-                        "recipient_mailbox_id": recipient_mailbox_id,
-                    },
-                )
-                row = cur.fetchone()
+                {
+                    "submission_id": submission_id,
+                    "recipient_mailbox_id": recipient_mailbox_id,
+                },
+            )
+            row = cur.fetchone()
 
-                if row is not None:
-                    # Fresh insert: return the new id.
-                    return str(row[0])
+            if row is not None:
+                # Fresh insert: return the new id.
+                return str(row[0])
 
-                # Conflict path: fetch the existing row's id.
-                cur.execute(
-                    "SELECT id FROM mesh_jobs WHERE submission_id = %s",
-                    (submission_id,),
-                )
-                existing = cur.fetchone()
-                return str(existing[0])
+            # Conflict path: fetch the existing row's id.
+            cur.execute(
+                "SELECT id FROM mesh_jobs WHERE submission_id = %s",
+                (submission_id,),
+            )
+            existing = cur.fetchone()
+            return str(existing[0])
 
     # ------------------------------------------------------------------
     # Job claiming (Phase 3 — dispatcher)
     # ------------------------------------------------------------------
 
-    def claim_next_pending(self) -> Optional[dict]:
+    def claim_next_pending(self) -> dict | None:
         """
         Claim the next dispatchable mesh_jobs row.
 
@@ -180,10 +179,9 @@ class MeshRepository:
 
         Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE mesh_jobs
                     SET status     = 'sent',
                         message_id = %(message_id)s,
@@ -192,18 +190,18 @@ class MeshRepository:
                     WHERE id = %(mesh_job_id)s
                     RETURNING id
                     """,
-                    {"mesh_job_id": mesh_job_id, "message_id": message_id},
-                )
-                if cur.fetchone() is None:
-                    raise MeshJobNotFound(mesh_job_id)
+                {"mesh_job_id": mesh_job_id, "message_id": message_id},
+            )
+            if cur.fetchone() is None:
+                raise MeshJobNotFound(mesh_job_id)
 
     def mark_failed(
         self,
         *,
         mesh_job_id: str,
         error: str,
-        error_code: Optional[str],
-        next_retry_after: Optional[datetime],
+        error_code: str | None,
+        next_retry_after: datetime | None,
     ) -> int:
         """
         Record a transient send failure.
@@ -257,20 +255,19 @@ class MeshRepository:
 
         Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE mesh_jobs
                     SET status     = 'fallback_triggered',
                         updated_at = NOW()
                     WHERE id = %s
                     RETURNING id
                     """,
-                    (mesh_job_id,),
-                )
-                if cur.fetchone() is None:
-                    raise MeshJobNotFound(mesh_job_id)
+                (mesh_job_id,),
+            )
+            if cur.fetchone() is None:
+                raise MeshJobNotFound(mesh_job_id)
 
     # ------------------------------------------------------------------
     # Outcome recording — tracking poller (Phase 4)
@@ -287,10 +284,9 @@ class MeshRepository:
 
         Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE mesh_jobs
                     SET status               = 'provider_accepted',
                         provider_accepted_at = NOW(),
@@ -298,10 +294,10 @@ class MeshRepository:
                     WHERE id = %s
                     RETURNING id
                     """,
-                    (mesh_job_id,),
-                )
-                if cur.fetchone() is None:
-                    raise MeshJobNotFound(mesh_job_id)
+                (mesh_job_id,),
+            )
+            if cur.fetchone() is None:
+                raise MeshJobNotFound(mesh_job_id)
 
     def mark_delivered(self, *, mesh_job_id: str) -> None:
         """
@@ -314,10 +310,9 @@ class MeshRepository:
 
         Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE mesh_jobs
                     SET status       = 'delivered',
                         delivered_at = NOW(),
@@ -325,10 +320,10 @@ class MeshRepository:
                     WHERE id = %s
                     RETURNING id
                     """,
-                    (mesh_job_id,),
-                )
-                if cur.fetchone() is None:
-                    raise MeshJobNotFound(mesh_job_id)
+                (mesh_job_id,),
+            )
+            if cur.fetchone() is None:
+                raise MeshJobNotFound(mesh_job_id)
 
     # ------------------------------------------------------------------
     # Lookup

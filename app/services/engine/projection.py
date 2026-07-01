@@ -1,6 +1,5 @@
-from typing import Dict
-from app.models.runtime_state import RuntimeState
 from app.models.explicit_answers import ExplicitAnswers
+from app.models.runtime_state import RuntimeState
 
 EXPLICIT_SOURCES = {
     "patient",
@@ -17,7 +16,7 @@ def project_explicit_answers(runtime: RuntimeState) -> ExplicitAnswers:
     "unanswered") are projected as None.
     """
 
-    projected: Dict[str, bool | None] = {}
+    projected: dict[str, bool | None] = {}
 
     for key, answer in runtime.answers.items():
         if answer.source in EXPLICIT_SOURCES:

@@ -13,9 +13,8 @@ AvailabilityException: represents a single row from the
 practice_availability_exceptions table.
 """
 
-from dataclasses import dataclass, field
 import datetime
-from typing import Optional
+from dataclasses import dataclass
 from zoneinfo import ZoneInfo
 
 # Canonical timezone constant. All availability evaluation uses Europe/London
@@ -31,11 +30,11 @@ class AvailabilityConfig:
     weekly_open_days: list[str]
     open_time: datetime.time
     close_time: datetime.time
-    closed_message: Optional[str]
+    closed_message: str | None
     # Override fields. All nullable — null means no override.
-    override_status: Optional[str] = None
-    override_expires_at: Optional[datetime.datetime] = None
-    override_message: Optional[str] = None
+    override_status: str | None = None
+    override_expires_at: datetime.datetime | None = None
+    override_message: str | None = None
 
     @classmethod
     def from_row(cls, row: dict) -> "AvailabilityConfig":
@@ -55,8 +54,8 @@ class AvailabilityConfig:
 @dataclass
 class AvailabilityResult:
     is_open: bool
-    closed_message: Optional[str]
-    after_hours_notice: Optional[str]
+    closed_message: str | None
+    after_hours_notice: str | None
 
 
 @dataclass
@@ -64,9 +63,9 @@ class AvailabilityException:
     practice_id: str
     exception_date: datetime.date
     exception_type: str  # "closed" or "custom_hours"
-    open_time: Optional[datetime.time]
-    close_time: Optional[datetime.time]
-    note: Optional[str]
+    open_time: datetime.time | None
+    close_time: datetime.time | None
+    note: str | None
 
     @classmethod
     def from_row(cls, row: dict) -> "AvailabilityException":

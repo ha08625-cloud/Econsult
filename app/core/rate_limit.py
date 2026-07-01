@@ -20,9 +20,8 @@ Key function:
     resolve to the proxy IP rather than the real client IP.
 """
 
-from starlette.requests import Request
-
 from slowapi import Limiter
+from starlette.requests import Request
 
 from app.utils.http_utils import extract_ip
 

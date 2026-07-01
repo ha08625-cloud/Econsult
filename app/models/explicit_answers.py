@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Dict, Optional
 
 
 @dataclass(frozen=True)
@@ -12,4 +11,5 @@ class ExplicitAnswers:
     - True / False: explicitly answered
     - None: unknown / unanswered (never treated as False)
     """
-    values: Dict[str, Optional[bool]]
+
+    values: dict[str, bool | None]

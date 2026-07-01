@@ -9,17 +9,18 @@ Requires nh3 to be installed:
 """
 
 import pytest
+
 from app.repositories.practice_repository import (
-    sanitise_signposting_html,
-    InvalidSignpostingData,
     MAX_SIGNPOSTING_LENGTH,
     QUILL_EMPTY_OUTPUT,
+    InvalidSignpostingData,
+    sanitise_signposting_html,
 )
-
 
 # ---------------------------------------------------------------------------
 # Allowed content survives
 # ---------------------------------------------------------------------------
+
 
 def test_strong_tag_survives():
     result = sanitise_signposting_html("<strong>bold</strong>")
@@ -34,9 +35,7 @@ def test_em_tag_survives():
 
 
 def test_valid_https_link_survives_with_href():
-    result = sanitise_signposting_html(
-        '<a href="https://example.com">click here</a>'
-    )
+    result = sanitise_signposting_html('<a href="https://example.com">click here</a>')
     assert result is not None
     assert 'href="https://example.com"' in result
     assert "click here" in result
@@ -69,19 +68,16 @@ def test_rel_and_target_attributes_survive():
 # Disallowed content is stripped
 # ---------------------------------------------------------------------------
 
+
 def test_javascript_href_is_stripped():
-    result = sanitise_signposting_html(
-        '<a href="javascript:alert(1)">click</a>'
-    )
+    result = sanitise_signposting_html('<a href="javascript:alert(1)">click</a>')
     # Either the href is stripped (leaving a bare <a>) or the element is
     # removed entirely. Either way, the javascript: URI must not appear.
     assert result is None or "javascript:" not in result
 
 
 def test_onclick_attribute_is_stripped():
-    result = sanitise_signposting_html(
-        '<p onclick="alert(1)">text</p>'
-    )
+    result = sanitise_signposting_html('<p onclick="alert(1)">text</p>')
     assert result is not None
     assert "onclick" not in result
     assert "text" in result
@@ -90,18 +86,14 @@ def test_onclick_attribute_is_stripped():
 def test_script_tag_is_stripped_text_preserved():
     result = sanitise_signposting_html("<script>alert(1)</script>visible")
     # The script tag is gone; the text content "visible" survives.
-    assert result is None or (
-        "<script>" not in result and "alert(1)" not in result
-    )
+    assert result is None or ("<script>" not in result and "alert(1)" not in result)
     # "visible" is bare text — nh3 does not wrap it, so this may return None.
     # The important assertion is that no script tag survives.
 
 
 def test_h1_tag_stripped_text_preserved():
     result = sanitise_signposting_html("<h1>heading text</h1>")
-    assert result is None or (
-        "<h1>" not in result and "heading text" in result
-    )
+    assert result is None or ("<h1>" not in result and "heading text" in result)
 
 
 def test_img_tag_stripped_entirely():
@@ -116,6 +108,7 @@ def test_img_tag_stripped_entirely():
 # ---------------------------------------------------------------------------
 # Empty-content detection returns None
 # ---------------------------------------------------------------------------
+
 
 def test_empty_string_returns_none():
     assert sanitise_signposting_html("") is None
@@ -133,6 +126,7 @@ def test_quill_empty_output_returns_none():
 # ---------------------------------------------------------------------------
 # Length enforcement
 # ---------------------------------------------------------------------------
+
 
 def test_exactly_max_length_is_accepted():
     # Build a string of exactly MAX_SIGNPOSTING_LENGTH characters.

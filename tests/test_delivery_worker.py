@@ -20,21 +20,20 @@ explicitly set send_clinical_output.return_value = None.
 """
 
 import logging
-import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, call, patch
 
 import psycopg2
 import pytest
 
+from app.repositories.attachment_repository import AttachmentNotFound
+from app.services.delivery.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
+from app.services.delivery.delivery_service import EmailDeliveryError
 from app.services.delivery.delivery_worker import (
     _compute_backoff,
     _process_job,
     run_worker,
 )
-from app.services.delivery.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
-from app.services.delivery.delivery_service import EmailDeliveryError
-from app.repositories.attachment_repository import AttachmentNotFound
 
 _MOCK_PROVIDER_ID = "20260423123456.1.abc@mailgun.org"
 
@@ -42,6 +41,7 @@ _MOCK_PROVIDER_ID = "20260423123456.1.abc@mailgun.org"
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_delivery_repo(job_sequence=None):
     """
@@ -84,7 +84,7 @@ def _make_job(
     attempt_count=0,
 ):
     if submitted_at is None:
-        submitted_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        submitted_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
     return {
         "id": job_id,
         "submission_id": submission_id,
@@ -132,6 +132,7 @@ def _run_worker_n_sleeps(
 # ---------------------------------------------------------------------------
 # _process_job: successful path — Mailgun (provider ID returned)
 # ---------------------------------------------------------------------------
+
 
 def test_process_job_fetches_attachment_and_sends():
     """
@@ -204,7 +205,7 @@ def test_process_job_passes_denormalised_fields_to_send():
     the delivery_jobs row, not from submission_records (which the delivery
     worker never reads).
     """
-    submitted_at = datetime(2026, 3, 15, 9, 30, 0, tzinfo=timezone.utc)
+    submitted_at = datetime(2026, 3, 15, 9, 30, 0, tzinfo=UTC)
     job = _make_job(condition_label="Chest Infection", submitted_at=submitted_at)
     delivery_service = _make_delivery_service()
 
@@ -223,6 +224,7 @@ def test_process_job_passes_denormalised_fields_to_send():
 # ---------------------------------------------------------------------------
 # _process_job: failure paths
 # ---------------------------------------------------------------------------
+
 
 def test_process_job_raises_email_delivery_error_on_send_failure():
     """
@@ -263,6 +265,7 @@ def test_process_job_raises_attachment_not_found_on_missing_attachment():
 # ---------------------------------------------------------------------------
 # run_worker: queue and sleep behaviour
 # ---------------------------------------------------------------------------
+
 
 def test_worker_sleeps_when_queue_is_empty():
     """
@@ -331,8 +334,11 @@ def test_worker_records_failed_backoff_on_send_error():
     assert call_args.args[0] == "job-aaa"
     assert isinstance(call_args.args[1], str)  # error message
     # next_retry_after should be a future datetime (not None at attempt 0)
-    assert call_args.kwargs.get("next_retry_after") is not None or \
-           len(call_args.args) >= 3 and call_args.args[2] is not None
+    assert (
+        call_args.kwargs.get("next_retry_after") is not None
+        or len(call_args.args) >= 3
+        and call_args.args[2] is not None
+    )
 
 
 def test_worker_logs_error_on_exhaustion(caplog):
@@ -347,25 +353,24 @@ def test_worker_logs_error_on_exhaustion(caplog):
     delivery_service = _make_delivery_service()
     delivery_service.send_clinical_output.side_effect = EmailDeliveryError("SMTP down")
 
-    with caplog.at_level(logging.ERROR):
-        with patch(
+    with (
+        caplog.at_level(logging.ERROR),
+        patch(
             "app.services.delivery.delivery_worker.time.sleep",
             side_effect=[None, StopIteration],
-        ):
-            try:
-                run_worker(
-                    delivery_repo=delivery_repo,
-                    attachment_repo=_make_attachment_repo(),
-                    delivery_service=delivery_service,
-                    poll_interval=10,
-                )
-            except StopIteration:
-                pass
+        ),
+    ):
+        try:
+            run_worker(
+                delivery_repo=delivery_repo,
+                attachment_repo=_make_attachment_repo(),
+                delivery_service=delivery_service,
+                poll_interval=10,
+            )
+        except StopIteration:
+            pass
 
-    exhaustion_messages = [
-        r.message for r in caplog.records
-        if "permanently failed" in r.message
-    ]
+    exhaustion_messages = [r.message for r in caplog.records if "permanently failed" in r.message]
     assert len(exhaustion_messages) == 1
     msg = exhaustion_messages[0]
     assert "sub-aaa" in msg
@@ -408,9 +413,7 @@ def test_worker_exits_on_db_failure():
     propagates uncaught, allowing the process to exit and Railway to restart.
     """
     delivery_repo = MagicMock()
-    delivery_repo.claim_next_pending.side_effect = psycopg2.OperationalError(
-        "connection refused"
-    )
+    delivery_repo.claim_next_pending.side_effect = psycopg2.OperationalError("connection refused")
 
     with patch("app.services.delivery.delivery_worker.time.sleep"):
         with pytest.raises(psycopg2.OperationalError):
@@ -426,11 +429,12 @@ def test_worker_exits_on_db_failure():
 # _compute_backoff
 # ---------------------------------------------------------------------------
 
+
 def test_compute_backoff_first_failure():
     result = _compute_backoff(attempt_count=0)
     assert result is not None
     expected_minutes = RETRY_BACKOFF_MINUTES[0]
-    diff = (result - datetime.now(timezone.utc)).total_seconds()
+    diff = (result - datetime.now(UTC)).total_seconds()
     assert abs(diff - expected_minutes * 60) < 5
 
 

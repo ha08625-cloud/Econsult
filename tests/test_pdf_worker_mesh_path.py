@@ -18,6 +18,7 @@ Run via: make test-integration
 """
 
 import os
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -35,22 +36,22 @@ os.environ.setdefault("PRACTICE_ID", "test-practice")
 
 pytestmark = pytest.mark.integration
 
-from datetime import datetime, timezone  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
 from uuid import uuid4  # noqa: E402
 
-from app.core.db import get_conn, alembic_upgrade  # noqa: E402
-from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
-from app.repositories.pdf_repository import PDFRepository  # noqa: E402
-from app.repositories.photo_repository import PhotoRepository  # noqa: E402
-from app.repositories.attachment_repository import AttachmentRepository  # noqa: E402
-from app.repositories.mesh_repository import MeshRepository  # noqa: E402
-from app.services.delivery.mesh_enqueuer import MeshEnqueuer  # noqa: E402
-from app.services.delivery import pdf_worker  # noqa: E402
+from app.core.db import alembic_upgrade, get_conn  # noqa: E402
 from app.models.serialisation_contracts import (  # noqa: E402
-    ClinicalOutput,
     AuditOutput,
+    ClinicalOutput,
     PatientDetails,
 )
+from app.repositories.attachment_repository import AttachmentRepository  # noqa: E402
+from app.repositories.mesh_repository import MeshRepository  # noqa: E402
+from app.repositories.pdf_repository import PDFRepository  # noqa: E402
+from app.repositories.photo_repository import PhotoRepository  # noqa: E402
+from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
+from app.services.delivery import pdf_worker  # noqa: E402
+from app.services.delivery.mesh_enqueuer import MeshEnqueuer  # noqa: E402
 
 alembic_upgrade()
 
@@ -94,35 +95,32 @@ def _create_submission(sid: str) -> None:
         condition_label="Urinary Tract Infection",
         clinical_output=clinical,
         audit_output=audit,
-        submitted_at=datetime.now(timezone.utc),
+        submitted_at=datetime.now(UTC),
     )
 
 
 def _cleanup(sid: str) -> None:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM mesh_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM submission_attachments WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM submission_photos WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM mesh_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_attachments WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_photos WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
 
 
 def _read_pdf_job(job_id: str) -> dict:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM pdf_jobs WHERE id = %s", (job_id,))
-            row = cur.fetchone()
-            cols = [desc[0] for desc in cur.description]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM pdf_jobs WHERE id = %s", (job_id,))
+        row = cur.fetchone()
+        cols = [desc[0] for desc in cur.description]
     return dict(zip(cols, row))
 
 
 def _count(table: str, sid: str) -> int:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) FROM {table} WHERE submission_id = %s", (sid,))
-            return cur.fetchone()[0]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT COUNT(*) FROM {table} WHERE submission_id = %s", (sid,))
+        return cur.fetchone()[0]
 
 
 def test_pdf_worker_mesh_path_writes_mesh_job_not_delivery_job():
@@ -158,13 +156,12 @@ def test_pdf_worker_mesh_path_writes_mesh_job_not_delivery_job():
 
         # A mesh_jobs row exists with the configured recipient and pending status.
         assert _count("mesh_jobs", sid) == 1
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT status, recipient_mailbox_id FROM mesh_jobs WHERE submission_id = %s",
-                    (sid,),
-                )
-                status, recipient = cur.fetchone()
+        with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT status, recipient_mailbox_id FROM mesh_jobs WHERE submission_id = %s",
+                (sid,),
+            )
+            status, recipient = cur.fetchone()
         assert status == "pending"
         assert recipient == RECIPIENT
 

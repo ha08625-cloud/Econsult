@@ -82,8 +82,8 @@ def main() -> None:
     # Import application modules after env validation so import errors are not
     # confused with missing configuration.
     from app.core.email_mode import has_partial_mailgun, select_email_delivery_mode
-    from app.repositories.delivery_repository import DeliveryRepository
     from app.repositories.attachment_repository import AttachmentRepository
+    from app.repositories.delivery_repository import DeliveryRepository
     from app.services.delivery.delivery_service import (
         EmailDeliveryService,
         MailgunHttpDeliveryService,

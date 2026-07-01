@@ -14,10 +14,10 @@ from unittest.mock import MagicMock
 
 from app.services.delivery.mesh_enqueuer import MeshEnqueuer
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_enqueuer(
     mesh_repo=None,
@@ -32,6 +32,7 @@ def _make_enqueuer(
 # ---------------------------------------------------------------------------
 # Protocol structural compliance
 # ---------------------------------------------------------------------------
+
 
 def test_mesh_enqueuer_has_protocol_shape():
     """
@@ -48,6 +49,7 @@ def test_mesh_enqueuer_has_protocol_shape():
 # ---------------------------------------------------------------------------
 # Behaviour
 # ---------------------------------------------------------------------------
+
 
 def test_mesh_enqueuer_forwards_to_create_job():
     """
@@ -76,12 +78,8 @@ def test_mesh_enqueuer_uses_constructor_recipient_not_a_default():
     """
     repo_a = MagicMock()
     repo_b = MagicMock()
-    _make_enqueuer(mesh_repo=repo_a, recipient_mailbox_id="AAA").enqueue(
-        submission_id="sub-ccc"
-    )
-    _make_enqueuer(mesh_repo=repo_b, recipient_mailbox_id="BBB").enqueue(
-        submission_id="sub-ccc"
-    )
+    _make_enqueuer(mesh_repo=repo_a, recipient_mailbox_id="AAA").enqueue(submission_id="sub-ccc")
+    _make_enqueuer(mesh_repo=repo_b, recipient_mailbox_id="BBB").enqueue(submission_id="sub-ccc")
 
     assert repo_a.create_job.call_args.kwargs["recipient_mailbox_id"] == "AAA"
     assert repo_b.create_job.call_args.kwargs["recipient_mailbox_id"] == "BBB"

@@ -63,8 +63,9 @@ def init_telemetry(app_context: str) -> None:
         if app_context == "http-api":
             from sentry_sdk.integrations.fastapi import FastAPIIntegration  # noqa: PLC0415
             from sentry_sdk.integrations.logging import LoggingIntegration  # noqa: PLC0415
-            from app.core.errors import APIError, ConditionNotFound, RateLimitError  # noqa: PLC0415
             from slowapi.errors import RateLimitExceeded  # noqa: PLC0415
+
+            from app.core.errors import APIError, ConditionNotFound, RateLimitError  # noqa: PLC0415
 
             integrations = [
                 FastAPIIntegration(

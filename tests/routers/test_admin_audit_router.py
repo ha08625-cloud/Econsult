@@ -3,44 +3,58 @@ tests/test_admin_audit_router.py
 
 Tests for the admin audit log endpoint (GET /admin/audit-log).
 """
+
 import unittest
-from datetime import datetime, timezone, date
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 
-from tests.helpers.admin_test_helpers import make_test_app, StubAuditRepo, TEST_SESSION_COOKIE
-
+from tests.helpers.admin_test_helpers import TEST_SESSION_COOKIE, StubAuditRepo, make_test_app
 
 # ---------------------------------------------------------------------------
 # Specialized Audit Stubs
 # ---------------------------------------------------------------------------
+
 
 class ConfigurableAuditRepo(StubAuditRepo):
     """
     Audit repo stub whose list_events return value can be configured
     per test. Also records the kwargs list_events was called with.
     """
+
     def __init__(self, return_value=None):
         super().__init__()
         self._return_value = return_value or {"events": [], "next_cursor": None}
         self.list_calls = []
 
-    def list_events(self, *, practice_id, cursor=None, from_date=None,
-                    to_date=None, actor=None, action_prefix=None, limit=50):
-        self.list_calls.append({
-            "practice_id": practice_id,
-            "cursor": cursor,
-            "from_date": from_date,
-            "to_date": to_date,
-            "actor": actor,
-            "action_prefix": action_prefix,
-            "limit": limit,
-        })
+    def list_events(
+        self,
+        *,
+        practice_id,
+        cursor=None,
+        from_date=None,
+        to_date=None,
+        actor=None,
+        action_prefix=None,
+        limit=50,
+    ):
+        self.list_calls.append(
+            {
+                "practice_id": practice_id,
+                "cursor": cursor,
+                "from_date": from_date,
+                "to_date": to_date,
+                "actor": actor,
+                "action_prefix": action_prefix,
+                "limit": limit,
+            }
+        )
         return self._return_value
 
 
 class RaisingAuditRepo(StubAuditRepo):
     """Audit repo stub whose list_events raises a given exception."""
+
     def __init__(self, exc):
         super().__init__()
         self._exc = exc
@@ -52,6 +66,7 @@ class RaisingAuditRepo(StubAuditRepo):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestAuditLogEndpoint(unittest.TestCase):
     """Tests for GET /admin/audit-log."""
@@ -89,12 +104,24 @@ class TestAuditLogEndpoint(unittest.TestCase):
         self.assertIsNone(body["next_cursor"])
 
     def test_events_and_cursor_reflected_from_repo(self):
-        repo = ConfigurableAuditRepo(return_value={
-            "events": [{"id": 1, "actor_email": "a@b.com", "action": "auth.login.succeeded",
-                        "occurred_at": None, "practice_id": "test_practice",
-                        "resource": None, "detail": None, "ip_address": None, "session_id": None}],
-            "next_cursor": "abc123",
-        })
+        repo = ConfigurableAuditRepo(
+            return_value={
+                "events": [
+                    {
+                        "id": 1,
+                        "actor_email": "a@b.com",
+                        "action": "auth.login.succeeded",
+                        "occurred_at": None,
+                        "practice_id": "test_practice",
+                        "resource": None,
+                        "detail": None,
+                        "ip_address": None,
+                        "session_id": None,
+                    }
+                ],
+                "next_cursor": "abc123",
+            }
+        )
         client = self._make_client(audit_repo=repo)
         res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
@@ -103,13 +130,24 @@ class TestAuditLogEndpoint(unittest.TestCase):
         self.assertEqual(body["next_cursor"], "abc123")
 
     def test_datetime_occurred_at_is_serialised_to_string(self):
-        repo = ConfigurableAuditRepo(return_value={
-            "events": [{"id": 1, "actor_email": "a@b.com", "action": "auth.login.succeeded",
-                        "occurred_at": datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc),
-                        "practice_id": "test_practice", "resource": None, "detail": None,
-                        "ip_address": None, "session_id": None}],
-            "next_cursor": None,
-        })
+        repo = ConfigurableAuditRepo(
+            return_value={
+                "events": [
+                    {
+                        "id": 1,
+                        "actor_email": "a@b.com",
+                        "action": "auth.login.succeeded",
+                        "occurred_at": datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC),
+                        "practice_id": "test_practice",
+                        "resource": None,
+                        "detail": None,
+                        "ip_address": None,
+                        "session_id": None,
+                    }
+                ],
+                "next_cursor": None,
+            }
+        )
         client = self._make_client(audit_repo=repo)
         res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)

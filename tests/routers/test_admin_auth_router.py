@@ -16,24 +16,23 @@ Run from project root:
     python -m pytest tests/test_admin_auth_router.py
 """
 
-import os
 import unittest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import bcrypt
 
 from tests.helpers.admin_test_helpers import (
-    make_test_app,
-    StubAuthRepo,
-    StubAdminDeliveryService,
     TEST_SESSION_COOKIE,
+    StubAdminDeliveryService,
+    StubAuthRepo,
+    make_test_app,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared SpyAuthRepo for auth router tests
 # ---------------------------------------------------------------------------
+
 
 class SpyAuthRepo(StubAuthRepo):
     """
@@ -114,9 +113,7 @@ class SpyAuthRepo(StubAuthRepo):
         self.deleted_tokens.append(token_hash)
 
     def set_password(self, user_id, hashed_password, conn=None):
-        self.passwords_set.append(
-            {"user_id": user_id, "hashed_password": hashed_password}
-        )
+        self.passwords_set.append({"user_id": user_id, "hashed_password": hashed_password})
 
 
 def _make_user(hashed_password=None, failed_attempts=0, locked_until=None):
@@ -126,7 +123,7 @@ def _make_user(hashed_password=None, failed_attempts=0, locked_until=None):
         "email": "admin@nhs.net",
         "practice_id": "test_practice",
         "role": "admin",
-        "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+        "created_at": datetime(2024, 1, 1, tzinfo=UTC),
         "hashed_password": hashed_password,
         "failed_password_attempts": failed_attempts,
         "password_locked_until": locked_until,
@@ -138,10 +135,11 @@ def _make_user(hashed_password=None, failed_attempts=0, locked_until=None):
 # Section 1: Auth behaviour (admin_context.py)
 # ---------------------------------------------------------------------------
 
-class TestAuthBehaviour(unittest.TestCase):
 
+class TestAuthBehaviour(unittest.TestCase):
     def setUp(self):
         from fastapi.testclient import TestClient
+
         self.app = make_test_app()
         self.client = TestClient(self.app, raise_server_exceptions=True)
 
@@ -165,10 +163,11 @@ class TestAuthBehaviour(unittest.TestCase):
 # Section 2: POST /auth/login (step 1)
 # ---------------------------------------------------------------------------
 
-class TestLogin(unittest.TestCase):
 
+class TestLogin(unittest.TestCase):
     def _make_client(self, auth_repo=None, delivery_service=None):
         from fastapi.testclient import TestClient
+
         app = make_test_app(auth_repo=auth_repo, delivery_service=delivery_service)
         return TestClient(app, raise_server_exceptions=False)
 
@@ -249,7 +248,7 @@ class TestLogin(unittest.TestCase):
     def test_locked_account_returns_422_with_generic_error(self):
         password = "CorrectHorseBatteryStaple1!"
         hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        locked_until = datetime.now(tz=timezone.utc) + timedelta(minutes=15)
+        locked_until = datetime.now(tz=UTC) + timedelta(minutes=15)
         user = _make_user(hashed_password=hashed, locked_until=locked_until)
         repo = SpyAuthRepo(user=user)
         client = self._make_client(auth_repo=repo)
@@ -299,10 +298,11 @@ class TestLogin(unittest.TestCase):
 # Section 3: POST /auth/verify (step 2, unchanged)
 # ---------------------------------------------------------------------------
 
-class TestVerifyMfaCode(unittest.TestCase):
 
+class TestVerifyMfaCode(unittest.TestCase):
     def _make_client(self, auth_repo=None):
         from fastapi.testclient import TestClient
+
         app = make_test_app(auth_repo=auth_repo)
         return TestClient(app, raise_server_exceptions=False)
 
@@ -316,9 +316,9 @@ class TestVerifyMfaCode(unittest.TestCase):
         record = {
             "email": "admin@nhs.net",
             "hashed_code": hashed,
-            "expires_at": datetime.now(tz=timezone.utc) + timedelta(minutes=5),
+            "expires_at": datetime.now(tz=UTC) + timedelta(minutes=5),
             "attempts_count": 0,
-            "last_requested_at": datetime.now(tz=timezone.utc),
+            "last_requested_at": datetime.now(tz=UTC),
         }
         return SpyAuthRepo(user=user, auth_code_record=record), code
 
@@ -357,9 +357,9 @@ class TestVerifyMfaCode(unittest.TestCase):
         record = {
             "email": "admin@nhs.net",
             "hashed_code": hashed,
-            "expires_at": datetime.now(tz=timezone.utc) - timedelta(minutes=1),
+            "expires_at": datetime.now(tz=UTC) - timedelta(minutes=1),
             "attempts_count": 0,
-            "last_requested_at": datetime.now(tz=timezone.utc),
+            "last_requested_at": datetime.now(tz=UTC),
         }
         repo = SpyAuthRepo(user=user, auth_code_record=record)
         client = self._make_client(auth_repo=repo)
@@ -376,9 +376,9 @@ class TestVerifyMfaCode(unittest.TestCase):
         record = {
             "email": "admin@nhs.net",
             "hashed_code": hashed,
-            "expires_at": datetime.now(tz=timezone.utc) + timedelta(minutes=5),
+            "expires_at": datetime.now(tz=UTC) + timedelta(minutes=5),
             "attempts_count": 3,
-            "last_requested_at": datetime.now(tz=timezone.utc),
+            "last_requested_at": datetime.now(tz=UTC),
         }
         repo = SpyAuthRepo(user=user, auth_code_record=record)
         client = self._make_client(auth_repo=repo)
@@ -394,10 +394,11 @@ class TestVerifyMfaCode(unittest.TestCase):
 # Section 4: POST /auth/request-reset
 # ---------------------------------------------------------------------------
 
-class TestRequestReset(unittest.TestCase):
 
+class TestRequestReset(unittest.TestCase):
     def _make_client(self, auth_repo=None, delivery_service=None):
         from fastapi.testclient import TestClient
+
         app = make_test_app(auth_repo=auth_repo, delivery_service=delivery_service)
         return TestClient(app, raise_server_exceptions=False)
 
@@ -451,10 +452,11 @@ class TestRequestReset(unittest.TestCase):
 # Section 5: POST /auth/set-password
 # ---------------------------------------------------------------------------
 
-class TestSetPassword(unittest.TestCase):
 
+class TestSetPassword(unittest.TestCase):
     def _make_client(self, auth_repo=None):
         from fastapi.testclient import TestClient
+
         app = make_test_app(auth_repo=auth_repo)
         return TestClient(app, raise_server_exceptions=False)
 
@@ -465,12 +467,13 @@ class TestSetPassword(unittest.TestCase):
         """Return a SpyAuthRepo with a valid unexpired reset token."""
         import hashlib
         import secrets as sec
+
         raw_token = sec.token_urlsafe(32)
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         record = {
             "token_hash": token_hash,
             "user_id": "user-uuid",
-            "expires_at": datetime.now(tz=timezone.utc) + timedelta(hours=1),
+            "expires_at": datetime.now(tz=UTC) + timedelta(hours=1),
         }
         repo = SpyAuthRepo(reset_token_record=record)
         return repo, raw_token
@@ -498,12 +501,13 @@ class TestSetPassword(unittest.TestCase):
     def test_expired_token_returns_422(self):
         import hashlib
         import secrets as sec
+
         raw_token = sec.token_urlsafe(32)
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         record = {
             "token_hash": token_hash,
             "user_id": "user-uuid",
-            "expires_at": datetime.now(tz=timezone.utc) - timedelta(hours=1),
+            "expires_at": datetime.now(tz=UTC) - timedelta(hours=1),
         }
         repo = SpyAuthRepo(reset_token_record=record)
         client = self._make_client(auth_repo=repo)
@@ -568,14 +572,10 @@ class TestSetPassword(unittest.TestCase):
         stored_hash = repo.passwords_set[0]["hashed_password"]
 
         # The stored hash must verify against the password exactly as typed.
-        self.assertTrue(
-            bcrypt.checkpw(submitted_password.encode(), stored_hash.encode())
-        )
+        self.assertTrue(bcrypt.checkpw(submitted_password.encode(), stored_hash.encode()))
         # It must NOT verify against a stripped version — proving the
         # service no longer normalises the password before hashing.
-        self.assertFalse(
-            bcrypt.checkpw(submitted_password.strip().encode(), stored_hash.encode())
-        )
+        self.assertFalse(bcrypt.checkpw(submitted_password.strip().encode(), stored_hash.encode()))
 
     def test_missing_token_returns_422(self):
         client = self._make_client()
@@ -599,12 +599,13 @@ class TestSetPassword(unittest.TestCase):
         """Expired token must also be deleted (consumed on lookup)."""
         import hashlib
         import secrets as sec
+
         raw_token = sec.token_urlsafe(32)
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         record = {
             "token_hash": token_hash,
             "user_id": "user-uuid",
-            "expires_at": datetime.now(tz=timezone.utc) - timedelta(hours=1),
+            "expires_at": datetime.now(tz=UTC) - timedelta(hours=1),
         }
         repo = SpyAuthRepo(reset_token_record=record)
         client = self._make_client(auth_repo=repo)
@@ -619,10 +620,11 @@ class TestSetPassword(unittest.TestCase):
 # Section 6: POST /auth/logout
 # ---------------------------------------------------------------------------
 
-class TestLogout(unittest.TestCase):
 
+class TestLogout(unittest.TestCase):
     def _make_client(self, auth_repo=None):
         from fastapi.testclient import TestClient
+
         app = make_test_app(auth_repo=auth_repo)
         return TestClient(app, raise_server_exceptions=False)
 
@@ -666,18 +668,21 @@ class TestLogout(unittest.TestCase):
 # Section 7: SlowAPI rate limiting
 # ---------------------------------------------------------------------------
 
-class TestAuthRateLimiting(unittest.TestCase):
 
+class TestAuthRateLimiting(unittest.TestCase):
     def setUp(self):
         from app.core.rate_limit import limiter
+
         limiter._storage.reset()
 
     def tearDown(self):
         from app.core.rate_limit import limiter
+
         limiter._storage.reset()
 
     def _make_client(self):
         from fastapi.testclient import TestClient
+
         app = make_test_app(with_rate_limiting=True)
         return TestClient(app, raise_server_exceptions=False)
 
@@ -688,7 +693,9 @@ class TestAuthRateLimiting(unittest.TestCase):
         with patch("app.services.admin.auth_service.verify_login_credentials"):
             for i in range(5):
                 res = client.post("/admin/auth/login", json=payload)
-                self.assertNotEqual(res.status_code, 429, msg=f"Request {i + 1} was unexpectedly rate-limited")
+                self.assertNotEqual(
+                    res.status_code, 429, msg=f"Request {i + 1} was unexpectedly rate-limited"
+                )
 
             res = client.post("/admin/auth/login", json=payload)
 
@@ -705,7 +712,9 @@ class TestAuthRateLimiting(unittest.TestCase):
         ):
             for i in range(5):
                 res = client.post("/admin/auth/verify", json=payload)
-                self.assertNotEqual(res.status_code, 429, msg=f"Request {i + 1} was unexpectedly rate-limited")
+                self.assertNotEqual(
+                    res.status_code, 429, msg=f"Request {i + 1} was unexpectedly rate-limited"
+                )
 
             res = client.post("/admin/auth/verify", json=payload)
 
@@ -718,7 +727,9 @@ class TestAuthRateLimiting(unittest.TestCase):
 
         for i in range(5):
             res = client.post("/admin/auth/request-reset", json=payload)
-            self.assertNotEqual(res.status_code, 429, msg=f"Request {i + 1} was unexpectedly rate-limited")
+            self.assertNotEqual(
+                res.status_code, 429, msg=f"Request {i + 1} was unexpectedly rate-limited"
+            )
 
         res = client.post("/admin/auth/request-reset", json=payload)
         self.assertEqual(res.status_code, 429)
@@ -730,7 +741,9 @@ class TestAuthRateLimiting(unittest.TestCase):
 
         for i in range(5):
             res = client.post("/admin/auth/set-password", json=payload)
-            self.assertNotEqual(res.status_code, 429, msg=f"Request {i + 1} was unexpectedly rate-limited")
+            self.assertNotEqual(
+                res.status_code, 429, msg=f"Request {i + 1} was unexpectedly rate-limited"
+            )
 
         res = client.post("/admin/auth/set-password", json=payload)
         self.assertEqual(res.status_code, 429)

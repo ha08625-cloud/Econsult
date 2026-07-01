@@ -51,12 +51,14 @@ INVALID_AUTH_CODE = lambda: APIError(
 # All 401 responses are reshaped into the standard error envelope by the
 # HTTPException handler registered in main.py.
 
+
 # RATE_LIMIT_EXCEEDED: code requested within the 60-second cooldown window.
 # Must return HTTP 429. The existing APIError handler uses exc.status_code,
 # so this is a separate exception class with its own handler registered in
 # main.py.
 class RateLimitError(Exception):
     pass
+
 
 RATE_LIMIT_EXCEEDED = lambda: RateLimitError(
     "Code requested too recently. Wait 60 seconds before trying again."

@@ -57,8 +57,8 @@ this module logs at ERROR/CRITICAL in the meantime.
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Callable, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 
 import psycopg2
 
@@ -373,8 +373,7 @@ def _recover_orphaned_fallbacks(
             raise
         except Exception as exc:
             logger.critical(
-                "MESH dispatcher: orphan recovery failed submission_id=%s "
-                "mesh_job_id=%s error=%s",
+                "MESH dispatcher: orphan recovery failed submission_id=%s mesh_job_id=%s error=%s",
                 submission_id,
                 orphan["id"],
                 exc,
@@ -391,12 +390,12 @@ def _compute_backoff(attempt_count: int) -> datetime:
     """
     index = min(attempt_count, len(MESH_RETRY_BACKOFF_MINUTES) - 1)
     minutes = MESH_RETRY_BACKOFF_MINUTES[index]
-    return datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    return datetime.now(UTC) + timedelta(minutes=minutes)
 
 
 def _handshake_with_retry(
     mesh_client: MeshClient,
-    delays_seconds: Optional[list[int]] = None,
+    delays_seconds: list[int] | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> None:
     """

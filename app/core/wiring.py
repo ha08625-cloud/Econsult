@@ -5,33 +5,32 @@ Application wiring: container construction and startup deployment checks.
 
 import logging
 from dataclasses import dataclass, fields
-from typing import Optional
 
 from fastapi import FastAPI
 
 from app.core.condition_registry import ConditionRegistry
 from app.core.settings import WebSettings
-from app.services.engine.ruleset import load_ruleset
-from app.repositories.practice_repository import PracticeRepository
-from app.repositories.availability_repository import AvailabilityRepository
-from app.repositories.runtime_state_repository import RuntimeStateRepository
-from app.repositories.submission_repository import SubmissionRepository
 from app.repositories.attachment_repository import AttachmentRepository
+from app.repositories.audit_repository import AuditRepository
+from app.repositories.auth_repository import AuthRepository
+from app.repositories.availability_repository import AvailabilityRepository
+from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.pdf_repository import PDFRepository
 from app.repositories.photo_repository import PhotoRepository
-from app.repositories.delivery_repository import DeliveryRepository
-from app.repositories.auth_repository import AuthRepository
-from app.repositories.audit_repository import AuditRepository
-from app.services.presentation_service import PresentationService
+from app.repositories.practice_repository import PracticeRepository
+from app.repositories.runtime_state_repository import RuntimeStateRepository
+from app.repositories.submission_repository import SubmissionRepository
+from app.services.delivery.admin_delivery_service import (
+    AdminDeliveryService,
+    MailgunHttpAdminDeliveryService,
+)
 from app.services.delivery.delivery_service import (
     DeliveryService,
     EmailDeliveryService,
     MailgunHttpDeliveryService,
 )
-from app.services.delivery.admin_delivery_service import (
-    AdminDeliveryService,
-    MailgunHttpAdminDeliveryService,
-)
+from app.services.engine.ruleset import load_ruleset
+from app.services.presentation_service import PresentationService
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +38,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Container
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True)
 class AppContainer:
@@ -68,9 +68,9 @@ class AppContainer:
     admin_delivery_service: AdminDeliveryService
 
     practice_id: str
-    practice_name: Optional[str]
+    practice_name: str | None
     allowed_admin_domains: str
-    mailgun_signing_key: Optional[str]
+    mailgun_signing_key: str | None
     database_url: str
 
 
@@ -79,6 +79,7 @@ class AppContainer:
 # _validate_startup; the environment-variable checks it used to perform
 # now live in app/core/settings.py)
 # ---------------------------------------------------------------------------
+
 
 def run_deployment_checks(
     practice_repo: PracticeRepository,
@@ -130,6 +131,7 @@ def run_deployment_checks(
 # Clinical ruleset validation (config-file phase, no database required)
 # ---------------------------------------------------------------------------
 
+
 def validate_rulesets(registry: ConditionRegistry) -> None:
     """
     Validate every condition's full clinical ruleset at startup.
@@ -163,6 +165,7 @@ def validate_rulesets(registry: ConditionRegistry) -> None:
 # ---------------------------------------------------------------------------
 # Construction
 # ---------------------------------------------------------------------------
+
 
 def build_container(settings: WebSettings) -> AppContainer:
     """
@@ -240,6 +243,7 @@ def build_container(settings: WebSettings) -> AppContainer:
 # ---------------------------------------------------------------------------
 # Unpacking onto app.state
 # ---------------------------------------------------------------------------
+
 
 def unpack_container(app: FastAPI, container: AppContainer) -> None:
     """

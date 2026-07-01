@@ -41,24 +41,25 @@ This module must never import:
 # the pattern in admin_auth_router.py for write-free flows).
 # ---------------------------------------------------------------------------
 """
-import logging
-import datetime
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+import datetime
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.admin_context import AdminContext, require_admin
+from app.core.db import get_conn
 from app.core.dependencies import (
-    get_auth_repo,
-    get_practice_repo,
-    get_audit_repo,
     get_admin_delivery_service,
     get_allowed_admin_domains,
+    get_audit_repo,
+    get_auth_repo,
+    get_practice_repo,
 )
-from app.core.errors import APIError, INVALID_PAYLOAD
-from app.core.db import get_conn
+from app.core.errors import INVALID_PAYLOAD, APIError
 from app.core.rate_limit import limiter
+from app.services.admin import auth_service, user_service
 from app.utils.http_utils import extract_ip
-from app.services.admin import user_service, auth_service
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # GET /users
 # ---------------------------------------------------------------------------
+
 
 @router.get("/users")
 async def list_users(
@@ -92,21 +94,23 @@ async def list_users(
 
     result = []
     for user in users:
-        result.append({
-            "id": user["id"],
-            "email": user["email"],
-            "created_at": (
-                user["created_at"].isoformat()
-                if isinstance(user["created_at"], datetime.datetime)
-                else user["created_at"]
-            ),
-            "last_login": (
-                user["last_login"].isoformat()
-                if isinstance(user["last_login"], datetime.datetime)
-                else None
-            ),
-            "is_current_user": user["id"] == admin.user_id,
-        })
+        result.append(
+            {
+                "id": user["id"],
+                "email": user["email"],
+                "created_at": (
+                    user["created_at"].isoformat()
+                    if isinstance(user["created_at"], datetime.datetime)
+                    else user["created_at"]
+                ),
+                "last_login": (
+                    user["last_login"].isoformat()
+                    if isinstance(user["last_login"], datetime.datetime)
+                    else None
+                ),
+                "is_current_user": user["id"] == admin.user_id,
+            }
+        )
 
     return result
 
@@ -114,6 +118,7 @@ async def list_users(
 # ---------------------------------------------------------------------------
 # POST /users
 # ---------------------------------------------------------------------------
+
 
 @router.post("/users", status_code=200)
 @limiter.limit("10/minute")
@@ -193,9 +198,7 @@ async def add_user(
             # Since insert_user does not return the id, we look it up within
             # the same transaction to guarantee consistency.
             new_user = _get_user_by_email_in_conn(auth_repo, email, conn)
-            raw_token = auth_service.generate_reset_token(
-                new_user["id"], auth_repo, conn=conn
-            )
+            raw_token = auth_service.generate_reset_token(new_user["id"], auth_repo, conn=conn)
             audit_repo.log_event(
                 practice_id=admin.practice_id,
                 actor_email=admin.actor_email,
@@ -241,6 +244,7 @@ def _get_user_by_email_in_conn(auth_repo, email: str, conn) -> dict:
     add_user, immediately after insert_user, within the same get_conn block.
     """
     from psycopg2.extras import RealDictCursor
+
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             "SELECT id::text, email FROM admin_users WHERE email = %s",
@@ -257,6 +261,7 @@ def _get_user_by_email_in_conn(auth_repo, email: str, conn) -> dict:
 # ---------------------------------------------------------------------------
 # DELETE /users/{user_id}
 # ---------------------------------------------------------------------------
+
 
 @router.delete("/users/{user_id}", status_code=200)
 async def remove_user(
@@ -322,6 +327,7 @@ async def remove_user(
 # ---------------------------------------------------------------------------
 # POST /users/{user_id}/resend-invitation
 # ---------------------------------------------------------------------------
+
 
 @router.post("/users/{user_id}/resend-invitation", status_code=200)
 @limiter.limit("10/minute")

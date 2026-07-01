@@ -16,7 +16,7 @@ import hmac
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
@@ -39,14 +39,14 @@ pytestmark = pytest.mark.integration
 # Imports (after guardrail)
 # ---------------------------------------------------------------------------
 
-from app.routers.webhook_router import router as webhook_router
+from app.models.serialisation_contracts import AuditOutput, ClinicalOutput, PatientDetails
 from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.submission_repository import SubmissionRepository
-from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails
+from app.routers.webhook_router import router as webhook_router
 
 _SIGNING_KEY = "test-signing-key-abc123"
 
-_SUBMITTED_AT = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+_SUBMITTED_AT = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
 # Minimal PatientDetails satisfying all required fields.
 _PATIENT_DETAILS = PatientDetails(
@@ -82,11 +82,12 @@ _AUDIT_OUTPUT = AuditOutput(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_signature(signing_key: str, timestamp: str, token: str) -> str:
     """Generate a valid Mailgun HMAC-SHA256 signature for a given timestamp and token."""
     return hmac.new(
         key=signing_key.encode("utf-8"),
-        msg=f"{timestamp}{token}".encode("utf-8"),
+        msg=f"{timestamp}{token}".encode(),
         digestmod=hashlib.sha256,
     ).hexdigest()
 
@@ -176,6 +177,7 @@ def _insert_delivery_job(
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def delivery_repo():
     return DeliveryRepository(_TEST_DB)
@@ -195,6 +197,7 @@ def client(delivery_repo):
 # ---------------------------------------------------------------------------
 # Security: HMAC verification
 # ---------------------------------------------------------------------------
+
 
 class TestHMACVerification:
     def test_valid_signature_is_accepted(self, client, delivery_repo, submission_repo):
@@ -242,6 +245,7 @@ class TestHMACVerification:
 # Security: timestamp staleness
 # ---------------------------------------------------------------------------
 
+
 class TestTimestampStaleness:
     def test_stale_timestamp_returns_200_and_does_not_update(
         self, client, delivery_repo, submission_repo
@@ -276,6 +280,7 @@ class TestTimestampStaleness:
 # ---------------------------------------------------------------------------
 # Security: replay protection
 # ---------------------------------------------------------------------------
+
 
 class TestReplayProtection:
     def test_duplicate_token_returns_200_and_does_not_double_update(
@@ -319,10 +324,9 @@ class TestReplayProtection:
 # Status transitions: delivered
 # ---------------------------------------------------------------------------
 
+
 class TestDeliveredEvent:
-    def test_delivered_event_transitions_status(
-        self, client, delivery_repo, submission_repo
-    ):
+    def test_delivered_event_transitions_status(self, client, delivery_repo, submission_repo):
         submission_id = _insert_test_submission(submission_repo)
         provider_message_id = f"msg-{uuid.uuid4().hex}@mailgun.org"
         job_id = _insert_delivery_job(delivery_repo, submission_id, provider_message_id)
@@ -334,9 +338,7 @@ class TestDeliveredEvent:
         job = delivery_repo.get(job_id)
         assert job["status"] == "delivered"
 
-    def test_delivered_event_appends_provider_event(
-        self, client, delivery_repo, submission_repo
-    ):
+    def test_delivered_event_appends_provider_event(self, client, delivery_repo, submission_repo):
         submission_id = _insert_test_submission(submission_repo)
         provider_message_id = f"msg-{uuid.uuid4().hex}@mailgun.org"
         job_id = _insert_delivery_job(delivery_repo, submission_id, provider_message_id)
@@ -354,10 +356,9 @@ class TestDeliveredEvent:
 # Status transitions: failed / dropped
 # ---------------------------------------------------------------------------
 
+
 class TestFailedEvent:
-    def test_failed_event_transitions_status(
-        self, client, delivery_repo, submission_repo
-    ):
+    def test_failed_event_transitions_status(self, client, delivery_repo, submission_repo):
         submission_id = _insert_test_submission(submission_repo)
         provider_message_id = f"msg-{uuid.uuid4().hex}@mailgun.org"
         job_id = _insert_delivery_job(delivery_repo, submission_id, provider_message_id)
@@ -388,6 +389,7 @@ class TestFailedEvent:
 # Race condition: provider_message_id not yet committed
 # ---------------------------------------------------------------------------
 
+
 class TestRaceCondition:
     def test_unknown_provider_message_id_returns_406(self, client):
         """
@@ -405,6 +407,7 @@ class TestRaceCondition:
 # ---------------------------------------------------------------------------
 # Informational events
 # ---------------------------------------------------------------------------
+
 
 class TestInformationalEvents:
     def test_unknown_event_type_returns_200_and_appends_event(

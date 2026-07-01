@@ -6,8 +6,8 @@ encoder_stub.py
 encoder_mapping.py
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Dict, Optional, Iterable
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ class EncoderOutput:
     model_name: str
     model_version: str
     ruleset_hash: str
-    signals: Dict[str, Optional[bool]]
+    signals: dict[str, bool | None]
 
     def validate_against(self, definitions: Iterable[EncoderSignalDefinition]) -> None:
         """
@@ -52,6 +52,5 @@ class EncoderOutput:
         for key, value in self.signals.items():
             if value not in (True, False, None):
                 raise TypeError(
-                    f"Invalid encoder value for {key}: {value!r}. "
-                    "Expected True, False, or None."
+                    f"Invalid encoder value for {key}: {value!r}. Expected True, False, or None."
                 )

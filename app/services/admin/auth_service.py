@@ -38,19 +38,18 @@ asyncio.get_event_loop().run_in_executor(None, ...) from the async router.
 """
 
 import hashlib
+import logging
 import secrets
 import time
-import logging
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Optional
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import bcrypt
 
 from app.core.errors import (
-    INVALID_PAYLOAD,
     INVALID_AUTH_CODE,
-    RATE_LIMIT_EXCEEDED,
     INVALID_CREDENTIALS,
+    INVALID_PAYLOAD,
     INVALID_RESET_TOKEN,
     WEAK_PASSWORD,
 )
@@ -58,7 +57,6 @@ from app.utils.email_utils import is_valid_email_format
 
 if TYPE_CHECKING:
     from app.repositories.auth_repository import AuthRepository
-    from app.services.delivery.admin_delivery_service import AdminDeliveryService
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +103,7 @@ _DUMMY_HASH: str = bcrypt.hashpw(b"__dummy_hash_input__", bcrypt.gensalt()).deco
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _fixed_delay(start: float) -> None:
     """
     Block until at least _MIN_RESPONSE_SECONDS have elapsed since start.
@@ -125,6 +124,7 @@ def _fixed_delay(start: float) -> None:
 # ---------------------------------------------------------------------------
 # Domain validation
 # ---------------------------------------------------------------------------
+
 
 def validate_admin_domain(email: str, allowed_domains: str) -> bool:
     """
@@ -152,6 +152,7 @@ def validate_admin_domain(email: str, allowed_domains: str) -> bool:
 # Code generation and hashing
 # ---------------------------------------------------------------------------
 
+
 def generate_code() -> str:
     """
     Return a cryptographically random 6-digit zero-padded string.
@@ -178,9 +179,11 @@ def verify_code(code: str, hashed: str) -> bool:
     """
     return bcrypt.checkpw(code.encode(), hashed.encode())
 
+
 # ---------------------------------------------------------------------------
 # Verify-code flow
 # ---------------------------------------------------------------------------
+
 
 def verify_mfa_code(
     email: str,
@@ -235,8 +238,8 @@ def verify_mfa_code(
     # Stage 4: expiry check.
     expires_at = record["expires_at"]
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < datetime.now(tz=timezone.utc):
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if expires_at < datetime.now(tz=UTC):
         logger.warning("auth.verify.code_expired: %s", email)
         auth_repo.delete_auth_code(email)
         _fixed_delay(start)
@@ -257,7 +260,7 @@ def verify_mfa_code(
 
     # Stage 6: success.
     auth_repo.delete_auth_code(email)
-    session_expires_at = datetime.now(tz=timezone.utc) + timedelta(minutes=session_ttl_minutes)
+    session_expires_at = datetime.now(tz=UTC) + timedelta(minutes=session_ttl_minutes)
     session_id = auth_repo.create_session(user["id"], session_expires_at)
 
     logger.info("MFA verification successful for %s — session created", email)
@@ -267,6 +270,7 @@ def verify_mfa_code(
 # ---------------------------------------------------------------------------
 # Password verification flow
 # ---------------------------------------------------------------------------
+
 
 def verify_login_credentials(
     email: str,
@@ -292,14 +296,14 @@ def verify_login_credentials(
     Returns the user dict on success.
     """
     start = time.monotonic()
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # ------------------------------------------------------------------
     # Fast checks — evaluated before bcrypt, recorded as a flag.
     # ------------------------------------------------------------------
     user = auth_repo.get_user_by_email(email)
     should_use_real_hash = True
-    failure_reason: Optional[str] = None
+    failure_reason: str | None = None
 
     if user is None:
         should_use_real_hash = False
@@ -312,7 +316,7 @@ def verify_login_credentials(
         if record is not None:
             last_requested = record["last_requested_at"]
             if last_requested.tzinfo is None:
-                last_requested = last_requested.replace(tzinfo=timezone.utc)
+                last_requested = last_requested.replace(tzinfo=UTC)
             elapsed = (now - last_requested).total_seconds()
             if elapsed < _COOLDOWN_SECONDS:
                 should_use_real_hash = False
@@ -323,7 +327,7 @@ def verify_login_credentials(
             locked_until = user.get("password_locked_until")
             if locked_until is not None:
                 if locked_until.tzinfo is None:
-                    locked_until = locked_until.replace(tzinfo=timezone.utc)
+                    locked_until = locked_until.replace(tzinfo=UTC)
                 if locked_until > now:
                     should_use_real_hash = False
                     failure_reason = "locked"
@@ -357,12 +361,11 @@ def verify_login_credentials(
 
     if not password_correct:
         new_attempts = user["failed_password_attempts"] + 1
-        lock_until: Optional[datetime] = None
+        lock_until: datetime | None = None
         if new_attempts >= _PASSWORD_MAX_FAILED_ATTEMPTS:
             lock_until = now + timedelta(minutes=_PASSWORD_LOCKOUT_MINUTES)
             logger.warning(
-                "auth.login.password_locked: %s — %d failed attempts, "
-                "locked until %s",
+                "auth.login.password_locked: %s — %d failed attempts, locked until %s",
                 email,
                 new_attempts,
                 lock_until.isoformat(),
@@ -387,6 +390,7 @@ def verify_login_credentials(
 # Password reset token flow
 # ---------------------------------------------------------------------------
 
+
 def generate_reset_token(
     user_id: str,
     auth_repo: "AuthRepository",
@@ -408,7 +412,7 @@ def generate_reset_token(
     """
     raw_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    expires_at = datetime.now(tz=timezone.utc) + timedelta(hours=_RESET_TOKEN_EXPIRY_HOURS)
+    expires_at = datetime.now(tz=UTC) + timedelta(hours=_RESET_TOKEN_EXPIRY_HOURS)
 
     auth_repo.upsert_reset_token(
         user_id=user_id,
@@ -444,8 +448,8 @@ def verify_reset_token(raw_token: str, auth_repo: "AuthRepository") -> str:
 
     expires_at = record["expires_at"]
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < datetime.now(tz=timezone.utc):
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if expires_at < datetime.now(tz=UTC):
         raise INVALID_RESET_TOKEN()
 
     return record["user_id"]
@@ -454,6 +458,7 @@ def verify_reset_token(raw_token: str, auth_repo: "AuthRepository") -> str:
 # ---------------------------------------------------------------------------
 # Password setting flow
 # ---------------------------------------------------------------------------
+
 
 def set_new_password(
     user_id: str,
@@ -484,13 +489,9 @@ def set_new_password(
     from zxcvbn import zxcvbn  # type: ignore[import]
 
     if len(password) < _PASSWORD_MIN_LENGTH:
-        raise INVALID_PAYLOAD(
-            f"Password must be at least {_PASSWORD_MIN_LENGTH} characters."
-        )
+        raise INVALID_PAYLOAD(f"Password must be at least {_PASSWORD_MIN_LENGTH} characters.")
     if len(password) > _PASSWORD_MAX_LENGTH:
-        raise INVALID_PAYLOAD(
-            f"Password must not exceed {_PASSWORD_MAX_LENGTH} characters."
-        )
+        raise INVALID_PAYLOAD(f"Password must not exceed {_PASSWORD_MAX_LENGTH} characters.")
 
     result = zxcvbn(password)
     if result["score"] < _PASSWORD_MIN_ZXCVBN_SCORE:

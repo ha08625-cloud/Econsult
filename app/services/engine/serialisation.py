@@ -15,10 +15,8 @@ Architectural guarantee:
     data (questions, safety rules, encoder definitions).
 """
 
-from typing import Optional
-
 from app.models.runtime_state import RuntimeState
-from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails
+from app.models.serialisation_contracts import AuditOutput, ClinicalOutput, PatientDetails
 
 
 def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label: str) -> dict:
@@ -71,9 +69,7 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
                 if answer.raw_components is not None:
                     question_dict["current_value"] = {
                         "system": runtime.unit_system,
-                        "components": {
-                            k: str(v) for k, v in answer.raw_components.items()
-                        },
+                        "components": {k: str(v) for k, v in answer.raw_components.items()},
                     }
                 else:
                     question_dict["current_value"] = None
@@ -92,15 +88,12 @@ def clinical_output(
     runtime: RuntimeState,
     ruleset: dict,
     patient_details: PatientDetails,
-    contact_preferences: Optional[dict] = None,
+    contact_preferences: dict | None = None,
 ) -> ClinicalOutput:
     """
     Lossy output safe for clinical and patient use.
     """
-    question_labels = {
-        q["answer_key"]: q["question"]
-        for q in ruleset["questions"]
-    }
+    question_labels = {q["answer_key"]: q["question"] for q in ruleset["questions"]}
 
     # Sidecar for quantity (unit-toggle) answers: the lossless raw input plus a
     # snapshot of decimal_places, so the PDF formatter (which has no ruleset) can

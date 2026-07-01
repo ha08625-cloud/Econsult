@@ -67,7 +67,7 @@ def test_every_getter_has_a_matching_container_field_and_returns_it():
     field_names = {field.name for field in dataclasses.fields(AppContainer)}
 
     for name, getter in _getters():
-        expected_field = name[len("get_"):]
+        expected_field = name[len("get_") :]
         assert expected_field in field_names, (
             f"dependencies.{name} has no matching AppContainer field "
             f"'{expected_field}'. Add the field to AppContainer in "
@@ -76,8 +76,7 @@ def test_every_getter_has_a_matching_container_field_and_returns_it():
         )
         result = getter(request)
         assert result is getattr(container, expected_field), (
-            f"dependencies.{name} did not return the container's "
-            f"'{expected_field}' object."
+            f"dependencies.{name} did not return the container's '{expected_field}' object."
         )
 
 

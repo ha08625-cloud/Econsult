@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Any, List
+from typing import Any
 
 
 @dataclass
@@ -19,7 +19,7 @@ class InitResponse:
 class UpdateRequest:
     runtime_id: str
     base_version: int
-    answers: Dict[str, Any]
+    answers: dict[str, Any]
 
 
 @dataclass
@@ -33,7 +33,7 @@ class UpdateResponse:
     runtime_id: str
     version: int
     client_state: dict
-    safety_messages: List[SafetyMessage]
+    safety_messages: list[SafetyMessage]
 
 
 @dataclass

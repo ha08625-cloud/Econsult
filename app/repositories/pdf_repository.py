@@ -19,8 +19,7 @@ Architecture rules:
   two concurrent workers cannot claim the same job.
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import datetime
 
 from psycopg2.extras import RealDictCursor
 
@@ -30,6 +29,7 @@ from app.services.delivery.pdf_constants import MAX_PDF_ATTEMPTS
 
 class PDFJobNotFound(Exception):
     """Raised when a job_id does not exist in pdf_jobs."""
+
     pass
 
 
@@ -62,10 +62,9 @@ class PDFRepository:
         not call this twice for the same submission outside of the retry
         UPSERT path).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO pdf_jobs (
                         submission_id,
                         attachment_count,
@@ -74,20 +73,20 @@ class PDFRepository:
                     VALUES (%(submission_id)s, %(attachment_count)s, %(delivery_email)s)
                     RETURNING id
                     """,
-                    {
-                        "submission_id": submission_id,
-                        "attachment_count": attachment_count,
-                        "delivery_email": delivery_email,
-                    },
-                )
-                row = cur.fetchone()
+                {
+                    "submission_id": submission_id,
+                    "attachment_count": attachment_count,
+                    "delivery_email": delivery_email,
+                },
+            )
+            row = cur.fetchone()
         return str(row[0])
 
     # ------------------------------------------------------------------
     # Job claiming
     # ------------------------------------------------------------------
 
-    def claim_next_pending(self) -> Optional[dict]:
+    def claim_next_pending(self) -> dict | None:
         """
         Claim the next eligible pending pdf_jobs row.
 
@@ -150,24 +149,23 @@ class PDFRepository:
         Does not verify that the job existed before — callers must supply
         a valid job_id obtained from claim_next_pending.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE pdf_jobs
                     SET status     = 'done',
                         last_error = NULL,
                         updated_at = NOW()
                     WHERE id = %s
                     """,
-                    (job_id,),
-                )
+                (job_id,),
+            )
 
     def mark_failed(
         self,
         job_id: str,
         error: str,
-        next_retry_after: Optional[datetime],
+        next_retry_after: datetime | None,
     ) -> None:
         """
         Record a failed PDF generation attempt.
@@ -185,10 +183,9 @@ class PDFRepository:
 
         Raises PDFJobNotFound if the job_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE pdf_jobs
                     SET attempt_count    = attempt_count + 1,
                         last_error       = %(error)s,
@@ -201,16 +198,16 @@ class PDFRepository:
                     WHERE id = %(job_id)s
                     RETURNING id
                     """,
-                    {
-                        "job_id": job_id,
-                        "error": error,
-                        "next_retry_after": next_retry_after,
-                        "max_attempts": MAX_PDF_ATTEMPTS,
-                    },
-                )
-                result = cur.fetchone()
-                if result is None:
-                    raise PDFJobNotFound(job_id)
+                {
+                    "job_id": job_id,
+                    "error": error,
+                    "next_retry_after": next_retry_after,
+                    "max_attempts": MAX_PDF_ATTEMPTS,
+                },
+            )
+            result = cur.fetchone()
+            if result is None:
+                raise PDFJobNotFound(job_id)
 
     # ------------------------------------------------------------------
     # Lookup
@@ -250,18 +247,15 @@ class PDFRepository:
         never happen: a pdf_job is always created before the worker
         processes the submission, and the row is never deleted.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT delivery_email FROM pdf_jobs WHERE submission_id = %s",
-                    (submission_id,),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT delivery_email FROM pdf_jobs WHERE submission_id = %s",
+                (submission_id,),
+            )
+            row = cur.fetchone()
 
         if row is None:
-            raise PDFJobNotFound(
-                f"No pdf_jobs row for submission_id={submission_id}"
-            )
+            raise PDFJobNotFound(f"No pdf_jobs row for submission_id={submission_id}")
 
         return row[0]
 
@@ -284,10 +278,9 @@ class PDFRepository:
 
         Returns submission IDs only. Returns an empty list if none found.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     SELECT sr.submission_id
                     FROM submission_records sr
                     LEFT JOIN pdf_jobs pj ON sr.submission_id = pj.submission_id
@@ -295,8 +288,8 @@ class PDFRepository:
                       AND sr.submitted_at < NOW() - INTERVAL '1 minute' * %(threshold)s
                     ORDER BY sr.submitted_at ASC
                     """,
-                    {"threshold": older_than_minutes},
-                )
-                rows = cur.fetchall()
+                {"threshold": older_than_minutes},
+            )
+            rows = cur.fetchall()
 
         return [str(row[0]) for row in rows]

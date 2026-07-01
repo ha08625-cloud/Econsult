@@ -42,17 +42,16 @@ out of provider_accepted is exclusively the webhook router's responsibility.
 """
 
 from datetime import datetime
-from typing import Optional
 
-import psycopg2.extras
 from psycopg2.extras import Json, RealDictCursor
 
 from app.core.db import get_conn
-from app.services.delivery.delivery_constants import MAX_ATTEMPTS, RETRY_BACKOFF_MINUTES
+from app.services.delivery.delivery_constants import MAX_ATTEMPTS
 
 
 class DeliveryJobNotFound(Exception):
     """Raised when a job_id does not exist in delivery_jobs."""
+
     pass
 
 
@@ -95,10 +94,9 @@ class DeliveryRepository:
         Returns the job UUID as a string (the existing row's id if the
         conflict path was taken).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO delivery_jobs (
                         submission_id,
                         to_email,
@@ -116,33 +114,33 @@ class DeliveryRepository:
                     ON CONFLICT (submission_id) DO NOTHING
                     RETURNING id
                     """,
-                    {
-                        "submission_id": submission_id,
-                        "to_email": to_email,
-                        "condition_label": condition_label,
-                        "submitted_at": submitted_at,
-                        "is_fallback": is_fallback,
-                    },
-                )
-                row = cur.fetchone()
+                {
+                    "submission_id": submission_id,
+                    "to_email": to_email,
+                    "condition_label": condition_label,
+                    "submitted_at": submitted_at,
+                    "is_fallback": is_fallback,
+                },
+            )
+            row = cur.fetchone()
 
-                if row is not None:
-                    # Fresh insert: return the new id.
-                    return str(row[0])
+            if row is not None:
+                # Fresh insert: return the new id.
+                return str(row[0])
 
-                # Conflict path: fetch the existing row's id.
-                cur.execute(
-                    "SELECT id FROM delivery_jobs WHERE submission_id = %s",
-                    (submission_id,),
-                )
-                existing = cur.fetchone()
-                return str(existing[0])
+            # Conflict path: fetch the existing row's id.
+            cur.execute(
+                "SELECT id FROM delivery_jobs WHERE submission_id = %s",
+                (submission_id,),
+            )
+            existing = cur.fetchone()
+            return str(existing[0])
 
     # ------------------------------------------------------------------
     # Job claiming
     # ------------------------------------------------------------------
 
-    def claim_next_pending(self) -> Optional[dict]:
+    def claim_next_pending(self) -> dict | None:
         """
         Claim the next eligible pending delivery_jobs row.
 
@@ -242,23 +240,22 @@ class DeliveryRepository:
         context is useful if a job failed before eventually succeeding on a
         later attempt).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE delivery_jobs
                     SET status     = 'sent',
                         updated_at = NOW()
                     WHERE id = %s
                     """,
-                    (job_id,),
-                )
+                (job_id,),
+            )
 
     def mark_failed(
         self,
         job_id: str,
         error: str,
-        next_retry_after: Optional[datetime],
+        next_retry_after: datetime | None,
     ) -> bool:
         """
         Record a failed delivery attempt.
@@ -317,19 +314,18 @@ class DeliveryRepository:
         for the given provider_message_id (signals the webhook router to
         return 406 so Mailgun retries later).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE delivery_jobs
                     SET status     = 'delivered',
                         updated_at = NOW()
                     WHERE provider_message_id = %s
                     RETURNING id
                     """,
-                    (provider_message_id,),
-                )
-                return cur.fetchone() is not None
+                (provider_message_id,),
+            )
+            return cur.fetchone() is not None
 
     def mark_provider_failed(self, provider_message_id: str) -> bool:
         """
@@ -342,23 +338,20 @@ class DeliveryRepository:
         for the given provider_message_id (signals the webhook router to
         return 406 so Mailgun retries later).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE delivery_jobs
                     SET status     = 'failed',
                         updated_at = NOW()
                     WHERE provider_message_id = %s
                     RETURNING id
                     """,
-                    (provider_message_id,),
-                )
-                return cur.fetchone() is not None
+                (provider_message_id,),
+            )
+            return cur.fetchone() is not None
 
-    def append_provider_event(
-        self, provider_message_id: str, event_payload: dict
-    ) -> None:
+    def append_provider_event(self, provider_message_id: str, event_payload: dict) -> None:
         """
         Append a raw webhook event payload to the provider_events JSONB column.
 
@@ -375,21 +368,20 @@ class DeliveryRepository:
         already returned False and the router will return 406. Appending to a
         non-existent row would be a no-op anyway.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE delivery_jobs
                     SET provider_events = COALESCE(provider_events, '[]'::jsonb)
                                          || jsonb_build_array(%(payload)s::jsonb),
                         updated_at      = NOW()
                     WHERE provider_message_id = %(provider_message_id)s
                     """,
-                    {
-                        "provider_message_id": provider_message_id,
-                        "payload": Json(event_payload),
-                    },
-                )
+                {
+                    "provider_message_id": provider_message_id,
+                    "payload": Json(event_payload),
+                },
+            )
 
     # ------------------------------------------------------------------
     # Lookup

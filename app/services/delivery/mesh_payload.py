@@ -58,8 +58,7 @@ class MeshPayloadBuilder(Protocol):
     reasoning is unaffected by builder choice.
     """
 
-    def build(self, *, pdf_bytes: bytes) -> MeshPayload:
-        ...
+    def build(self, *, pdf_bytes: bytes) -> MeshPayload: ...
 
 
 class RawPdfPayloadBuilder:

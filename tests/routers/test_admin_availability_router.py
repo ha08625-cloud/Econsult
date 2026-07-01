@@ -14,18 +14,16 @@ Coverage:
   DELETE /availability/exceptions/{date}
 """
 
-import unittest
 import datetime
-from datetime import timezone
+import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from tests.helpers.admin_test_helpers import make_test_app, dummy_conn, TEST_SESSION_COOKIE
+from tests.helpers.admin_test_helpers import TEST_SESSION_COOKIE, dummy_conn, make_test_app
 
 
 class TestAdminAvailabilityRouter(unittest.TestCase):
-
     def setUp(self):
         self._conn_patcher = patch(
             "app.routers.admin.admin_availability_router.get_conn", dummy_conn
@@ -39,14 +37,10 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         # A timezone-aware datetime 2 hours from now. Used for override tests.
         # Chosen to be safely within the validate_override window of
         # (now_utc, now_utc + 24h].
-        self.override_expires = (
-            datetime.datetime.now(timezone.utc) + datetime.timedelta(hours=2)
-        )
+        self.override_expires = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=2)
 
         # A future date used for exception tests.
-        self.future_date = (
-            datetime.datetime.now(timezone.utc) + datetime.timedelta(days=1)
-        ).date()
+        self.future_date = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=1)).date()
 
     def tearDown(self):
         self._conn_patcher.stop()
@@ -237,9 +231,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         self.assertEqual(res.status_code, 422)
 
     def test_post_override_expires_at_in_past_returns_422(self):
-        past = (
-            datetime.datetime.now(timezone.utc) - datetime.timedelta(hours=1)
-        ).isoformat()
+        past = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)).isoformat()
         body = {"status": "closed", "expires_at": past, "message": None}
         res = self.client.post(
             "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
@@ -247,9 +239,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         self.assertEqual(res.status_code, 422)
 
     def test_post_override_expires_at_beyond_24h_returns_422(self):
-        too_far = (
-            datetime.datetime.now(timezone.utc) + datetime.timedelta(hours=25)
-        ).isoformat()
+        too_far = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=25)).isoformat()
         body = {"status": "closed", "expires_at": too_far, "message": None}
         res = self.client.post(
             "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
@@ -264,9 +254,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         self.availability_repo.set_override(
             "test_practice", "closed", self.override_expires, "test"
         )
-        res = self.client.delete(
-            "/admin/availability/override", cookies=TEST_SESSION_COOKIE
-        )
+        res = self.client.delete("/admin/availability/override", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIsNone(data["override_status"])
@@ -274,9 +262,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
 
     def test_delete_override_idempotent_when_no_override_active(self):
         # No override set — should still return 200 cleanly.
-        res = self.client.delete(
-            "/admin/availability/override", cookies=TEST_SESSION_COOKIE
-        )
+        res = self.client.delete("/admin/availability/override", cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json()["override_status"])
 
@@ -299,9 +285,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(len(data["exceptions"]), 1)
-        self.assertEqual(
-            data["exceptions"][0]["exception_date"], self.future_date.isoformat()
-        )
+        self.assertEqual(data["exceptions"][0]["exception_date"], self.future_date.isoformat())
 
     # ---------------------------------------------------------------------------
     # PUT /availability/exceptions/{date}
@@ -442,9 +426,7 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             f"/admin/availability/exceptions/{date_str}", cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 204)
-        self.assertIsNone(
-            self.availability_repo.get_exception("test_practice", self.future_date)
-        )
+        self.assertIsNone(self.availability_repo.get_exception("test_practice", self.future_date))
 
     def test_delete_exception_idempotent_when_no_exception_exists(self):
         date_str = self.future_date.isoformat()

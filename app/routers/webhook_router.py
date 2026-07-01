@@ -53,13 +53,13 @@ import time
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
-from app.repositories.delivery_repository import DeliveryRepository
 from app.core.db import get_conn
 from app.core.dependencies import (
     get_database_url,
     get_delivery_repo,
     get_mailgun_signing_key,
 )
+from app.repositories.delivery_repository import DeliveryRepository
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ def _verify_mailgun_signature(signing_key: str, token: str, timestamp: str, sign
     """
     expected = hmac.new(
         key=signing_key.encode("utf-8"),
-        msg=f"{timestamp}{token}".encode("utf-8"),
+        msg=f"{timestamp}{token}".encode(),
         digestmod=hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
@@ -107,25 +107,24 @@ def _consume_token(database_url: str, token: str) -> bool:
     the new token. Returns True if the token is fresh (insert succeeded),
     False if it was already seen (ON CONFLICT fired, no row inserted).
     """
-    with get_conn(database_url) as conn:
-        with conn.cursor() as cur:
-            # Purge tokens older than the tolerance window first.
-            cur.execute(
-                """
+    with get_conn(database_url) as conn, conn.cursor() as cur:
+        # Purge tokens older than the tolerance window first.
+        cur.execute(
+            """
                 DELETE FROM webhook_tokens
                 WHERE received_at < NOW() - INTERVAL '15 minutes'
                 """
-            )
+        )
 
-            cur.execute(
-                """
+        cur.execute(
+            """
                 INSERT INTO webhook_tokens (token)
                 VALUES (%s)
                 ON CONFLICT (token) DO NOTHING
                 """,
-                (token,),
-            )
-            return cur.rowcount == 1
+            (token,),
+        )
+        return cur.rowcount == 1
 
 
 @router.post("/webhooks/mailgun")
@@ -151,8 +150,7 @@ async def mailgun_webhook(request: Request) -> Response:
     signature = payload.get("signature", "")
     event_type = payload.get("event-data[event]") or payload.get("event", "")
     provider_message_id = (
-        payload.get("event-data[message][headers][message-id]")
-        or payload.get("message-id", "")
+        payload.get("event-data[message][headers][message-id]") or payload.get("message-id", "")
     ).strip("<>")
 
     # 1. Timestamp check — drop stale signals silently.
@@ -174,9 +172,7 @@ async def mailgun_webhook(request: Request) -> Response:
         return JSONResponse(status_code=403, content={"error": "misconfigured"})
 
     if not _verify_mailgun_signature(signing_key, token, timestamp, signature):
-        logger.warning(
-            "Webhook: HMAC verification failed event=%s", event_type
-        )
+        logger.warning("Webhook: HMAC verification failed event=%s", event_type)
         return JSONResponse(status_code=403, content={"error": "invalid signature"})
 
     # 3. Replay protection.
@@ -211,9 +207,7 @@ async def mailgun_webhook(request: Request) -> Response:
             return JSONResponse(status_code=406, content={"error": "not ready"})
 
         delivery_repo.append_provider_event(provider_message_id, payload)
-        logger.info(
-            "Webhook: delivery confirmed provider_message_id=%s", provider_message_id
-        )
+        logger.info("Webhook: delivery confirmed provider_message_id=%s", provider_message_id)
 
     elif event_type in ("failed", "dropped"):
         found = delivery_repo.mark_provider_failed(provider_message_id)
@@ -228,8 +222,7 @@ async def mailgun_webhook(request: Request) -> Response:
 
         delivery_repo.append_provider_event(provider_message_id, payload)
         logger.info(
-            "Webhook: permanent provider failure recorded event=%s "
-            "provider_message_id=%s",
+            "Webhook: permanent provider failure recorded event=%s provider_message_id=%s",
             event_type,
             provider_message_id,
         )
@@ -239,8 +232,7 @@ async def mailgun_webhook(request: Request) -> Response:
         # Append to audit log but do not change status.
         delivery_repo.append_provider_event(provider_message_id, payload)
         logger.info(
-            "Webhook: informational event appended event=%s "
-            "provider_message_id=%s",
+            "Webhook: informational event appended event=%s provider_message_id=%s",
             event_type,
             provider_message_id,
         )

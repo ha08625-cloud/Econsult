@@ -53,16 +53,15 @@ class AvailabilityRepository:
         Uses INSERT ... ON CONFLICT DO NOTHING so it is safe to call
         repeatedly.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO practice_availability (practice_id)
                     VALUES (%s)
                     ON CONFLICT DO NOTHING
                     """,
-                    (practice_id,),
-                )
+                (practice_id,),
+            )
 
     def get_availability(self, practice_id: str) -> dict:
         """
@@ -86,9 +85,7 @@ class AvailabilityRepository:
                 row = cur.fetchone()
 
         if row is None:
-            raise ValueError(
-                f"No availability row found for practice '{practice_id}'"
-            )
+            raise ValueError(f"No availability row found for practice '{practice_id}'")
         return dict(row)
 
     def set_availability(
@@ -109,6 +106,7 @@ class AvailabilityRepository:
 
         conn: see module-level conn parameter convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -137,9 +135,8 @@ class AvailabilityRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     def set_override(
         self,
@@ -156,6 +153,7 @@ class AvailabilityRepository:
 
         conn: see module-level conn parameter convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -172,9 +170,8 @@ class AvailabilityRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     def clear_override(self, practice_id: str, conn=None) -> None:
         """
@@ -184,6 +181,7 @@ class AvailabilityRepository:
 
         conn: see module-level conn parameter convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -200,17 +198,14 @@ class AvailabilityRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     # ------------------------------------------------------------------
     # Per-date exceptions
     # ------------------------------------------------------------------
 
-    def get_exceptions(
-        self, practice_id: str, from_date: datetime.date
-    ) -> list[dict]:
+    def get_exceptions(self, practice_id: str, from_date: datetime.date) -> list[dict]:
         """
         Return all exceptions on or after from_date, ordered by date ascending.
 
@@ -233,9 +228,7 @@ class AvailabilityRepository:
                 rows = cur.fetchall()
         return [dict(r) for r in rows]
 
-    def get_exception(
-        self, practice_id: str, exception_date: datetime.date
-    ) -> dict | None:
+    def get_exception(self, practice_id: str, exception_date: datetime.date) -> dict | None:
         """
         Return a single exception row for a specific date, or None if absent.
 
@@ -274,6 +267,7 @@ class AvailabilityRepository:
 
         conn: see module-level conn parameter convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -301,13 +295,10 @@ class AvailabilityRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
-    def delete_exception(
-        self, practice_id: str, exception_date: datetime.date, conn=None
-    ) -> None:
+    def delete_exception(self, practice_id: str, exception_date: datetime.date, conn=None) -> None:
         """
         Delete a single exception row.
 
@@ -315,6 +306,7 @@ class AvailabilityRepository:
 
         conn: see module-level conn parameter convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -328,6 +320,5 @@ class AvailabilityRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)

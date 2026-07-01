@@ -16,8 +16,7 @@ This module must never:
 - Manage table creation (handled by Alembic migrations)
 """
 
-from psycopg2.extras import RealDictCursor, Json
-from psycopg2.errors import UniqueViolation
+from psycopg2.extras import Json, RealDictCursor
 
 from app.core.db import get_conn
 
@@ -141,16 +140,15 @@ class RuntimeStateRepository:
         to the query. psycopg2 does not automatically adapt plain dicts to JSONB —
         explicit wrapping is required.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO runtime_state_versions
                         (runtime_id, version, ruleset_hash, state_json, is_closed)
                     VALUES (%s, 1, %s, %s, FALSE)
                     """,
-                    (runtime_id, ruleset_hash, Json(state_dict)),
-                )
+                (runtime_id, ruleset_hash, Json(state_dict)),
+            )
 
     def close_session(self, runtime_id: str, version: int) -> None:
         """

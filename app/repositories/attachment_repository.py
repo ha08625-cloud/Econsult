@@ -36,6 +36,7 @@ class AttachmentNotFound(Exception):
     delivery time means the ordering invariant has been broken and must
     be investigated. See arch_submission.md.
     """
+
     pass
 
 
@@ -58,17 +59,16 @@ class AttachmentRepository:
         invariant that guarantees the delivery worker always finds the
         attachment when it claims a delivery job. Do not break this ordering.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO submission_attachments (submission_id, pdf_bytes)
                     VALUES (%s, %s)
                     ON CONFLICT (submission_id) DO UPDATE
                         SET pdf_bytes = EXCLUDED.pdf_bytes
                     """,
-                    (submission_id, pdf_bytes),
-                )
+                (submission_id, pdf_bytes),
+            )
 
     def get_attachment(self, submission_id: str) -> bytes:
         """
@@ -80,17 +80,16 @@ class AttachmentRepository:
         completed successfully. If the attachment is absent, the invariant
         has been broken and the error must propagate loudly.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     SELECT pdf_bytes
                     FROM submission_attachments
                     WHERE submission_id = %s
                     """,
-                    (submission_id,),
-                )
-                row = cur.fetchone()
+                (submission_id,),
+            )
+            row = cur.fetchone()
 
         if row is None:
             raise AttachmentNotFound(
@@ -106,12 +105,11 @@ class AttachmentRepository:
         Idempotent — does not raise if the row does not exist.
         Called exclusively by deletion_job.py for fully delivered submissions.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     DELETE FROM submission_attachments
                     WHERE submission_id = %s
                     """,
-                    (submission_id,),
-                )
+                (submission_id,),
+            )

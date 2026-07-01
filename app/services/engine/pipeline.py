@@ -13,27 +13,27 @@ Architectural guarantee:
     explicitly by the HTTP layer.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any
 
-from app.models.runtime_state import RuntimeState
-from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails
+from app.models.api_models import SafetyMessage
 from app.models.encoder_contracts import EncoderOutput, EncoderSignalDefinition
-from app.services.engine.projection import project_explicit_answers
-from app.services.engine.safety_engine import evaluate_safety
-from app.services.engine.serialisation import serialize_client_state, clinical_output, audit_output
-from app.services.engine.ruleset import load_ruleset, ruleset_hash, extract_encoder_definitions
-from app.services.engine.encoder_stub import extract_signals
+from app.models.runtime_state import RuntimeState
+from app.models.serialisation_contracts import AuditOutput, ClinicalOutput, PatientDetails
 from app.services.engine.encoder_mapping import apply_encoder_output
+from app.services.engine.encoder_stub import extract_signals
 from app.services.engine.form_logic import (
-    initialise_runtime_state,
     apply_additional_text,
     apply_patient_answers,
     convert_unit_answers,
+    initialise_runtime_state,
     normalise_encoder_provenance,
-    validate_required_answers,
     normalise_number_answers,
+    validate_required_answers,
 )
-from app.models.api_models import SafetyMessage
+from app.services.engine.projection import project_explicit_answers
+from app.services.engine.ruleset import extract_encoder_definitions, load_ruleset, ruleset_hash
+from app.services.engine.safety_engine import evaluate_safety
+from app.services.engine.serialisation import audit_output, clinical_output, serialize_client_state
 
 
 def init_runtime_state(
@@ -77,8 +77,8 @@ def init_runtime_state(
 
 def apply_update_and_evaluate(
     runtime_state: RuntimeState,
-    answers: Dict[str, Any],
-    additional_text: Optional[str],
+    answers: dict[str, Any],
+    additional_text: str | None,
     ruleset_path: str,
     condition_label: str,
 ):
@@ -111,7 +111,7 @@ def apply_update_and_evaluate(
 
     runtime_state.safety_evaluation = safety_eval
 
-    safety_messages: List[SafetyMessage] = [
+    safety_messages: list[SafetyMessage] = [
         SafetyMessage(
             rule_id=m["id"],
             message=m["text"],
@@ -128,15 +128,13 @@ def finish_runtime_state(
     runtime_state: RuntimeState,
     ruleset_path: str,
     patient_details: PatientDetails,
-    contact_preferences: Optional[dict] = None,
-) -> Tuple[ClinicalOutput, AuditOutput]:
+    contact_preferences: dict | None = None,
+) -> tuple[ClinicalOutput, AuditOutput]:
     """Entry point for /form/finish."""
 
     ruleset = load_ruleset(ruleset_path)
 
-    clinical = clinical_output(
-        runtime_state, ruleset, patient_details, contact_preferences
-    )
+    clinical = clinical_output(runtime_state, ruleset, patient_details, contact_preferences)
     audit = audit_output(runtime_state)
 
     return clinical, audit

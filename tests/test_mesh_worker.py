@@ -14,7 +14,7 @@ tests/integration/test_mesh_worker_sandbox.py.
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -43,6 +43,7 @@ MESSAGE_ID = "20260611000000000000_A1B2C3"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _job_row(attempt_count: int = 0) -> dict:
     """A claimed mesh_jobs row as claim_next_pending returns it."""
@@ -75,7 +76,7 @@ def _deps():
     deps["pdf_repo"].get_delivery_email.return_value = "gp@example.com"
     deps["submission_repo"].get_delivery_metadata.return_value = {
         "condition_label": "Urinary Tract Infection",
-        "submitted_at": datetime(2026, 6, 11, 9, 0, tzinfo=timezone.utc),
+        "submitted_at": datetime(2026, 6, 11, 9, 0, tzinfo=UTC),
     }
     return deps
 
@@ -106,6 +107,7 @@ def _fallback_kwargs(deps):
 # ---------------------------------------------------------------------------
 # Success path
 # ---------------------------------------------------------------------------
+
 
 def test_success_sends_payload_and_marks_sent():
     deps = _deps()
@@ -142,6 +144,7 @@ def test_mex_localid_is_stringified():
 # Transient failure: retry with backoff
 # ---------------------------------------------------------------------------
 
+
 def test_transient_below_max_records_failure_without_fallback():
     deps = _deps()
     deps["mesh_client"].send_message.side_effect = MeshTransientError("503")
@@ -154,9 +157,7 @@ def test_transient_below_max_records_failure_without_fallback():
     assert failed_kwargs["mesh_job_id"] == str(job["id"])
     assert "503" in failed_kwargs["error"]
     assert failed_kwargs["error_code"] is None
-    expected = datetime.now(timezone.utc) + timedelta(
-        minutes=MESH_RETRY_BACKOFF_MINUTES[0]
-    )
+    expected = datetime.now(UTC) + timedelta(minutes=MESH_RETRY_BACKOFF_MINUTES[0])
     assert abs((failed_kwargs["next_retry_after"] - expected).total_seconds()) < 5
     deps["mesh_repo"].mark_sent.assert_not_called()
     deps["mesh_repo"].mark_fallback_triggered.assert_not_called()
@@ -173,7 +174,7 @@ def test_transient_below_max_records_failure_without_fallback():
     ],
 )
 def test_compute_backoff_indexes_and_clamps(attempt_count, expected_minutes):
-    expected = datetime.now(timezone.utc) + timedelta(minutes=expected_minutes)
+    expected = datetime.now(UTC) + timedelta(minutes=expected_minutes)
     assert abs((_compute_backoff(attempt_count) - expected).total_seconds()) < 5
 
 
@@ -186,9 +187,7 @@ def test_transient_exhaustion_triggers_fallback():
     _run_process_job(job, deps)
 
     deps["mesh_repo"].mark_failed.assert_called_once()
-    deps["mesh_repo"].mark_fallback_triggered.assert_called_once_with(
-        mesh_job_id=str(job["id"])
-    )
+    deps["mesh_repo"].mark_fallback_triggered.assert_called_once_with(mesh_job_id=str(job["id"]))
     deps["delivery_repo"].create_job.assert_called_once()
     deps["mesh_repo"].mark_sent.assert_not_called()
 
@@ -197,19 +196,16 @@ def test_transient_exhaustion_triggers_fallback():
 # Terminal failure: immediate fallback
 # ---------------------------------------------------------------------------
 
+
 def test_terminal_failure_falls_back_immediately_without_mark_failed():
     deps = _deps()
-    deps["mesh_client"].send_message.side_effect = MeshTerminalError(
-        "417 unregistered recipient"
-    )
+    deps["mesh_client"].send_message.side_effect = MeshTerminalError("417 unregistered recipient")
     job = _job_row()
 
     _run_process_job(job, deps)
 
     deps["mesh_repo"].mark_failed.assert_not_called()
-    deps["mesh_repo"].mark_fallback_triggered.assert_called_once_with(
-        mesh_job_id=str(job["id"])
-    )
+    deps["mesh_repo"].mark_fallback_triggered.assert_called_once_with(mesh_job_id=str(job["id"]))
     deps["delivery_repo"].create_job.assert_called_once()
     deps["mesh_repo"].mark_sent.assert_not_called()
 
@@ -217,6 +213,7 @@ def test_terminal_failure_falls_back_immediately_without_mark_failed():
 # ---------------------------------------------------------------------------
 # Fallback mechanics
 # ---------------------------------------------------------------------------
+
 
 def test_fallback_ordering_invariant_mark_before_create():
     """
@@ -251,9 +248,7 @@ def test_fallback_enqueue_uses_narrow_metadata_and_sets_flag():
     )
 
     deps["pdf_repo"].get_delivery_email.assert_called_once_with("sub_test_123")
-    deps["submission_repo"].get_delivery_metadata.assert_called_once_with(
-        "sub_test_123"
-    )
+    deps["submission_repo"].get_delivery_metadata.assert_called_once_with("sub_test_123")
     deps["submission_repo"].get_submission.assert_not_called()
     create_kwargs = deps["delivery_repo"].create_job.call_args.kwargs
     assert create_kwargs["submission_id"] == "sub_test_123"
@@ -265,6 +260,7 @@ def test_fallback_enqueue_uses_narrow_metadata_and_sets_flag():
 # ---------------------------------------------------------------------------
 # Unexpected-exception path (run_worker delegates here)
 # ---------------------------------------------------------------------------
+
 
 def test_unexpected_failure_records_attempt_and_falls_back_on_exhaustion():
     deps = _deps()
@@ -283,6 +279,7 @@ def test_unexpected_failure_records_attempt_and_falls_back_on_exhaustion():
 # ---------------------------------------------------------------------------
 # Orphaned-fallback recovery sweep
 # ---------------------------------------------------------------------------
+
 
 def test_sweep_recovers_each_orphan_and_logs_error(caplog):
     deps = _deps()
@@ -325,15 +322,13 @@ def test_sweep_contains_per_orphan_failure_and_continues():
     _recover_orphaned_fallbacks(**_fallback_kwargs(deps))
 
     assert deps["delivery_repo"].create_job.call_count == 1
-    assert (
-        deps["delivery_repo"].create_job.call_args.kwargs["submission_id"]
-        == "sub_good"
-    )
+    assert deps["delivery_repo"].create_job.call_args.kwargs["submission_id"] == "sub_good"
 
 
 # ---------------------------------------------------------------------------
 # Startup handshake with bounded retry
 # ---------------------------------------------------------------------------
+
 
 def test_handshake_terminal_error_aborts_immediately_without_sleeping():
     client = MagicMock()

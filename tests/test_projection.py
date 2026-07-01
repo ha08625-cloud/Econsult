@@ -7,7 +7,7 @@ None-projection of every excluded source. Pure unit tests — no database, no
 FastAPI — so this module carries no integration marker.
 """
 
-from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
+from app.models.runtime_state import AnswerState, RuntimeState, SafetyEvaluation
 from app.services.engine.projection import EXPLICIT_SOURCES, project_explicit_answers
 
 
@@ -33,7 +33,7 @@ def _runtime(source, value):
 def test_explicit_sources_is_exactly_the_three_explicit_states():
     # Exact equality, not membership: catches an accidental future addition
     # (e.g. raw "encoder") leaking unconfirmed signals into safety.
-    assert EXPLICIT_SOURCES == {"patient", "encoder_correct", "encoder_incorrect"}
+    assert {"patient", "encoder_correct", "encoder_incorrect"} == EXPLICIT_SOURCES
 
 
 def test_patient_value_is_projected():

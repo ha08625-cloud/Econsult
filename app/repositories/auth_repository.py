@@ -41,7 +41,6 @@ Table creation is handled by Alembic migrations.
 
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from psycopg2.extras import RealDictCursor
 
@@ -56,7 +55,7 @@ class AuthRepository:
     # admin_users — reads
     # ------------------------------------------------------------------
 
-    def get_user_by_email(self, email: str) -> Optional[dict]:
+    def get_user_by_email(self, email: str) -> dict | None:
         """
         Return the admin_users row for the given email as a dict, or None
         if no matching row exists.
@@ -89,7 +88,7 @@ class AuthRepository:
                 row = cur.fetchone()
         return dict(row) if row is not None else None
 
-    def get_user_by_id(self, user_id: str, practice_id: str) -> Optional[dict]:
+    def get_user_by_id(self, user_id: str, practice_id: str) -> dict | None:
         """
         Return an admin_users row by UUID and practice, or None if not found.
 
@@ -126,6 +125,7 @@ class AuthRepository:
         that holds the practice row lock, so the count check is consistent
         with the subsequent delete.
         """
+
         def _execute(cur):
             cur.execute(
                 """
@@ -153,13 +153,12 @@ class AuthRepository:
         Used at startup to decide whether to seed the initial admin user.
         Returns 0 if no users exist for the practice.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM admin_users WHERE practice_id = %s",
-                    (practice_id,),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM admin_users WHERE practice_id = %s",
+                (practice_id,),
+            )
+            row = cur.fetchone()
         return row[0] if row else 0
 
     # ------------------------------------------------------------------
@@ -197,9 +196,8 @@ class AuthRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     def delete_user(self, user_id: str, practice_id: str, conn=None) -> None:
         """
@@ -215,6 +213,7 @@ class AuthRepository:
 
         conn: see module-level convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -229,9 +228,8 @@ class AuthRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     def set_password(self, user_id: str, hashed_password: str, conn=None) -> None:
         """
@@ -247,6 +245,7 @@ class AuthRepository:
 
         conn: see module-level convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -264,14 +263,13 @@ class AuthRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     def record_failed_password_attempt(
         self,
         user_id: str,
-        lock_until: Optional[datetime] = None,
+        lock_until: datetime | None = None,
         conn=None,
     ) -> None:
         """
@@ -287,6 +285,7 @@ class AuthRepository:
 
         conn: see module-level convention.
         """
+
         def _execute(cur) -> None:
             if lock_until is not None:
                 cur.execute(
@@ -312,9 +311,8 @@ class AuthRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     def reset_password_attempts(self, user_id: str, conn=None) -> None:
         """
@@ -326,6 +324,7 @@ class AuthRepository:
 
         conn: see module-level convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -341,9 +340,8 @@ class AuthRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     # ------------------------------------------------------------------
     # admin_auth_codes
@@ -364,10 +362,9 @@ class AuthRepository:
         attempts_count is reset to 0 on every upsert — a new code starts
         fresh regardless of how many times the old code was attempted.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO admin_auth_codes
                         (email, hashed_code, expires_at, attempts_count, last_requested_at)
                     VALUES (%s, %s, %s, 0, %s)
@@ -377,10 +374,10 @@ class AuthRepository:
                         attempts_count    = 0,
                         last_requested_at = EXCLUDED.last_requested_at
                     """,
-                    (email, hashed_code, expires_at, last_requested_at),
-                )
+                (email, hashed_code, expires_at, last_requested_at),
+            )
 
-    def get_auth_code_record(self, email: str) -> Optional[dict]:
+    def get_auth_code_record(self, email: str) -> dict | None:
         """
         Return the admin_auth_codes row for the given email as a dict,
         or None if no row exists.
@@ -410,16 +407,15 @@ class AuthRepository:
         a read-modify-write race. No-ops silently if the row does not exist
         (the code may have been deleted by a concurrent request).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     UPDATE admin_auth_codes
                     SET attempts_count = attempts_count + 1
                     WHERE email = %s
                     """,
-                    (email,),
-                )
+                (email,),
+            )
 
     def delete_auth_code(self, email: str) -> None:
         """
@@ -429,12 +425,11 @@ class AuthRepository:
         Called on successful verification, on lockout (3 failed attempts),
         and on expiry detection.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM admin_auth_codes WHERE email = %s",
-                    (email,),
-                )
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM admin_auth_codes WHERE email = %s",
+                (email,),
+            )
 
     # ------------------------------------------------------------------
     # admin_sessions
@@ -455,37 +450,34 @@ class AuthRepository:
         invalidated and the login timestamp is recorded atomically.
         """
         session_id = str(uuid.uuid4())
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                # Invalidate any existing sessions for this user.
-                cur.execute(
-                    "DELETE FROM admin_sessions WHERE user_id = %s::uuid",
-                    (user_id,),
-                )
-                # Lazy expiry cleanup — remove expired sessions for all users.
-                cur.execute(
-                    "DELETE FROM admin_sessions WHERE expires_at <= NOW()"
-                )
-                # Insert the new session.
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            # Invalidate any existing sessions for this user.
+            cur.execute(
+                "DELETE FROM admin_sessions WHERE user_id = %s::uuid",
+                (user_id,),
+            )
+            # Lazy expiry cleanup — remove expired sessions for all users.
+            cur.execute("DELETE FROM admin_sessions WHERE expires_at <= NOW()")
+            # Insert the new session.
+            cur.execute(
+                """
                     INSERT INTO admin_sessions (session_id, user_id, expires_at)
                     VALUES (%s::uuid, %s::uuid, %s)
                     """,
-                    (session_id, user_id, expires_at),
-                )
-                # Record last login time atomically with session creation.
-                cur.execute(
-                    """
+                (session_id, user_id, expires_at),
+            )
+            # Record last login time atomically with session creation.
+            cur.execute(
+                """
                     UPDATE admin_users
                     SET last_login = NOW()
                     WHERE id = %s::uuid
                     """,
-                    (user_id,),
-                )
+                (user_id,),
+            )
         return session_id
 
-    def get_session_context(self, session_id: str) -> Optional[dict]:
+    def get_session_context(self, session_id: str) -> dict | None:
         """
         Return session context for the given session_id, or None if the
         session does not exist or has expired.
@@ -526,12 +518,11 @@ class AuthRepository:
         Idempotent — no-ops silently if the session does not exist.
         Called by the logout endpoint.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM admin_sessions WHERE session_id = %s::uuid",
-                    (session_id,),
-                )
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM admin_sessions WHERE session_id = %s::uuid",
+                (session_id,),
+            )
 
     # ------------------------------------------------------------------
     # admin_password_reset_tokens
@@ -558,6 +549,7 @@ class AuthRepository:
         (POST /users) to ensure the token is only committed if the user
         write succeeds.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -575,11 +567,10 @@ class AuthRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
-    def get_reset_token_record(self, token_hash: str) -> Optional[dict]:
+    def get_reset_token_record(self, token_hash: str) -> dict | None:
         """
         Return the admin_password_reset_tokens row for the given token hash,
         or None if no matching row exists.
@@ -610,6 +601,7 @@ class AuthRepository:
 
         conn: see module-level convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 "DELETE FROM admin_password_reset_tokens WHERE token_hash = %s",
@@ -620,6 +612,5 @@ class AuthRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)

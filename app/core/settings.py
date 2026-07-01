@@ -52,7 +52,7 @@ build_container after this module's checks pass.
 
 import logging
 import os
-from typing import Optional, Type, TypeVar
+from typing import TypeVar
 
 from pydantic import ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -63,9 +63,7 @@ logger = logging.getLogger(__name__)
 
 # Project root: app/core/settings.py -> app/core -> app -> root.
 # Matches main.py's _PROJECT_ROOT (the directory containing main.py).
-_PROJECT_ROOT = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _VALUE_ERROR_PREFIX = "Value error, "
 
@@ -85,12 +83,12 @@ def _clean_messages(exc: ValidationError) -> str:
     for err in exc.errors():
         msg = err.get("msg", "")
         if msg.startswith(_VALUE_ERROR_PREFIX):
-            msg = msg[len(_VALUE_ERROR_PREFIX):]
+            msg = msg[len(_VALUE_ERROR_PREFIX) :]
         messages.append(msg)
     return "\n".join(messages)
 
 
-def _construct_clean(settings_cls: Type[_T]) -> _T:
+def _construct_clean(settings_cls: type[_T]) -> _T:
     """
     Construct a settings model, converting ValidationError into a plain
     ValueError carrying only the clean message text.
@@ -110,6 +108,7 @@ def _construct_clean(settings_cls: Type[_T]) -> _T:
 # Email settings
 # ---------------------------------------------------------------------------
 
+
 class EmailSettings(BaseSettings):
     """
     Email delivery configuration.
@@ -122,15 +121,15 @@ class EmailSettings(BaseSettings):
 
     model_config = SettingsConfigDict(case_sensitive=True, extra="ignore")
 
-    EMAIL_FROM: Optional[str] = None
+    EMAIL_FROM: str | None = None
 
-    MAILGUN_API_KEY: Optional[str] = None
-    MAILGUN_DOMAIN: Optional[str] = None
-    MAILGUN_SIGNING_KEY: Optional[str] = None
+    MAILGUN_API_KEY: str | None = None
+    MAILGUN_DOMAIN: str | None = None
+    MAILGUN_SIGNING_KEY: str | None = None
 
-    SMTP_HOST: Optional[str] = None
-    SMTP_USER: Optional[str] = None
-    SMTP_PASSWORD: Optional[str] = None
+    SMTP_HOST: str | None = None
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
 
     @field_validator(
         "EMAIL_FROM",
@@ -170,9 +169,7 @@ class EmailSettings(BaseSettings):
         otherwise "smtp". Validation guarantees that whichever mode this
         returns is complete by the time the model is constructed.
         """
-        return email_mode.select_email_delivery_mode(
-            self.MAILGUN_API_KEY, self.MAILGUN_DOMAIN
-        )
+        return email_mode.select_email_delivery_mode(self.MAILGUN_API_KEY, self.MAILGUN_DOMAIN)
 
     # --- Cross-field rules --------------------------------------------------
 
@@ -214,6 +211,7 @@ class EmailSettings(BaseSettings):
 # MESH settings
 # ---------------------------------------------------------------------------
 
+
 class MeshSettings(BaseSettings):
     """
     MESH delivery mode flag.
@@ -231,7 +229,7 @@ class MeshSettings(BaseSettings):
 
     # No blank-normalisation and no stripping: the original code compared
     # the raw value exactly and reported its repr on mismatch.
-    MESH_DELIVERY: Optional[str] = None
+    MESH_DELIVERY: str | None = None
 
     @model_validator(mode="after")
     def _validate_mesh_delivery(self) -> "MeshSettings":
@@ -258,6 +256,7 @@ class MeshSettings(BaseSettings):
 # Web service settings (composition root)
 # ---------------------------------------------------------------------------
 
+
 class WebSettings(BaseSettings):
     """
     Complete environment configuration for the web service process.
@@ -278,16 +277,19 @@ class WebSettings(BaseSettings):
 
     model_config = SettingsConfigDict(case_sensitive=True, extra="ignore")
 
-    PRACTICE_ID: Optional[str] = None
-    ALLOWED_ADMIN_DOMAINS: Optional[str] = None
-    DATABASE_URL: Optional[str] = None
-    DATA_DIR: Optional[str] = None
+    PRACTICE_ID: str | None = None
+    ALLOWED_ADMIN_DOMAINS: str | None = None
+    DATABASE_URL: str | None = None
+    DATA_DIR: str | None = None
 
-    email: Optional[EmailSettings] = None
-    mesh: Optional[MeshSettings] = None
+    email: EmailSettings | None = None
+    mesh: MeshSettings | None = None
 
     @field_validator(
-        "PRACTICE_ID", "ALLOWED_ADMIN_DOMAINS", "DATABASE_URL", "DATA_DIR",
+        "PRACTICE_ID",
+        "ALLOWED_ADMIN_DOMAINS",
+        "DATABASE_URL",
+        "DATA_DIR",
         mode="before",
     )
     @classmethod
@@ -297,13 +299,9 @@ class WebSettings(BaseSettings):
     @model_validator(mode="after")
     def _validate_required(self) -> "WebSettings":
         if not self.DATABASE_URL:
-            raise ValueError(
-                "Required environment variable not set: DATABASE_URL"
-            )
+            raise ValueError("Required environment variable not set: DATABASE_URL")
         if not self.PRACTICE_ID:
-            raise ValueError(
-                "Required environment variable not set: PRACTICE_ID"
-            )
+            raise ValueError("Required environment variable not set: PRACTICE_ID")
         if not self.ALLOWED_ADMIN_DOMAINS:
             raise ValueError(
                 "Required environment variable not set: ALLOWED_ADMIN_DOMAINS. "
@@ -327,6 +325,7 @@ class WebSettings(BaseSettings):
 # ---------------------------------------------------------------------------
 # Loader
 # ---------------------------------------------------------------------------
+
 
 def load_web_settings() -> WebSettings:
     """

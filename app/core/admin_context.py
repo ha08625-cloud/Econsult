@@ -38,9 +38,9 @@ used by this module without importing the repository class itself.
 """
 
 import logging
-from typing import Optional, Dict, Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
-from fastapi import Request, HTTPException
+from fastapi import HTTPException, Request
 
 from app.core.state_keys import AUTH_REPO
 
@@ -64,6 +64,7 @@ SESSION_COOKIE_MAX_AGE = SESSION_TTL_MINUTES * 60
 # AdminContext
 # ---------------------------------------------------------------------------
 
+
 class AdminContext:
     """
     Resolved authentication context for an admin request.
@@ -76,6 +77,7 @@ class AdminContext:
     session_id:   the raw session UUID string from the cookie, used for
                   audit logging.
     """
+
     __slots__ = ("practice_id", "user_id", "auth_method", "actor_email", "session_id")
 
     def __init__(
@@ -97,6 +99,7 @@ class AdminContext:
 # AuthProvider Protocol
 # ---------------------------------------------------------------------------
 
+
 @runtime_checkable
 class AuthProvider(Protocol):
     """
@@ -112,13 +115,13 @@ class AuthProvider(Protocol):
         session_id (str).
     """
 
-    def get_session_context(self, session_id: str) -> Optional[Dict[str, Any]]:
-        ...
+    def get_session_context(self, session_id: str) -> dict[str, Any] | None: ...
 
 
 # ---------------------------------------------------------------------------
 # require_admin dependency
 # ---------------------------------------------------------------------------
+
 
 async def require_admin(request: Request) -> AdminContext:
     """

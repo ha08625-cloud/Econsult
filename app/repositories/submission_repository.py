@@ -31,8 +31,7 @@ import psycopg2.extras
 from psycopg2.extras import RealDictCursor
 
 from app.core.db import get_conn
-from app.models.serialisation_contracts import ClinicalOutput, AuditOutput
-
+from app.models.serialisation_contracts import AuditOutput, ClinicalOutput
 
 # Explicit column list for SELECT queries against submission_records.
 # Must be updated whenever a migration adds or removes a column.
@@ -54,6 +53,7 @@ _SUBMISSION_COLUMNS = """
 
 class SubmissionNotFound(Exception):
     """Raised when a submission_id does not exist."""
+
     pass
 
 
@@ -100,10 +100,9 @@ class SubmissionRepository:
         clinical_dict = asdict(clinical_output)
         audit_dict = asdict(audit_output)
 
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO submission_records (
                         submission_id,
                         practice_id,
@@ -122,16 +121,16 @@ class SubmissionRepository:
                         %(submitted_at)s
                     )
                     """,
-                    {
-                        "submission_id": submission_id,
-                        "practice_id": practice_id,
-                        "condition_id": condition_id,
-                        "condition_label": condition_label,
-                        "clinical_output_json": psycopg2.extras.Json(clinical_dict),
-                        "audit_output_json": psycopg2.extras.Json(audit_dict),
-                        "submitted_at": submitted_at,
-                    },
-                )
+                {
+                    "submission_id": submission_id,
+                    "practice_id": practice_id,
+                    "condition_id": condition_id,
+                    "condition_label": condition_label,
+                    "clinical_output_json": psycopg2.extras.Json(clinical_dict),
+                    "audit_output_json": psycopg2.extras.Json(audit_dict),
+                    "submitted_at": submitted_at,
+                },
+            )
 
     def get_submission(self, submission_id: str) -> dict:
         """

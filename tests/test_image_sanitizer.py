@@ -34,6 +34,7 @@ _5MB = 5 * 1024 * 1024
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 def _make_minimal_png() -> bytes:
     """
     Build a 1x1 pixel red PNG using Pillow.
@@ -90,6 +91,7 @@ def _make_large_jpeg(long_edge_px: int) -> bytes:
     defeats JPEG's DCT compression.
     """
     import random
+
     rng = random.Random(42)
     pixels = bytes(rng.randint(0, 255) for _ in range(long_edge_px * long_edge_px * 3))
     img = Image.frombytes("RGB", (long_edge_px, long_edge_px), pixels)
@@ -101,6 +103,7 @@ def _make_large_jpeg(long_edge_px: int) -> bytes:
 # ---------------------------------------------------------------------------
 # Existing tests — no changes to behaviour, preserved verbatim
 # ---------------------------------------------------------------------------
+
 
 def test_sanitize_valid_jpeg_returns_bytes():
     """
@@ -116,9 +119,7 @@ def test_sanitize_valid_jpeg_output_is_jpeg():
     Output must begin with the JPEG SOI magic bytes (FF D8 FF).
     """
     result = sanitize_image(MINIMAL_JPEG)
-    assert result[:3] == b"\xff\xd8\xff", (
-        "Expected sanitized JPEG output to start with FF D8 FF"
-    )
+    assert result[:3] == b"\xff\xd8\xff", "Expected sanitized JPEG output to start with FF D8 FF"
 
 
 def test_sanitize_valid_png_returns_jpeg():
@@ -195,14 +196,13 @@ def test_sanitize_corrupt_bytes_raises():
 # Tier tests — output format
 # ---------------------------------------------------------------------------
 
+
 def test_standard_tier_produces_jpeg():
     """
     standard-tier encode must return valid JPEG bytes.
     """
     result = sanitize_image(MINIMAL_JPEG, tier="standard")
-    assert result[:3] == b"\xff\xd8\xff", (
-        "Expected standard-tier output to be JPEG (FF D8 FF)"
-    )
+    assert result[:3] == b"\xff\xd8\xff", "Expected standard-tier output to be JPEG (FF D8 FF)"
 
 
 def test_high_tier_produces_jpeg():
@@ -210,9 +210,7 @@ def test_high_tier_produces_jpeg():
     high-tier encode must return valid JPEG bytes.
     """
     result = sanitize_image(MINIMAL_JPEG, tier="high")
-    assert result[:3] == b"\xff\xd8\xff", (
-        "Expected high-tier output to be JPEG (FF D8 FF)"
-    )
+    assert result[:3] == b"\xff\xd8\xff", "Expected high-tier output to be JPEG (FF D8 FF)"
 
 
 def test_unknown_tier_raises_key_error():
@@ -228,6 +226,7 @@ def test_unknown_tier_raises_key_error():
 # ---------------------------------------------------------------------------
 # Tier tests — resize behaviour
 # ---------------------------------------------------------------------------
+
 
 def test_standard_tier_does_not_upscale_small_image():
     """
@@ -308,6 +307,7 @@ def test_high_tier_resizes_image_exceeding_3840px():
 # Tier tests — 5 MB size enforcement and iteration
 # ---------------------------------------------------------------------------
 
+
 def test_standard_tier_output_within_5mb():
     """
     standard-tier output must be within the 5 MB EMIS limit for a realistic
@@ -320,9 +320,7 @@ def test_standard_tier_output_within_5mb():
 
     result = sanitize_image(buf.getvalue(), tier="standard")
 
-    assert len(result) <= _5MB, (
-        f"standard-tier output must be <= 5 MB, got {len(result)} bytes"
-    )
+    assert len(result) <= _5MB, f"standard-tier output must be <= 5 MB, got {len(result)} bytes"
 
 
 def test_high_tier_iteration_succeeds_for_compressible_image():
@@ -340,9 +338,7 @@ def test_high_tier_iteration_succeeds_for_compressible_image():
     result = sanitize_image(buf.getvalue(), tier="high")
 
     assert isinstance(result, bytes)
-    assert len(result) <= _5MB, (
-        f"high-tier output must be <= 5 MB, got {len(result)} bytes"
-    )
+    assert len(result) <= _5MB, f"high-tier output must be <= 5 MB, got {len(result)} bytes"
 
 
 def test_high_tier_raises_image_too_large_error_when_all_attempts_fail(monkeypatch):
@@ -368,6 +364,7 @@ def test_high_tier_raises_image_too_large_error_when_all_attempts_fail(monkeypat
         any bytes were written: Pillow writes to the buffer during save(),
         leaving it non-empty.
         """
+
         def getvalue(self):
             data = super().getvalue()
             if len(data) > 0:

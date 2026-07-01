@@ -95,7 +95,7 @@ import json
 import logging
 import re
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
 import psycopg2.extras
 from psycopg2.extras import RealDictCursor
@@ -157,10 +157,10 @@ class AuditRepository:
         practice_id: str,
         actor_email: str,
         action: str,
-        resource: Optional[str] = None,
-        detail: Optional[dict[str, Any]] = None,
-        ip_address: Optional[str] = None,
-        session_id: Optional[str] = None,
+        resource: str | None = None,
+        detail: dict[str, Any] | None = None,
+        ip_address: str | None = None,
+        session_id: str | None = None,
         conn=None,
     ) -> None:
         """
@@ -217,19 +217,18 @@ class AuditRepository:
                 _execute(cur)
         else:
             # Standalone insert — open, commit, close.
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     def list_events(
         self,
         *,
         practice_id: str,
-        cursor: Optional[str] = None,
-        from_date: Optional[date] = None,
-        to_date: Optional[date] = None,
-        actor: Optional[str] = None,
-        action_prefix: Optional[str] = None,
+        cursor: str | None = None,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        actor: str | None = None,
+        action_prefix: str | None = None,
         limit: int = _DEFAULT_LIMIT,
     ) -> dict[str, Any]:
         """
@@ -277,13 +276,11 @@ class AuditRepository:
         # Validate action_prefix before interpolating into a LIKE clause.
         if action_prefix is not None:
             if not _ACTION_PREFIX_RE.match(action_prefix):
-                raise ValueError(
-                    f"action_prefix must match ^[a-z0-9_.]+$, got: {action_prefix!r}"
-                )
+                raise ValueError(f"action_prefix must match ^[a-z0-9_.]+$, got: {action_prefix!r}")
 
         # Decode cursor if present.
-        last_id: Optional[int] = None
-        last_occurred_at: Optional[datetime] = None
+        last_id: int | None = None
+        last_occurred_at: datetime | None = None
         if cursor is not None:
             last_id, last_occurred_at = _decode_cursor(cursor)
 
@@ -292,17 +289,13 @@ class AuditRepository:
         params: dict[str, Any] = {"practice_id": practice_id}
 
         if last_id is not None and last_occurred_at is not None:
-            conditions.append(
-                "(occurred_at, id) < (%(last_occurred_at)s, %(last_id)s)"
-            )
+            conditions.append("(occurred_at, id) < (%(last_occurred_at)s, %(last_id)s)")
             params["last_occurred_at"] = last_occurred_at
             params["last_id"] = last_id
 
         if from_date is not None:
             conditions.append("occurred_at >= %(from_date)s")
-            params["from_date"] = datetime(
-                from_date.year, from_date.month, from_date.day, 0, 0, 0
-            )
+            params["from_date"] = datetime(from_date.year, from_date.month, from_date.day, 0, 0, 0)
 
         if to_date is not None:
             conditions.append("occurred_at <= %(to_date)s")
@@ -348,7 +341,7 @@ class AuditRepository:
         if has_more:
             rows = rows[:limit]
 
-        next_cursor: Optional[str] = None
+        next_cursor: str | None = None
         if has_more:
             last_row = rows[-1]
             next_cursor = _encode_cursor(last_row["id"], last_row["occurred_at"])

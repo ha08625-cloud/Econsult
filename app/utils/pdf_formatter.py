@@ -7,19 +7,18 @@ No database access. No imports from routers or delivery service.
 
 import io
 from datetime import date, datetime
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional
+from decimal import ROUND_HALF_UP, Decimal
 
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
-from app.models.serialisation_contracts import ClinicalOutput
 from app.core.consultation_outcomes import CONSULTATION_OUTCOMES
-
+from app.models.serialisation_contracts import ClinicalOutput
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _format_answer(value) -> str:
     if value is True:
@@ -44,7 +43,7 @@ def _format_kg(canonical_value, decimal_places: int) -> str:
 
 
 def _format_quantity_answer(
-    canonical_value, raw_components: dict, unit_system: Optional[str], decimal_places: int
+    canonical_value, raw_components: dict, unit_system: str | None, decimal_places: int
 ) -> str:
     """
     Format a quantity (unit-toggle) answer for the document.
@@ -74,7 +73,7 @@ def _dob_display(dob_iso: str) -> str:
         return dob_iso
 
 
-def _age_from_dob(dob_iso: str) -> Optional[int]:
+def _age_from_dob(dob_iso: str) -> int | None:
     """
     Calculate age in whole years from an ISO date string "YYYY-MM-DD".
     Returns None if the string cannot be parsed.
@@ -107,22 +106,22 @@ _GENDER_LABELS: dict[str, str] = {
 # PDF layout constants (NHS Palette)
 # ---------------------------------------------------------------------------
 
-_MARGIN = 15        # mm left/right margin
-_LINE_H = 7         # mm standard line height
-_PAGE_W = 210       # A4 width in mm
-_USABLE_W = _PAGE_W - 2 * _MARGIN   # 180mm
-_LABEL_W = 65       # mm — label column width in two-column rows
-_VALUE_W = _USABLE_W - _LABEL_W     # 115mm — value column width
-_LEFT_INDENT = 5    # mm — indent for free text body blocks
+_MARGIN = 15  # mm left/right margin
+_LINE_H = 7  # mm standard line height
+_PAGE_W = 210  # A4 width in mm
+_USABLE_W = _PAGE_W - 2 * _MARGIN  # 180mm
+_LABEL_W = 65  # mm — label column width in two-column rows
+_VALUE_W = _USABLE_W - _LABEL_W  # 115mm — value column width
+_LEFT_INDENT = 5  # mm — indent for free text body blocks
 
 # Colours - NHS Palette
-_NHS_BLUE      = (0, 94, 184)      # Primary NHS Blue
-_NHS_DARK_GREY = (66, 85, 99)      # NHS Dark Grey for standard text/labels
-_NHS_MID_GREY  = (118, 134, 146)   # Footer text
-_SAFETY_BG     = (255, 241, 241)   # Very pale NHS Red tint
-_SAFETY_TEXT   = (218, 41, 28)     # NHS Red
-_RULE_COLOUR   = (232, 237, 238)   # NHS Pale Grey for separators
-_INDENT_BAR    = (0, 94, 184)      # NHS Blue for free-text accent bars
+_NHS_BLUE = (0, 94, 184)  # Primary NHS Blue
+_NHS_DARK_GREY = (66, 85, 99)  # NHS Dark Grey for standard text/labels
+_NHS_MID_GREY = (118, 134, 146)  # Footer text
+_SAFETY_BG = (255, 241, 241)  # Very pale NHS Red tint
+_SAFETY_TEXT = (218, 41, 28)  # NHS Red
+_RULE_COLOUR = (232, 237, 238)  # NHS Pale Grey for separators
+_INDENT_BAR = (0, 94, 184)  # NHS Blue for free-text accent bars
 
 # Maximum height an embedded photo may occupy on the page.
 _MAX_IMAGE_H = 200  # mm
@@ -150,11 +149,7 @@ class _EConsultPDF(FPDF):
         self.set_y(-15)
         self.set_font("Helvetica", style="I", size=8)
         self.set_text_color(*_NHS_MID_GREY)
-        self.cell(
-            0, 5,
-            f"Online Consultation Form  |  Page {self.page_no()} of {{nb}}",
-            align="C"
-        )
+        self.cell(0, 5, f"Online Consultation Form  |  Page {self.page_no()} of {{nb}}", align="C")
         self.set_text_color(0, 0, 0)  # Reset text color for safety
 
     def section_heading(self, title: str) -> None:
@@ -269,13 +264,14 @@ class _EConsultPDF(FPDF):
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def generate_pdf(
     condition_label: str,
     clinical_output: ClinicalOutput,
     submission_id: str,
     submitted_at: datetime,
-    practice_name: Optional[str] = None,
-    photo_bytes: Optional[list[bytes]] = None,
+    practice_name: str | None = None,
+    photo_bytes: list[bytes] | None = None,
 ) -> bytes:
     """
     Generate a PDF representation of a clinical submission.

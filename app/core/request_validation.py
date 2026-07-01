@@ -1,8 +1,8 @@
 import re
 from datetime import date
 
-from app.core.errors import INVALID_PAYLOAD
 from app.core.consultation_outcomes import VALID_OUTCOME_VALUES
+from app.core.errors import INVALID_PAYLOAD
 
 VALID_CONTACT_METHODS = {"email", "text", "phone"}
 VALID_DOCTOR_PREFERENCES = {"any", "usual"}
@@ -102,9 +102,7 @@ def validate_contact_preferences(cp: dict):
     # email_address required if email selected
     if "email" in methods_set:
         if not cp.get("email_address"):
-            raise INVALID_PAYLOAD(
-                "email_address is required when contact_methods includes 'email'"
-            )
+            raise INVALID_PAYLOAD("email_address is required when contact_methods includes 'email'")
 
     # best_time_to_call — optional string, but must not be a non-string type if present
     best_time = cp.get("best_time_to_call")
@@ -120,9 +118,7 @@ def validate_contact_preferences(cp: dict):
 
     # usual_doctor_name required if doctor_preference is "usual"
     if doctor_pref == "usual" and not cp.get("usual_doctor_name"):
-        raise INVALID_PAYLOAD(
-            "usual_doctor_name is required when doctor_preference is 'usual'"
-        )
+        raise INVALID_PAYLOAD("usual_doctor_name is required when doctor_preference is 'usual'")
 
     # consultation_outcome — required, must be a known value
     outcome = cp.get("consultation_outcome")
@@ -159,9 +155,7 @@ def validate_patient_details(pd: dict) -> None:
     # patient_for
     patient_for = pd.get("patient_for")
     if patient_for not in VALID_PATIENT_FOR_VALUES:
-        raise INVALID_PAYLOAD(
-            f"patient_for must be one of: {sorted(VALID_PATIENT_FOR_VALUES)}"
-        )
+        raise INVALID_PAYLOAD(f"patient_for must be one of: {sorted(VALID_PATIENT_FOR_VALUES)}")
 
     # Required string fields
     for field_name in ("first_name", "last_name", "postcode"):
@@ -179,9 +173,7 @@ def validate_patient_details(pd: dict) -> None:
     for component in ("day", "month", "year"):
         val = dob.get(component)
         if not isinstance(val, str) or not val.strip():
-            raise INVALID_PAYLOAD(
-                f"date_of_birth.{component} must be a non-empty string"
-            )
+            raise INVALID_PAYLOAD(f"date_of_birth.{component} must be a non-empty string")
         if not val.strip().isdigit():
             raise INVALID_PAYLOAD(
                 f"date_of_birth.{component} must contain digits only, got: {val!r}"
@@ -202,16 +194,12 @@ def validate_patient_details(pd: dict) -> None:
 
     # Postcode format
     if not _UK_POSTCODE_RE.match(pd["postcode"].strip()):
-        raise INVALID_PAYLOAD(
-            "postcode does not match a recognised UK postcode format"
-        )
+        raise INVALID_PAYLOAD("postcode does not match a recognised UK postcode format")
 
     # gender — required, must be a known value
     gender = pd.get("gender")
     if gender not in VALID_GENDER_VALUES:
-        raise INVALID_PAYLOAD(
-            f"gender must be one of: {sorted(VALID_GENDER_VALUES)}"
-        )
+        raise INVALID_PAYLOAD(f"gender must be one of: {sorted(VALID_GENDER_VALUES)}")
 
     # preferred_name — optional, must be a string or null if present
     preferred_name = pd.get("preferred_name")
@@ -225,9 +213,7 @@ def validate_patient_details(pd: dict) -> None:
         if not isinstance(nhs_number, str):
             raise INVALID_PAYLOAD("nhs_number must be a string or null")
         if not _NHS_DIGITS_RE.match(nhs_number):
-            raise INVALID_PAYLOAD(
-                "nhs_number must be exactly 10 digits with no spaces"
-            )
+            raise INVALID_PAYLOAD("nhs_number must be exactly 10 digits with no spaces")
 
     # Submitter fields — required when patient_for is "someone_else"
     if patient_for == "someone_else":

@@ -1,40 +1,40 @@
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
 class PatientDetails:
-    patient_for: str          # "me" or "someone_else"
+    patient_for: str  # "me" or "someone_else"
     first_name: str
     last_name: str
-    date_of_birth: str        # ISO 8601: "1990-03-15"
+    date_of_birth: str  # ISO 8601: "1990-03-15"
     postcode: str
-    gender: str               # "male" | "female" | "other" | "prefer_not_to_say"
-    preferred_name: Optional[str] = field(default=None)
-    nhs_number: Optional[str] = field(default=None)
-    submitter_name: Optional[str] = field(default=None)
-    submitter_relationship: Optional[str] = field(default=None)
+    gender: str  # "male" | "female" | "other" | "prefer_not_to_say"
+    preferred_name: str | None = field(default=None)
+    nhs_number: str | None = field(default=None)
+    submitter_name: str | None = field(default=None)
+    submitter_relationship: str | None = field(default=None)
 
 
 @dataclass(frozen=True)
 class ClinicalOutput:
     condition_id: str
     free_text: str
-    additional_text: Optional[str]
-    answers: Dict[str, Any]
-    safety_messages: List[dict]
-    question_labels: Dict[str, str]  # answer_key -> question text at submission time
+    additional_text: str | None
+    answers: dict[str, Any]
+    safety_messages: list[dict]
+    question_labels: dict[str, str]  # answer_key -> question text at submission time
     patient_details: PatientDetails
-    contact_preferences: Optional[Dict[str, Any]] = field(default=None)
+    contact_preferences: dict[str, Any] | None = field(default=None)
     # The form-wide unit system chosen by the patient, or None for a submission
     # with no quantity question. answers[key] always holds the canonical kg
     # string regardless; this records which unit the patient actually used.
-    unit_system: Optional[str] = field(default=None)
+    unit_system: str | None = field(default=None)
     # Per quantity answer_key: {"raw_components": {...}, "decimal_places": int}.
     # raw_components is the lossless input ({"kg": "70.5"} or {"st": 11, "lb": 11})
     # and decimal_places is snapshotted so the PDF (which has no ruleset) can
     # format the canonical value. One sidecar dict, mirroring question_labels.
-    quantity_answers: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    quantity_answers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "ClinicalOutput":
@@ -81,8 +81,8 @@ class ClinicalOutput:
 
 @dataclass(frozen=True)
 class AuditOutput:
-    runtime_state: Dict[str, Any]
-    safety_evaluation: Dict[str, Any]
+    runtime_state: dict[str, Any]
+    safety_evaluation: dict[str, Any]
     ruleset_version: str
     # photo_quality_tier is optional because:
     # - Submissions without photos do not have a meaningful tier value.
@@ -90,4 +90,4 @@ class AuditOutput:
     #   of the HTTP submission tier. form_router.py stamps this field after
     #   finish_runtime_state() returns, using dataclasses.replace().
     # - Historical records predating this field will read None when deserialised.
-    photo_quality_tier: Optional[str] = field(default=None)
+    photo_quality_tier: str | None = field(default=None)

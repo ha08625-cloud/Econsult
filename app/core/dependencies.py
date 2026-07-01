@@ -12,24 +12,22 @@ Rules:
 - All values stored in app.state are immutable after startup.
 """
 
-from typing import Optional
-
 from fastapi import Request
 
 from app.core.condition_registry import ConditionRegistry
 from app.core.state_keys import AUTH_REPO
-from app.repositories.practice_repository import PracticeRepository
-from app.repositories.availability_repository import AvailabilityRepository
-from app.repositories.runtime_state_repository import RuntimeStateRepository
-from app.repositories.submission_repository import SubmissionRepository
 from app.repositories.attachment_repository import AttachmentRepository
+from app.repositories.audit_repository import AuditRepository
+from app.repositories.auth_repository import AuthRepository
+from app.repositories.availability_repository import AvailabilityRepository
+from app.repositories.delivery_repository import DeliveryRepository
 from app.repositories.pdf_repository import PDFRepository
 from app.repositories.photo_repository import PhotoRepository
-from app.repositories.delivery_repository import DeliveryRepository
-from app.repositories.auth_repository import AuthRepository
-from app.repositories.audit_repository import AuditRepository
-from app.services.delivery.delivery_service import DeliveryService
+from app.repositories.practice_repository import PracticeRepository
+from app.repositories.runtime_state_repository import RuntimeStateRepository
+from app.repositories.submission_repository import SubmissionRepository
 from app.services.delivery.admin_delivery_service import AdminDeliveryService
+from app.services.delivery.delivery_service import DeliveryService
 from app.services.presentation_service import PresentationService
 
 
@@ -108,7 +106,7 @@ def get_database_url(request: Request) -> str:
     return request.app.state.database_url
 
 
-def get_mailgun_signing_key(request: Request) -> Optional[str]:
+def get_mailgun_signing_key(request: Request) -> str | None:
     # Optional by design: None on the SMTP delivery path. Uses getattr with a
     # None default so a deployment that never set the attribute resolves to
     # None (and the webhook returns 403) rather than raising AttributeError,

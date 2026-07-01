@@ -71,6 +71,7 @@ def _set_web_scalars(monkeypatch):
 # EmailSettings: delivery_mode and completeness rules
 # ---------------------------------------------------------------------------
 
+
 def test_complete_smtp_selects_smtp_mode(monkeypatch):
     _set_smtp(monkeypatch)
     settings = EmailSettings()
@@ -115,10 +116,7 @@ def test_partial_mailgun_fall_through_logs_warning(monkeypatch, caplog):
     monkeypatch.setenv("MAILGUN_API_KEY", "key-123")
     with caplog.at_level(logging.WARNING, logger="app.core.settings"):
         EmailSettings()
-    assert any(
-        "Partial Mailgun configuration" in record.message
-        for record in caplog.records
-    )
+    assert any("Partial Mailgun configuration" in record.message for record in caplog.records)
 
 
 def test_partial_mailgun_without_smtp_aborts(monkeypatch):
@@ -166,6 +164,7 @@ def test_smtp_does_not_require_signing_key(monkeypatch):
 # MeshSettings: exact-value rules
 # ---------------------------------------------------------------------------
 
+
 def test_mesh_delivery_zero_accepted(monkeypatch):
     monkeypatch.setenv("MESH_DELIVERY", "0")
     assert MeshSettings().MESH_DELIVERY == "0"
@@ -192,6 +191,7 @@ def test_mesh_delivery_rejects_non_exact_values(monkeypatch, bad_value):
 # ---------------------------------------------------------------------------
 # WebSettings: scalar requiredness and composition
 # ---------------------------------------------------------------------------
+
 
 def test_full_valid_environment_loads(monkeypatch):
     _set_web_scalars(monkeypatch)

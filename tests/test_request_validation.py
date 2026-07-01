@@ -15,13 +15,13 @@ Run from project root:
 import unittest
 from datetime import date
 
-from app.core.request_validation import validate_patient_details, validate_contact_preferences
 from app.core.errors import APIError
-
+from app.core.request_validation import validate_contact_preferences, validate_patient_details
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _valid_pd(**overrides) -> dict:
     """
@@ -109,8 +109,8 @@ def _cp_raises_with(cp: dict, expected_fragment: str):
 # Section 1: validate_patient_details
 # ---------------------------------------------------------------------------
 
-class TestValidatePatientDetailsHappyPath(unittest.TestCase):
 
+class TestValidatePatientDetailsHappyPath(unittest.TestCase):
     def test_valid_me_payload_passes(self):
         validate_patient_details(_valid_pd())
 
@@ -149,7 +149,6 @@ class TestValidatePatientDetailsHappyPath(unittest.TestCase):
 
 
 class TestValidatePatientDetailsTopLevel(unittest.TestCase):
-
     def test_not_a_dict_raises(self):
         try:
             validate_patient_details("not a dict")
@@ -194,7 +193,6 @@ class TestValidatePatientDetailsTopLevel(unittest.TestCase):
 
 
 class TestValidatePatientDetailsDateOfBirth(unittest.TestCase):
-
     def _set_dob(self, day=None, month=None, year=None) -> dict:
         pd = _valid_pd()
         dob = {"day": "15", "month": "3", "year": "1990"}
@@ -268,7 +266,6 @@ class TestValidatePatientDetailsDateOfBirth(unittest.TestCase):
 
 
 class TestValidatePatientDetailsPostcode(unittest.TestCase):
-
     def test_invalid_postcode_raises(self):
         _raises_with(_valid_pd(postcode="NOTAPOSTCODE"), "postcode")
 
@@ -286,7 +283,6 @@ class TestValidatePatientDetailsPostcode(unittest.TestCase):
 
 
 class TestValidatePatientDetailsGender(unittest.TestCase):
-
     def test_missing_gender_raises(self):
         pd = _valid_pd()
         del pd["gender"]
@@ -307,7 +303,6 @@ class TestValidatePatientDetailsGender(unittest.TestCase):
 
 
 class TestValidatePatientDetailsNhsNumber(unittest.TestCase):
-
     def test_ten_digit_string_passes(self):
         validate_patient_details(_valid_pd(nhs_number="4857773456"))
 
@@ -336,7 +331,6 @@ class TestValidatePatientDetailsNhsNumber(unittest.TestCase):
 
 
 class TestValidatePatientDetailsPreferredName(unittest.TestCase):
-
     def test_preferred_name_string_passes(self):
         validate_patient_details(_valid_pd(preferred_name="Jo"))
 
@@ -348,7 +342,6 @@ class TestValidatePatientDetailsPreferredName(unittest.TestCase):
 
 
 class TestValidatePatientDetailsSubmitterFields(unittest.TestCase):
-
     def test_someone_else_missing_submitter_name_raises(self):
         pd = _valid_someone_else(submitter_name=None)
         _raises_with(pd, "submitter_name")
@@ -371,15 +364,17 @@ class TestValidatePatientDetailsSubmitterFields(unittest.TestCase):
 
     def test_me_with_submitter_name_populated_passes(self):
         # For patient_for="me", submitter fields are ignored even if populated
-        validate_patient_details(_valid_pd(submitter_name="Someone", submitter_relationship="carer"))
+        validate_patient_details(
+            _valid_pd(submitter_name="Someone", submitter_relationship="carer")
+        )
 
 
 # ---------------------------------------------------------------------------
 # Section 2: validate_contact_preferences — consultation_outcome
 # ---------------------------------------------------------------------------
 
-class TestValidateContactPreferencesOutcomeHappyPath(unittest.TestCase):
 
+class TestValidateContactPreferencesOutcomeHappyPath(unittest.TestCase):
     def test_valid_outcome_passes(self):
         validate_contact_preferences(_valid_cp(consultation_outcome="face_to_face"))
 
@@ -398,7 +393,6 @@ class TestValidateContactPreferencesOutcomeHappyPath(unittest.TestCase):
 
 
 class TestValidateContactPreferencesOutcomeRejection(unittest.TestCase):
-
     def test_unknown_outcome_value_raises_422(self):
         _cp_raises_with(
             _valid_cp(consultation_outcome="in_person"),

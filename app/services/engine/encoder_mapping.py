@@ -9,9 +9,10 @@ Encoder may never overwrite patient input.
 Encoder influence is fully contained in this module.
 """
 
-from app.models.runtime_state import RuntimeState
+from collections.abc import Iterable
+
 from app.models.encoder_contracts import EncoderOutput, EncoderSignalDefinition
-from typing import Iterable
+from app.models.runtime_state import RuntimeState
 
 
 def apply_encoder_output(
@@ -33,6 +34,7 @@ def apply_encoder_output(
 
     # Store raw encoder output for audit trail (as plain dict for JSON serialisation)
     from dataclasses import asdict
+
     runtime.metadata.setdefault("audit", {})
     runtime.metadata["audit"]["encoder_output"] = asdict(encoder_output)
 

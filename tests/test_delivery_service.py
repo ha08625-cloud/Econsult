@@ -7,29 +7,29 @@ No database or SMTP connection required.
 """
 
 import os
-from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.services.delivery.delivery_service import (
     EmailDeliveryError,
-    MailgunHttpDeliveryService,
     EmailDeliveryService,
+    MailgunHttpDeliveryService,
     _format_body,
 )
-
 
 # ---------------------------------------------------------------------------
 # _format_body
 # ---------------------------------------------------------------------------
+
 
 class TestFormatBody:
     def test_contains_submission_id(self):
         body = _format_body(
             condition_label="Earache",
             submission_id="abc12345-0000-0000-0000-000000000000",
-            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
         )
         assert "abc12345-0000-0000-0000-000000000000" in body
 
@@ -37,7 +37,7 @@ class TestFormatBody:
         body = _format_body(
             condition_label="Earache",
             submission_id="abc12345",
-            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
         )
         assert "Earache" in body
 
@@ -45,7 +45,7 @@ class TestFormatBody:
         body = _format_body(
             condition_label="Earache",
             submission_id="abc12345",
-            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
         )
         assert "2026-03-25 10:30:00" in body
         assert "UTC" in body
@@ -54,7 +54,7 @@ class TestFormatBody:
         body = _format_body(
             condition_label="Earache",
             submission_id="abc12345",
-            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
         )
         assert "attached PDF" in body
 
@@ -62,7 +62,7 @@ class TestFormatBody:
         body = _format_body(
             condition_label="Earache",
             submission_id="abc12345",
-            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
         )
         assert "Do not reply" in body
 
@@ -71,14 +71,13 @@ class TestFormatBody:
         body = _format_body(
             condition_label="Earache",
             submission_id="abc12345",
-            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
         )
         assert "PATIENT DETAILS" not in body
         assert "PATIENT DESCRIPTION" not in body
         assert "ANSWERS" not in body
         assert "CONTACT PREFERENCES" not in body
         assert "SAFETY FLAGS" not in body
-
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +113,7 @@ class TestEmailDeliveryService:
                 condition_label="Earache",
                 pdf_bytes=b"%PDF-fake-content",
                 submission_id="abc12345-0000-0000-0000-000000000000",
-                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
             )
 
         assert result is None
@@ -169,13 +168,15 @@ class TestMailgunHttpDeliveryService:
             "message": "Queued. Thank you.",
         }
 
-        with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response):
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ):
             result = svc.send_clinical_output(
                 to_email="gp@example.com",
                 condition_label="Earache",
                 pdf_bytes=b"%PDF-fake-content",
                 submission_id="abc12345-0000-0000-0000-000000000000",
-                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
             )
 
         assert result == "20260423123456.1.xyz@mailgun.org"
@@ -197,13 +198,15 @@ class TestMailgunHttpDeliveryService:
             "message": "Queued. Thank you.",
         }
 
-        with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response):
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ):
             result = svc.send_clinical_output(
                 to_email="gp@example.com",
                 condition_label="Earache",
                 pdf_bytes=b"%PDF-fake-content",
                 submission_id="abc12345-0000-0000-0000-000000000000",
-                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
             )
 
         assert result == "20260423123456.1.xyz@mailgun.org"
@@ -216,13 +219,15 @@ class TestMailgunHttpDeliveryService:
         mock_response.raise_for_status.return_value = None
         mock_response.json.return_value = {"id": "<msg-id@mailgun.org>"}
 
-        with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response) as mock_post:
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ) as mock_post:
             svc.send_clinical_output(
                 to_email="gp@example.com",
                 condition_label="Earache",
                 pdf_bytes=b"%PDF-fake-content",
                 submission_id="abc12345-0000-0000-0000-000000000000",
-                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
             )
 
         mock_post.assert_called_once()
@@ -238,13 +243,15 @@ class TestMailgunHttpDeliveryService:
         mock_response.raise_for_status.return_value = None
         mock_response.json.return_value = {"id": "<msg-id@mailgun.org>"}
 
-        with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response) as mock_post:
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ) as mock_post:
             svc.send_clinical_output(
                 to_email="gp@example.com",
                 condition_label="Earache",
                 pdf_bytes=b"%PDF-fake-content",
                 submission_id="abc12345-0000-0000-0000-000000000000",
-                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
             )
 
         call_kwargs = mock_post.call_args
@@ -258,13 +265,15 @@ class TestMailgunHttpDeliveryService:
         mock_response.raise_for_status.return_value = None
         mock_response.json.return_value = {"id": "<msg-id@mailgun.org>"}
 
-        with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response) as mock_post:
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ) as mock_post:
             svc.send_clinical_output(
                 to_email="gp@example.com",
                 condition_label="Earache",
                 pdf_bytes=b"%PDF-fake-content",
                 submission_id="abc12345-0000-0000-0000-000000000000",
-                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
             )
 
         call_kwargs = mock_post.call_args
@@ -280,14 +289,17 @@ class TestMailgunHttpDeliveryService:
         with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
             svc = MailgunHttpDeliveryService()
 
-        with patch("app.services.delivery.delivery_service.requests.post", side_effect=req.RequestException("timeout")):
+        with patch(
+            "app.services.delivery.delivery_service.requests.post",
+            side_effect=req.RequestException("timeout"),
+        ):
             with pytest.raises(EmailDeliveryError):
                 svc.send_clinical_output(
                     to_email="gp@example.com",
                     condition_label="Earache",
                     pdf_bytes=b"%PDF-fake-content",
                     submission_id="abc12345-0000-0000-0000-000000000000",
-                    submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+                    submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
                 )
 
     def test_send_raises_email_delivery_error_on_bad_status(self):
@@ -299,12 +311,14 @@ class TestMailgunHttpDeliveryService:
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = req.HTTPError("401 Unauthorized")
 
-        with patch("app.services.delivery.delivery_service.requests.post", return_value=mock_response):
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ):
             with pytest.raises(EmailDeliveryError):
                 svc.send_clinical_output(
                     to_email="gp@example.com",
                     condition_label="Earache",
                     pdf_bytes=b"%PDF-fake-content",
                     submission_id="abc12345-0000-0000-0000-000000000000",
-                    submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=timezone.utc),
+                    submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
                 )

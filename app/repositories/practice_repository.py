@@ -41,14 +41,12 @@ This module must never:
 """
 
 import re
-from typing import List, Optional
 
 import nh3
 import psycopg2.extras
 from psycopg2.extras import RealDictCursor
 
 from app.core.db import get_conn
-
 
 MAX_SIGNPOSTING_LENGTH = 5000
 QUILL_EMPTY_OUTPUT = "<p></p>"
@@ -59,21 +57,25 @@ MAX_DOCTOR_LIST_LENGTH = 50
 
 class PracticeNotFound(Exception):
     """Raised when a practice_id does not exist."""
+
     pass
 
 
 class InvalidSignpostingData(Exception):
     """Raised when signposting HTML is too long or otherwise invalid."""
+
     pass
 
 
 class InvalidEmailError(Exception):
     """Raised when an email address fails validation."""
+
     pass
 
 
 class InvalidDoctorListError(Exception):
     """Raised when the doctor list fails validation."""
+
     pass
 
 
@@ -100,8 +102,7 @@ def sanitise_signposting_html(raw: str) -> str | None:
     """
     if len(raw) > MAX_SIGNPOSTING_LENGTH:
         raise InvalidSignpostingData(
-            f"Signposting must not exceed {MAX_SIGNPOSTING_LENGTH} characters "
-            f"(received {len(raw)})"
+            f"Signposting must not exceed {MAX_SIGNPOSTING_LENGTH} characters (received {len(raw)})"
         )
 
     clean = nh3.clean(
@@ -124,20 +125,14 @@ class PracticeRepository:
 
     def _validate_email(self, email: str) -> None:
         if not isinstance(email, str):
-            raise InvalidEmailError(
-                f"Email must be a string, got {type(email).__name__}"
-            )
+            raise InvalidEmailError(f"Email must be a string, got {type(email).__name__}")
         if email != email.strip():
-            raise InvalidEmailError(
-                "Email contains leading or trailing whitespace"
-            )
+            raise InvalidEmailError("Email contains leading or trailing whitespace")
         parts = email.split("@")
         if len(parts) != 2 or not parts[0] or not parts[1]:
-            raise InvalidEmailError(
-                "Email must be in format 'local@domain'"
-            )
+            raise InvalidEmailError("Email must be in format 'local@domain'")
 
-    def _validate_doctor_list(self, names: List[str]) -> None:
+    def _validate_doctor_list(self, names: list[str]) -> None:
         """
         Validate a list of doctor names.
 
@@ -156,9 +151,7 @@ class PracticeRepository:
             )
         for i, name in enumerate(names):
             if not isinstance(name, str) or not name.strip():
-                raise InvalidDoctorListError(
-                    f"Doctor name at index {i} must be a non-empty string"
-                )
+                raise InvalidDoctorListError(f"Doctor name at index {i} must be a non-empty string")
             if len(name) > MAX_DOCTOR_NAME_LENGTH:
                 raise InvalidDoctorListError(
                     f"Doctor name at index {i} exceeds {MAX_DOCTOR_NAME_LENGTH} characters"
@@ -175,17 +168,16 @@ class PracticeRepository:
         """
         self._validate_email(email)
 
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     INSERT INTO practices (practice_id, name, email)
                     VALUES (%s, %s, %s)
                     """,
-                    (practice_id, name, email),
-                )
+                (practice_id, name, email),
+            )
 
-    def get_practice(self, practice_id: str) -> Optional[dict]:
+    def get_practice(self, practice_id: str) -> dict | None:
         """
         Get practice by ID.
         Returns dict with practice_id, name, email, created_at or None if not found.
@@ -246,25 +238,21 @@ class PracticeRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     def practice_exists(self, practice_id: str) -> bool:
         return self.get_practice(practice_id) is not None
 
     def count_practices(self) -> int:
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM practices")
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM practices")
+            row = cur.fetchone()
         return row[0]
 
     # --- Signposting ---
 
-    def get_signposting(
-        self, practice_id: str, condition_id: str
-    ) -> Optional[str]:
+    def get_signposting(self, practice_id: str, condition_id: str) -> str | None:
         """
         Get signposting for a practice and condition.
         Returns None if no row exists, or the HTML string if it does.
@@ -288,9 +276,7 @@ class PracticeRepository:
             return None
         return row["signposting_json"]
 
-    def set_signposting(
-        self, practice_id: str, condition_id: str, html: str, conn=None
-    ) -> None:
+    def set_signposting(self, practice_id: str, condition_id: str, html: str, conn=None) -> None:
         """
         Set signposting for a practice and condition.
 
@@ -334,18 +320,16 @@ class PracticeRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
-    def delete_signposting(
-        self, practice_id: str, condition_id: str, conn=None
-    ) -> None:
+    def delete_signposting(self, practice_id: str, condition_id: str, conn=None) -> None:
         """
         Delete signposting for a practice and condition. No error if absent.
 
         conn: see module-level conn parameter convention.
         """
+
         def _execute(cur) -> None:
             cur.execute(
                 """
@@ -359,13 +343,12 @@ class PracticeRepository:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
 
     # --- Doctor list ---
 
-    def get_doctors(self, practice_id: str) -> List[str]:
+    def get_doctors(self, practice_id: str) -> list[str]:
         """
         Return the doctor list for a practice, ordered by display_order.
         Returns an empty list if no doctors are configured.
@@ -385,7 +368,7 @@ class PracticeRepository:
 
         return [row["name"] for row in rows]
 
-    def set_doctors(self, practice_id: str, names: List[str], conn=None) -> None:
+    def set_doctors(self, practice_id: str, names: list[str], conn=None) -> None:
         """
         Replace the entire doctor list for a practice atomically.
 
@@ -416,20 +399,16 @@ class PracticeRepository:
                     INSERT INTO practice_doctors (practice_id, name, display_order)
                     VALUES %s
                     """,
-                    [
-                        (practice_id, name.strip(), order)
-                        for order, name in enumerate(names)
-                    ],
+                    [(practice_id, name.strip(), order) for order, name in enumerate(names)],
                 )
 
         if conn is not None:
             with conn.cursor() as cur:
                 _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn:
-                with own_conn.cursor() as cur:
-                    _execute(cur)
-                    
+            with get_conn(self.database_url) as own_conn, own_conn.cursor() as cur:
+                _execute(cur)
+
     def lock_practice(self, practice_id: str, conn) -> None:
         """
         Acquire a row-level lock on the practice row for the current transaction.

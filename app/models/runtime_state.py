@@ -7,7 +7,7 @@ No business logic. No IO. No encoder awareness. No safety logic.
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Dict, Any, Optional, Literal
+from typing import Any, Literal
 
 AnswerSource = Literal[
     "unanswered",
@@ -63,12 +63,13 @@ class AnswerState:
         AuditOutput. Because each increment on a boolean is a flip, parity is an
         invariant: even count <-> encoder_correct, odd count <-> encoder_incorrect.
     """
+
     value: bool | str | int | float | Decimal | dict | None
     source: AnswerSource
-    encoder_value: Optional[bool]
+    encoder_value: bool | None
     answer_type: Literal["boolean", "text", "number"]
     change_count: int = 0
-    raw_components: Optional[Dict[str, Any]] = None
+    raw_components: dict[str, Any] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -120,15 +121,15 @@ class RuntimeState:
     condition_id: str
     ruleset_version: str
     free_text: str
-    additional_text: Optional[str]
-    answers: Dict[str, AnswerState]
+    additional_text: str | None
+    answers: dict[str, AnswerState]
     safety_evaluation: SafetyEvaluation
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     # The form-wide unit system, set once a quantity-bearing answer is processed
     # in a submission. None until then. With a single quantity question this is
     # effectively that question's chosen system; it is a form-level field rather
     # than per-answer because the toggle is global.
-    unit_system: Optional[Literal["metric", "imperial"]] = None
+    unit_system: Literal["metric", "imperial"] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -146,6 +147,7 @@ class RuntimeState:
     def from_dict(cls, d: dict) -> "RuntimeState":
         if isinstance(d, str):
             import json
+
             d = json.loads(d)
         return cls(
             condition_id=d["condition_id"],

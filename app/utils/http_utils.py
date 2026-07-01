@@ -7,13 +7,11 @@ Functions here are used by routers and repositories that need access to
 request-level metadata such as client IP addresses.
 """
 
-from typing import Optional
-
 
 def extract_ip(
     headers,
-    client_host: Optional[str],
-) -> Optional[str]:
+    client_host: str | None,
+) -> str | None:
     """
     Extract the real client IP address from request headers.
 

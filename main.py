@@ -17,8 +17,8 @@ dry-run (python -c "from main import app") and the integration tests
 sequence.
 """
 
-import os
 import logging
+import os
 
 from app.core.telemetry import init_telemetry
 
@@ -27,21 +27,20 @@ from app.core.telemetry import init_telemetry
 # migration in db.py) are captured by Sentry's default sys.excepthook.
 init_telemetry("http-api")
 
+import sentry_sdk  # noqa: E402 — safe: no-op if Sentry not initialised
 from fastapi import FastAPI  # noqa: E402
 from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
 from starlette.staticfiles import StaticFiles  # noqa: E402
 
-from app.core.rate_limit import limiter  # noqa: E402
 from app.core.db import alembic_upgrade  # noqa: E402
+from app.core.error_handlers import register_error_handlers  # noqa: E402
+from app.core.rate_limit import limiter  # noqa: E402
 from app.core.settings import load_web_settings  # noqa: E402
 from app.core.wiring import build_container, unpack_container  # noqa: E402
-from app.core.error_handlers import register_error_handlers  # noqa: E402
 from app.routers.admin_router import router as admin_router  # noqa: E402
-from app.routers.public_router import router as public_router  # noqa: E402
 from app.routers.form_router import router as form_router  # noqa: E402
+from app.routers.public_router import router as public_router  # noqa: E402
 from app.routers.webhook_router import router as webhook_router  # noqa: E402
-
-import sentry_sdk  # noqa: E402 — safe: no-op if Sentry not initialised
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +119,7 @@ register_error_handlers(app)
 # ---------------------------------------------------------------------------
 # Utility endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get("/healthz")
 async def health():

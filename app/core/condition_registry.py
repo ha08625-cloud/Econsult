@@ -22,10 +22,9 @@ data from practice_repository.py. Universal safety warnings are defined
 as constants in presentation_service.py.
 """
 
+import json
 import logging
 import os
-import json
-from typing import Dict, List, Optional
 
 from app.core.errors import ConditionNotFound
 
@@ -47,45 +46,35 @@ class ConditionRegistry:
     """
 
     def __init__(self, data_dir: str):
-        self._conditions: Dict[str, dict] = {}
-        self._load_order: List[str] = []
+        self._conditions: dict[str, dict] = {}
+        self._load_order: list[str] = []
         self._load_all(data_dir)
 
     def _load_all(self, data_dir: str) -> None:
         if not os.path.isdir(data_dir):
-            raise RegistryValidationError(
-                f"Data directory does not exist: {data_dir}"
-            )
+            raise RegistryValidationError(f"Data directory does not exist: {data_dir}")
 
-        json_files = sorted(
-            f for f in os.listdir(data_dir) if f.endswith(".json")
-        )
+        json_files = sorted(f for f in os.listdir(data_dir) if f.endswith(".json"))
 
         if not json_files:
-            raise RegistryValidationError(
-                f"No JSON files found in {data_dir}"
-            )
+            raise RegistryValidationError(f"No JSON files found in {data_dir}")
 
         for filename in json_files:
             path = os.path.join(data_dir, filename)
             self._load_one(path)
 
     def _load_one(self, path: str) -> None:
-        with open(path, "r") as f:
+        with open(path) as f:
             raw = json.load(f)
 
         # Validate condition_id exists
         condition_id = raw.get("condition_id")
         if not condition_id or not isinstance(condition_id, str):
-            raise RegistryValidationError(
-                f"Missing or invalid condition_id in {path}"
-            )
+            raise RegistryValidationError(f"Missing or invalid condition_id in {path}")
 
         # Reject duplicates
         if condition_id in self._conditions:
-            raise RegistryValidationError(
-                f"Duplicate condition_id '{condition_id}' in {path}"
-            )
+            raise RegistryValidationError(f"Duplicate condition_id '{condition_id}' in {path}")
 
         # Validate and extract presentation
         presentation = raw.get("presentation")
@@ -101,8 +90,8 @@ class ConditionRegistry:
         self._load_order.append(condition_id)
 
     def _validate_presentation(
-        self, presentation: Optional[dict], condition_id: str, path: str
-    ) -> List[str]:
+        self, presentation: dict | None, condition_id: str, path: str
+    ) -> list[str]:
         """
         Validate the presentation block.
         Returns the cleaned search_tags list (may be empty).
@@ -111,14 +100,10 @@ class ConditionRegistry:
         prefix = f"condition '{condition_id}' in {path}"
 
         if presentation is None:
-            raise RegistryValidationError(
-                f"Missing presentation block for {prefix}"
-            )
+            raise RegistryValidationError(f"Missing presentation block for {prefix}")
 
         if not isinstance(presentation, dict):
-            raise RegistryValidationError(
-                f"presentation must be an object for {prefix}"
-            )
+            raise RegistryValidationError(f"presentation must be an object for {prefix}")
 
         # label is required, must be non-empty string
         label = presentation.get("label")
@@ -143,9 +128,7 @@ class ConditionRegistry:
         allowed_keys = {"label", "free_text_prompt", "search_tags"}
         extra = set(presentation.keys()) - allowed_keys
         if extra:
-            raise RegistryValidationError(
-                f"Unexpected keys in presentation for {prefix}: {extra}"
-            )
+            raise RegistryValidationError(f"Unexpected keys in presentation for {prefix}: {extra}")
 
         return search_tags
 
@@ -154,7 +137,7 @@ class ConditionRegistry:
         raw_tags,
         condition_id: str,
         path: str,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         Validate and normalise search_tags from the presentation block.
 
@@ -174,9 +157,7 @@ class ConditionRegistry:
             return []
 
         if not isinstance(raw_tags, list):
-            raise RegistryValidationError(
-                f"presentation.search_tags must be a list for {prefix}"
-            )
+            raise RegistryValidationError(f"presentation.search_tags must be a list for {prefix}")
 
         if len(raw_tags) > SEARCH_TAGS_MAX_COUNT:
             raise RegistryValidationError(
@@ -184,7 +165,7 @@ class ConditionRegistry:
                 f"tags for {prefix} (found {len(raw_tags)})"
             )
 
-        cleaned: List[str] = []
+        cleaned: list[str] = []
         seen_lower: set = set()
 
         for i, item in enumerate(raw_tags):
@@ -197,8 +178,7 @@ class ConditionRegistry:
 
             if not stripped:
                 raise RegistryValidationError(
-                    f"presentation.search_tags item {i} is empty after stripping "
-                    f"for {prefix}"
+                    f"presentation.search_tags item {i} is empty after stripping for {prefix}"
                 )
 
             if len(stripped) > SEARCH_TAGS_MAX_TAG_LENGTH:
@@ -224,7 +204,7 @@ class ConditionRegistry:
 
     # --- Public interface ---
 
-    def list_conditions(self) -> List[dict]:
+    def list_conditions(self) -> list[dict]:
         """Returns ordered list of {id, label, search_tags} for all conditions."""
         return [
             {

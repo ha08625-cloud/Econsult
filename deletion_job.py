@@ -80,10 +80,9 @@ def run_deletion(database_url: str) -> None:
     # Import here so missing DATABASE_URL is caught before any app import.
     from app.core.db import get_conn
 
-    with get_conn(database_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
+    with get_conn(database_url) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
                 DELETE FROM submission_photos
                 WHERE submission_id IN (
                     SELECT submission_id
@@ -91,11 +90,11 @@ def run_deletion(database_url: str) -> None:
                     WHERE status = 'delivered'
                 )
                 """
-            )
-            photos_deleted = cur.rowcount
+        )
+        photos_deleted = cur.rowcount
 
-            cur.execute(
-                """
+        cur.execute(
+            """
                 DELETE FROM submission_attachments
                 WHERE submission_id IN (
                     SELECT submission_id
@@ -103,8 +102,8 @@ def run_deletion(database_url: str) -> None:
                     WHERE status = 'delivered'
                 )
                 """
-            )
-            attachments_deleted = cur.rowcount
+        )
+        attachments_deleted = cur.rowcount
 
     logger.info(
         "Deletion job complete: photos_deleted=%d attachments_deleted=%d",

@@ -52,6 +52,7 @@ _MAILGUN_EU_API_BASE = "https://api.eu.mailgun.net/v3"
 # SMTP implementation
 # ---------------------------------------------------------------------------
 
+
 class AdminDeliveryService:
     """
     Sends admin MFA codes and setup invitations via SMTP.
@@ -74,9 +75,7 @@ class AdminDeliveryService:
     def _require_env(name: str) -> str:
         value = os.environ.get(name)
         if not value:
-            raise RuntimeError(
-                f"AdminDeliveryService requires environment variable: {name}"
-            )
+            raise RuntimeError(f"AdminDeliveryService requires environment variable: {name}")
         return value
 
     def send_mfa_code(self, email: str, code: str) -> None:
@@ -90,10 +89,7 @@ class AdminDeliveryService:
         or send fails. The caller should let this propagate — a failed send
         is a genuine error.
         """
-        body = (
-            f"Your Econsult admin security code is: {code}. "
-            "It expires in 10 minutes."
-        )
+        body = f"Your Econsult admin security code is: {code}. It expires in 10 minutes."
 
         msg = EmailMessage()
         msg["Subject"] = "Your Econsult admin security code"
@@ -151,6 +147,7 @@ class AdminDeliveryService:
 # Mailgun HTTP API implementation
 # ---------------------------------------------------------------------------
 
+
 class MailgunHttpAdminDeliveryService:
     """
     Sends admin MFA codes and setup invitations via the Mailgun HTTP API.
@@ -185,10 +182,7 @@ class MailgunHttpAdminDeliveryService:
         Raises requests.RequestException if the HTTP call fails.
         The caller should let this propagate — a failed send is a genuine error.
         """
-        body = (
-            f"Your Econsult admin security code is: {code}. "
-            "It expires in 10 minutes."
-        )
+        body = f"Your Econsult admin security code is: {code}. It expires in 10 minutes."
 
         url = f"{_MAILGUN_EU_API_BASE}/{self._domain}/messages"
 

@@ -91,6 +91,7 @@ def _client_with_mock_session():
 
 # --- construction / TLS configuration --------------------------------------
 
+
 def test_session_built_with_cert_and_verify():
     """The Session must present our client cert and verify the server cert."""
     client = _make_client()
@@ -117,11 +118,10 @@ def test_construction_does_not_touch_the_filesystem():
 
 # --- auth header (golden) ---------------------------------------------------
 
+
 def test_auth_header_golden():
     client = _make_client()
-    header = client._build_auth_header(
-        nonce=_FIXED_NONCE, timestamp=_FIXED_TIMESTAMP
-    )
+    header = client._build_auth_header(nonce=_FIXED_NONCE, timestamp=_FIXED_TIMESTAMP)
     assert header == _GOLDEN_HEADER
 
 
@@ -135,9 +135,7 @@ def test_auth_header_regenerated_per_call():
 
 def test_auth_header_excludes_password_but_signs_it():
     client = _make_client()
-    header = client._build_auth_header(
-        nonce=_FIXED_NONCE, timestamp=_FIXED_TIMESTAMP
-    )
+    header = client._build_auth_header(nonce=_FIXED_NONCE, timestamp=_FIXED_TIMESTAMP)
     # The header value must not leak the password...
     assert _MAILBOX_PASSWORD not in header
     # ...but the signature depends on it: a different password -> different hmac.
@@ -150,18 +148,15 @@ def test_auth_header_excludes_password_but_signs_it():
         client_cert_path=_CLIENT_CERT_PATH,
         client_key_path=_CLIENT_KEY_PATH,
     )
-    assert other._build_auth_header(
-        nonce=_FIXED_NONCE, timestamp=_FIXED_TIMESTAMP
-    ) != header
+    assert other._build_auth_header(nonce=_FIXED_NONCE, timestamp=_FIXED_TIMESTAMP) != header
 
 
 # --- send_message: success --------------------------------------------------
 
+
 def test_send_message_returns_hex_message_id():
     client, session = _client_with_mock_session()
-    session.request.return_value = _FakeResponse(
-        202, json_body={"messageID": _HEX_MESSAGE_ID}
-    )
+    session.request.return_value = _FakeResponse(202, json_body={"messageID": _HEX_MESSAGE_ID})
 
     result = client.send_message(
         recipient_mailbox_id="TARGET_MAILBOX",
@@ -185,9 +180,7 @@ def test_send_message_returns_hex_message_id():
 
 def test_send_message_targets_outbox_with_expected_headers():
     client, session = _client_with_mock_session()
-    session.request.return_value = _FakeResponse(
-        202, json_body={"messageID": _HEX_MESSAGE_ID}
-    )
+    session.request.return_value = _FakeResponse(202, json_body={"messageID": _HEX_MESSAGE_ID})
 
     client.send_message(
         recipient_mailbox_id="TARGET_MAILBOX",
@@ -212,6 +205,7 @@ def test_send_message_targets_outbox_with_expected_headers():
 
 
 # --- send_message: malformed success body -> terminal -----------------------
+
 
 def test_send_message_malformed_202_body_is_terminal():
     client, session = _client_with_mock_session()
@@ -241,6 +235,7 @@ def test_send_message_202_without_message_id_is_terminal():
 
 # --- error classification ---------------------------------------------------
 
+
 def _send(client):
     return client.send_message(
         recipient_mailbox_id="TARGET_MAILBOX",
@@ -261,9 +256,7 @@ def test_network_error_is_transient():
 def test_missing_cert_file_oserror_is_transient():
     """requests raises OSError on a missing cert file; classify it transient."""
     client, session = _client_with_mock_session()
-    session.request.side_effect = OSError(
-        "Could not find the TLS certificate file"
-    )
+    session.request.side_effect = OSError("Could not find the TLS certificate file")
     with pytest.raises(MeshTransientError):
         _send(client)
 
@@ -328,6 +321,7 @@ def test_other_4xx_is_terminal():
 
 # --- get_message_status -----------------------------------------------------
 
+
 def test_get_message_status_uses_query_string_and_returns_dict():
     client, session = _client_with_mock_session()
     tracking = {
@@ -344,9 +338,7 @@ def test_get_message_status_uses_query_string_and_returns_dict():
     method, url = args
     assert method == "GET"
     # Query-string form: the message id is in params, not the path.
-    assert url == (
-        f"{_BASE_URL}/messageexchange/{_MAILBOX_ID}/outbox/tracking"
-    )
+    assert url == (f"{_BASE_URL}/messageexchange/{_MAILBOX_ID}/outbox/tracking")
     assert kwargs["params"] == {"messageID": _HEX_MESSAGE_ID}
 
 
@@ -366,11 +358,10 @@ def test_get_message_status_unparseable_body_is_terminal():
 
 # --- handshake --------------------------------------------------------------
 
+
 def test_handshake_success_does_not_raise():
     client, session = _client_with_mock_session()
-    session.request.return_value = _FakeResponse(
-        200, json_body={"mailboxId": _MAILBOX_ID}
-    )
+    session.request.return_value = _FakeResponse(200, json_body={"mailboxId": _MAILBOX_ID})
     client.handshake()  # no exception
     args, _ = session.request.call_args
     method, url = args

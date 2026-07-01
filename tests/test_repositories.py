@@ -12,6 +12,7 @@ block. No test depends on another test's data.
 """
 
 import os
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -29,32 +30,35 @@ os.environ.setdefault("PRACTICE_ID", "test-practice")
 
 pytestmark = pytest.mark.integration
 
+from datetime import UTC, datetime  # noqa: E402
 from uuid import uuid4  # noqa: E402
-from datetime import datetime, timezone  # noqa: E402
 
 from app.core.db import get_conn  # noqa: E402
-from app.repositories.runtime_state_repository import (  # noqa: E402
-    RuntimeStateRepository,
-    RuntimeStateNotFound,
-    VersionConflict,
-    SessionClosed,
-)
-from app.repositories.practice_repository import (  # noqa: E402
-    PracticeRepository,
-    PracticeNotFound,
-    InvalidEmailError,
-    InvalidSignpostingData,
-    InvalidDoctorListError,
-)
-from app.repositories.submission_repository import (  # noqa: E402
-    SubmissionRepository,
-    SubmissionNotFound,
+from app.models.serialisation_contracts import (  # noqa: E402
+    AuditOutput,
+    ClinicalOutput,
+    PatientDetails,
 )
 from app.repositories.attachment_repository import (  # noqa: E402
-    AttachmentRepository,
     AttachmentNotFound,
+    AttachmentRepository,
 )
-from app.models.serialisation_contracts import ClinicalOutput, AuditOutput, PatientDetails  # noqa: E402
+from app.repositories.practice_repository import (  # noqa: E402
+    InvalidDoctorListError,
+    InvalidEmailError,
+    PracticeNotFound,
+    PracticeRepository,
+)
+from app.repositories.runtime_state_repository import (  # noqa: E402
+    RuntimeStateNotFound,
+    RuntimeStateRepository,
+    SessionClosed,
+    VersionConflict,
+)
+from app.repositories.submission_repository import (  # noqa: E402
+    SubmissionNotFound,
+    SubmissionRepository,
+)
 
 DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 
@@ -62,6 +66,7 @@ DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _uid() -> str:
     return f"test_{uuid4().hex[:8]}"
@@ -71,16 +76,14 @@ def _uid() -> str:
 # RuntimeStateRepository
 # ---------------------------------------------------------------------------
 
+
 def _make_state_repo() -> RuntimeStateRepository:
     return RuntimeStateRepository(DATABASE_URL)
 
 
 def _cleanup_runtime(rid: str) -> None:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM runtime_state_versions WHERE runtime_id = %s", (rid,)
-            )
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM runtime_state_versions WHERE runtime_id = %s", (rid,))
 
 
 def test_runtime_create_and_get():
@@ -152,20 +155,16 @@ def test_runtime_not_found():
 # PracticeRepository
 # ---------------------------------------------------------------------------
 
+
 def _make_practice_repo() -> PracticeRepository:
     return PracticeRepository(DATABASE_URL)
 
 
 def _cleanup_practice(pid: str) -> None:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM practice_doctors WHERE practice_id = %s", (pid,)
-            )
-            cur.execute(
-                "DELETE FROM practice_signposting WHERE practice_id = %s", (pid,)
-            )
-            cur.execute("DELETE FROM practices WHERE practice_id = %s", (pid,))
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM practice_doctors WHERE practice_id = %s", (pid,))
+        cur.execute("DELETE FROM practice_signposting WHERE practice_id = %s", (pid,))
+        cur.execute("DELETE FROM practices WHERE practice_id = %s", (pid,))
 
 
 def test_practice_create_and_get():
@@ -286,6 +285,7 @@ def test_signposting_empty_html_deletes_row():
 # PracticeRepository — doctor list
 # ---------------------------------------------------------------------------
 
+
 def test_doctors_get_returns_empty_list_when_none_configured():
     repo = _make_practice_repo()
     pid = _uid()
@@ -399,6 +399,7 @@ def test_doctors_set_raises_for_list_too_long():
 # SubmissionRepository
 # ---------------------------------------------------------------------------
 
+
 def _make_submission_repo() -> SubmissionRepository:
     return SubmissionRepository(DATABASE_URL)
 
@@ -436,20 +437,11 @@ def _make_dummy_outputs():
 
 
 def _cleanup_submission(sid: str) -> None:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,)
-            )
-            cur.execute(
-                "DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,)
-            )
-            cur.execute(
-                "DELETE FROM submission_attachments WHERE submission_id = %s", (sid,)
-            )
-            cur.execute(
-                "DELETE FROM submission_records WHERE submission_id = %s", (sid,)
-            )
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_attachments WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
 
 
 def _create_test_submission(repo: SubmissionRepository, sid: str) -> None:
@@ -461,7 +453,7 @@ def _create_test_submission(repo: SubmissionRepository, sid: str) -> None:
         condition_label="Urinary Tract Infection",
         clinical_output=clinical,
         audit_output=audit,
-        submitted_at=datetime.now(timezone.utc),
+        submitted_at=datetime.now(UTC),
     )
 
 
@@ -492,6 +484,7 @@ def test_submission_not_found():
 # ---------------------------------------------------------------------------
 # AttachmentRepository
 # ---------------------------------------------------------------------------
+
 
 def _make_attachment_repo() -> AttachmentRepository:
     return AttachmentRepository(DATABASE_URL)
@@ -551,6 +544,7 @@ def test_attachment_delete_idempotent():
 # ---------------------------------------------------------------------------
 # SubmissionRepository.get_delivery_metadata (Phase 3 — MESH fallback path)
 # ---------------------------------------------------------------------------
+
 
 def test_get_delivery_metadata_returns_only_the_two_fields():
     """

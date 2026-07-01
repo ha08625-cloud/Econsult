@@ -31,30 +31,30 @@ This module must never import:
 # On any exception inside the with block, psycopg2's context manager rolls
 # back, and the endpoint returns HTTP 500.
 """
+
 import logging
 
-from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.admin_context import AdminContext, require_admin
-from app.repositories.practice_repository import (
-    InvalidSignpostingData,
-    InvalidEmailError,
-    InvalidDoctorListError,
-    MAX_SIGNPOSTING_LENGTH,
-    MAX_DOCTOR_LIST_LENGTH,
-    sanitise_signposting_html,
+from app.core.db import get_conn
+from app.core.dependencies import (
+    get_audit_repo,
+    get_practice_repo,
+    get_registry,
 )
 from app.core.errors import (
-    INVALID_PAYLOAD,
     INVALID_FIELD_TYPE,
+    INVALID_PAYLOAD,
     ConditionNotFound,
 )
-from app.core.dependencies import (
-    get_registry,
-    get_practice_repo,
-    get_audit_repo,
+from app.repositories.practice_repository import (
+    MAX_SIGNPOSTING_LENGTH,
+    InvalidDoctorListError,
+    InvalidEmailError,
+    InvalidSignpostingData,
+    sanitise_signposting_html,
 )
-from app.core.db import get_conn
 from app.utils.http_utils import extract_ip
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
 
 def _normalise_signposting(value) -> str | None:
     """
@@ -86,6 +87,7 @@ def _normalise_signposting(value) -> str | None:
 # Condition list
 # ---------------------------------------------------------------------------
 
+
 @router.get("/conditions")
 async def admin_list_conditions(
     _: AdminContext = Depends(require_admin),
@@ -101,6 +103,7 @@ async def admin_list_conditions(
 # ---------------------------------------------------------------------------
 # Practice
 # ---------------------------------------------------------------------------
+
 
 @router.get("/practice")
 async def get_practice(
@@ -208,6 +211,7 @@ async def put_practice_email(
 # ---------------------------------------------------------------------------
 # Signposting
 # ---------------------------------------------------------------------------
+
 
 @router.get("/conditions/{condition_id}/signposting")
 async def get_signposting(
@@ -380,6 +384,7 @@ async def delete_signposting(
 # ---------------------------------------------------------------------------
 # Doctors
 # ---------------------------------------------------------------------------
+
 
 @router.get("/doctors")
 async def get_doctors(

@@ -10,18 +10,17 @@ level. The underlying repositories are integration-tested separately in
 test_pipeline_repositories.py.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 from app.services.delivery.downstream_enqueuer import (
     DeliveryEnqueuer,
-    DownstreamEnqueuer,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_pdf_repo(delivery_email: str = "gp@example.com"):
     repo = MagicMock()
@@ -35,7 +34,7 @@ def _make_submission_repo(
 ):
     repo = MagicMock()
     if submitted_at is None:
-        submitted_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        submitted_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
     repo.get_submission.return_value = {
         "condition_label": condition_label,
         "submitted_at": submitted_at,
@@ -63,6 +62,7 @@ def _make_enqueuer(
 # Protocol structural compliance
 # ---------------------------------------------------------------------------
 
+
 def test_delivery_enqueuer_has_protocol_shape():
     """
     DeliveryEnqueuer must satisfy the structural shape of DownstreamEnqueuer:
@@ -83,6 +83,7 @@ def test_delivery_enqueuer_has_protocol_shape():
 # ---------------------------------------------------------------------------
 # DeliveryEnqueuer behaviour
 # ---------------------------------------------------------------------------
+
 
 def test_delivery_enqueuer_reads_email_from_pdf_repo():
     """
@@ -115,7 +116,7 @@ def test_delivery_enqueuer_forwards_to_delivery_repo_create_job():
     enqueue must call delivery_repo.create_job with the submission_id and
     the values fetched from the other two repos.
     """
-    submitted_at = datetime(2026, 3, 15, 9, 30, 0, tzinfo=timezone.utc)
+    submitted_at = datetime(2026, 3, 15, 9, 30, 0, tzinfo=UTC)
     pdf_repo = _make_pdf_repo(delivery_email="practice@nhs.net")
     submission_repo = _make_submission_repo(
         condition_label="Sore throat",
@@ -208,14 +209,15 @@ def test_delivery_enqueuer_call_order_reads_before_writes():
     """
     call_order = []
     pdf_repo = _make_pdf_repo()
-    pdf_repo.get_delivery_email.side_effect = (
-        lambda *a, **kw: call_order.append("get_delivery_email") or "gp@example.com"
+    pdf_repo.get_delivery_email.side_effect = lambda *a, **kw: (
+        call_order.append("get_delivery_email") or "gp@example.com"
     )
     submission_repo = _make_submission_repo()
-    submission_repo.get_submission.side_effect = (
-        lambda *a, **kw: call_order.append("get_submission") or {
+    submission_repo.get_submission.side_effect = lambda *a, **kw: (
+        call_order.append("get_submission")
+        or {
             "condition_label": "X",
-            "submitted_at": datetime.now(timezone.utc),
+            "submitted_at": datetime.now(UTC),
         }
     )
     delivery_repo = _make_delivery_repo()

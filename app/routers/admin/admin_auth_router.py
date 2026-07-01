@@ -19,29 +19,29 @@ does not block the response. If the background delivery fails, the task
 catches the exception, logs it to Sentry, and deletes the OTP record from
 the database so the user is not left waiting for a code that will never arrive.
 """
+
 import logging
+from datetime import UTC, datetime, timedelta
 
 import sentry_sdk
-from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, BackgroundTasks, Request, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.core.admin_context import (
-    SESSION_COOKIE_NAME,
     SESSION_COOKIE_MAX_AGE,
+    SESSION_COOKIE_NAME,
     SESSION_TTL_MINUTES,
 )
-from app.core.errors import APIError, INVALID_PAYLOAD
 from app.core.dependencies import (
-    get_auth_repo,
-    get_audit_repo,
     get_admin_delivery_service,
-    get_allowed_admin_domains,
+    get_audit_repo,
+    get_auth_repo,
     get_practice_id,
 )
-from app.utils.http_utils import extract_ip
+from app.core.errors import INVALID_PAYLOAD, APIError
 from app.core.rate_limit import limiter
 from app.services.admin import auth_service
+from app.utils.http_utils import extract_ip
 
 # OTP TTL re-used from auth_service constants (10 minutes).
 _CODE_TTL_MINUTES = 10
@@ -54,6 +54,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Background task: send MFA code with cleanup on failure
 # ---------------------------------------------------------------------------
+
 
 def _send_mfa_code_background(
     email: str,
@@ -79,9 +80,7 @@ def _send_mfa_code_background(
         delivery_service.send_mfa_code(email, code)
         logger.info("auth.login.mfa_code_sent: %s", email)
     except Exception:
-        logger.exception(
-            "auth.login.mfa_delivery_failed: %s — cleaning up OTP record", email
-        )
+        logger.exception("auth.login.mfa_delivery_failed: %s — cleaning up OTP record", email)
         sentry_sdk.capture_exception()
         try:
             auth_repo.delete_auth_code(email)
@@ -95,6 +94,7 @@ def _send_mfa_code_background(
 # ---------------------------------------------------------------------------
 # POST /auth/login  (step 1: password check + OTP dispatch)
 # ---------------------------------------------------------------------------
+
 
 @router.post("/auth/login", status_code=200)
 @limiter.limit("5/minute")
@@ -176,7 +176,7 @@ async def login(
     # Password verified. Generate OTP and upsert synchronously.
     code = auth_service.generate_code()
     hashed = auth_service.hash_code(code)
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     expires_at = now + timedelta(minutes=_CODE_TTL_MINUTES)
 
     auth_repo.upsert_auth_code(
@@ -216,6 +216,7 @@ async def login(
 # ---------------------------------------------------------------------------
 # POST /auth/verify  (step 2: OTP check, unchanged)
 # ---------------------------------------------------------------------------
+
 
 @router.post("/auth/verify", status_code=200)
 @limiter.limit("5/minute")
@@ -328,6 +329,7 @@ async def verify_mfa_code(
 # POST /auth/request-reset
 # ---------------------------------------------------------------------------
 
+
 @router.post("/auth/request-reset", status_code=200)
 @limiter.limit("5/minute")
 async def request_password_reset(
@@ -354,6 +356,7 @@ async def request_password_reset(
     addresses in the audit trail — the opposite of the intended behaviour.
     """
     import time
+
     start = time.monotonic()
 
     try:
@@ -375,6 +378,7 @@ async def request_password_reset(
     # Fixed delay applied regardless of whether the user exists, to prevent
     # an attacker from distinguishing DB hit vs miss via response time.
     from app.services.admin.auth_service import _fixed_delay
+
     _fixed_delay(start)
 
     if user is not None:
@@ -395,6 +399,7 @@ async def request_password_reset(
 # ---------------------------------------------------------------------------
 # POST /auth/set-password
 # ---------------------------------------------------------------------------
+
 
 @router.post("/auth/set-password", status_code=200)
 @limiter.limit("5/minute")
@@ -450,6 +455,7 @@ async def set_password(
 # ---------------------------------------------------------------------------
 # POST /auth/logout
 # ---------------------------------------------------------------------------
+
 
 @router.post("/auth/logout", status_code=200)
 async def logout(

@@ -1,11 +1,10 @@
 # ruleset IO and validation
 
-import json
 import hashlib
+import json
 from decimal import Decimal
-from functools import lru_cache
-from typing import Dict, Any, List
-
+from functools import cache
+from typing import Any
 
 # The complete set of answer types the engine understands. Authored in the
 # ruleset's original (capitalised-Boolean) casing; runtime lowercases it.
@@ -17,8 +16,8 @@ VALID_ANSWER_TYPES = {"Boolean", "text", "Number"}
 VALID_UNIT_SYSTEMS = {"metric", "imperial"}
 
 
-@lru_cache(maxsize=None)
-def load_ruleset(path: str) -> Dict[str, Any]:
+@cache
+def load_ruleset(path: str) -> dict[str, Any]:
     """
     Loads, validates, and caches a ruleset by its file path.
 
@@ -30,13 +29,13 @@ def load_ruleset(path: str) -> Dict[str, Any]:
     every call after that returns the same cached dict. A failed load is
     not cached -- a path that raises will be retried on the next call.
     """
-    with open(path, "r") as f:
+    with open(path) as f:
         ruleset = json.load(f)
     validate_ruleset(ruleset)
     return ruleset
 
 
-def ruleset_hash(ruleset: Dict[str, Any]) -> str:
+def ruleset_hash(ruleset: dict[str, Any]) -> str:
     payload = json.dumps(ruleset, sort_keys=True).encode()
     return hashlib.sha256(payload).hexdigest()
 
@@ -57,7 +56,7 @@ def _decimal_places(x: float) -> int:
     return -exponent if isinstance(exponent, int) and exponent < 0 else 0
 
 
-def _validate_number_question(q: Dict[str, Any]) -> None:
+def _validate_number_question(q: dict[str, Any]) -> None:
     """Validate the Number-specific fields. Raises ValueError on any violation."""
     key = q["answer_key"]
 
@@ -72,13 +71,10 @@ def _validate_number_question(q: Dict[str, Any]) -> None:
     hi = q.get("max")
     if not _is_number(lo) or not _is_number(hi):
         raise ValueError(
-            f"Number question '{key}' requires numeric min and max, "
-            f"got min={lo!r}, max={hi!r}"
+            f"Number question '{key}' requires numeric min and max, got min={lo!r}, max={hi!r}"
         )
     if lo >= hi:
-        raise ValueError(
-            f"Number question '{key}' requires min < max, got min={lo}, max={hi}"
-        )
+        raise ValueError(f"Number question '{key}' requires min < max, got min={lo}, max={hi}")
 
     # A bound finer than the question's own precision is an authoring mistake:
     # it can never be entered or matched. Reject it fail-fast.
@@ -91,12 +87,11 @@ def _validate_number_question(q: Dict[str, Any]) -> None:
     rwt = q.get("range_warning_text")
     if rwt is not None and not isinstance(rwt, str):
         raise ValueError(
-            f"Number question '{key}' range_warning_text must be a string or null, "
-            f"got {rwt!r}"
+            f"Number question '{key}' range_warning_text must be a string or null, got {rwt!r}"
         )
 
 
-def _validate_quantity_fields(q: Dict[str, Any]) -> None:
+def _validate_quantity_fields(q: dict[str, Any]) -> None:
     """
     Validate the unit-toggle fields (quantity / allowed_systems / default_system).
 
@@ -120,21 +115,15 @@ def _validate_quantity_fields(q: Dict[str, Any]) -> None:
     quantity = q.get("quantity")
 
     if quantity is not None and not isinstance(quantity, bool):
-        raise ValueError(
-            f"Question '{key}' has a non-boolean quantity: {quantity!r}"
-        )
+        raise ValueError(f"Question '{key}' has a non-boolean quantity: {quantity!r}")
 
     if quantity is True:
         if q.get("answer_type") != "Number":
-            raise ValueError(
-                f"Question '{key}' sets quantity but is not a Number question"
-            )
+            raise ValueError(f"Question '{key}' sets quantity but is not a Number question")
 
         allowed = q.get("allowed_systems")
         if not isinstance(allowed, list) or not allowed:
-            raise ValueError(
-                f"Quantity question '{key}' requires a non-empty allowed_systems list"
-            )
+            raise ValueError(f"Quantity question '{key}' requires a non-empty allowed_systems list")
         unknown = [s for s in allowed if s not in VALID_UNIT_SYSTEMS]
         if unknown:
             raise ValueError(
@@ -142,9 +131,7 @@ def _validate_quantity_fields(q: Dict[str, Any]) -> None:
                 f"allowed: {sorted(VALID_UNIT_SYSTEMS)}"
             )
         if len(set(allowed)) != len(allowed):
-            raise ValueError(
-                f"Quantity question '{key}' has duplicate allowed_systems: {allowed}"
-            )
+            raise ValueError(f"Quantity question '{key}' has duplicate allowed_systems: {allowed}")
 
         default_system = q.get("default_system")
         if default_system not in allowed:
@@ -155,12 +142,10 @@ def _validate_quantity_fields(q: Dict[str, Any]) -> None:
     else:
         for unit_field in ("allowed_systems", "default_system"):
             if q.get(unit_field) is not None:
-                raise ValueError(
-                    f"Non-quantity question '{key}' must not set {unit_field}"
-                )
+                raise ValueError(f"Non-quantity question '{key}' must not set {unit_field}")
 
 
-def validate_ruleset(ruleset: Dict[str, Any]) -> None:
+def validate_ruleset(ruleset: dict[str, Any]) -> None:
     if "condition_id" not in ruleset:
         raise ValueError("Ruleset missing required field: condition_id")
 
@@ -194,9 +179,7 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
 
         if q.get("send_to_encoder"):
             if q.get("encoder_prompt") is None:
-                raise ValueError(
-                    f"Encoder question missing encoder_prompt: {q['answer_key']}"
-                )
+                raise ValueError(f"Encoder question missing encoder_prompt: {q['answer_key']}")
             if q.get("answer_type") != "Boolean":
                 raise ValueError(
                     f"Encoder questions must be Boolean, got {q.get('answer_type')} "
@@ -238,7 +221,7 @@ def validate_ruleset(ruleset: Dict[str, Any]) -> None:
                     )
 
 
-def extract_encoder_definitions(ruleset: Dict[str, Any]) -> List[Dict[str, str]]:
+def extract_encoder_definitions(ruleset: dict[str, Any]) -> list[dict[str, str]]:
     """
     Returns the encoder-facing contract.
     Each definition contains answer_key + encoder_prompt.

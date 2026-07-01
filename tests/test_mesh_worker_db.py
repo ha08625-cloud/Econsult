@@ -12,6 +12,7 @@ Run via: make test-integration
 """
 
 import os
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -29,11 +30,16 @@ os.environ.setdefault("PRACTICE_ID", "test-practice")
 
 pytestmark = pytest.mark.integration
 
-from datetime import datetime, timezone  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
 from unittest.mock import MagicMock  # noqa: E402
 from uuid import uuid4  # noqa: E402
 
-from app.core.db import get_conn, alembic_upgrade  # noqa: E402
+from app.core.db import alembic_upgrade, get_conn  # noqa: E402
+from app.models.serialisation_contracts import (  # noqa: E402
+    AuditOutput,
+    ClinicalOutput,
+    PatientDetails,
+)
 from app.repositories.attachment_repository import AttachmentRepository  # noqa: E402
 from app.repositories.delivery_repository import DeliveryRepository  # noqa: E402
 from app.repositories.mesh_repository import MeshRepository  # noqa: E402
@@ -44,11 +50,6 @@ from app.services.delivery.mesh_payload import RawPdfPayloadBuilder  # noqa: E40
 from app.services.delivery.mesh_worker import (  # noqa: E402
     _process_job,
     _recover_orphaned_fallbacks,
-)
-from app.models.serialisation_contracts import (  # noqa: E402
-    AuditOutput,
-    ClinicalOutput,
-    PatientDetails,
 )
 
 alembic_upgrade()
@@ -63,6 +64,7 @@ PDF_BYTES = b"%PDF-1.7 dispatcher integration test"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _uid() -> str:
     return f"test_{uuid4().hex[:12]}"
@@ -102,7 +104,7 @@ def _create_submission_with_pdf_artifacts(sid: str) -> None:
         condition_label="Urinary Tract Infection",
         clinical_output=clinical,
         audit_output=audit,
-        submitted_at=datetime.now(timezone.utc),
+        submitted_at=datetime.now(UTC),
     )
     PDFRepository(DATABASE_URL).create_job(
         submission_id=sid,
@@ -114,34 +116,27 @@ def _create_submission_with_pdf_artifacts(sid: str) -> None:
 
 def _cleanup(sid: str) -> None:
     """Delete all FK child rows before the parent submission_records row."""
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM mesh_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
-            cur.execute(
-                "DELETE FROM submission_attachments WHERE submission_id = %s", (sid,)
-            )
-            cur.execute(
-                "DELETE FROM submission_records WHERE submission_id = %s", (sid,)
-            )
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM mesh_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_attachments WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
 
 
 def _read_delivery_job(sid: str) -> dict:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM delivery_jobs WHERE submission_id = %s", (sid,)
-            )
-            row = cur.fetchone()
-            assert row is not None, f"expected a delivery_jobs row for {sid}"
-            cols = [desc[0] for desc in cur.description]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM delivery_jobs WHERE submission_id = %s", (sid,))
+        row = cur.fetchone()
+        assert row is not None, f"expected a delivery_jobs row for {sid}"
+        cols = [desc[0] for desc in cur.description]
     return dict(zip(cols, row))
 
 
 # ---------------------------------------------------------------------------
 # Terminal failure -> fallback delivery_jobs row
 # ---------------------------------------------------------------------------
+
 
 def test_terminal_failure_creates_fallback_delivery_job_with_real_metadata():
     """
@@ -164,9 +159,7 @@ def test_terminal_failure_creates_fallback_delivery_job_with_real_metadata():
         assert job is not None and str(job["submission_id"]) == sid
 
         failing_client = MagicMock()
-        failing_client.send_message.side_effect = MeshTerminalError(
-            "417 unregistered recipient"
-        )
+        failing_client.send_message.side_effect = MeshTerminalError("417 unregistered recipient")
 
         _process_job(
             job=job,
@@ -197,6 +190,7 @@ def test_terminal_failure_creates_fallback_delivery_job_with_real_metadata():
 # Orphaned-fallback recovery sweep
 # ---------------------------------------------------------------------------
 
+
 def test_sweep_recovers_manufactured_orphan():
     """
     Manufacture the crash artefact (fallback_triggered with no
@@ -206,9 +200,7 @@ def test_sweep_recovers_manufactured_orphan():
     mesh_repo = MeshRepository(DATABASE_URL)
     try:
         _create_submission_with_pdf_artifacts(sid)
-        job_id = mesh_repo.create_job(
-            submission_id=sid, recipient_mailbox_id=RECIPIENT
-        )
+        job_id = mesh_repo.create_job(submission_id=sid, recipient_mailbox_id=RECIPIENT)
         mesh_repo.mark_fallback_triggered(mesh_job_id=job_id)
 
         _recover_orphaned_fallbacks(
@@ -231,12 +223,11 @@ def test_sweep_recovers_manufactured_orphan():
             submission_repo=SubmissionRepository(DATABASE_URL),
             delivery_repo=DeliveryRepository(DATABASE_URL),
         )
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
-                    (sid,),
-                )
-                assert cur.fetchone()[0] == 1
+        with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
+                (sid,),
+            )
+            assert cur.fetchone()[0] == 1
     finally:
         _cleanup(sid)

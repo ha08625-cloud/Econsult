@@ -10,21 +10,21 @@ from decimal import Decimal
 
 import pytest
 
-from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
+from app.models.runtime_state import AnswerState, RuntimeState, SafetyEvaluation
 from app.services.engine.form_logic import (
-    validate_required_answers,
-    normalise_number_answers,
+    AnswerValidationError,
+    _validate_number_value,
     apply_patient_answers,
     convert_unit_answers,
     normalise_encoder_provenance,
-    AnswerValidationError,
-    _validate_number_value,
+    normalise_number_answers,
+    validate_required_answers,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 def _number_ruleset(decimal_places: int = 1):
     return {
@@ -69,6 +69,7 @@ def _runtime(value):
 # validate_required_answers — accept
 # ---------------------------------------------------------------------------
 
+
 def test_accepts_decimal_at_exact_precision():
     validate_required_answers(_runtime(Decimal("70.5")), _number_ruleset(1))
 
@@ -92,6 +93,7 @@ def test_range_is_not_enforced_here():
 # ---------------------------------------------------------------------------
 # validate_required_answers — reject
 # ---------------------------------------------------------------------------
+
 
 def test_rejects_missing_number():
     with pytest.raises(AnswerValidationError):
@@ -149,6 +151,7 @@ def test_answer_validation_error_is_a_value_error():
 # component error) before delegating here.
 # ---------------------------------------------------------------------------
 
+
 def test_helper_accepts_int():
     _validate_number_value(70, 1, "weight")
 
@@ -192,6 +195,7 @@ def test_helper_is_not_none_aware():
 # ---------------------------------------------------------------------------
 # normalise_number_answers
 # ---------------------------------------------------------------------------
+
 
 def _normalised(value):
     rt = _runtime(value)
@@ -240,6 +244,7 @@ def test_normalise_ignores_non_number_answers():
 # ---------------------------------------------------------------------------
 # apply_patient_answers / normalise_encoder_provenance — provenance
 # ---------------------------------------------------------------------------
+
 
 def _bool_runtime(source, encoder_value, value=None):
     return RuntimeState(
@@ -334,6 +339,7 @@ def test_normalise_leaves_encoder_incorrect_untouched():
 # apply_patient_answers — change_count auditing
 # ---------------------------------------------------------------------------
 
+
 def _encoder_runtime(encoder_value=True):
     return _bool_runtime(source="encoder", encoder_value=encoder_value, value=encoder_value)
 
@@ -393,8 +399,12 @@ def test_change_count_multi_key_submit_counts_each_changed_encoder_answer():
         free_text="",
         additional_text=None,
         answers={
-            "a": AnswerState(value=True, source="encoder", encoder_value=True, answer_type="boolean"),
-            "b": AnswerState(value=False, source="encoder", encoder_value=False, answer_type="boolean"),
+            "a": AnswerState(
+                value=True, source="encoder", encoder_value=True, answer_type="boolean"
+            ),
+            "b": AnswerState(
+                value=False, source="encoder", encoder_value=False, answer_type="boolean"
+            ),
             "c": AnswerState(value="hi", source="patient", encoder_value=None, answer_type="text"),
         },
         safety_evaluation=SafetyEvaluation(),
@@ -410,10 +420,14 @@ def test_change_count_multi_key_submit_counts_each_changed_encoder_answer():
 # AnswerState.change_count — serialisation
 # ---------------------------------------------------------------------------
 
+
 def test_answerstate_roundtrip_preserves_change_count():
     a = AnswerState(
-        value=True, source="encoder_incorrect", encoder_value=True,
-        answer_type="boolean", change_count=3,
+        value=True,
+        source="encoder_incorrect",
+        encoder_value=True,
+        answer_type="boolean",
+        change_count=3,
     )
     restored = AnswerState.from_dict(a.to_dict())
     assert restored.change_count == 3
@@ -436,6 +450,7 @@ def test_answerstate_from_dict_defaults_missing_change_count_to_zero():
 # {"system", "components"} into a canonical kg Decimal, recording raw_components
 # and runtime.unit_system. Metric rejects over-precision; imperial rounds.
 # ---------------------------------------------------------------------------
+
 
 def _quantity_ruleset(decimal_places=1, allowed=("metric", "imperial")):
     return {
@@ -467,6 +482,7 @@ def _convert(value, ruleset=None):
 
 
 # --- metric ---
+
 
 def test_convert_metric_decimal():
     rt = _convert({"system": "metric", "components": {"kg": Decimal("70.5")}})
@@ -500,10 +516,11 @@ def test_convert_metric_rejects_bool_component():
 
 # --- imperial ---
 
+
 def test_convert_imperial_rounds_to_decimal_places():
     rt = _convert({"system": "imperial", "components": {"st": 11, "lb": 11}})
     a = rt.answers["weight"]
-    assert a.value == Decimal("74.8")          # 74.84274105 rounded to 1 dp
+    assert a.value == Decimal("74.8")  # 74.84274105 rounded to 1 dp
     assert a.raw_components == {"st": 11, "lb": 11}
     assert rt.unit_system == "imperial"
 
@@ -513,7 +530,7 @@ def test_convert_imperial_rounds_half_up_to_whole():
         {"system": "imperial", "components": {"st": 11, "lb": 11}},
         ruleset=_quantity_ruleset(decimal_places=0),
     )
-    assert rt.answers["weight"].value == Decimal("75")   # 74.84 -> 75
+    assert rt.answers["weight"].value == Decimal("75")  # 74.84 -> 75
 
 
 def test_convert_imperial_accepts_decimal_whole_components():
@@ -534,6 +551,7 @@ def test_convert_imperial_rejects_negative():
 
 
 # --- shape / system guards ---
+
 
 def test_convert_skips_unanswered():
     rt = _convert(None)
@@ -594,6 +612,7 @@ def test_convert_ignores_non_quantity_number_question():
 # Proves the ordering and the final persisted shape, without a database.
 # ---------------------------------------------------------------------------
 
+
 def _run_sequence(submitted_value, ruleset):
     rt = _runtime(None)  # starts unanswered
     rt.answers["weight"].source = "unanswered"
@@ -611,7 +630,7 @@ def test_sequence_imperial_end_state():
         _quantity_ruleset(1),
     )
     a = rt.answers["weight"]
-    assert a.value == "74.8"                       # canonical kg string, persisted
+    assert a.value == "74.8"  # canonical kg string, persisted
     assert a.raw_components == {"st": 11, "lb": 11}
     assert a.source == "patient"
     assert a.change_count == 0
@@ -641,6 +660,7 @@ def test_sequence_metric_whole_number_persists_cleanly():
 # ---------------------------------------------------------------------------
 # normalise_number_answers defensive guard
 # ---------------------------------------------------------------------------
+
 
 def test_normalise_raises_on_unresolved_dict():
     # A dict reaching normalise means convert was skipped / ran out of order.

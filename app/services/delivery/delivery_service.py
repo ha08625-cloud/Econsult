@@ -69,6 +69,7 @@ class EmailDeliveryError(Exception):
 # Abstract base
 # ---------------------------------------------------------------------------
 
+
 class DeliveryService(ABC):
     @abstractmethod
     def send_clinical_output(
@@ -85,28 +86,32 @@ class DeliveryService(ABC):
 # Email body (static — no clinical content)
 # ---------------------------------------------------------------------------
 
+
 def _format_body(
     condition_label: str,
     submission_id: str,
     submitted_at: datetime,
 ) -> str:
-    return "\n".join([
-        "E-CONSULTATION SUBMISSION",
-        "",
-        f"Submission ID: {submission_id}",
-        f"Condition: {condition_label}",
-        f"Submitted at: {submitted_at.strftime('%Y-%m-%d %H:%M:%S')} UTC",
-        "",
-        "Please open the attached PDF for the full submission.",
-        "",
-        "This message was generated automatically by the e-consultation system.",
-        "Do not reply to this email.",
-    ])
+    return "\n".join(
+        [
+            "E-CONSULTATION SUBMISSION",
+            "",
+            f"Submission ID: {submission_id}",
+            f"Condition: {condition_label}",
+            f"Submitted at: {submitted_at.strftime('%Y-%m-%d %H:%M:%S')} UTC",
+            "",
+            "Please open the attached PDF for the full submission.",
+            "",
+            "This message was generated automatically by the e-consultation system.",
+            "Do not reply to this email.",
+        ]
+    )
 
 
 # ---------------------------------------------------------------------------
 # SMTP implementation
 # ---------------------------------------------------------------------------
+
 
 class EmailDeliveryService(DeliveryService):
     """
@@ -137,9 +142,7 @@ class EmailDeliveryService(DeliveryService):
     def _require_env(name: str) -> str:
         value = os.environ.get(name)
         if not value:
-            raise RuntimeError(
-                f"EmailDeliveryService requires environment variable: {name}"
-            )
+            raise RuntimeError(f"EmailDeliveryService requires environment variable: {name}")
         return value
 
     def send_clinical_output(
@@ -153,9 +156,7 @@ class EmailDeliveryService(DeliveryService):
         subject = f"E-consultation: {condition_label} [{submission_id}]"
         body = _format_body(condition_label, submission_id, submitted_at)
 
-        pdf_filename = (
-            f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
-        )
+        pdf_filename = f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
 
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -170,7 +171,9 @@ class EmailDeliveryService(DeliveryService):
         )
 
         try:
-            with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=self._smtp_timeout) as server:
+            with smtplib.SMTP(
+                self._smtp_host, self._smtp_port, timeout=self._smtp_timeout
+            ) as server:
                 server.ehlo()
                 server.starttls()
                 server.ehlo()
@@ -185,6 +188,7 @@ class EmailDeliveryService(DeliveryService):
 # ---------------------------------------------------------------------------
 # Mailgun HTTP API implementation
 # ---------------------------------------------------------------------------
+
 
 class MailgunHttpDeliveryService(DeliveryService):
     """
@@ -218,9 +222,7 @@ class MailgunHttpDeliveryService(DeliveryService):
     def _require_env(name: str) -> str:
         value = os.environ.get(name)
         if not value:
-            raise RuntimeError(
-                f"MailgunHttpDeliveryService requires environment variable: {name}"
-            )
+            raise RuntimeError(f"MailgunHttpDeliveryService requires environment variable: {name}")
         return value
 
     def send_clinical_output(
@@ -234,9 +236,7 @@ class MailgunHttpDeliveryService(DeliveryService):
         subject = f"E-consultation: {condition_label} [{submission_id}]"
         body = _format_body(condition_label, submission_id, submitted_at)
 
-        pdf_filename = (
-            f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
-        )
+        pdf_filename = f"econsultation_{submitted_at.strftime('%Y-%m-%d')}_{submission_id[:8]}.pdf"
 
         url = f"{_MAILGUN_EU_API_BASE}/{self._domain}/messages"
 

@@ -8,28 +8,26 @@ Covers:
 
 import unittest
 from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 from app.repositories.practice_repository import (
-    MAX_SIGNPOSTING_LENGTH,
-    MAX_DOCTOR_NAME_LENGTH,
     MAX_DOCTOR_LIST_LENGTH,
-    sanitise_signposting_html,
+    MAX_DOCTOR_NAME_LENGTH,
+    MAX_SIGNPOSTING_LENGTH,
     InvalidSignpostingData,
+    sanitise_signposting_html,
 )
-from tests.helpers.admin_test_helpers import make_test_app, dummy_conn, TEST_SESSION_COOKIE
-
+from tests.helpers.admin_test_helpers import TEST_SESSION_COOKIE, dummy_conn, make_test_app
 
 # ---------------------------------------------------------------------------
 # Section 1: Endpoint behaviour
 # ---------------------------------------------------------------------------
 
-class TestPracticeEndpointBehaviour(unittest.TestCase):
 
+class TestPracticeEndpointBehaviour(unittest.TestCase):
     def setUp(self):
-        self._conn_patcher = patch(
-            "app.routers.admin.admin_practice_router.get_conn", dummy_conn
-        )
+        self._conn_patcher = patch("app.routers.admin.admin_practice_router.get_conn", dummy_conn)
         self._conn_patcher.start()
         self.app = make_test_app(condition_ids=["urinary_symptoms"])
         self.client = TestClient(self.app, raise_server_exceptions=True)
@@ -400,8 +398,8 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
 # Section 2: Signposting sanitisation logic
 # ---------------------------------------------------------------------------
 
-class TestSignpostingSanitisation(unittest.TestCase):
 
+class TestSignpostingSanitisation(unittest.TestCase):
     def test_valid_html_returned_with_content_intact(self):
         result = sanitise_signposting_html("<p>Call us on <strong>0800 123 456</strong>.</p>")
         self.assertIsNotNone(result)

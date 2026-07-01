@@ -51,9 +51,9 @@ Photo count defensive check:
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
+from app.models.serialisation_contracts import ClinicalOutput  # noqa: F401 (used via from_dict)
 from app.repositories.attachment_repository import AttachmentRepository
 from app.repositories.pdf_repository import PDFRepository
 from app.repositories.photo_repository import PhotoRepository
@@ -61,7 +61,6 @@ from app.repositories.submission_repository import SubmissionRepository
 from app.services.delivery.downstream_enqueuer import DownstreamEnqueuer
 from app.services.delivery.pdf_constants import MAX_PDF_ATTEMPTS, PDF_RETRY_BACKOFF_MINUTES
 from app.utils.pdf_formatter import generate_pdf
-from app.models.serialisation_contracts import ClinicalOutput  # noqa: F401 (used via from_dict)
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +80,7 @@ def run_worker(
     attachment_repo: AttachmentRepository,
     downstream: DownstreamEnqueuer,
     poll_interval: int,
-    practice_name: Optional[str],
+    practice_name: str | None,
 ) -> None:
     """
     Run the PDF worker loop indefinitely.
@@ -105,7 +104,7 @@ def run_worker(
     """
     logger.info("PDF worker started: poll_interval=%ds", poll_interval)
 
-    last_orphan_log_at: Optional[float] = None
+    last_orphan_log_at: float | None = None
 
     while True:
         last_orphan_log_at = _check_orphans(
@@ -152,7 +151,7 @@ def _process_job(
     submission_repo: SubmissionRepository,
     attachment_repo: AttachmentRepository,
     downstream: DownstreamEnqueuer,
-    practice_name: Optional[str],
+    practice_name: str | None,
 ) -> None:
     """
     Process a single claimed pdf_jobs row.
@@ -208,7 +207,7 @@ def _process_job(
     )
 
 
-def _compute_backoff(attempt_count: int) -> Optional[datetime]:
+def _compute_backoff(attempt_count: int) -> datetime | None:
     """
     Compute next_retry_after for a failed attempt.
 
@@ -229,14 +228,14 @@ def _compute_backoff(attempt_count: int) -> Optional[datetime]:
         minutes = PDF_RETRY_BACKOFF_MINUTES[backoff_index]
     else:
         minutes = PDF_RETRY_BACKOFF_MINUTES[-1]
-    return datetime.now(timezone.utc) + timedelta(minutes=minutes)
+    return datetime.now(UTC) + timedelta(minutes=minutes)
 
 
 def _check_orphans(
     pdf_repo: PDFRepository,
-    last_log_at: Optional[float],
+    last_log_at: float | None,
     interval: int,
-) -> Optional[float]:
+) -> float | None:
     """
     Query for orphaned submissions and emit a CRITICAL log if any are found,
     subject to rate limiting. Returns the updated last_log_at timestamp.
@@ -256,9 +255,7 @@ def _check_orphans(
     within_rate_limit = last_log_at is not None and (now - last_log_at) < interval
 
     try:
-        orphan_ids = pdf_repo.list_orphaned_submissions(
-            older_than_minutes=ORPHAN_THRESHOLD_MINUTES
-        )
+        orphan_ids = pdf_repo.list_orphaned_submissions(older_than_minutes=ORPHAN_THRESHOLD_MINUTES)
     except Exception as exc:
         logger.error("PDF worker: orphan check failed — error=%s", exc)
         return last_log_at

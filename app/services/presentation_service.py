@@ -29,9 +29,7 @@ practice in this deployment model.
 """
 
 from app.core.condition_registry import ConditionRegistry
-from app.core.errors import ConditionNotFound
 from app.repositories.practice_repository import PracticeRepository
-
 
 # Universal safety warning shown to all patients before all conditions.
 # This is intentionally hardcoded - it should not be editable by practices.
@@ -115,9 +113,7 @@ class PresentationService:
         # get_signposting returns either a non-empty HTML string or None —
         # the repository never stores an empty string, so no further
         # normalisation is needed here.
-        practice_signposting = self._practice_repository.get_signposting(
-            practice_id, condition_id
-        )
+        practice_signposting = self._practice_repository.get_signposting(practice_id, condition_id)
 
         return {
             "label": condition_presentation["label"],

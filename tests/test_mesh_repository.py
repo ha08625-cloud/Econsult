@@ -20,6 +20,7 @@ Design notes (mirrors test_pipeline_repositories.py):
 """
 
 import os
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -37,17 +38,17 @@ os.environ.setdefault("PRACTICE_ID", "test-practice")
 
 pytestmark = pytest.mark.integration
 
-from datetime import datetime, timedelta, timezone  # noqa: E402
+from datetime import UTC, datetime, timedelta  # noqa: E402
 from uuid import uuid4  # noqa: E402
 
-from app.core.db import get_conn, alembic_upgrade  # noqa: E402
-from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
-from app.repositories.mesh_repository import MeshRepository, MeshJobNotFound  # noqa: E402
+from app.core.db import alembic_upgrade, get_conn  # noqa: E402
 from app.models.serialisation_contracts import (  # noqa: E402
-    ClinicalOutput,
     AuditOutput,
+    ClinicalOutput,
     PatientDetails,
 )
+from app.repositories.mesh_repository import MeshJobNotFound, MeshRepository  # noqa: E402
+from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Ensure schema is up to date before any test runs.
@@ -63,6 +64,7 @@ RECIPIENT = "X26HC001"
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _uid() -> str:
     return f"test_{uuid4().hex[:12]}"
@@ -102,30 +104,29 @@ def _create_submission(sid: str) -> None:
         condition_label="Urinary Tract Infection",
         clinical_output=clinical,
         audit_output=audit,
-        submitted_at=datetime.now(timezone.utc),
+        submitted_at=datetime.now(UTC),
     )
 
 
 def _cleanup(sid: str) -> None:
     """Delete a submission and its mesh_jobs child rows in dependency order."""
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM mesh_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM mesh_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
 
 
 def _read_job(mesh_job_id: str) -> dict:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM mesh_jobs WHERE id = %s", (mesh_job_id,))
-            row = cur.fetchone()
-            cols = [desc[0] for desc in cur.description]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM mesh_jobs WHERE id = %s", (mesh_job_id,))
+        row = cur.fetchone()
+        cols = [desc[0] for desc in cur.description]
     return dict(zip(cols, row))
 
 
 # ---------------------------------------------------------------------------
 # create_job
 # ---------------------------------------------------------------------------
+
 
 def test_create_job_inserts_pending_row():
     sid = _uid()
@@ -160,10 +161,9 @@ def test_create_job_is_idempotent_on_submission_id():
         row = _read_job(first)
         assert row["recipient_mailbox_id"] == RECIPIENT
 
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(*) FROM mesh_jobs WHERE submission_id = %s", (sid,))
-                assert cur.fetchone()[0] == 1
+        with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM mesh_jobs WHERE submission_id = %s", (sid,))
+            assert cur.fetchone()[0] == 1
     finally:
         _cleanup(sid)
 
@@ -171,6 +171,7 @@ def test_create_job_is_idempotent_on_submission_id():
 # ---------------------------------------------------------------------------
 # claim_next_pending
 # ---------------------------------------------------------------------------
+
 
 def test_claim_next_pending_returns_eligible_row_and_pushes_retry():
     sid = _uid()
@@ -192,7 +193,7 @@ def test_claim_next_pending_returns_eligible_row_and_pushes_retry():
         # concurrent claim would skip it.
         row = _read_job(job_id)
         assert row["next_retry_after"] is not None
-        assert row["next_retry_after"] > datetime.now(timezone.utc)
+        assert row["next_retry_after"] > datetime.now(UTC)
     finally:
         _cleanup(sid)
 
@@ -204,11 +205,8 @@ def test_claim_next_pending_returns_none_when_no_eligible_rows():
         repo = MeshRepository(DATABASE_URL)
         job_id = repo.create_job(submission_id=sid, recipient_mailbox_id=RECIPIENT)
         # Move our row out of eligibility, then drain any other eligible rows.
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE mesh_jobs SET status = 'sent' WHERE id = %s", (job_id,)
-                )
+        with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+            cur.execute("UPDATE mesh_jobs SET status = 'sent' WHERE id = %s", (job_id,))
         # Drain anything else that may be pending from other tests.
         for _ in range(50):
             if repo.claim_next_pending() is None:
@@ -224,6 +222,7 @@ def test_claim_next_pending_returns_none_when_no_eligible_rows():
 # ---------------------------------------------------------------------------
 # mark_sent
 # ---------------------------------------------------------------------------
+
 
 def test_mark_sent_records_message_id_and_timestamp():
     sid = _uid()
@@ -253,6 +252,7 @@ def test_mark_sent_raises_for_unknown_job():
 # mark_failed
 # ---------------------------------------------------------------------------
 
+
 def test_mark_failed_increments_attempt_and_keeps_pending():
     sid = _uid()
     _create_submission(sid)
@@ -260,7 +260,7 @@ def test_mark_failed_increments_attempt_and_keeps_pending():
         repo = MeshRepository(DATABASE_URL)
         job_id = repo.create_job(submission_id=sid, recipient_mailbox_id=RECIPIENT)
 
-        retry_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        retry_at = datetime.now(UTC) + timedelta(minutes=5)
         count = repo.mark_failed(
             mesh_job_id=job_id,
             error="connection reset",
@@ -307,6 +307,7 @@ def test_mark_failed_raises_for_unknown_job():
 # mark_fallback_triggered
 # ---------------------------------------------------------------------------
 
+
 def test_mark_fallback_triggered_transitions_status():
     sid = _uid()
     _create_submission(sid)
@@ -330,6 +331,7 @@ def test_mark_fallback_triggered_raises_for_unknown_job():
 # ---------------------------------------------------------------------------
 # mark_provider_accepted / mark_delivered (Phase 4 tracking transitions)
 # ---------------------------------------------------------------------------
+
 
 def test_mark_provider_accepted_then_delivered():
     sid = _uid()
@@ -365,6 +367,7 @@ def test_tracking_transitions_raise_for_unknown_job():
 # get
 # ---------------------------------------------------------------------------
 
+
 def test_get_returns_full_row_and_raises_when_absent():
     sid = _uid()
     _create_submission(sid)
@@ -386,30 +389,27 @@ def test_get_returns_full_row_and_raises_when_absent():
 # list_orphaned_fallbacks (Phase 3 — dispatcher recovery sweep)
 # ---------------------------------------------------------------------------
 
+
 def _insert_delivery_job(sid: str) -> None:
     """
     Insert a minimal delivery_jobs row directly. DeliveryRepository is
     deliberately not imported here — this file owns mesh_jobs coverage and
     only needs the FK sibling row to exist.
     """
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
                 INSERT INTO delivery_jobs
                     (submission_id, to_email, condition_label, submitted_at)
                 VALUES (%s, %s, %s, NOW())
                 """,
-                (sid, "gp@example.com", "Urinary Tract Infection"),
-            )
+            (sid, "gp@example.com", "Urinary Tract Infection"),
+        )
 
 
 def _delete_delivery_job(sid: str) -> None:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,)
-            )
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
 
 
 def test_list_orphaned_fallbacks_finds_row_without_delivery_job():

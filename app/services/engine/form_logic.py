@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Any, Dict, Optional
-from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
+from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
+
+from app.models.runtime_state import AnswerState, RuntimeState, SafetyEvaluation
 from app.services.engine.ruleset import ruleset_hash
 from app.services.engine.unit_conversion import imperial_weight_to_kg
 
@@ -49,24 +50,17 @@ def _validate_number_value(value: Any, decimal_places: int, answer_key: str) -> 
         negative exponent is its number of decimal places.
     """
     if isinstance(value, bool):
-        raise AnswerValidationError(
-            f"Answer must be a number, not a boolean: {answer_key}"
-        )
+        raise AnswerValidationError(f"Answer must be a number, not a boolean: {answer_key}")
 
     if not isinstance(value, (int, Decimal)):
-        raise AnswerValidationError(
-            f"Answer must be a number: {answer_key}"
-        )
+        raise AnswerValidationError(f"Answer must be a number: {answer_key}")
 
     if isinstance(value, Decimal) and not value.is_finite():
-        raise AnswerValidationError(
-            f"Answer must be a finite number: {answer_key}"
-        )
+        raise AnswerValidationError(f"Answer must be a finite number: {answer_key}")
 
     if isinstance(value, Decimal) and value.as_tuple().exponent < -decimal_places:
         raise AnswerValidationError(
-            f"Answer for {answer_key} has more than {decimal_places} "
-            f"decimal place(s)"
+            f"Answer for {answer_key} has more than {decimal_places} decimal place(s)"
         )
 
 
@@ -95,15 +89,19 @@ def initialise_runtime_state(
         safety_evaluation=SafetyEvaluation(),
         metadata={
             "engine_version": engine_version,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         },
     )
 
-def apply_additional_text(runtime: RuntimeState, additional_text: Optional[str]) -> None:
-    """Updates the optional patient narrative, normalizing empty strings to None."""
-    runtime.additional_text = additional_text.strip() if additional_text and additional_text.strip() else None
 
-def apply_patient_answers(runtime: RuntimeState, answers: Dict[str, Any]) -> None:
+def apply_additional_text(runtime: RuntimeState, additional_text: str | None) -> None:
+    """Updates the optional patient narrative, normalizing empty strings to None."""
+    runtime.additional_text = (
+        additional_text.strip() if additional_text and additional_text.strip() else None
+    )
+
+
+def apply_patient_answers(runtime: RuntimeState, answers: dict[str, Any]) -> None:
     """
     Applies patient-provided answers, recomputes provenance, and records churn.
 
@@ -204,23 +202,19 @@ def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
 
         if not isinstance(a.value, dict):
             raise AnswerValidationError(
-                f"Quantity answer {answer_key} must be a "
-                f"{{system, components}} object"
+                f"Quantity answer {answer_key} must be a {{system, components}} object"
             )
 
         allowed_systems = q.get("allowed_systems", [])
         system = a.value.get("system")
         if system not in allowed_systems:
             raise AnswerValidationError(
-                f"Quantity answer {answer_key} has an unsupported unit "
-                f"system: {system!r}"
+                f"Quantity answer {answer_key} has an unsupported unit system: {system!r}"
             )
 
         components = a.value.get("components")
         if not isinstance(components, dict):
-            raise AnswerValidationError(
-                f"Quantity answer {answer_key} is missing its components"
-            )
+            raise AnswerValidationError(f"Quantity answer {answer_key} is missing its components")
 
         # system is guaranteed to be in _COMPONENT_KEYS: ruleset validation
         # restricts allowed_systems to the known set, and system is in
@@ -244,9 +238,7 @@ def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
             try:
                 exact = imperial_weight_to_kg(components["st"], components["lb"])
             except ValueError as exc:
-                raise AnswerValidationError(
-                    f"Quantity answer {answer_key}: {exc}"
-                )
+                raise AnswerValidationError(f"Quantity answer {answer_key}: {exc}")
             quantum = Decimal(1).scaleb(-decimal_places)
             canonical = exact.quantize(quantum, rounding=ROUND_HALF_UP)
             # Stones and pounds are whole numbers; persist as ints.
@@ -257,6 +249,7 @@ def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
 
         a.value = canonical
         runtime.unit_system = system
+
 
 def normalise_encoder_provenance(runtime: RuntimeState) -> None:
     """
@@ -270,6 +263,7 @@ def normalise_encoder_provenance(runtime: RuntimeState) -> None:
     for a in runtime.answers.values():
         if a.source == "encoder":
             a.source = "encoder_correct"
+
 
 def validate_required_answers(runtime: RuntimeState, ruleset: dict) -> None:
     """
@@ -309,6 +303,7 @@ def validate_required_answers(runtime: RuntimeState, ruleset: dict) -> None:
                 raise AnswerValidationError(f"Missing number answer: {answer_key}")
 
             _validate_number_value(value, decimal_places, answer_key)
+
 
 def normalise_number_answers(runtime: RuntimeState) -> None:
     """

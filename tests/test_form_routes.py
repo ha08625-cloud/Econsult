@@ -26,6 +26,7 @@ Architecture notes:
 import io
 import json
 import os
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -52,11 +53,9 @@ os.environ.setdefault("ALLOWED_ADMIN_DOMAINS", "example.com")
 
 pytestmark = pytest.mark.integration
 
-from datetime import datetime  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from main import app  # noqa: E402
 from app.core.db import get_conn  # noqa: E402
 from app.core.dependencies import get_availability_repo  # noqa: E402
 from app.core.upload_constants import (  # noqa: E402
@@ -64,7 +63,7 @@ from app.core.upload_constants import (  # noqa: E402
     MAX_FILE_SIZE_BYTES,
     MAX_TOTAL_SIZE_BYTES,
 )
-from app.services.delivery.delivery_service import DeliveryService  # noqa: E402
+from main import app  # noqa: E402
 from tests.test_pdf_generation import MINIMAL_JPEG  # noqa: E402
 
 DATABASE_URL = os.environ["TEST_DATABASE_URL"]
@@ -73,6 +72,7 @@ DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_first_condition(client: TestClient) -> dict:
     """Return the first condition from the registry (id and label)."""
@@ -155,22 +155,28 @@ def _run_full_flow(client: TestClient) -> tuple[str, int]:
     condition = _get_first_condition(client)
     condition_id = condition["id"]
 
-    init_res = client.post("/form/init", json={
-        "condition_id": condition_id,
-        "free_text": "Test symptom description",
-    })
+    init_res = client.post(
+        "/form/init",
+        json={
+            "condition_id": condition_id,
+            "free_text": "Test symptom description",
+        },
+    )
     assert init_res.status_code == 200, init_res.text
     init_body = init_res.json()
     runtime_id = init_body["runtime_id"]
     version = init_body["version"]
     client_state = init_body["client_state"]
 
-    update_res = client.post("/form/update", json={
-        "runtime_id": runtime_id,
-        "base_version": version,
-        "answers": _build_answers(client_state),
-        "additional_text": None,
-    })
+    update_res = client.post(
+        "/form/update",
+        json={
+            "runtime_id": runtime_id,
+            "base_version": version,
+            "answers": _build_answers(client_state),
+            "additional_text": None,
+        },
+    )
     assert update_res.status_code == 200, update_res.text
     version = update_res.json()["version"]
 
@@ -178,42 +184,40 @@ def _run_full_flow(client: TestClient) -> tuple[str, int]:
 
 
 def _count_pdf_jobs(submission_id: str) -> int:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM pdf_jobs WHERE submission_id = %s",
-                (submission_id,),
-            )
-            return cur.fetchone()[0]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM pdf_jobs WHERE submission_id = %s",
+            (submission_id,),
+        )
+        return cur.fetchone()[0]
 
 
 def _read_pdf_job(submission_id: str) -> dict | None:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM pdf_jobs WHERE submission_id = %s",
-                (submission_id,),
-            )
-            row = cur.fetchone()
-            if row is None:
-                return None
-            cols = [desc[0] for desc in cur.description]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT * FROM pdf_jobs WHERE submission_id = %s",
+            (submission_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cols = [desc[0] for desc in cur.description]
     return dict(zip(cols, row))
 
 
 def _count_submission_photos(submission_id: str) -> int:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM submission_photos WHERE submission_id = %s",
-                (submission_id,),
-            )
-            return cur.fetchone()[0]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM submission_photos WHERE submission_id = %s",
+            (submission_id,),
+        )
+        return cur.fetchone()[0]
 
 
 # ---------------------------------------------------------------------------
 # Core flow tests
 # ---------------------------------------------------------------------------
+
 
 def test_happy_path_end_to_end():
     """
@@ -232,10 +236,13 @@ def test_happy_path_end_to_end():
             condition = _get_first_condition(client)
             condition_id = condition["id"]
 
-            init_res = client.post("/form/init", json={
-                "condition_id": condition_id,
-                "free_text": "Test symptom description",
-            })
+            init_res = client.post(
+                "/form/init",
+                json={
+                    "condition_id": condition_id,
+                    "free_text": "Test symptom description",
+                },
+            )
             assert init_res.status_code == 200, init_res.text
             init_body = init_res.json()
             runtime_id = init_body["runtime_id"]
@@ -245,12 +252,15 @@ def test_happy_path_end_to_end():
             assert version == 1
 
             answers = _build_answers(client_state)
-            update_res = client.post("/form/update", json={
-                "runtime_id": runtime_id,
-                "base_version": version,
-                "answers": answers,
-                "additional_text": None,
-            })
+            update_res = client.post(
+                "/form/update",
+                json={
+                    "runtime_id": runtime_id,
+                    "base_version": version,
+                    "answers": answers,
+                    "additional_text": None,
+                },
+            )
             assert update_res.status_code == 200, update_res.text
             version = update_res.json()["version"]
             assert version == 2
@@ -277,13 +287,12 @@ def test_happy_path_end_to_end():
             assert _count_submission_photos(submission_id) == 0
 
             # No delivery_jobs row yet (delivery is async).
-            with get_conn(DATABASE_URL) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
-                        (submission_id,),
-                    )
-                    delivery_count = cur.fetchone()[0]
+            with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
+                    (submission_id,),
+                )
+                delivery_count = cur.fetchone()[0]
             assert delivery_count == 0
 
     finally:
@@ -295,12 +304,15 @@ def test_form_init_fail_open_on_availability_error():
     If the availability check raises an exception during form_init,
     the endpoint must still return HTTP 200 (fail-open).
     """
+
     def broken_availability_repo():
         class BrokenRepo:
             def get_availability(self, *args, **kwargs):
                 raise RuntimeError("Simulated availability DB failure")
+
             def get_exceptions(self, *args, **kwargs):
                 raise RuntimeError("Simulated availability DB failure")
+
         return BrokenRepo()
 
     app.dependency_overrides[get_availability_repo] = broken_availability_repo
@@ -308,10 +320,13 @@ def test_form_init_fail_open_on_availability_error():
     try:
         with TestClient(app) as client:
             condition = _get_first_condition(client)
-            res = client.post("/form/init", json={
-                "condition_id": condition["id"],
-                "free_text": None,
-            })
+            res = client.post(
+                "/form/init",
+                json={
+                    "condition_id": condition["id"],
+                    "free_text": None,
+                },
+            )
             assert res.status_code == 200, (
                 f"form_init must fail-open when availability check raises, "
                 f"got {res.status_code}: {res.text}"
@@ -341,21 +356,27 @@ def test_form_finish_submitted_after_hours_absent():
         condition = _get_first_condition(client)
         condition_id = condition["id"]
 
-        init_res = client.post("/form/init", json={
-            "condition_id": condition_id,
-            "free_text": None,
-        })
+        init_res = client.post(
+            "/form/init",
+            json={
+                "condition_id": condition_id,
+                "free_text": None,
+            },
+        )
         assert init_res.status_code == 200
         body = init_res.json()
         runtime_id, version = body["runtime_id"], body["version"]
         client_state = body["client_state"]
 
-        update_res = client.post("/form/update", json={
-            "runtime_id": runtime_id,
-            "base_version": version,
-            "answers": _build_answers(client_state),
-            "additional_text": None,
-        })
+        update_res = client.post(
+            "/form/update",
+            json={
+                "runtime_id": runtime_id,
+                "base_version": version,
+                "answers": _build_answers(client_state),
+                "additional_text": None,
+            },
+        )
         assert update_res.status_code == 200
         version = update_res.json()["version"]
 
@@ -370,6 +391,7 @@ def test_form_finish_submitted_after_hours_absent():
 # ---------------------------------------------------------------------------
 # Photo upload tests
 # ---------------------------------------------------------------------------
+
 
 def test_finish_with_no_photos_creates_pdf_job_with_attachment_count_zero():
     """
@@ -460,13 +482,12 @@ def test_finish_no_delivery_call_is_made():
         assert finish_res.status_code == 200, finish_res.text
         submission_id = finish_res.json()["submission_id"]
 
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
-                (submission_id,),
-            )
-            count = cur.fetchone()[0]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
+            (submission_id,),
+        )
+        count = cur.fetchone()[0]
     assert count == 0, (
         "delivery_jobs must have no row after form_finish — "
         "delivery is enqueued asynchronously by the PDF worker"
@@ -569,7 +590,7 @@ def test_finish_rejects_truncated_jpeg():
     """
     A truncated JPEG — valid SOI header bytes, abrupt end — must return 422.
 
-    This is the CE+ regression test for CDR. 
+    This is the CE+ regression test for CDR.
     """
     with TestClient(app) as client:
         runtime_id, version = _run_full_flow(client)
@@ -628,9 +649,11 @@ def test_finish_sanitizes_png_to_jpeg():
     assert pdf_job["attachment_count"] == 1
     assert _count_submission_photos(submission_id) == 1
 
+
 # ---------------------------------------------------------------------------
 # Tier validation tests
 # ---------------------------------------------------------------------------
+
 
 def test_finish_with_photo_and_high_tier_returns_200():
     """
@@ -680,8 +703,7 @@ def test_finish_with_photo_and_invalid_tier_returns_422():
             files=[("photos", ("photo.jpg", MINIMAL_JPEG, "image/jpeg"))],
         )
         assert finish_res.status_code == 422, (
-            f"Expected 422 for invalid tier value, "
-            f"got {finish_res.status_code}: {finish_res.text}"
+            f"Expected 422 for invalid tier value, got {finish_res.status_code}: {finish_res.text}"
         )
 
 
@@ -745,10 +767,13 @@ NUMERIC_DEMO_ANSWER_KEY = "patient_weight_kg"
 
 def _init_numeric_demo(client: TestClient) -> tuple[str, int]:
     """Init the demo condition directly by id (works regardless of search_tags)."""
-    res = client.post("/form/init", json={
-        "condition_id": NUMERIC_DEMO_CONDITION_ID,
-        "free_text": "Numeric capability demo",
-    })
+    res = client.post(
+        "/form/init",
+        json={
+            "condition_id": NUMERIC_DEMO_CONDITION_ID,
+            "free_text": "Numeric capability demo",
+        },
+    )
     assert res.status_code == 200, res.text
     body = res.json()
     return body["runtime_id"], body["version"]
@@ -763,12 +788,15 @@ def _imperial(st, lb):
 
 
 def _update_weight(client, runtime_id, version, value):
-    return client.post("/form/update", json={
-        "runtime_id": runtime_id,
-        "base_version": version,
-        "answers": {NUMERIC_DEMO_ANSWER_KEY: value},
-        "additional_text": None,
-    })
+    return client.post(
+        "/form/update",
+        json={
+            "runtime_id": runtime_id,
+            "base_version": version,
+            "answers": {NUMERIC_DEMO_ANSWER_KEY: value},
+            "additional_text": None,
+        },
+    )
 
 
 def test_update_rejects_number_with_too_many_decimals():
@@ -837,7 +865,9 @@ def test_update_rejects_unknown_unit_system():
     with TestClient(app) as client:
         runtime_id, version = _init_numeric_demo(client)
         res = _update_weight(
-            client, runtime_id, version,
+            client,
+            runtime_id,
+            version,
             {"system": "nautical", "components": {"kg": 70}},
         )
         assert res.status_code == 422, res.text

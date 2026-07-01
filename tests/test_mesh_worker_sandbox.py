@@ -19,6 +19,7 @@ Run via: make test-integration (with the sandbox up: make sandbox-up)
 """
 
 import os
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -46,10 +47,15 @@ if "MESH_BASE_URL" not in os.environ:
 
 pytestmark = pytest.mark.integration
 
-from datetime import datetime, timezone  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
 from uuid import uuid4  # noqa: E402
 
-from app.core.db import get_conn, alembic_upgrade  # noqa: E402
+from app.core.db import alembic_upgrade, get_conn  # noqa: E402
+from app.models.serialisation_contracts import (  # noqa: E402
+    AuditOutput,
+    ClinicalOutput,
+    PatientDetails,
+)
 from app.repositories.attachment_repository import AttachmentRepository  # noqa: E402
 from app.repositories.delivery_repository import DeliveryRepository  # noqa: E402
 from app.repositories.mesh_repository import MeshRepository  # noqa: E402
@@ -58,11 +64,6 @@ from app.repositories.submission_repository import SubmissionRepository  # noqa:
 from app.services.delivery.mesh import MeshClient  # noqa: E402
 from app.services.delivery.mesh_payload import RawPdfPayloadBuilder  # noqa: E402
 from app.services.delivery.mesh_worker import _process_job  # noqa: E402
-from app.models.serialisation_contracts import (  # noqa: E402
-    AuditOutput,
-    ClinicalOutput,
-    PatientDetails,
-)
 
 alembic_upgrade()
 
@@ -130,7 +131,7 @@ def _create_submission_with_pdf_artifacts(sid: str) -> None:
         condition_label="Urinary Tract Infection",
         clinical_output=clinical,
         audit_output=audit,
-        submitted_at=datetime.now(timezone.utc),
+        submitted_at=datetime.now(UTC),
     )
     PDFRepository(DATABASE_URL).create_job(
         submission_id=sid,
@@ -141,17 +142,12 @@ def _create_submission_with_pdf_artifacts(sid: str) -> None:
 
 
 def _cleanup(sid: str) -> None:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM mesh_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
-            cur.execute(
-                "DELETE FROM submission_attachments WHERE submission_id = %s", (sid,)
-            )
-            cur.execute(
-                "DELETE FROM submission_records WHERE submission_id = %s", (sid,)
-            )
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM mesh_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_attachments WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
 
 
 def test_dispatch_tick_sends_to_sandbox_and_marks_sent():
@@ -169,9 +165,7 @@ def test_dispatch_tick_sends_to_sandbox_and_marks_sent():
 
     try:
         _create_submission_with_pdf_artifacts(sid)
-        mesh_repo.create_job(
-            submission_id=sid, recipient_mailbox_id=_RECIPIENT_MAILBOX_ID
-        )
+        mesh_repo.create_job(submission_id=sid, recipient_mailbox_id=_RECIPIENT_MAILBOX_ID)
         job = mesh_repo.claim_next_pending()
         attempts = 0
         while job is not None and str(job["submission_id"]) != sid and attempts < 50:
@@ -202,12 +196,11 @@ def test_dispatch_tick_sends_to_sandbox_and_marks_sent():
         assert "-" not in message_id
 
         # The send must not have touched the email path.
-        with get_conn(DATABASE_URL) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
-                    (sid,),
-                )
-                assert cur.fetchone()[0] == 0
+        with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
+                (sid,),
+            )
+            assert cur.fetchone()[0] == 0
     finally:
         _cleanup(sid)

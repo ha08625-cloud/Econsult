@@ -9,12 +9,12 @@ Also asserts the change_count audit counter surfaces in the lossless
 AuditOutput (and only there).
 """
 
-from app.models.runtime_state import RuntimeState, AnswerState, SafetyEvaluation
+from app.models.runtime_state import AnswerState, RuntimeState, SafetyEvaluation
 from app.models.serialisation_contracts import ClinicalOutput, PatientDetails
 from app.services.engine.serialisation import (
-    serialize_client_state,
-    clinical_output,
     audit_output,
+    clinical_output,
+    serialize_client_state,
 )
 
 
@@ -118,6 +118,7 @@ def test_non_number_question_omits_number_fields():
 # the real exposure path, so it is the one guarded here.
 # ---------------------------------------------------------------------------
 
+
 def test_audit_output_exposes_change_count():
     rt = RuntimeState(
         condition_id="demo",
@@ -143,6 +144,7 @@ def test_audit_output_exposes_change_count():
 # ---------------------------------------------------------------------------
 # Quantity (unit-toggle) questions — client view
 # ---------------------------------------------------------------------------
+
 
 def _quantity_ruleset(allowed=("metric", "imperial"), default="metric", decimal_places=1):
     return {
@@ -249,6 +251,7 @@ def test_quantity_unanswered_current_value_is_null_but_fields_present():
 # Quantity questions — clinical output
 # ---------------------------------------------------------------------------
 
+
 def _patient_details():
     return PatientDetails(
         patient_for="me",
@@ -298,6 +301,7 @@ def test_clinical_output_from_dict_roundtrip_preserves_quantity_fields():
     )
     # Simulate JSONB round-trip via the dataclass dict form.
     from dataclasses import asdict
+
     restored = ClinicalOutput.from_dict(asdict(out))
     assert restored.unit_system == "metric"
     assert restored.quantity_answers == {

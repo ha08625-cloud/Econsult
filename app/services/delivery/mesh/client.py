@@ -33,7 +33,7 @@ import hashlib
 import hmac
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import requests
 
@@ -182,8 +182,7 @@ class MeshClient:
             return response.json()
         except ValueError as exc:
             raise MeshTerminalError(
-                f"MESH get_message_status returned an unparseable body: "
-                f"{response.text[:200]!r}"
+                f"MESH get_message_status returned an unparseable body: {response.text[:200]!r}"
             ) from exc
 
     # ------------------------------------------------------------------
@@ -219,7 +218,7 @@ class MeshClient:
         if nonce is None:
             nonce = str(uuid.uuid4())
         if timestamp is None:
-            timestamp = datetime.now(timezone.utc).strftime(_TIMESTAMP_FORMAT)
+            timestamp = datetime.now(UTC).strftime(_TIMESTAMP_FORMAT)
 
         hmac_input = ":".join(
             [
@@ -269,9 +268,7 @@ class MeshClient:
                 **kwargs,
             )
         except (requests.RequestException, OSError) as exc:
-            raise MeshTransientError(
-                f"MESH {context} transport error: {exc}"
-            ) from exc
+            raise MeshTransientError(f"MESH {context} transport error: {exc}") from exc
         self._raise_for_status(response, context=context)
         return response
 
@@ -283,13 +280,11 @@ class MeshClient:
             message_id = body["messageID"]
         except (ValueError, KeyError, TypeError) as exc:
             raise MeshTerminalError(
-                f"MESH send returned an unparseable or messageID-less body: "
-                f"{response.text[:200]!r}"
+                f"MESH send returned an unparseable or messageID-less body: {response.text[:200]!r}"
             ) from exc
         if not isinstance(message_id, str) or not message_id:
             raise MeshTerminalError(
-                f"MESH send returned an empty or non-string messageID: "
-                f"{message_id!r}"
+                f"MESH send returned an empty or non-string messageID: {message_id!r}"
             )
         return message_id
 

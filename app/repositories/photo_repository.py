@@ -44,16 +44,15 @@ class PhotoRepository:
         if not photo_bytes_list:
             return
 
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                for index, photo in enumerate(photo_bytes_list):
-                    cur.execute(
-                        """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            for index, photo in enumerate(photo_bytes_list):
+                cur.execute(
+                    """
                         INSERT INTO submission_photos (submission_id, photo_index, photo_bytes)
                         VALUES (%s, %s, %s)
                         """,
-                        (submission_id, index, photo),
-                    )
+                    (submission_id, index, photo),
+                )
 
     def get_photos(self, submission_id: str) -> list[bytes]:
         """
@@ -66,17 +65,16 @@ class PhotoRepository:
         The caller (PDF worker) is responsible for comparing the length
         of this list against job.attachment_count as a defensive check.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
                     SELECT photo_bytes
                     FROM submission_photos
                     WHERE submission_id = %s
                     ORDER BY photo_index ASC
                     """,
-                    (submission_id,),
-                )
-                rows = cur.fetchall()
+                (submission_id,),
+            )
+            rows = cur.fetchall()
 
         return [bytes(row[0]) for row in rows]

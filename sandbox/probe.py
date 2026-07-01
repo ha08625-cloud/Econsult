@@ -2,17 +2,18 @@
 Temporary investigation helper for the MESH sandbox.
 Delete after Phase 0 discovery is complete.
 """
+
 import hashlib
 import hmac
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def build_auth_header(mailbox_id: str, password: str, shared_key: str) -> str:
     nonce = str(uuid.uuid4())
     nonce_count = "1"
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M")
     raw = f"{mailbox_id}:{nonce}:{nonce_count}:{password}:{timestamp}"
     digest = hmac.new(
         shared_key.encode("utf-8"),

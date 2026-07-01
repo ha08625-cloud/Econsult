@@ -15,10 +15,10 @@ from app.core.email_mode import (
     select_email_delivery_mode,
 )
 
-
 # ---------------------------------------------------------------------------
 # has_complete_mailgun
 # ---------------------------------------------------------------------------
+
 
 def test_complete_pair_is_complete():
     assert has_complete_mailgun("key-123", "mg.example.com") is True
@@ -51,6 +51,7 @@ def test_whitespace_only_domain_is_not_complete():
 # has_partial_mailgun
 # ---------------------------------------------------------------------------
 
+
 def test_key_only_is_partial():
     assert has_partial_mailgun("key-123", None) is True
 
@@ -78,6 +79,7 @@ def test_blank_domain_with_real_key_is_partial():
 # ---------------------------------------------------------------------------
 # select_email_delivery_mode
 # ---------------------------------------------------------------------------
+
 
 def test_complete_mailgun_selects_mailgun():
     assert select_email_delivery_mode("key-123", "mg.example.com") == "mailgun"

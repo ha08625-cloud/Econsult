@@ -120,13 +120,14 @@ def main() -> None:
     # Import application modules after env validation so import errors are not
     # confused with missing configuration.
     import sentry_sdk
-    from app.repositories.pdf_repository import PDFRepository
-    from app.repositories.photo_repository import PhotoRepository
-    from app.repositories.submission_repository import SubmissionRepository
+
     from app.repositories.attachment_repository import AttachmentRepository
     from app.repositories.delivery_repository import DeliveryRepository
-    from app.repositories.practice_repository import PracticeRepository
     from app.repositories.mesh_repository import MeshRepository
+    from app.repositories.pdf_repository import PDFRepository
+    from app.repositories.photo_repository import PhotoRepository
+    from app.repositories.practice_repository import PracticeRepository
+    from app.repositories.submission_repository import SubmissionRepository
     from app.services.delivery.downstream_enqueuer import DeliveryEnqueuer
     from app.services.delivery.mesh_enqueuer import MeshEnqueuer
     from app.services.delivery.pdf_worker import run_worker
@@ -154,9 +155,7 @@ def main() -> None:
                 exc,
             )
     else:
-        logger.warning(
-            "PDF worker: PRACTICE_ID not set — PDFs will omit the practice name."
-        )
+        logger.warning("PDF worker: PRACTICE_ID not set — PDFs will omit the practice name.")
 
     # --- Downstream selection ---
     # The PDF worker is downstream-agnostic; the adapter is chosen here based on

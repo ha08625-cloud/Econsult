@@ -21,6 +21,7 @@ Design notes:
 """
 
 import os
+
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -38,21 +39,24 @@ os.environ.setdefault("PRACTICE_ID", "test-practice")
 
 pytestmark = pytest.mark.integration
 
-from datetime import datetime, timedelta, timezone  # noqa: E402
+from datetime import UTC, datetime, timedelta  # noqa: E402
 from uuid import uuid4  # noqa: E402
 
-from app.core.db import get_conn, alembic_upgrade  # noqa: E402
-from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
-from app.repositories.pdf_repository import PDFRepository, PDFJobNotFound  # noqa: E402
-from app.repositories.delivery_repository import DeliveryRepository, DeliveryJobNotFound  # noqa: E402
-from app.repositories.photo_repository import PhotoRepository  # noqa: E402
+from app.core.db import alembic_upgrade, get_conn  # noqa: E402
 from app.models.serialisation_contracts import (  # noqa: E402
-    ClinicalOutput,
     AuditOutput,
+    ClinicalOutput,
     PatientDetails,
 )
-from app.services.delivery.pdf_constants import MAX_PDF_ATTEMPTS  # noqa: E402
+from app.repositories.delivery_repository import (  # noqa: E402
+    DeliveryJobNotFound,
+    DeliveryRepository,
+)
+from app.repositories.pdf_repository import PDFJobNotFound, PDFRepository  # noqa: E402
+from app.repositories.photo_repository import PhotoRepository  # noqa: E402
+from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
 from app.services.delivery.delivery_constants import MAX_ATTEMPTS  # noqa: E402
+from app.services.delivery.pdf_constants import MAX_PDF_ATTEMPTS  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Ensure schema is up to date before any test runs.
@@ -66,6 +70,7 @@ DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 def _uid() -> str:
     return f"test_{uuid4().hex[:12]}"
@@ -86,7 +91,7 @@ def _create_submission(sid: str) -> None:
         last_name="Patient",
         date_of_birth="1990-01-15",
         postcode="SW1A 1AA",
-        gender= "female",
+        gender="female",
     )
     clinical = ClinicalOutput(
         condition_id="uti",
@@ -110,56 +115,51 @@ def _create_submission(sid: str) -> None:
         condition_label="Urinary Tract Infection",
         clinical_output=clinical,
         audit_output=audit,
-        submitted_at=datetime.now(timezone.utc),
+        submitted_at=datetime.now(UTC),
     )
 
 
 def _cleanup(sid: str) -> None:
     """Delete a submission and all FK child rows in dependency order."""
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM submission_attachments WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM submission_photos WHERE submission_id = %s", (sid,))
-            cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM delivery_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM pdf_jobs WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_attachments WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_photos WHERE submission_id = %s", (sid,))
+        cur.execute("DELETE FROM submission_records WHERE submission_id = %s", (sid,))
 
 
 def _backdate_pdf_job_retry(job_id: str) -> None:
     """Set next_retry_after to the past so the job is immediately eligible."""
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE pdf_jobs SET next_retry_after = NOW() - INTERVAL '1 minute' WHERE id = %s",
-                (job_id,),
-            )
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE pdf_jobs SET next_retry_after = NOW() - INTERVAL '1 minute' WHERE id = %s",
+            (job_id,),
+        )
 
 
 def _backdate_delivery_job_retry(job_id: str) -> None:
     """Set next_retry_after to the past so the job is immediately eligible."""
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE delivery_jobs SET next_retry_after = NOW() - INTERVAL '1 minute' WHERE id = %s",
-                (job_id,),
-            )
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE delivery_jobs SET next_retry_after = NOW() - INTERVAL '1 minute' WHERE id = %s",
+            (job_id,),
+        )
 
 
 def _read_pdf_job(job_id: str) -> dict:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM pdf_jobs WHERE id = %s", (job_id,))
-            row = cur.fetchone()
-            cols = [desc[0] for desc in cur.description]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM pdf_jobs WHERE id = %s", (job_id,))
+        row = cur.fetchone()
+        cols = [desc[0] for desc in cur.description]
     return dict(zip(cols, row))
 
 
 def _read_delivery_job(job_id: str) -> dict:
-    with get_conn(DATABASE_URL) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM delivery_jobs WHERE id = %s", (job_id,))
-            row = cur.fetchone()
-            cols = [desc[0] for desc in cur.description]
+    with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM delivery_jobs WHERE id = %s", (job_id,))
+        row = cur.fetchone()
+        cols = [desc[0] for desc in cur.description]
     return dict(zip(cols, row))
 
 
@@ -188,6 +188,7 @@ def _claim_until(claim_fn, target_job_id: str, limit: int = 50):
 # PhotoRepository tests
 # ===========================================================================
 
+
 class TestPhotoRepositorySaveAndGet:
     def test_save_photos_inserts_one_row_per_photo(self):
         """save_photos inserts one row per byte payload with the correct index."""
@@ -197,14 +198,13 @@ class TestPhotoRepositorySaveAndGet:
             _create_submission(sid)
             repo.save_photos(sid, [b"photo-0", b"photo-1", b"photo-2"])
 
-            with get_conn(DATABASE_URL) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT photo_index, photo_bytes FROM submission_photos "
-                        "WHERE submission_id = %s ORDER BY photo_index",
-                        (sid,),
-                    )
-                    rows = cur.fetchall()
+            with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT photo_index, photo_bytes FROM submission_photos "
+                    "WHERE submission_id = %s ORDER BY photo_index",
+                    (sid,),
+                )
+                rows = cur.fetchall()
 
             assert len(rows) == 3
             assert rows[0][0] == 0
@@ -266,6 +266,7 @@ class TestPhotoRepositorySaveAndGet:
 # ===========================================================================
 # PDFRepository tests
 # ===========================================================================
+
 
 class TestPDFRepositoryCreateJob:
     def test_create_job_inserts_pending_row(self):
@@ -336,7 +337,7 @@ class TestPDFRepositoryClaimNextPending:
             _claim_until(repo.claim_next_pending, job_id)
             row = _read_pdf_job(job_id)
             assert row["next_retry_after"] is not None
-            assert row["next_retry_after"] > datetime.now(timezone.utc)
+            assert row["next_retry_after"] > datetime.now(UTC)
         finally:
             _cleanup(sid)
 
@@ -391,7 +392,7 @@ class TestPDFRepositoryMarkFailed:
         assert MAX_PDF_ATTEMPTS > 1, "Test requires MAX_PDF_ATTEMPTS > 1"
         sid = _uid()
         repo = PDFRepository(DATABASE_URL)
-        future = datetime.now(timezone.utc) + timedelta(minutes=5)
+        future = datetime.now(UTC) + timedelta(minutes=5)
         try:
             _create_submission(sid)
             job_id = repo.create_job(sid, attachment_count=2, delivery_email="gp@example.com")
@@ -407,7 +408,7 @@ class TestPDFRepositoryMarkFailed:
     def test_at_max_attempts_sets_status_failed(self):
         sid = _uid()
         repo = PDFRepository(DATABASE_URL)
-        future = datetime.now(timezone.utc) + timedelta(minutes=5)
+        future = datetime.now(UTC) + timedelta(minutes=5)
         try:
             _create_submission(sid)
             job_id = repo.create_job(sid, attachment_count=2, delivery_email="gp@example.com")
@@ -498,13 +499,12 @@ class TestPDFRepositoryListOrphanedSubmissions:
         sid = _uid()
         try:
             _create_submission(sid)
-            with get_conn(DATABASE_URL) as conn:
-                with conn.cursor() as cur:
-                    six_ago = datetime.now(timezone.utc) - timedelta(minutes=6)
-                    cur.execute(
-                        "UPDATE submission_records SET submitted_at = %s WHERE submission_id = %s",
-                        (six_ago, sid),
-                    )
+            with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+                six_ago = datetime.now(UTC) - timedelta(minutes=6)
+                cur.execute(
+                    "UPDATE submission_records SET submitted_at = %s WHERE submission_id = %s",
+                    (six_ago, sid),
+                )
             repo = PDFRepository(DATABASE_URL)
             orphans = repo.list_orphaned_submissions(older_than_minutes=5)
             assert sid in orphans
@@ -517,13 +517,12 @@ class TestPDFRepositoryListOrphanedSubmissions:
         try:
             _create_submission(sid)
             repo.create_job(sid, attachment_count=2, delivery_email="gp@example.com")
-            with get_conn(DATABASE_URL) as conn:
-                with conn.cursor() as cur:
-                    six_ago = datetime.now(timezone.utc) - timedelta(minutes=6)
-                    cur.execute(
-                        "UPDATE submission_records SET submitted_at = %s WHERE submission_id = %s",
-                        (six_ago, sid),
-                    )
+            with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+                six_ago = datetime.now(UTC) - timedelta(minutes=6)
+                cur.execute(
+                    "UPDATE submission_records SET submitted_at = %s WHERE submission_id = %s",
+                    (six_ago, sid),
+                )
             orphans = repo.list_orphaned_submissions(older_than_minutes=5)
             assert sid not in orphans
         finally:
@@ -544,11 +543,12 @@ class TestPDFRepositoryListOrphanedSubmissions:
 # DeliveryRepository tests
 # ===========================================================================
 
+
 class TestDeliveryRepositoryCreateJob:
     def test_create_job_inserts_pending_row(self):
         sid = _uid()
         repo = DeliveryRepository(DATABASE_URL)
-        submitted_at = datetime.now(timezone.utc)
+        submitted_at = datetime.now(UTC)
         try:
             _create_submission(sid)
             job_id = repo.create_job(
@@ -574,7 +574,7 @@ class TestDeliveryRepositoryCreateJob:
         """
         sid = _uid()
         repo = DeliveryRepository(DATABASE_URL)
-        submitted_at = datetime.now(timezone.utc)
+        submitted_at = datetime.now(UTC)
         try:
             _create_submission(sid)
             job_id_1 = repo.create_job(
@@ -590,13 +590,12 @@ class TestDeliveryRepositoryCreateJob:
                 submitted_at=submitted_at,
             )
             assert job_id_1 == job_id_2
-            with get_conn(DATABASE_URL) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
-                        (sid,),
-                    )
-                    count = cur.fetchone()[0]
+            with get_conn(DATABASE_URL) as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM delivery_jobs WHERE submission_id = %s",
+                    (sid,),
+                )
+                count = cur.fetchone()[0]
             assert count == 1
         finally:
             _cleanup(sid)
@@ -615,7 +614,7 @@ class TestDeliveryRepositoryClaimNextPending:
         """
         sid = _uid()
         repo = DeliveryRepository(DATABASE_URL)
-        submitted_at = datetime.now(timezone.utc)
+        submitted_at = datetime.now(UTC)
         try:
             _create_submission(sid)
             job_id = repo.create_job(
@@ -625,9 +624,7 @@ class TestDeliveryRepositoryClaimNextPending:
                 submitted_at=submitted_at,
             )
             claimed = _claim_until(repo.claim_next_pending, job_id)
-            assert claimed is not None, (
-                f"Expected delivery job {job_id} to be claimed"
-            )
+            assert claimed is not None, f"Expected delivery job {job_id} to be claimed"
             assert str(claimed["id"]) == job_id
         finally:
             _cleanup(sid)
@@ -635,7 +632,7 @@ class TestDeliveryRepositoryClaimNextPending:
     def test_claim_updates_next_retry_after_atomically(self):
         sid = _uid()
         repo = DeliveryRepository(DATABASE_URL)
-        submitted_at = datetime.now(timezone.utc)
+        submitted_at = datetime.now(UTC)
         try:
             _create_submission(sid)
             job_id = repo.create_job(
@@ -647,7 +644,7 @@ class TestDeliveryRepositoryClaimNextPending:
             _claim_until(repo.claim_next_pending, job_id)
             row = _read_delivery_job(job_id)
             assert row["next_retry_after"] is not None
-            assert row["next_retry_after"] > datetime.now(timezone.utc)
+            assert row["next_retry_after"] > datetime.now(UTC)
         finally:
             _cleanup(sid)
 
@@ -656,7 +653,7 @@ class TestDeliveryRepositoryMarkSent:
     def test_mark_sent_sets_status(self):
         sid = _uid()
         repo = DeliveryRepository(DATABASE_URL)
-        submitted_at = datetime.now(timezone.utc)
+        submitted_at = datetime.now(UTC)
         try:
             _create_submission(sid)
             job_id = repo.create_job(
@@ -677,8 +674,8 @@ class TestDeliveryRepositoryMarkFailed:
         assert MAX_ATTEMPTS > 1, "Test requires MAX_ATTEMPTS > 1"
         sid = _uid()
         repo = DeliveryRepository(DATABASE_URL)
-        submitted_at = datetime.now(timezone.utc)
-        future = datetime.now(timezone.utc) + timedelta(minutes=5)
+        submitted_at = datetime.now(UTC)
+        future = datetime.now(UTC) + timedelta(minutes=5)
         try:
             _create_submission(sid)
             job_id = repo.create_job(
@@ -699,8 +696,8 @@ class TestDeliveryRepositoryMarkFailed:
     def test_at_max_attempts_sets_status_failed(self):
         sid = _uid()
         repo = DeliveryRepository(DATABASE_URL)
-        submitted_at = datetime.now(timezone.utc)
-        future = datetime.now(timezone.utc) + timedelta(minutes=5)
+        submitted_at = datetime.now(UTC)
+        future = datetime.now(UTC) + timedelta(minutes=5)
         try:
             _create_submission(sid)
             job_id = repo.create_job(
@@ -740,7 +737,7 @@ class TestDeliveryRepositoryGet:
     def test_get_returns_row(self):
         sid = _uid()
         repo = DeliveryRepository(DATABASE_URL)
-        submitted_at = datetime.now(timezone.utc)
+        submitted_at = datetime.now(UTC)
         try:
             _create_submission(sid)
             job_id = repo.create_job(
@@ -769,6 +766,7 @@ class TestDeliveryRepositoryGet:
 # DeliveryRepository.create_job is_fallback (Phase 3 — MESH fallback path)
 # ===========================================================================
 
+
 class TestDeliveryRepositoryIsFallback:
     def test_create_job_defaults_is_fallback_false(self):
         """The PDF worker's email path never sets the flag."""
@@ -780,7 +778,7 @@ class TestDeliveryRepositoryIsFallback:
                 submission_id=sid,
                 to_email="gp@example.com",
                 condition_label="Urinary Tract Infection",
-                submitted_at=datetime.now(timezone.utc),
+                submitted_at=datetime.now(UTC),
             )
             row = _read_delivery_job(job_id)
             assert row["is_fallback"] is False
@@ -797,7 +795,7 @@ class TestDeliveryRepositoryIsFallback:
                 submission_id=sid,
                 to_email="gp@example.com",
                 condition_label="Urinary Tract Infection",
-                submitted_at=datetime.now(timezone.utc),
+                submitted_at=datetime.now(UTC),
                 is_fallback=True,
             )
             row = _read_delivery_job(job_id)
@@ -820,14 +818,14 @@ class TestDeliveryRepositoryIsFallback:
                 submission_id=sid,
                 to_email="gp@example.com",
                 condition_label="Urinary Tract Infection",
-                submitted_at=datetime.now(timezone.utc),
+                submitted_at=datetime.now(UTC),
                 is_fallback=True,
             )
             second_id = repo.create_job(
                 submission_id=sid,
                 to_email="other@example.com",
                 condition_label="Urinary Tract Infection",
-                submitted_at=datetime.now(timezone.utc),
+                submitted_at=datetime.now(UTC),
                 is_fallback=False,
             )
             assert second_id == first_id

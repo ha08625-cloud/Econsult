@@ -27,8 +27,8 @@ from typing import TYPE_CHECKING
 import psycopg2.errors
 
 from app.core.errors import (
-    INVALID_PAYLOAD,
     ACTION_NOT_PERMITTED,
+    INVALID_PAYLOAD,
     USER_ALREADY_EXISTS,
     USER_NOT_FOUND,
 )
