@@ -77,6 +77,19 @@ The fatal error reset button uses `window.location.reload()` rather than a manua
 
 ---
 
+## Quantity (Unit-Toggle) Questions
+
+A Number question flagged `quantity` in the ruleset lets the patient enter the value in metric or imperial. Frontend design decisions:
+
+- **One form-wide toggle.** A single `unitSystem` state on `EditScreen` drives every quantity question, seeded once from the first quantity question (its answered system, else its `default_system`) via `initialUnitSystem` in `helpers.ts`. There is no per-question unit selector. A tie-break for multiple quantity questions with differing defaults is a deliberate TODO — not a concern with one such question today.
+- **Edit as strings, submit as numbers.** A quantity answer is held in `editableAnswers` as `{system, components}` with **string** components (e.g. `{kg: "70.5"}` or `{st: "11", lb: "11"}`) — the same verbatim-string convention scalar Numbers use, so trailing-zero precision errors are detectable. They are converted to JSON numbers only when the `/form/update` payload is built. This mirrors the server's outbound-string / inbound-number asymmetry (see `arch_submission.md`).
+- **Toggling clears, never converts.** Switching units blanks every quantity question's component inputs. There is no automatic conversion between systems — a deliberate v1 choice.
+- **Client-side gates.** The completeness gate requires every component non-empty (a seeded-but-blank quantity is not "answered"). Precision is enforced per system: metric flags kg over-`decimal_places`; imperial flags any fractional stones/pounds. Both disable Continue. The advisory out-of-range notice is shown for metric only — suppressed in imperial (a recorded limitation, matching the backend).
+- **Rendering.** `EditScreen` renders a metric/imperial toggle plus compound inputs (kg, or st + lb). `ReviewScreen` renders the patient's chosen unit as `"11 st 11 lb"` or `"70.5 kg"` — never the raw object. The kg conversion for imperial appears on the clinical PDF, not the Review screen.
+- **Pure helpers.** Seeding, the component-key map, and the string→number payload conversion live as pure functions in `helpers.ts` (unit-tested in `helpers.test.ts`), keeping `EditScreen` wiring thin.
+
+---
+
 ## Condition Change Warning
 
 Switching condition on `SELECT_CONDITION` after free text has already been written against the previous condition would silently destroy that text. This is the scenario the `selectedConditionId` / `confirmedConditionId` split above exists to prevent.
