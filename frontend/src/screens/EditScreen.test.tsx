@@ -555,3 +555,166 @@ describe("EditScreen — number questions", () => {
     expect(screen.queryByText(/outside the usual range/i)).toBeNull();
   });
 });
+
+
+// ---------------------------------------------------------------------------
+// Quantity (unit-toggle) questions
+// ---------------------------------------------------------------------------
+
+const quantityQuestion = {
+  answer_key: "patient_weight_kg",
+  question_text: "What is your current weight?",
+  answer_type: "number" as const,
+  current_value: null as
+    | null
+    | { system: "metric" | "imperial"; components: Record<string, string> },
+  required: true,
+  suggested: false,
+  decimal_places: 1,
+  min: 2,
+  max: 400,
+  range_warning_text:
+    "That weight is outside the usual range. Please check you entered it correctly.",
+  quantity: true,
+  allowed_systems: ["metric", "imperial"],
+  default_system: "metric",
+};
+
+function makeQuantityState(
+  current_value: (typeof quantityQuestion)["current_value"]
+): ClientStateView {
+  return {
+    ...baseClientState,
+    questions: [{ ...quantityQuestion, current_value }],
+  };
+}
+
+function renderQuantity(
+  editableAnswers: Record<string, unknown>,
+  current_value: (typeof quantityQuestion)["current_value"] = null,
+  extraProps: Record<string, unknown> = {}
+) {
+  return render(
+    <EditScreen
+      {...defaultProps}
+      clientState={makeQuantityState(current_value)}
+      editableAnswers={editableAnswers as never}
+      {...extraProps}
+    />
+  );
+}
+
+const reviewBtn = () =>
+  screen.getByRole("button", { name: /review answers/i });
+
+describe("EditScreen — quantity questions", () => {
+  beforeEach(() => {
+    mockUpdateForm.mockReset();
+  });
+
+  it("renders a metric/imperial toggle and a kg input by default", () => {
+    renderQuantity({ patient_weight_kg: { system: "metric", components: { kg: "" } } });
+    expect(screen.getByRole("button", { name: /metric/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /imperial/i })).toBeTruthy();
+    expect(screen.getByLabelText(/kilograms/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/stones/i)).toBeNull();
+  });
+
+  it("shows stones and pounds inputs after switching to imperial", async () => {
+    renderQuantity({ patient_weight_kg: { system: "metric", components: { kg: "" } } });
+    await userEvent.click(screen.getByRole("button", { name: /imperial/i }));
+    expect(screen.getByLabelText(/stones/i)).toBeTruthy();
+    expect(screen.getByLabelText(/pounds/i)).toBeTruthy();
+    expect(screen.queryByLabelText(/kilograms/i)).toBeNull();
+  });
+
+  it("disables Continue when quantity components are blank", () => {
+    renderQuantity({ patient_weight_kg: { system: "metric", components: { kg: "" } } });
+    expect(reviewBtn().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("enables Continue when a metric kg value is filled", () => {
+    renderQuantity({ patient_weight_kg: { system: "metric", components: { kg: "70.5" } } });
+    expect(reviewBtn().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("enables Continue when imperial stones and pounds are filled", () => {
+    const filled = { system: "imperial", components: { st: "11", lb: "11" } };
+    renderQuantity({ patient_weight_kg: filled }, filled);
+    expect(reviewBtn().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("blocks Continue with a precision error for metric over-precision", () => {
+    renderQuantity({ patient_weight_kg: { system: "metric", components: { kg: "70.55" } } });
+    expect(screen.getByText(/at most 1 decimal place/i)).toBeTruthy();
+    expect(reviewBtn().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("blocks Continue with a precision error for fractional stones or pounds", () => {
+    const frac = { system: "imperial", components: { st: "11", lb: "11.5" } };
+    renderQuantity({ patient_weight_kg: frac }, frac);
+    expect(screen.getByText(/whole numbers for stones and pounds/i)).toBeTruthy();
+    expect(reviewBtn().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("shows the range notice for an out-of-range metric value but does not block Continue", () => {
+    renderQuantity({ patient_weight_kg: { system: "metric", components: { kg: "500" } } });
+    expect(screen.getByText(/outside the usual range/i)).toBeTruthy();
+    expect(reviewBtn().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("suppresses the range notice in imperial mode", () => {
+    // 70 st (~444 kg) is above the kg max, but imperial never shows the notice.
+    const heavy = { system: "imperial", components: { st: "70", lb: "0" } };
+    renderQuantity({ patient_weight_kg: heavy }, heavy);
+    expect(screen.queryByText(/outside the usual range/i)).toBeNull();
+  });
+
+  it("clears components via onAnswersChange when units are toggled", async () => {
+    const onAnswersChange = vi.fn();
+    const filled = { system: "metric", components: { kg: "70.5" } };
+    renderQuantity({ patient_weight_kg: filled }, filled, { onAnswersChange });
+    await userEvent.click(screen.getByRole("button", { name: /imperial/i }));
+    expect(onAnswersChange).toHaveBeenCalledWith({
+      patient_weight_kg: { system: "imperial", components: { st: "", lb: "" } },
+    });
+  });
+
+  it("submits an imperial answer as numeric components", async () => {
+    mockUpdateForm.mockResolvedValueOnce({
+      runtime_id: "runtime-123",
+      version: 2,
+      client_state: { ...baseClientState, questions: [] },
+      safety_messages: [],
+    });
+    const filled = { system: "imperial", components: { st: "11", lb: "11" } };
+    renderQuantity({ patient_weight_kg: filled }, filled);
+    await userEvent.click(reviewBtn());
+    expect(mockUpdateForm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answers: {
+          patient_weight_kg: { system: "imperial", components: { st: 11, lb: 11 } },
+        },
+      })
+    );
+  });
+
+  it("submits a metric answer as a numeric kg", async () => {
+    mockUpdateForm.mockResolvedValueOnce({
+      runtime_id: "runtime-123",
+      version: 2,
+      client_state: { ...baseClientState, questions: [] },
+      safety_messages: [],
+    });
+    const filled = { system: "metric", components: { kg: "70.5" } };
+    renderQuantity({ patient_weight_kg: filled }, filled);
+    await userEvent.click(reviewBtn());
+    expect(mockUpdateForm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answers: {
+          patient_weight_kg: { system: "metric", components: { kg: 70.5 } },
+        },
+      })
+    );
+  });
+});
