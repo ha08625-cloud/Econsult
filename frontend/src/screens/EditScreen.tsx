@@ -2,8 +2,22 @@ import { useRef, useState, useEffect, useMemo } from "react";
 import { PageShell, InlineError } from "../layout";
 import { updateForm } from "../api";
 import { friendlyErrorMessage } from "../api";
-import type { ClientStateView, SafetyMessage, ClientAnswerReturn } from "../types";
+import type {
+  ClientStateView,
+  SafetyMessage,
+  ClientAnswerReturn,
+  QuantityAnswerPayload,
+  QuantityValueView,
+  UnitSystem,
+} from "../types";
 import type { PhotoAttachment } from "../uiTypes";
+import {
+  emptyComponents,
+  initialUnitSystem,
+  quantityComponentsToNumbers,
+  UNIT_COMPONENTS,
+  type EditableAnswers,
+} from "../helpers";
 import {
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE_BYTES,
@@ -20,12 +34,24 @@ const TIER_MAX_COUNT: Record<PhotoTier, number> = {
   standard: 5,
 };
 
+// Labels for quantity (unit-toggle) inputs. Keys match UNIT_COMPONENTS.
+const COMPONENT_LABELS: Record<string, string> = {
+  kg: "Kilograms (kg)",
+  st: "Stones (st)",
+  lb: "Pounds (lb)",
+};
+
+const UNIT_SYSTEM_LABELS: Record<UnitSystem, string> = {
+  metric: "Metric (kg)",
+  imperial: "Imperial (st, lb)",
+};
+
 interface EditScreenProps {
   practiceName: string | null;
   clientState: ClientStateView;
-  editableAnswers: Record<string, boolean | string | null>;
+  editableAnswers: EditableAnswers;
   additionalText: string;
-  onAnswersChange: (answers: Record<string, boolean | string | null>) => void;
+  onAnswersChange: (answers: EditableAnswers) => void;
   onAdditionalTextChange: (text: string) => void;
   onContinue: (result: {
     version: number;
@@ -62,6 +88,13 @@ export default function EditScreen({
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
 
+  // Single shared unit toggle for the whole form. Seeded once from the first
+  // quantity question (its answered system, else its default_system). The
+  // multi-quantity tie-break is a TODO in helpers.initialUnitSystem.
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>(() =>
+    initialUnitSystem(clientState)
+  );
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const guideCloseRef = useRef<HTMLButtonElement>(null);
@@ -97,6 +130,14 @@ export default function EditScreen({
   const allRequiredAnswered = clientState.questions.every((q) => {
     if (!q.required) return true;
     const v = editableAnswers[q.answer_key];
+    if (q.quantity) {
+      // A quantity answer is complete only when every component input is
+      // non-empty. The seeded shape ({system, components}) is always an object,
+      // so the scalar null/"" check below would wrongly treat blanks as answered.
+      if (v == null || typeof v !== "object") return false;
+      const comps = Object.values(v.components);
+      return comps.length > 0 && comps.every((x) => x.trim() !== "");
+    }
     return v !== null && v !== undefined && v !== "";
   });
 
@@ -107,25 +148,82 @@ export default function EditScreen({
   // is allowed) is flagged here even though it would be sent as 70.5.
   const numberPrecisionErrors = useMemo(() => {
     const errs: Record<string, string> = {};
+    const tooManyDpMessage = (dp: number) =>
+      dp === 0
+        ? "Please enter a whole number."
+        : `Please enter a number with at most ${dp} decimal ${dp === 1 ? "place" : "places"}.`;
+
     for (const q of clientState.questions) {
       if (q.answer_type !== "number") continue;
+      const dp = q.decimal_places ?? 0;
+
+      if (q.quantity) {
+        const v = editableAnswers[q.answer_key];
+        if (v == null || typeof v !== "object") continue;
+        if (v.system === "imperial") {
+          // Stones and pounds must be whole numbers (the backend conversion
+          // rejects fractional components); flag any decimal point.
+          const nonWhole = ["st", "lb"].some((k) => {
+            const s = (v.components[k] ?? "").trim();
+            return s !== "" && s.indexOf(".") !== -1;
+          });
+          if (nonWhole) {
+            errs[q.answer_key] = "Please enter whole numbers for stones and pounds.";
+          }
+        } else {
+          // Metric: kg may carry at most dp decimal places, same as a scalar.
+          const s = (v.components["kg"] ?? "").trim();
+          if (s !== "") {
+            const dot = s.indexOf(".");
+            const decimals = dot === -1 ? 0 : s.length - dot - 1;
+            if (decimals > dp) errs[q.answer_key] = tooManyDpMessage(dp);
+          }
+        }
+        continue;
+      }
+
       const raw = editableAnswers[q.answer_key];
       if (raw === null || raw === undefined || raw === "") continue;
       const valueStr = String(raw);
-      const dp = q.decimal_places ?? 0;
       const dot = valueStr.indexOf(".");
       const decimals = dot === -1 ? 0 : valueStr.length - dot - 1;
-      if (decimals > dp) {
-        errs[q.answer_key] =
-          dp === 0
-            ? "Please enter a whole number."
-            : `Please enter a number with at most ${dp} decimal ${dp === 1 ? "place" : "places"}.`;
-      }
+      if (decimals > dp) errs[q.answer_key] = tooManyDpMessage(dp);
     }
     return errs;
   }, [clientState.questions, editableAnswers]);
 
   const hasPrecisionError = Object.keys(numberPrecisionErrors).length > 0;
+
+  function handleComponentChange(answerKey: string, componentKey: string, value: string) {
+    const current = editableAnswers[answerKey];
+    const base: QuantityValueView =
+      current && typeof current === "object"
+        ? current
+        : { system: unitSystem, components: emptyComponents(unitSystem) };
+    onAnswersChange({
+      ...editableAnswers,
+      [answerKey]: {
+        system: unitSystem,
+        components: { ...base.components, [componentKey]: value },
+      },
+    });
+    if (screenError) setScreenError(null);
+  }
+
+  function handleUnitSystemChange(sys: UnitSystem) {
+    if (sys === unitSystem) return;
+    setUnitSystem(sys);
+    // Toggling clears every quantity question's inputs to blanks for the new
+    // system. No auto-conversion, by design.
+    const cleared: EditableAnswers = { ...editableAnswers };
+    for (const question of clientState.questions) {
+      if (question.quantity) {
+        cleared[question.answer_key] = { system: sys, components: emptyComponents(sys) };
+      }
+    }
+    onAnswersChange(cleared);
+    if (screenError) setScreenError(null);
+  }
 
   async function handleContinue() {
     setScreenError(null);
@@ -134,17 +232,32 @@ export default function EditScreen({
     try {
       // Number answers are held as strings in editableAnswers (so the input and
       // the precision check see exactly what was typed). Convert them to JSON
-      // numbers on the wire here; an empty number field becomes null. All other
-      // answers pass through unchanged.
+      // numbers on the wire here; an empty number field becomes null. A quantity
+      // answer becomes {system, components-as-numbers}, taking the system from
+      // the shared toggle. All other answers pass through unchanged.
       const numberKeys = new Set(
         clientState.questions
           .filter((q) => q.answer_type === "number")
           .map((q) => q.answer_key)
       );
-      const answersPayload: Record<string, boolean | string | number | null> = {};
+      const quantityKeys = new Set(
+        clientState.questions
+          .filter((q) => q.quantity)
+          .map((q) => q.answer_key)
+      );
+      const answersPayload: Record<
+        string,
+        boolean | string | number | QuantityAnswerPayload | null
+      > = {};
       for (const [k, v] of Object.entries(editableAnswers)) {
-        if (!numberKeys.has(k)) {
-          answersPayload[k] = v;
+        if (quantityKeys.has(k)) {
+          const qv = v as QuantityValueView;
+          answersPayload[k] = {
+            system: unitSystem,
+            components: quantityComponentsToNumbers(qv.components),
+          };
+        } else if (!numberKeys.has(k)) {
+          answersPayload[k] = v as boolean | string | null;
         } else if (v === null || v === undefined || v === "") {
           answersPayload[k] = null;
         } else {
@@ -340,12 +453,114 @@ export default function EditScreen({
             }
 
             if (q.answer_type === "number") {
-              const raw = editableAnswers[q.answer_key];
-              const valueStr =
-                raw === null || raw === undefined ? "" : String(raw);
               const dp = q.decimal_places ?? 0;
               const step = dp > 0 ? `0.${"0".repeat(Math.max(0, dp - 1))}1` : "1";
               const precisionError = numberPrecisionErrors[q.answer_key];
+
+              if (q.quantity) {
+                const stored = editableAnswers[q.answer_key];
+                const qv: QuantityValueView =
+                  stored && typeof stored === "object"
+                    ? stored
+                    : { system: unitSystem, components: emptyComponents(unitSystem) };
+
+                // Range notice is metric-only. It is suppressed for imperial
+                // (the kg bounds don't map cleanly onto stones/pounds), which
+                // matches the backend treating range as an advisory client-only
+                // notice rather than a validation rule.
+                const kgStr =
+                  unitSystem === "metric" ? (qv.components["kg"] ?? "").trim() : "";
+                const kgNum = kgStr === "" ? NaN : Number(kgStr);
+                const showRangeNotice =
+                  unitSystem === "metric" &&
+                  q.range_warning_text != null &&
+                  kgStr !== "" &&
+                  !Number.isNaN(kgNum) &&
+                  ((q.min != null && kgNum < q.min) ||
+                    (q.max != null && kgNum > q.max));
+
+                return (
+                  <fieldset
+                    key={q.answer_key}
+                    className={`field ${precisionError ? "has-error" : ""}`}
+                  >
+                    <legend>
+                      {q.question_text}{" "}
+                      {!q.required && (
+                        <span className="field-label-optional">(optional)</span>
+                      )}
+                    </legend>
+
+                    <div
+                      className="unit-toggle"
+                      role="group"
+                      aria-label="Choose units"
+                      style={{
+                        display: "flex",
+                        gap: "var(--space-sm)",
+                        marginBottom: "var(--space-sm)",
+                      }}
+                    >
+                      {(q.allowed_systems ?? []).map((sys) => (
+                        <button
+                          type="button"
+                          key={sys}
+                          className={`btn ${unitSystem === sys ? "btn-primary" : "btn-secondary"}`}
+                          aria-pressed={unitSystem === sys}
+                          onClick={() => handleUnitSystemChange(sys)}
+                        >
+                          {UNIT_SYSTEM_LABELS[sys]}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div
+                      className="unit-components"
+                      style={{ display: "flex", gap: "var(--space-sm)" }}
+                    >
+                      {UNIT_COMPONENTS[unitSystem].map((ck) => {
+                        const componentId = `question-${q.answer_key}-${ck}`;
+                        return (
+                          <div key={ck} style={{ flex: 1 }}>
+                            <label htmlFor={componentId} className="field-hint">
+                              {COMPONENT_LABELS[ck] ?? ck}
+                            </label>
+                            <input
+                              id={componentId}
+                              type="number"
+                              inputMode={unitSystem === "imperial" ? "numeric" : "decimal"}
+                              step={unitSystem === "imperial" ? "1" : step}
+                              min={0}
+                              aria-invalid={!!precisionError}
+                              value={qv.components[ck] ?? ""}
+                              onChange={(e) =>
+                                handleComponentChange(q.answer_key, ck, e.target.value)
+                              }
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {precisionError && <InlineError message={precisionError} />}
+
+                    {showRangeNotice && (
+                      <div
+                        className="alert alert-info"
+                        style={{ marginTop: "var(--space-sm)", padding: "8px 12px" }}
+                      >
+                        <p style={{ margin: 0, fontSize: "14px" }}>
+                          {q.range_warning_text}
+                        </p>
+                      </div>
+                    )}
+                  </fieldset>
+                );
+              }
+
+              const raw = editableAnswers[q.answer_key];
+              const valueStr =
+                raw === null || raw === undefined ? "" : String(raw);
               const numeric = valueStr === "" ? NaN : Number(valueStr);
               // Non-blocking out-of-range notice: shown only when the question
               // authored range_warning_text and the value is outside min/max.
