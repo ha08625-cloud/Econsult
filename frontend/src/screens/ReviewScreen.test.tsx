@@ -228,4 +228,82 @@ describe("ReviewScreen", () => {
     expect(images[1].getAttribute("src")).toBe("blob:fake-url-2");
     expect(images[1].getAttribute("alt")).toBe("Photo 2");
   });
+
+  // --- Quantity (unit-toggle) answers ---
+
+  function quantityState(
+    current_value: ClientStateView["questions"][number]["current_value"]
+  ): ClientStateView {
+    return {
+      condition_label: "Weight demo",
+      free_text: null,
+      additional_text: null,
+      questions: [
+        {
+          answer_key: "weight",
+          question_text: "What is your current weight?",
+          answer_type: "number",
+          current_value,
+          required: true,
+          suggested: false,
+          quantity: true,
+          allowed_systems: ["metric", "imperial"],
+          default_system: "metric",
+          decimal_places: 1,
+        },
+      ],
+    };
+  }
+
+  it("renders an imperial quantity answer as stones and pounds", () => {
+    render(
+      <ReviewScreen
+        clientState={quantityState({ system: "imperial", components: { st: "11", lb: "11" } })}
+        safetyMessages={[]}
+        photos={[]}
+        onBack={noop}
+        onContinue={noop}
+      />
+    );
+    expect(screen.getByText("11 st 11 lb")).toBeTruthy();
+  });
+
+  it("renders a metric quantity answer as kilograms", () => {
+    render(
+      <ReviewScreen
+        clientState={quantityState({ system: "metric", components: { kg: "70.5" } })}
+        safetyMessages={[]}
+        photos={[]}
+        onBack={noop}
+        onContinue={noop}
+      />
+    );
+    expect(screen.getByText("70.5 kg")).toBeTruthy();
+  });
+
+  it("keeps a zero pounds component rather than dropping it", () => {
+    render(
+      <ReviewScreen
+        clientState={quantityState({ system: "imperial", components: { st: "11", lb: "0" } })}
+        safetyMessages={[]}
+        photos={[]}
+        onBack={noop}
+        onContinue={noop}
+      />
+    );
+    expect(screen.getByText("11 st 0 lb")).toBeTruthy();
+  });
+
+  it("renders an unanswered quantity question as Not answered", () => {
+    render(
+      <ReviewScreen
+        clientState={quantityState(null)}
+        safetyMessages={[]}
+        photos={[]}
+        onBack={noop}
+        onContinue={noop}
+      />
+    );
+    expect(screen.getByText("Not answered")).toBeTruthy();
+  });
 });
