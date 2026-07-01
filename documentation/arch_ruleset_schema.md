@@ -33,9 +33,14 @@ The shape and constraints of the JSON ruleset files that define clinical behavio
 
       // Number questions only (omit these four for Boolean and text):
       "decimal_places": <non-negative integer>,  // 0 = whole numbers only
-      "min": <number>,                            // advisory lower bound
-      "max": <number>,                            // advisory upper bound; min < max
-      "range_warning_text": "<string>" | null     // optional; shown when value is outside min/max
+      "min": <number>,                            // advisory lower bound (canonical unit)
+      "max": <number>,                            // advisory upper bound; min < max (canonical unit)
+      "range_warning_text": "<string>" | null,    // optional; shown when value is outside min/max
+
+      // Quantity (unit-toggle) Number questions only (omit when quantity is unset):
+      "quantity": true | false,                     // opt-in to patient-selectable units
+      "allowed_systems": ["metric", "imperial"],    // non-empty subset of the known systems
+      "default_system": "metric" | "imperial"       // must be one of allowed_systems
     }
   ],
 
@@ -67,6 +72,10 @@ The shape and constraints of the JSON ruleset files that define clinical behavio
 **Answer types are a closed set.** `answer_type` must be present and one of `"Boolean"`, `"text"`, or `"Number"`. An unknown or missing type aborts startup. (Runtime state lowercases the type, so the client view reports `"number"`.)
 
 **Number questions carry their own precision and bounds.** A `"Number"` question requires `decimal_places` (a non-negative integer; `0` means whole numbers only) and numeric `min`/`max` with `min < max`. Neither bound may have more decimal places than `decimal_places`. `range_warning_text` is optional (string or null). The two constraints behave differently: `decimal_places` is a **hard** submission constraint — a value with more decimal places is rejected at `/form/update` with `INVALID_PAYLOAD` — whereas `min`/`max` are **advisory**, driving only a non-blocking, client-side out-of-range notice (rendered when `range_warning_text` is authored and the value falls outside the bounds) and never blocking submission. Number values are transported on the wire as JSON numbers, parsed with decimal precision at the request boundary, and stored as exact canonical strings (e.g. `"70.5"`). Validated at startup by `ruleset.py`.
+
+**Quantity (unit-toggle) questions carry patient-selectable units.** A Number question may set `quantity: true` to let the patient enter the value in either metric or imperial units. It then requires a non-empty, duplicate-free `allowed_systems` (a subset of `{"metric", "imperial"}`) and a `default_system` within that list. `quantity` is only valid on a Number question; when it is not set, the unit fields must be absent, so an author who sets them but forgets the flag (which would otherwise be silently ignored) fails loudly instead — mirroring the encoder_prompt rule. Validated at startup by `ruleset.py`.
+
+Kilograms is the canonical unit and the single source of truth. `min`/`max` are expressed in kilograms regardless of the patient's chosen system, and the advisory range notice is shown only in metric — the kg bounds do not map cleanly onto stones/pounds, so imperial input gets no out-of-range notice (a recorded v1 limitation). The stored answer is always the canonical kg string; the patient's raw input in the unit they used is preserved separately (for display on the Review screen and PDF, and for audit). Today `quantity` covers weight only (kilograms, or stones + pounds); a second quantity kind, and any cross-question unit consistency, are deliberate future extensions.
 
 **Safety rules use `"any"` (OR) semantics.** A rule fires if **any** clause in its `"any"` list is satisfied. This is the correct clinical behaviour: a single red flag answer should trigger the rule. The key must be `"any"`, not `"all"` — both the validator in `ruleset.py` and the engine in `safety_engine.py` read this key.
 
