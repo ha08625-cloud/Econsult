@@ -330,10 +330,12 @@ class AuditRepository:
             LIMIT %(fetch_limit)s
         """
 
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(query, params)
-                rows = cur.fetchall()
+        with (
+            get_conn(self.database_url) as conn,
+            conn.cursor(cursor_factory=RealDictCursor) as cur,
+        ):
+            cur.execute(query, params)
+            rows = cur.fetchall()
 
         rows = [dict(r) for r in rows]
 

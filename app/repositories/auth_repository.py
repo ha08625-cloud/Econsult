@@ -67,25 +67,27 @@ class AuthRepository:
         id is cast to str — psycopg2 returns UUID columns as uuid.UUID
         objects; callers expect strings throughout the auth layer.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT id::text,
-                           email,
-                           practice_id,
-                           role,
-                           created_at,
-                           hashed_password,
-                           failed_password_attempts,
-                           password_locked_until,
-                           password_changed_at
-                    FROM admin_users
-                    WHERE email = %s
-                    """,
-                    (email,),
-                )
-                row = cur.fetchone()
+        with (
+            get_conn(self.database_url) as conn,
+            conn.cursor(cursor_factory=RealDictCursor) as cur,
+        ):
+            cur.execute(
+                """
+                SELECT id::text,
+                        email,
+                        practice_id,
+                        role,
+                        created_at,
+                        hashed_password,
+                        failed_password_attempts,
+                        password_locked_until,
+                        password_changed_at
+                FROM admin_users
+                WHERE email = %s
+                """,
+                (email,),
+            )
+            row = cur.fetchone()
         return dict(row) if row is not None else None
 
     def get_user_by_id(self, user_id: str, practice_id: str) -> dict | None:
@@ -98,18 +100,20 @@ class AuthRepository:
         No conn parameter — this is only called from resend_invitation, which
         performs no writes and has no transaction to join.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT id::text, email, created_at, last_login
-                    FROM admin_users
-                    WHERE id = %s::uuid
-                      AND practice_id = %s
-                    """,
-                    (user_id, practice_id),
-                )
-                row = cur.fetchone()
+        with (
+            get_conn(self.database_url) as conn,
+            conn.cursor(cursor_factory=RealDictCursor) as cur,
+        ):
+            cur.execute(
+                """
+                SELECT id::text, email, created_at, last_login
+                FROM admin_users
+                WHERE id = %s::uuid
+                    AND practice_id = %s
+                """,
+                (user_id, practice_id),
+            )
+            row = cur.fetchone()
         return dict(row) if row is not None else None
 
     def get_users_by_practice(self, practice_id: str, conn=None) -> list:
