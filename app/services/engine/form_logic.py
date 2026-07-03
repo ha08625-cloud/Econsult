@@ -238,7 +238,7 @@ def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
             try:
                 exact = imperial_weight_to_kg(components["st"], components["lb"])
             except ValueError as exc:
-                raise AnswerValidationError(f"Quantity answer {answer_key}: {exc}")
+                raise AnswerValidationError(f"Quantity answer {answer_key}: {exc}") from exc
             quantum = Decimal(1).scaleb(-decimal_places)
             canonical = exact.quantize(quantum, rounding=ROUND_HALF_UP)
             # Stones and pounds are whole numbers; persist as ints.

@@ -187,7 +187,7 @@ def validate_patient_details(pd: dict) -> None:
             int(dob["day"].strip()),
         )
     except ValueError:
-        raise INVALID_PAYLOAD("date_of_birth is not a valid calendar date")
+        raise INVALID_PAYLOAD("date_of_birth is not a valid calendar date") from None
 
     if assembled > date.today():
         raise INVALID_PAYLOAD("date_of_birth cannot be in the future")

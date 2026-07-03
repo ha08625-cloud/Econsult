@@ -87,7 +87,7 @@ def add_user(
             conn=conn,
         )
     except psycopg2.errors.UniqueViolation:
-        raise USER_ALREADY_EXISTS()
+        raise USER_ALREADY_EXISTS() from None
 
 
 def remove_user(
