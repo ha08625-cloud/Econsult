@@ -44,18 +44,19 @@ class RuntimeStateRepository:
         Raises RuntimeStateNotFound if no row exists.
         Raises SessionClosed if the session has been closed.
         """
-        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT *
-                FROM runtime_state_versions
-                WHERE runtime_id = %s
-                ORDER BY version DESC
-                LIMIT 1
-                """,
-                (runtime_id,),
-            )
-            row = cur.fetchone()
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM runtime_state_versions
+                    WHERE runtime_id = %s
+                    ORDER BY version DESC
+                    LIMIT 1
+                    """,
+                    (runtime_id,),
+                )
+                row = cur.fetchone()
 
         if row is None:
             raise RuntimeStateNotFound(runtime_id)
@@ -86,38 +87,39 @@ class RuntimeStateRepository:
         to the query. psycopg2 does not automatically adapt plain dicts to JSONB —
         explicit wrapping is required.
         """
-        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT version, is_closed
-                FROM runtime_state_versions
-                WHERE runtime_id = %s
-                ORDER BY version DESC
-                LIMIT 1
-                """,
-                (runtime_id,),
-            )
-            latest = cur.fetchone()
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT version, is_closed
+                    FROM runtime_state_versions
+                    WHERE runtime_id = %s
+                    ORDER BY version DESC
+                    LIMIT 1
+                    """,
+                    (runtime_id,),
+                )
+                latest = cur.fetchone()
 
-            if latest is None:
-                raise RuntimeStateNotFound(runtime_id)
+                if latest is None:
+                    raise RuntimeStateNotFound(runtime_id)
 
-            if latest["is_closed"]:
-                raise SessionClosed(runtime_id)
+                if latest["is_closed"]:
+                    raise SessionClosed(runtime_id)
 
-            if latest["version"] != base_version:
-                raise VersionConflict()
+                if latest["version"] != base_version:
+                    raise VersionConflict()
 
-            new_version = base_version + 1
+                new_version = base_version + 1
 
-            cur.execute(
-                """
-                INSERT INTO runtime_state_versions
-                    (runtime_id, version, ruleset_hash, state_json, is_closed)
-                VALUES (%s, %s, %s, %s, FALSE)
-                """,
-                (runtime_id, new_version, ruleset_hash, Json(state_dict)),
-            )
+                cur.execute(
+                    """
+                    INSERT INTO runtime_state_versions
+                        (runtime_id, version, ruleset_hash, state_json, is_closed)
+                    VALUES (%s, %s, %s, %s, FALSE)
+                    """,
+                    (runtime_id, new_version, ruleset_hash, Json(state_dict)),
+                )
 
         return new_version
 
@@ -155,30 +157,31 @@ class RuntimeStateRepository:
         Raises RuntimeStateNotFound if runtime_id does not exist.
         Raises VersionConflict if version does not match the current latest version.
         """
-        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT version
-                FROM runtime_state_versions
-                WHERE runtime_id = %s
-                ORDER BY version DESC
-                LIMIT 1
-                """,
-                (runtime_id,),
-            )
-            row = cur.fetchone()
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT version
+                    FROM runtime_state_versions
+                    WHERE runtime_id = %s
+                    ORDER BY version DESC
+                    LIMIT 1
+                    """,
+                    (runtime_id,),
+                )
+                row = cur.fetchone()
 
-            if row is None:
-                raise RuntimeStateNotFound(runtime_id)
+                if row is None:
+                    raise RuntimeStateNotFound(runtime_id)
 
-            if row["version"] != version:
-                raise VersionConflict()
+                if row["version"] != version:
+                    raise VersionConflict()
 
-            cur.execute(
-                """
-                UPDATE runtime_state_versions
-                SET is_closed = TRUE
-                WHERE runtime_id = %s AND version = %s
-                """,
-                (runtime_id, version),
-            )
+                cur.execute(
+                    """
+                    UPDATE runtime_state_versions
+                    SET is_closed = TRUE
+                    WHERE runtime_id = %s AND version = %s
+                    """,
+                    (runtime_id, version),
+                )

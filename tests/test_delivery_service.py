@@ -133,23 +133,29 @@ class TestMailgunHttpDeliveryService:
     def test_raises_without_api_key(self):
         env = {**_MAILGUN_ENV}
         del env["MAILGUN_API_KEY"]
-        with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(RuntimeError, match="MAILGUN_API_KEY"):
-                MailgunHttpDeliveryService()
+        with (
+            patch.dict(os.environ, env, clear=True),
+            pytest.raises(RuntimeError, match="MAILGUN_API_KEY"),
+        ):
+            MailgunHttpDeliveryService()
 
     def test_raises_without_domain(self):
         env = {**_MAILGUN_ENV}
         del env["MAILGUN_DOMAIN"]
-        with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(RuntimeError, match="MAILGUN_DOMAIN"):
-                MailgunHttpDeliveryService()
+        with (
+            patch.dict(os.environ, env, clear=True),
+            pytest.raises(RuntimeError, match="MAILGUN_DOMAIN"),
+        ):
+            MailgunHttpDeliveryService()
 
     def test_raises_without_email_from(self):
         env = {**_MAILGUN_ENV}
         del env["EMAIL_FROM"]
-        with patch.dict(os.environ, env, clear=True):
-            with pytest.raises(RuntimeError, match="EMAIL_FROM"):
-                MailgunHttpDeliveryService()
+        with (
+            patch.dict(os.environ, env, clear=True),
+            pytest.raises(RuntimeError, match="EMAIL_FROM"),
+        ):
+            MailgunHttpDeliveryService()
 
     def test_send_returns_provider_id_with_brackets_stripped(self):
         """
@@ -288,18 +294,20 @@ class TestMailgunHttpDeliveryService:
         with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
             svc = MailgunHttpDeliveryService()
 
-        with patch(
-            "app.services.delivery.delivery_service.requests.post",
-            side_effect=req.RequestException("timeout"),
+        with (
+            patch(
+                "app.services.delivery.delivery_service.requests.post",
+                side_effect=req.RequestException("timeout"),
+            ),
+            pytest.raises(EmailDeliveryError),
         ):
-            with pytest.raises(EmailDeliveryError):
-                svc.send_clinical_output(
-                    to_email="gp@example.com",
-                    condition_label="Earache",
-                    pdf_bytes=b"%PDF-fake-content",
-                    submission_id="abc12345-0000-0000-0000-000000000000",
-                    submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
-                )
+            svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+            )
 
     def test_send_raises_email_delivery_error_on_bad_status(self):
         import requests as req
@@ -310,14 +318,17 @@ class TestMailgunHttpDeliveryService:
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = req.HTTPError("401 Unauthorized")
 
-        with patch(
-            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        with (
+            patch(
+                "app.services.delivery.delivery_service.requests.post",
+                return_value=mock_response,
+            ),
+            pytest.raises(EmailDeliveryError),
         ):
-            with pytest.raises(EmailDeliveryError):
-                svc.send_clinical_output(
-                    to_email="gp@example.com",
-                    condition_label="Earache",
-                    pdf_bytes=b"%PDF-fake-content",
-                    submission_id="abc12345-0000-0000-0000-000000000000",
-                    submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
-                )
+            svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+            )

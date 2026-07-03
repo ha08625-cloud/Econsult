@@ -1,125 +1,101 @@
 """
-Delivery repository.
+MESH repository.
 
-Database access for the delivery_jobs table.
+Database access for the mesh_jobs table — the queue between the PDF worker
+(producer, via MeshEnqueuer) and the MESH dispatcher (consumer, Phase 3) and
+tracking poller (Phase 4).
 
 Responsibilities:
-- Creating delivery jobs once the PDF attachment has been saved.
-- Claiming the next eligible pending job (SKIP LOCKED, single job per call).
-- Marking jobs as sent or failed (legacy SMTP path).
-- Marking jobs as provider_accepted (Mailgun path — worker sets this after
-  receiving the provider message ID from send_clinical_output).
-- Marking jobs as delivered or failed via webhook signals.
-- Appending raw webhook event payloads to the provider_events JSONB column.
-- Retrieving individual jobs by ID.
+- Creating mesh jobs once the PDF attachment has been saved (idempotent).
+- Claiming the next dispatchable job (SKIP LOCKED, single job per call) — Phase 3.
+- Recording a successful send and the returned MESH messageID — Phase 3.
+- Recording a transient failure with caller-supplied backoff — Phase 3.
+- Recording the fallback-to-email transition — Phase 3.
+- Recording tracking transitions (provider_accepted, delivered) — Phase 4.
 
 Architecture rules:
-- This module must never import clinical engine modules.
-- This module must never send emails or generate PDFs.
-- Retry policy constants are imported from delivery_constants; this
-  module does not define policy.
-- All claim operations use SELECT ... FOR UPDATE SKIP LOCKED and
-  immediately update next_retry_after within the same transaction.
-- JSONB writes must wrap dicts in psycopg2.extras.Json() per the
-  infrastructure convention (psycopg2 does not auto-adapt Python dicts).
+- This module must never import clinical engine modules, routers, or services.
+- This module must never send MESH messages, build payloads, or open HTTP
+  connections — it is persistence only. The dispatcher owns the MeshClient.
+- This module does not define retry policy. The number of attempts before
+  giving up (MAX_MESH_ATTEMPTS) is the dispatcher's concern; mark_failed only
+  records the attempt and returns the new attempt_count so the dispatcher can
+  decide whether to retry or fall back. This mirrors how DeliveryRepository
+  keeps backoff values out of the repository.
 
 Ordering invariant (enforced by the PDF worker, documented here):
-A delivery_jobs row can only exist after save_attachment has completed
-successfully. Therefore get_attachment will always find the attachment
-when a delivery job is claimed. Do not break this invariant in the PDF
-worker's operation ordering.
+A mesh_jobs row can only exist after save_attachment has completed
+successfully. create_job is therefore idempotent (ON CONFLICT DO NOTHING on
+submission_id) so the PDF worker's at-least-once enqueue is safe across
+retries — identical in shape to DeliveryRepository.create_job.
 
-Status lifecycle:
-  pending -> provider_accepted  (Mailgun path: worker marks after successful send)
-  pending -> sent               (SMTP/legacy path: worker marks after successful send)
-  provider_accepted -> delivered (webhook router marks on 'delivered' event)
-  provider_accepted -> failed    (webhook router marks on 'failed'/'dropped' event)
-  pending -> failed              (worker exhausts all retry attempts)
+Status lifecycle (the six CHECK-constrained states):
+  pending                  -> sent               (dispatcher: MESH returned 202)
+  pending                  -> fallback_triggered (dispatcher: terminal failure
+                                                  or transient attempts exhausted)
+  sent                     -> provider_accepted  (tracking: Accepted + downloadTimestamp)
+  sent | provider_accepted -> delivered          (tracking: Acknowledged + SUCCESS)
 
-Jobs in provider_accepted status are intentionally excluded from
-claim_next_pending. They must not be re-processed by the worker. Transition
-out of provider_accepted is exclusively the webhook router's responsibility.
+The 'failed' state is reserved for a tracking-time terminal signal (Error /
+statusSuccess=FAILED) and is set by a Phase 4 tracking method that is added in
+that phase. In Phase 2b only create_job is wired (by MeshEnqueuer); the claim
+and mark_* methods are built and tested here but not yet called by any worker.
+
+A transient send failure does NOT move the row to 'failed': mark_failed leaves
+status as 'pending' and sets next_retry_after, so the dispatcher reclaims the
+row when the backoff expires. Giving up after MAX_MESH_ATTEMPTS is an explicit
+dispatcher decision that calls mark_fallback_triggered.
 """
 
 from datetime import datetime
 
-from psycopg2.extras import Json, RealDictCursor
+from psycopg2.extras import RealDictCursor
 
 from app.core.db import get_conn
-from app.services.delivery.delivery_constants import MAX_ATTEMPTS
 
 
-class DeliveryJobNotFound(Exception):
-    """Raised when a job_id does not exist in delivery_jobs."""
+class MeshJobNotFound(Exception):
+    """Raised when a mesh_job_id does not exist in mesh_jobs."""
 
     pass
 
 
-class DeliveryRepository:
+class MeshRepository:
     def __init__(self, database_url: str):
         self.database_url = database_url
 
     # ------------------------------------------------------------------
-    # Job creation
+    # Job creation (Phase 2b — wired via MeshEnqueuer)
     # ------------------------------------------------------------------
 
-    def create_job(
-        self,
-        submission_id: str,
-        to_email: str,
-        condition_label: str,
-        submitted_at: datetime,
-        *,
-        is_fallback: bool = False,
-    ) -> str:
+    def create_job(self, *, submission_id: str, recipient_mailbox_id: str) -> str:
         """
-        Insert a new delivery_jobs row with status = 'pending'.
+        Insert a new mesh_jobs row with status = 'pending'.
 
-        The submission_id column has a UNIQUE constraint, so calling this
-        twice with the same submission_id is safe: the second call uses
-        ON CONFLICT DO NOTHING and the existing row is left untouched.
-        This makes the call idempotent and safe across PDF worker retries
-        and across the MESH dispatcher's orphaned-fallback recovery sweep.
+        The submission_id column has a UNIQUE constraint, so calling this twice
+        with the same submission_id is safe: the second call uses ON CONFLICT
+        DO NOTHING and the existing row is left untouched. This makes the call
+        idempotent and safe across PDF worker retries, satisfying the worker's
+        ordering invariant (see arch_submission.md).
 
-        to_email, condition_label, and submitted_at are denormalised here
-        so the delivery worker never needs to read submission_records.
+        recipient_mailbox_id is copied onto the row so that a later change to
+        the MESH_RECIPIENT_MAILBOX_ID configuration cannot misroute a referral
+        that was already queued.
 
-        is_fallback is operational metadata only: set True exclusively by
-        the MESH dispatcher when a terminal MESH failure (or transient
-        exhaustion) falls through to the email path. Nothing in the
-        delivery worker or webhook router routes on it — fallback emails
-        are identical to email-path emails by design (see
-        mesh_integration_plan.md, Governing Decisions).
-
-        Returns the job UUID as a string (the existing row's id if the
-        conflict path was taken).
+        Returns the row's id as a string (the existing row's id if the conflict
+        path was taken).
         """
         with get_conn(self.database_url) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                    INSERT INTO delivery_jobs (
-                        submission_id,
-                        to_email,
-                        condition_label,
-                        submitted_at,
-                        is_fallback
-                    )
-                    VALUES (
-                        %(submission_id)s,
-                        %(to_email)s,
-                        %(condition_label)s,
-                        %(submitted_at)s,
-                        %(is_fallback)s
-                    )
+                    INSERT INTO mesh_jobs (submission_id, recipient_mailbox_id)
+                    VALUES (%(submission_id)s, %(recipient_mailbox_id)s)
                     ON CONFLICT (submission_id) DO NOTHING
                     RETURNING id
                     """,
                 {
                     "submission_id": submission_id,
-                    "to_email": to_email,
-                    "condition_label": condition_label,
-                    "submitted_at": submitted_at,
-                    "is_fallback": is_fallback,
+                    "recipient_mailbox_id": recipient_mailbox_id,
                 },
             )
             row = cur.fetchone()
@@ -130,57 +106,56 @@ class DeliveryRepository:
 
             # Conflict path: fetch the existing row's id.
             cur.execute(
-                "SELECT id FROM delivery_jobs WHERE submission_id = %s",
+                "SELECT id FROM mesh_jobs WHERE submission_id = %s",
                 (submission_id,),
             )
             existing = cur.fetchone()
             return str(existing[0])
 
     # ------------------------------------------------------------------
-    # Job claiming
+    # Job claiming (Phase 3 — dispatcher)
     # ------------------------------------------------------------------
 
     def claim_next_pending(self) -> dict | None:
         """
-        Claim the next eligible pending delivery_jobs row.
+        Claim the next dispatchable mesh_jobs row.
 
         A job is eligible when:
         - status = 'pending'
         - next_retry_after IS NULL OR next_retry_after <= NOW()
 
-        Jobs in provider_accepted, delivered, sent, or failed status are
-        intentionally excluded. A provider_accepted job must not be
-        re-processed by the worker; its status transitions exclusively via
-        the webhook router.
-
-        The claim is performed atomically:
+        Rows in any other status are excluded. The claim is atomic:
         1. SELECT ... FOR UPDATE SKIP LOCKED finds and locks the row.
         2. An immediate UPDATE pushes next_retry_after 10 minutes into the
            future, moving the row outside the eligible window for any
-           concurrent worker.
+           concurrent dispatcher. This is a crash safety net: if the
+           dispatcher dies after claiming but before recording an outcome,
+           the row becomes eligible again once the 10 minutes elapse.
         Both steps happen inside a single transaction.
 
-        Returns a dict of the claimed row, or None if the queue is empty.
+        Returns a dict of the claimed row (all columns), or None if the queue
+        is empty.
         """
-        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT *
-                FROM delivery_jobs
-                WHERE status = 'pending'
-                    AND (next_retry_after IS NULL OR next_retry_after <= NOW())
-                ORDER BY created_at ASC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-                """
-            )
-            row = cur.fetchone()
-            if row is None:
-                return None
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT *
+                    FROM mesh_jobs
+                    WHERE status = 'pending'
+                      AND (next_retry_after IS NULL OR next_retry_after <= NOW())
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                    """
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
 
                 cur.execute(
                     """
-                    UPDATE delivery_jobs
+                    UPDATE mesh_jobs
                     SET next_retry_after = NOW() + INTERVAL '10 minutes',
                         updated_at       = NOW()
                     WHERE id = %s
@@ -191,213 +166,217 @@ class DeliveryRepository:
         return dict(row)
 
     # ------------------------------------------------------------------
-    # Outcome recording — worker
+    # Outcome recording — dispatcher (Phase 3)
     # ------------------------------------------------------------------
 
-    def mark_as_accepted(self, job_id: str, provider_message_id: str) -> None:
+    def mark_sent(self, *, mesh_job_id: str, message_id: str) -> None:
         """
-        Mark a delivery_job as accepted by the provider (Mailgun path).
+        Mark a mesh_job as sent after MESH returns 202 Accepted.
 
-        Sets status = 'provider_accepted' and records the provider_message_id
-        returned by the Mailgun API. Called by the delivery worker immediately
-        after a successful send_clinical_output call.
+        Records the MESH messageID verbatim and stamps sent_at. message_id is
+        stored exactly as returned (32-char uppercase hex); it must not be
+        normalised.
 
-        The provider_message_id is the lookup key used by the webhook router
-        to match incoming delivery signals to this job. It must be committed
-        before any webhook can arrive (in practice there is a small window
-        where a webhook could arrive first; the router handles this by
-        returning 406 to trigger a provider retry).
-
-        Raises DeliveryJobNotFound if the job_id does not exist.
-        """
-        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                UPDATE delivery_jobs
-                SET status              = 'provider_accepted',
-                    provider_message_id = %(provider_message_id)s,
-                    updated_at          = NOW()
-                WHERE id = %(job_id)s
-                RETURNING id
-                """,
-                {
-                    "job_id": job_id,
-                    "provider_message_id": provider_message_id,
-                },
-            )
-            if cur.fetchone() is None:
-                raise DeliveryJobNotFound(job_id)
-
-    def mark_sent(self, job_id: str) -> None:
-        """
-        Mark a delivery_job as successfully sent (legacy SMTP path).
-
-        Sets status = 'sent' and updated_at. Used when the delivery service
-        returns None (SMTP or ConsoleDeliveryService), indicating no webhook
-        tracking is available. Does not clear last_error (historical error
-        context is useful if a job failed before eventually succeeding on a
-        later attempt).
+        Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
         with get_conn(self.database_url) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                    UPDATE delivery_jobs
+                    UPDATE mesh_jobs
                     SET status     = 'sent',
+                        message_id = %(message_id)s,
+                        sent_at    = NOW(),
                         updated_at = NOW()
-                    WHERE id = %s
+                    WHERE id = %(mesh_job_id)s
+                    RETURNING id
                     """,
-                (job_id,),
+                {"mesh_job_id": mesh_job_id, "message_id": message_id},
             )
+            if cur.fetchone() is None:
+                raise MeshJobNotFound(mesh_job_id)
 
     def mark_failed(
         self,
-        job_id: str,
+        *,
+        mesh_job_id: str,
         error: str,
+        error_code: str | None,
         next_retry_after: datetime | None,
-    ) -> bool:
+    ) -> int:
         """
-        Record a failed delivery attempt.
+        Record a transient send failure.
 
-        Increments attempt_count by 1. If the new attempt_count reaches
-        MAX_ATTEMPTS, status is set to 'failed' permanently. Otherwise
-        status remains 'pending' and next_retry_after is set to the
-        supplied value.
+        Increments attempt_count by 1, records the error text and any MESH
+        error code, and sets next_retry_after to the caller-supplied backoff.
+        Status is left as 'pending' so the dispatcher reclaims the row when the
+        backoff expires.
 
-        Returns True if the job has been permanently exhausted (status is
-        now 'failed'), False if it remains pending for a future retry.
+        Returns the new attempt_count so the dispatcher can compare it against
+        MAX_MESH_ATTEMPTS and decide whether to keep retrying or to call
+        mark_fallback_triggered. This repository intentionally does not own
+        that threshold.
 
-        Raises DeliveryJobNotFound if the job_id does not exist.
+        Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
-        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                UPDATE delivery_jobs
-                SET attempt_count    = attempt_count + 1,
-                    last_error       = %(error)s,
-                    next_retry_after = %(next_retry_after)s,
-                    status           = CASE
-                        WHEN attempt_count + 1 >= %(max_attempts)s THEN 'failed'
-                        ELSE 'pending'
-                    END,
-                    updated_at       = NOW()
-                WHERE id = %(job_id)s
-                RETURNING id, status
-                """,
-                {
-                    "job_id": job_id,
-                    "error": error,
-                    "next_retry_after": next_retry_after,
-                    "max_attempts": MAX_ATTEMPTS,
-                },
-            )
-            result = cur.fetchone()
-            if result is None:
-                raise DeliveryJobNotFound(job_id)
-            return result["status"] == "failed"
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    UPDATE mesh_jobs
+                    SET attempt_count    = attempt_count + 1,
+                        last_error       = %(error)s,
+                        last_error_code  = %(error_code)s,
+                        next_retry_after = %(next_retry_after)s,
+                        updated_at       = NOW()
+                    WHERE id = %(mesh_job_id)s
+                    RETURNING attempt_count
+                    """,
+                    {
+                        "mesh_job_id": mesh_job_id,
+                        "error": error,
+                        "error_code": error_code,
+                        "next_retry_after": next_retry_after,
+                    },
+                )
+                result = cur.fetchone()
+                if result is None:
+                    raise MeshJobNotFound(mesh_job_id)
+                return result["attempt_count"]
 
-    # ------------------------------------------------------------------
-    # Outcome recording — webhook router
-    # ------------------------------------------------------------------
-
-    def mark_delivered(self, provider_message_id: str) -> bool:
+    def mark_fallback_triggered(self, *, mesh_job_id: str) -> None:
         """
-        Mark a job as delivered based on a Mailgun 'delivered' webhook event.
+        Mark a mesh_job as having fallen through to the email (Mailgun) path.
 
-        Sets status = 'delivered' and updated_at. Does not append the event
-        payload here — call append_provider_event separately to keep the
-        JSONB write and the status update decoupled.
+        Set by the dispatcher when MESH fails terminally or transient attempts
+        are exhausted, immediately before it enqueues the email fallback. The
+        dispatcher's ordering invariant (mark_fallback_triggered then
+        delivery_repo.create_job(is_fallback=True)) is documented in
+        arch_submission.md; this method only performs the status transition.
 
-        Returns True if a row was found and updated, False if no row exists
-        for the given provider_message_id (signals the webhook router to
-        return 406 so Mailgun retries later).
+        Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
         with get_conn(self.database_url) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                    UPDATE delivery_jobs
-                    SET status     = 'delivered',
+                    UPDATE mesh_jobs
+                    SET status     = 'fallback_triggered',
                         updated_at = NOW()
-                    WHERE provider_message_id = %s
+                    WHERE id = %s
                     RETURNING id
                     """,
-                (provider_message_id,),
+                (mesh_job_id,),
             )
-            return cur.fetchone() is not None
+            if cur.fetchone() is None:
+                raise MeshJobNotFound(mesh_job_id)
 
-    def mark_provider_failed(self, provider_message_id: str) -> bool:
+    # ------------------------------------------------------------------
+    # Outcome recording — tracking poller (Phase 4)
+    # ------------------------------------------------------------------
+
+    def mark_provider_accepted(self, *, mesh_job_id: str) -> None:
         """
-        Mark a job as failed based on a Mailgun 'failed' or 'dropped' webhook.
+        Mark a mesh_job as downloaded by the recipient's MESH client.
 
-        Sets status = 'failed' and updated_at. Does not append the event
-        payload here — call append_provider_event separately.
+        Set by the tracking poller when the tracking record shows the message
+        has been Accepted with a populated downloadTimestamp. This is an
+        intermediate state, not proof of clinical receipt — delivery is only
+        confirmed on Acknowledged + SUCCESS (mark_delivered).
 
-        Returns True if a row was found and updated, False if no row exists
-        for the given provider_message_id (signals the webhook router to
-        return 406 so Mailgun retries later).
+        Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
         with get_conn(self.database_url) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                    UPDATE delivery_jobs
-                    SET status     = 'failed',
-                        updated_at = NOW()
-                    WHERE provider_message_id = %s
+                    UPDATE mesh_jobs
+                    SET status               = 'provider_accepted',
+                        provider_accepted_at = NOW(),
+                        updated_at           = NOW()
+                    WHERE id = %s
                     RETURNING id
                     """,
-                (provider_message_id,),
+                (mesh_job_id,),
             )
-            return cur.fetchone() is not None
+            if cur.fetchone() is None:
+                raise MeshJobNotFound(mesh_job_id)
 
-    def append_provider_event(self, provider_message_id: str, event_payload: dict) -> None:
+    def mark_delivered(self, *, mesh_job_id: str) -> None:
         """
-        Append a raw webhook event payload to the provider_events JSONB column.
+        Mark a mesh_job as delivered (recipient acknowledgement received).
 
-        Uses jsonb_build_array and the concatenation operator (||) to append
-        to the existing array, initialising to an empty array if NULL.
-        This keeps the column as an ordered array of event objects.
+        Set by the tracking poller when the tracking record shows
+        status == 'Acknowledged' AND statusSuccess == 'SUCCESS'. This is the
+        authoritative delivery signal; the deletion job (Phase 4) treats it as
+        proof of receipt and only then becomes eligible to delete the referral.
 
-        Called for all webhook event types, including ones that do not change
-        status (e.g. 'opened', 'clicked'). The lossless audit trail is
-        maintained regardless of whether the event triggers a status change.
-
-        No-ops silently if the provider_message_id is not found — a missing
-        row at this point means the status update (mark_delivered / mark_provider_failed)
-        already returned False and the router will return 406. Appending to a
-        non-existent row would be a no-op anyway.
+        Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
         with get_conn(self.database_url) as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                    UPDATE delivery_jobs
-                    SET provider_events = COALESCE(provider_events, '[]'::jsonb)
-                                         || jsonb_build_array(%(payload)s::jsonb),
-                        updated_at      = NOW()
-                    WHERE provider_message_id = %(provider_message_id)s
+                    UPDATE mesh_jobs
+                    SET status       = 'delivered',
+                        delivered_at = NOW(),
+                        updated_at   = NOW()
+                    WHERE id = %s
+                    RETURNING id
                     """,
-                {
-                    "provider_message_id": provider_message_id,
-                    "payload": Json(event_payload),
-                },
+                (mesh_job_id,),
             )
+            if cur.fetchone() is None:
+                raise MeshJobNotFound(mesh_job_id)
 
     # ------------------------------------------------------------------
     # Lookup
     # ------------------------------------------------------------------
 
-    def get(self, job_id: str) -> dict:
+    def list_orphaned_fallbacks(self) -> list[dict]:
         """
-        Return the full delivery_jobs row for job_id.
+        Find mesh_jobs rows in 'fallback_triggered' with no matching
+        delivery_jobs row.
 
-        Raises DeliveryJobNotFound if absent.
+        These are the crash artefacts of the dispatcher's fallback ordering
+        invariant: mark_fallback_triggered committed, but the process died
+        before delivery_repo.create_job ran. Without recovery, the
+        submission is silently undelivered — fallback_triggered is terminal
+        in mesh_jobs and nothing else consumes it.
+
+        Consumed by the dispatcher's recovery sweep (every loop iteration),
+        which re-runs the idempotent delivery_repo.create_job for each
+        orphan. Returns a list of dicts with 'id' and 'submission_id',
+        oldest first; empty list when there are no orphans (the normal
+        case — this query is a cheap LEFT JOIN on two indexed columns).
         """
-        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM delivery_jobs WHERE id = %s",
-                (job_id,),
-            )
-            row = cur.fetchone()
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT m.id, m.submission_id
+                    FROM mesh_jobs m
+                    LEFT JOIN delivery_jobs d
+                           ON d.submission_id = m.submission_id
+                    WHERE m.status = 'fallback_triggered'
+                      AND d.id IS NULL
+                    ORDER BY m.created_at ASC
+                    """
+                )
+                rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+    def get(self, mesh_job_id: str) -> dict:
+        """
+        Return the full mesh_jobs row for mesh_job_id.
+
+        Raises MeshJobNotFound if absent.
+        """
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM mesh_jobs WHERE id = %s",
+                    (mesh_job_id,),
+                )
+                row = cur.fetchone()
 
         if row is None:
-            raise DeliveryJobNotFound(job_id)
+            raise MeshJobNotFound(mesh_job_id)
 
         return dict(row)

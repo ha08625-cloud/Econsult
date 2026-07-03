@@ -143,16 +143,17 @@ class SubmissionRepository:
 
         Raises SubmissionNotFound if submission_id does not exist.
         """
-        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                f"""
-                SELECT {_SUBMISSION_COLUMNS}
-                FROM submission_records
-                WHERE submission_id = %s
-                """,
-                (submission_id,),
-            )
-            row = cur.fetchone()
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    f"""
+                    SELECT {_SUBMISSION_COLUMNS}
+                    FROM submission_records
+                    WHERE submission_id = %s
+                    """,
+                    (submission_id,),
+                )
+                row = cur.fetchone()
 
         if row is None:
             raise SubmissionNotFound(submission_id)
@@ -177,16 +178,17 @@ class SubmissionRepository:
 
         Raises SubmissionNotFound if submission_id does not exist.
         """
-        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT condition_label, submitted_at
-                FROM submission_records
-                WHERE submission_id = %s
-                """,
-                (submission_id,),
-            )
-            row = cur.fetchone()
+        with get_conn(self.database_url) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT condition_label, submitted_at
+                    FROM submission_records
+                    WHERE submission_id = %s
+                    """,
+                    (submission_id,),
+                )
+                row = cur.fetchone()
 
         if row is None:
             raise SubmissionNotFound(submission_id)
