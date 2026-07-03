@@ -102,7 +102,6 @@ class TestEmailDeliveryService:
             svc = EmailDeliveryService()
 
         mock_server = MagicMock()
-        mock_smtp_class = MagicMock(return_value=__import__("contextlib").nullcontext(mock_server))
 
         with patch("app.services.delivery.delivery_service.smtplib.SMTP") as mock_smtp:
             mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
