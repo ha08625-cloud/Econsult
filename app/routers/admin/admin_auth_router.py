@@ -129,7 +129,7 @@ async def login(
     try:
         body = await request.json()
     except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+        raise INVALID_PAYLOAD("Invalid JSON body") from None
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -165,12 +165,12 @@ async def login(
                     ip_address=ip_address,
                     detail={"email": email},
                 )
-            except Exception:
+            except Exception as err:
                 logger.exception("Audit log write failed for auth.login.step1_failed")
                 raise HTTPException(
                     status_code=500,
                     detail="Action succeeded but audit logging failed. Please report this.",
-                )
+                ) from err
         raise
 
     # Password verified. Generate OTP and upsert synchronously.
@@ -203,12 +203,12 @@ async def login(
             ip_address=ip_address,
             detail={"email": email},
         )
-    except Exception:
+    except Exception as err:
         logger.exception("Audit log write failed for auth.login.step1_succeeded")
         raise HTTPException(
             status_code=500,
             detail="Action succeeded but audit logging failed. Please report this.",
-        )
+        ) from err
 
     return {"ok": True}
 
@@ -247,7 +247,7 @@ async def verify_mfa_code(
     try:
         body = await request.json()
     except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+        raise INVALID_PAYLOAD("Invalid JSON body") from None
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -289,12 +289,12 @@ async def verify_mfa_code(
                     ip_address=ip_address,
                     detail={"email": email, "reason": "verification_failed"},
                 )
-            except Exception:
+            except Exception as err:
                 logger.exception("Audit log write failed for action auth.login.failed")
                 raise HTTPException(
                     status_code=500,
                     detail="Action succeeded but audit logging failed. Please report this.",
-                )
+                ) from err
         raise
 
     try:
@@ -306,12 +306,12 @@ async def verify_mfa_code(
             session_id=session_id,
             detail={"email": email},
         )
-    except Exception:
+    except Exception as err:
         logger.exception("Audit log write failed for action auth.login.succeeded")
         raise HTTPException(
             status_code=500,
             detail="Action succeeded but audit logging failed. Please report this.",
-        )
+        ) from err
 
     response = JSONResponse(content={"ok": True})
     response.set_cookie(
@@ -362,7 +362,7 @@ async def request_password_reset(
     try:
         body = await request.json()
     except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+        raise INVALID_PAYLOAD("Invalid JSON body") from None
 
     if not isinstance(body, dict) or "email" not in body:
         raise INVALID_PAYLOAD('Body must be {"email": "..."}')
@@ -430,7 +430,7 @@ async def set_password(
     try:
         body = await request.json()
     except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+        raise INVALID_PAYLOAD("Invalid JSON body") from None
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -498,12 +498,12 @@ async def logout(
                 session_id=session_id,
                 detail={"session_id": session_id},
             )
-        except Exception:
+        except Exception as err:
             logger.exception("Audit log write failed for action auth.logout")
             raise HTTPException(
                 status_code=500,
                 detail="Action succeeded but audit logging failed. Please report this.",
-            )
+            ) from err
 
     response = JSONResponse(content={"ok": True})
     response.set_cookie(
