@@ -158,8 +158,8 @@ async def add_user(
     """
     try:
         body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+    except Exception as exc:
+        raise INVALID_PAYLOAD("Invalid JSON body") from exc
 
     if not isinstance(body, dict) or "email" not in body:
         raise INVALID_PAYLOAD('Body must be {"email": "..."}')
@@ -212,12 +212,12 @@ async def add_user(
         # Domain validation failure (409, 403, 422) — let it propagate to the
         # registered APIError handler in main.py unchanged.
         raise
-    except Exception:
+    except Exception as exc:
         logger.exception("Transaction failed for auth.user_added")
         raise HTTPException(
             status_code=500,
             detail="Failed to add user. Please try again.",
-        )
+        ) from exc
 
     # Delivery is outside the transaction. A failure here does not roll back
     # the user insert — the admin can retry via /resend-invitation.
@@ -314,12 +314,12 @@ async def remove_user(
             )
     except APIError:
         raise
-    except Exception:
+    except Exception as exc:
         logger.exception("Transaction failed for auth.user_deleted")
         raise HTTPException(
             status_code=500,
             detail="Failed to delete user. Please try again.",
-        )
+        ) from exc
 
     return {"ok": True}
 
@@ -384,12 +384,12 @@ async def resend_invitation(
             session_id=admin.session_id,
             detail={"target_user_id": user_id},
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Audit log write failed for action auth.invitation_resent")
         raise HTTPException(
             status_code=500,
             detail="Action succeeded but audit logging failed. Please report this.",
-        )
+        ) from exc
 
     email_sent = True
     try:
