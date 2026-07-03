@@ -136,22 +136,21 @@ class MeshRepository:
         Returns a dict of the claimed row (all columns), or None if the queue
         is empty.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT *
-                    FROM mesh_jobs
-                    WHERE status = 'pending'
-                      AND (next_retry_after IS NULL OR next_retry_after <= NOW())
-                    ORDER BY created_at ASC
-                    LIMIT 1
-                    FOR UPDATE SKIP LOCKED
-                    """
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return None
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM mesh_jobs
+                WHERE status = 'pending'
+                    AND (next_retry_after IS NULL OR next_retry_after <= NOW())
+                ORDER BY created_at ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                """
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
 
                 cur.execute(
                     """
@@ -218,30 +217,29 @@ class MeshRepository:
 
         Raises MeshJobNotFound if the mesh_job_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    UPDATE mesh_jobs
-                    SET attempt_count    = attempt_count + 1,
-                        last_error       = %(error)s,
-                        last_error_code  = %(error_code)s,
-                        next_retry_after = %(next_retry_after)s,
-                        updated_at       = NOW()
-                    WHERE id = %(mesh_job_id)s
-                    RETURNING attempt_count
-                    """,
-                    {
-                        "mesh_job_id": mesh_job_id,
-                        "error": error,
-                        "error_code": error_code,
-                        "next_retry_after": next_retry_after,
-                    },
-                )
-                result = cur.fetchone()
-                if result is None:
-                    raise MeshJobNotFound(mesh_job_id)
-                return result["attempt_count"]
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE mesh_jobs
+                SET attempt_count    = attempt_count + 1,
+                    last_error       = %(error)s,
+                    last_error_code  = %(error_code)s,
+                    next_retry_after = %(next_retry_after)s,
+                    updated_at       = NOW()
+                WHERE id = %(mesh_job_id)s
+                RETURNING attempt_count
+                """,
+                {
+                    "mesh_job_id": mesh_job_id,
+                    "error": error,
+                    "error_code": error_code,
+                    "next_retry_after": next_retry_after,
+                },
+            )
+            result = cur.fetchone()
+            if result is None:
+                raise MeshJobNotFound(mesh_job_id)
+            return result["attempt_count"]
 
     def mark_fallback_triggered(self, *, mesh_job_id: str) -> None:
         """
@@ -346,20 +344,19 @@ class MeshRepository:
         oldest first; empty list when there are no orphans (the normal
         case — this query is a cheap LEFT JOIN on two indexed columns).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT m.id, m.submission_id
-                    FROM mesh_jobs m
-                    LEFT JOIN delivery_jobs d
-                           ON d.submission_id = m.submission_id
-                    WHERE m.status = 'fallback_triggered'
-                      AND d.id IS NULL
-                    ORDER BY m.created_at ASC
-                    """
-                )
-                rows = cur.fetchall()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT m.id, m.submission_id
+                FROM mesh_jobs m
+                LEFT JOIN delivery_jobs d
+                        ON d.submission_id = m.submission_id
+                WHERE m.status = 'fallback_triggered'
+                    AND d.id IS NULL
+                ORDER BY m.created_at ASC
+                """
+            )
+            rows = cur.fetchall()
         return [dict(row) for row in rows]
 
     def get(self, mesh_job_id: str) -> dict:
@@ -368,13 +365,12 @@ class MeshRepository:
 
         Raises MeshJobNotFound if absent.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM mesh_jobs WHERE id = %s",
-                    (mesh_job_id,),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM mesh_jobs WHERE id = %s",
+                (mesh_job_id,),
+            )
+            row = cur.fetchone()
 
         if row is None:
             raise MeshJobNotFound(mesh_job_id)

@@ -182,17 +182,16 @@ class PracticeRepository:
         Get practice by ID.
         Returns dict with practice_id, name, email, created_at or None if not found.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT practice_id, name, email, created_at
-                    FROM practices
-                    WHERE practice_id = %s
-                    """,
-                    (practice_id,),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT practice_id, name, email, created_at
+                FROM practices
+                WHERE practice_id = %s
+                """,
+                (practice_id,),
+            )
+            row = cur.fetchone()
 
         if row is None:
             return None
@@ -260,17 +259,16 @@ class PracticeRepository:
         NOTE: despite the column name 'signposting_json', this column
         stores a plain HTML string. The column name is a legacy misnomer.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT signposting_json
-                    FROM practice_signposting
-                    WHERE practice_id = %s AND condition_id = %s
-                    """,
-                    (practice_id, condition_id),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT signposting_json
+                FROM practice_signposting
+                WHERE practice_id = %s AND condition_id = %s
+                """,
+                (practice_id, condition_id),
+            )
+            row = cur.fetchone()
 
         if row is None:
             return None
@@ -353,18 +351,17 @@ class PracticeRepository:
         Return the doctor list for a practice, ordered by display_order.
         Returns an empty list if no doctors are configured.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT name
-                    FROM practice_doctors
-                    WHERE practice_id = %s
-                    ORDER BY display_order ASC
-                    """,
-                    (practice_id,),
-                )
-                rows = cur.fetchall()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT name
+                FROM practice_doctors
+                WHERE practice_id = %s
+                ORDER BY display_order ASC
+                """,
+                (practice_id,),
+            )
+            rows = cur.fetchall()
 
         return [row["name"] for row in rows]
 
