@@ -153,8 +153,8 @@ async def put_practice_email(
     """
     try:
         body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+    except Exception as e:
+        raise INVALID_PAYLOAD("Invalid JSON body") from e
 
     if not isinstance(body, dict) or "email" not in body:
         raise INVALID_PAYLOAD('Body must be {"email": "..."}')
@@ -169,7 +169,7 @@ async def put_practice_email(
     try:
         practice_repo._validate_email(email)
     except InvalidEmailError as e:
-        raise INVALID_PAYLOAD(str(e))
+        raise INVALID_PAYLOAD(str(e)) from e
 
     # Read "before" state outside the transaction.
     before_email = practice_repo.get_email(admin.practice_id)
@@ -192,13 +192,13 @@ async def put_practice_email(
                 conn=conn,
             )
     except InvalidEmailError as e:
-        raise INVALID_PAYLOAD(str(e))
-    except Exception:
+        raise INVALID_PAYLOAD(str(e)) from e
+    except Exception as e:
         logger.exception("Transaction failed for practice.email.updated")
         raise HTTPException(
             status_code=500,
             detail="Failed to update practice email. Please try again.",
-        )
+        ) from e
 
     practice = practice_repo.get_practice(admin.practice_id)
     return {
@@ -270,8 +270,8 @@ async def put_signposting(
 
     try:
         body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+    except Exception as e:
+        raise INVALID_PAYLOAD("Invalid JSON body") from e
 
     if not isinstance(body, dict) or "signposting" not in body:
         raise INVALID_PAYLOAD('Body must be {"signposting": "..."}')
@@ -314,13 +314,13 @@ async def put_signposting(
                 conn=conn,
             )
     except InvalidSignpostingData as e:
-        raise INVALID_PAYLOAD(str(e))
-    except Exception:
+        raise INVALID_PAYLOAD(str(e)) from e
+    except Exception as e:
         logger.exception("Transaction failed for conditions.signposting.updated")
         raise HTTPException(
             status_code=500,
             detail="Failed to update signposting. Please try again.",
-        )
+        ) from e
 
     saved = practice_repo.get_signposting(admin.practice_id, condition_id)
 
@@ -373,12 +373,12 @@ async def delete_signposting(
                 detail={"before": {"signposting": _normalise_signposting(before_html)}},
                 conn=conn,
             )
-    except Exception:
+    except Exception as e:
         logger.exception("Transaction failed for conditions.signposting.deleted")
         raise HTTPException(
             status_code=500,
             detail="Failed to delete signposting. Please try again.",
-        )
+        ) from e
 
 
 # ---------------------------------------------------------------------------
@@ -432,8 +432,8 @@ async def put_doctors(
     """
     try:
         body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+    except Exception as e:
+        raise INVALID_PAYLOAD("Invalid JSON body") from e
 
     if not isinstance(body, dict) or "doctors" not in body:
         raise INVALID_PAYLOAD('Body must be {"doctors": [...]}')
@@ -448,7 +448,7 @@ async def put_doctors(
     try:
         practice_repo._validate_doctor_list(doctors)
     except InvalidDoctorListError as e:
-        raise INVALID_PAYLOAD(str(e))
+        raise INVALID_PAYLOAD(str(e)) from e
 
     # Read "before" state outside the transaction.
     before_doctors = practice_repo.get_doctors(admin.practice_id)
@@ -471,13 +471,13 @@ async def put_doctors(
                 conn=conn,
             )
     except InvalidDoctorListError as e:
-        raise INVALID_PAYLOAD(str(e))
-    except Exception:
+        raise INVALID_PAYLOAD(str(e)) from e
+    except Exception as e:
         logger.exception("Transaction failed for doctors.updated")
         raise HTTPException(
             status_code=500,
             detail="Failed to update doctor list. Please try again.",
-        )
+        ) from e
 
     saved = practice_repo.get_doctors(admin.practice_id)
     return {"doctors": saved}
