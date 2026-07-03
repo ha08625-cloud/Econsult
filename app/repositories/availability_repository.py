@@ -69,20 +69,19 @@ class AvailabilityRepository:
 
         Raises ValueError if the row does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT practice_id, is_active, weekly_open_days,
-                           open_time, close_time, closed_message,
-                           override_status, override_expires_at,
-                           override_message
-                    FROM practice_availability
-                    WHERE practice_id = %s
-                    """,
-                    (practice_id,),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT practice_id, is_active, weekly_open_days,
+                        open_time, close_time, closed_message,
+                        override_status, override_expires_at,
+                        override_message
+                FROM practice_availability
+                WHERE practice_id = %s
+                """,
+                (practice_id,),
+            )
+            row = cur.fetchone()
 
         if row is None:
             raise ValueError(f"No availability row found for practice '{practice_id}'")
@@ -213,19 +212,18 @@ class AvailabilityRepository:
         exception) and by GET /admin/availability/exceptions (which
         displays all upcoming exceptions to the admin).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT practice_id, exception_date, exception_type,
-                           open_time, close_time, note
-                    FROM practice_availability_exceptions
-                    WHERE practice_id = %s AND exception_date >= %s
-                    ORDER BY exception_date ASC
-                    """,
-                    (practice_id, from_date),
-                )
-                rows = cur.fetchall()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT practice_id, exception_date, exception_type,
+                        open_time, close_time, note
+                FROM practice_availability_exceptions
+                WHERE practice_id = %s AND exception_date >= %s
+                ORDER BY exception_date ASC
+                """,
+                (practice_id, from_date),
+            )
+            rows = cur.fetchall()
         return [dict(r) for r in rows]
 
     def get_exception(self, practice_id: str, exception_date: datetime.date) -> dict | None:
@@ -235,18 +233,17 @@ class AvailabilityRepository:
         Used to read the "before" state for audit logging before a set or
         delete operation.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT practice_id, exception_date, exception_type,
-                           open_time, close_time, note
-                    FROM practice_availability_exceptions
-                    WHERE practice_id = %s AND exception_date = %s
-                    """,
-                    (practice_id, exception_date),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT practice_id, exception_date, exception_type,
+                        open_time, close_time, note
+                FROM practice_availability_exceptions
+                WHERE practice_id = %s AND exception_date = %s
+                """,
+                (practice_id, exception_date),
+            )
+            row = cur.fetchone()
         return dict(row) if row is not None else None
 
     def set_exception(
