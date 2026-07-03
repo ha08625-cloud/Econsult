@@ -72,14 +72,14 @@ async def get_audit_log(
         try:
             parsed_from_date = datetime.date.fromisoformat(from_date)
         except ValueError:
-            raise INVALID_DATE_FORMAT("from_date", from_date)
+            raise INVALID_DATE_FORMAT("from_date", from_date) from None
 
     parsed_to_date = None
     if to_date is not None:
         try:
             parsed_to_date = datetime.date.fromisoformat(to_date)
         except ValueError:
-            raise INVALID_DATE_FORMAT("to_date", to_date)
+            raise INVALID_DATE_FORMAT("to_date", to_date) from None
 
     # Clamp limit. Do not reject out-of-range values — just apply the bounds
     # silently. This avoids a class of client breakage if limits drift over time.
@@ -96,7 +96,7 @@ async def get_audit_log(
             limit=limit,
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Serialise datetime fields. psycopg2 returns occurred_at as a Python
     # datetime object; JSON serialisation requires a string.
