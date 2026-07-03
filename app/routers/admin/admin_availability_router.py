@@ -194,8 +194,8 @@ async def put_availability(
     """
     try:
         body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+    except Exception as e:
+        raise INVALID_PAYLOAD("Invalid JSON body") from e
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -219,13 +219,13 @@ async def put_availability(
 
     try:
         open_time = datetime.time.fromisoformat(open_time_str)
-    except ValueError:
-        raise INVALID_DATE_FORMAT("open_time", open_time_str)
+    except ValueError as e:
+        raise INVALID_DATE_FORMAT("open_time", open_time_str) from e
 
     try:
         close_time = datetime.time.fromisoformat(close_time_str)
-    except ValueError:
-        raise INVALID_DATE_FORMAT("close_time", close_time_str)
+    except ValueError as e:
+        raise INVALID_DATE_FORMAT("close_time", close_time_str) from e
 
     closed_message = body.get("closed_message")
     if closed_message is not None and not isinstance(closed_message, str):
@@ -241,7 +241,7 @@ async def put_availability(
             closed_message=closed_message,
         )
     except ValueError as e:
-        raise INVALID_PAYLOAD(str(e))
+        raise INVALID_PAYLOAD(str(e)) from e
 
     # --- Read "before" state outside the transaction ---
 
@@ -307,12 +307,12 @@ async def put_availability(
                 },
                 conn=conn,
             )
-    except Exception:
+    except Exception as e:
         logger.exception("Transaction failed for availability.config.updated")
         raise HTTPException(
             status_code=500,
             detail="Failed to update availability configuration. Please try again.",
-        )
+        ) from e
 
     # --- Log warning for empty-days misconfiguration ---
 
@@ -362,8 +362,8 @@ async def post_override(
     """
     try:
         body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+    except Exception as e:
+        raise INVALID_PAYLOAD("Invalid JSON body") from e
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -380,8 +380,8 @@ async def post_override(
 
     try:
         expires_at = datetime.datetime.fromisoformat(expires_at_str)
-    except ValueError:
-        raise INVALID_DATE_FORMAT("expires_at", expires_at_str)
+    except ValueError as e:
+        raise INVALID_DATE_FORMAT("expires_at", expires_at_str) from e
 
     # Reject timezone-naive datetimes. During BST, a London-local time
     # submitted without an offset would be stored as if it were UTC,
@@ -406,7 +406,7 @@ async def post_override(
             now_utc=now_utc,
         )
     except ValueError as e:
-        raise INVALID_PAYLOAD(str(e))
+        raise INVALID_PAYLOAD(str(e)) from e
 
     # --- Read "before" state outside the transaction ---
 
@@ -451,12 +451,12 @@ async def post_override(
                 },
                 conn=conn,
             )
-    except Exception:
+    except Exception as e:
         logger.exception("Transaction failed for availability.override.updated")
         raise HTTPException(
             status_code=500,
             detail="Failed to set availability override. Please try again.",
-        )
+        ) from e
 
     # --- Return updated config (read after commit) ---
 
@@ -508,12 +508,12 @@ async def delete_override(
                 },
                 conn=conn,
             )
-    except Exception:
+    except Exception as e:
         logger.exception("Transaction failed for availability.override.deleted")
         raise HTTPException(
             status_code=500,
             detail="Failed to clear availability override. Please try again.",
-        )
+        ) from e
 
     updated = availability_repo.get_availability(admin.practice_id)
     return _format_availability_response(updated)
@@ -574,14 +574,14 @@ async def put_exception(
     # --- Parse date from URL path ---
     try:
         exception_date = datetime.date.fromisoformat(date)
-    except ValueError:
-        raise INVALID_DATE_FORMAT("date", date)
+    except ValueError as e:
+        raise INVALID_DATE_FORMAT("date", date) from e
 
     # --- Parse body ---
     try:
         body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body")
+    except Exception as e:
+        raise INVALID_PAYLOAD("Invalid JSON body") from e
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -603,16 +603,16 @@ async def put_exception(
             raise INVALID_FIELD_TYPE("open_time", "a string in HH:MM format or null")
         try:
             open_time = datetime.time.fromisoformat(open_time_str)
-        except ValueError:
-            raise INVALID_DATE_FORMAT("open_time", open_time_str)
+        except ValueError as e:
+            raise INVALID_DATE_FORMAT("open_time", open_time_str) from e
 
     if close_time_str is not None:
         if not isinstance(close_time_str, str):
             raise INVALID_FIELD_TYPE("close_time", "a string in HH:MM format or null")
         try:
             close_time = datetime.time.fromisoformat(close_time_str)
-        except ValueError:
-            raise INVALID_DATE_FORMAT("close_time", close_time_str)
+        except ValueError as e:
+            raise INVALID_DATE_FORMAT("close_time", close_time_str) from e
 
     note = body.get("note")
     if note is not None and not isinstance(note, str):
@@ -627,7 +627,7 @@ async def put_exception(
             close_time=close_time,
         )
     except ValueError as e:
-        raise INVALID_PAYLOAD(str(e))
+        raise INVALID_PAYLOAD(str(e)) from e
 
     # --- Read "before" state outside the transaction ---
 
@@ -680,12 +680,12 @@ async def put_exception(
                 detail=audit_detail,
                 conn=conn,
             )
-    except Exception:
+    except Exception as e:
         logger.exception("Transaction failed for %s", action)
         raise HTTPException(
             status_code=500,
             detail="Failed to save availability exception. Please try again.",
-        )
+        ) from e
 
     # --- Return the stored exception ---
 
@@ -713,8 +713,8 @@ async def delete_exception(
     """
     try:
         exception_date = datetime.date.fromisoformat(date)
-    except ValueError:
-        raise INVALID_DATE_FORMAT("date", date)
+    except ValueError as e:
+        raise INVALID_DATE_FORMAT("date", date) from e
 
     # Read "before" state outside the transaction.
     before_exc = availability_repo.get_exception(admin.practice_id, exception_date)
@@ -739,9 +739,9 @@ async def delete_exception(
                 },
                 conn=conn,
             )
-    except Exception:
+    except Exception as e:
         logger.exception("Transaction failed for availability.exception.deleted")
         raise HTTPException(
             status_code=500,
             detail="Failed to delete availability exception. Please try again.",
-        )
+        ) from e
