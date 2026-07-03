@@ -130,7 +130,7 @@ def _read_delivery_job(sid: str) -> dict:
         row = cur.fetchone()
         assert row is not None, f"expected a delivery_jobs row for {sid}"
         cols = [desc[0] for desc in cur.description]
-    return dict(zip(cols, row))
+    return dict(zip(cols, row, strict=True))
 
 
 # ---------------------------------------------------------------------------

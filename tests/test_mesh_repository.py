@@ -120,7 +120,7 @@ def _read_job(mesh_job_id: str) -> dict:
         cur.execute("SELECT * FROM mesh_jobs WHERE id = %s", (mesh_job_id,))
         row = cur.fetchone()
         cols = [desc[0] for desc in cur.description]
-    return dict(zip(cols, row))
+    return dict(zip(cols, row, strict=True))
 
 
 # ---------------------------------------------------------------------------

@@ -114,7 +114,7 @@ def _read_pdf_job(job_id: str) -> dict:
         cur.execute("SELECT * FROM pdf_jobs WHERE id = %s", (job_id,))
         row = cur.fetchone()
         cols = [desc[0] for desc in cur.description]
-    return dict(zip(cols, row))
+    return dict(zip(cols, row, strict=True))
 
 
 def _count(table: str, sid: str) -> int:

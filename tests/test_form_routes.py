@@ -202,7 +202,7 @@ def _read_pdf_job(submission_id: str) -> dict | None:
         if row is None:
             return None
         cols = [desc[0] for desc in cur.description]
-    return dict(zip(cols, row))
+    return dict(zip(cols, row, strict=True))
 
 
 def _count_submission_photos(submission_id: str) -> int:
