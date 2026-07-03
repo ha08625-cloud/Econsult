@@ -118,7 +118,7 @@ async def form_init(
         ruleset_path = registry.get_ruleset_path(condition_id)
         condition_label = registry.get_presentation(condition_id)["label"]
     except ConditionNotFound:
-        raise INVALID_PAYLOAD(f"Unknown condition_id: {condition_id}")
+        raise INVALID_PAYLOAD(f"Unknown condition_id: {condition_id}") from None
 
     runtime_id = str(uuid.uuid4())
 
@@ -171,9 +171,9 @@ async def form_update(
     try:
         row = runtime_repo.get_latest(runtime_id)
     except RuntimeStateNotFound:
-        raise UNKNOWN_RUNTIME_ID()
+        raise UNKNOWN_RUNTIME_ID() from None
     except SessionClosed:
-        raise SESSION_CLOSED()
+        raise SESSION_CLOSED() from None
 
     runtime_state = RuntimeState.from_dict(row["state_json"])
     current_ruleset_hash = row["ruleset_hash"]
@@ -182,7 +182,7 @@ async def form_update(
         ruleset_path = registry.get_ruleset_path(runtime_state.condition_id)
         condition_label = registry.get_presentation(runtime_state.condition_id)["label"]
     except ConditionNotFound:
-        raise INVALID_PAYLOAD(f"Unknown condition_id: {runtime_state.condition_id}")
+        raise INVALID_PAYLOAD(f"Unknown condition_id: {runtime_state.condition_id}") from None
 
     try:
         new_state, new_client_state, safety_messages = apply_update_and_evaluate(
@@ -197,7 +197,7 @@ async def form_update(
         # core exception to a 422 here at the boundary. Catching the subclass
         # specifically means a plain ValueError raised deeper in the pipeline
         # (e.g. load_ruleset) still surfaces as a logged 500, not a 422.
-        raise INVALID_PAYLOAD(str(exc))
+        raise INVALID_PAYLOAD(str(exc)) from None
 
     try:
         new_version = runtime_repo.insert_new_version(
@@ -207,7 +207,7 @@ async def form_update(
             state_dict=new_state.to_dict(),
         )
     except VersionConflict:
-        raise VERSION_CONFLICT()
+        raise VERSION_CONFLICT() from None
 
     return {
         "runtime_id": runtime_id,
@@ -300,9 +300,9 @@ async def form_finish(
         try:
             sanitized.append(sanitize_image(b, tier=effective_tier))
         except ImageTooLargeError as exc:
-            raise INVALID_PAYLOAD(str(exc))
+            raise INVALID_PAYLOAD(str(exc)) from None
         except ValueError:
-            raise INVALID_PAYLOAD(f"Photo {i + 1} is not a valid image")
+            raise INVALID_PAYLOAD(f"Photo {i + 1} is not a valid image") from None
     photo_bytes = sanitized
 
     for i, b in enumerate(photo_bytes):
@@ -348,9 +348,9 @@ async def form_finish(
     try:
         row = runtime_repo.get_latest(runtime_id)
     except RuntimeStateNotFound:
-        raise UNKNOWN_RUNTIME_ID()
+        raise UNKNOWN_RUNTIME_ID() from None
     except SessionClosed:
-        raise SESSION_CLOSED()
+        raise SESSION_CLOSED() from None
 
     if row["version"] != version:
         raise VERSION_CONFLICT()
@@ -361,7 +361,7 @@ async def form_finish(
         ruleset_path = registry.get_ruleset_path(runtime_state.condition_id)
         condition_label = registry.get_presentation(runtime_state.condition_id)["label"]
     except ConditionNotFound:
-        raise INVALID_PAYLOAD(f"Unknown condition_id: {runtime_state.condition_id}")
+        raise INVALID_PAYLOAD(f"Unknown condition_id: {runtime_state.condition_id}") from None
 
     clinical, audit = finish_runtime_state(
         runtime_state,
