@@ -1,6 +1,8 @@
 ### Updates
 - timeout for forms after 30 minutes
-- impetial measurements for numbers
+- Session refresh / sliding expiry
+- add eslint to CI
+- MYPY
 - calculations
 gp connect and MESH (defer)
 - direct GP connect input for weight/height BP codes
@@ -10,8 +12,6 @@ gp connect and MESH (defer)
 - Notification architecture
 - safety rules implemented on clicking yes/no, rather than on submit form (defer - big feature change and we need to know if blocking safety rules are desired or not)
 
-### Admin portal updates
-- Session refresh / sliding expiry
 
 ### Encoder updates
 - Deterministic data augmentation
