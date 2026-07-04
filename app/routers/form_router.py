@@ -262,11 +262,10 @@ async def form_finish(
     # When no photos are submitted, tier is accepted as None or absent and
     # ignored. When photos are present, tier must be one of the valid values.
     tier = data.get("photo_quality_tier")
-    if photo_bytes:
-        if tier not in _VALID_TIERS:
-            raise INVALID_PAYLOAD(
-                f"photo_quality_tier must be one of {sorted(_VALID_TIERS)} when photos are included"
-            )
+    if photo_bytes and tier not in _VALID_TIERS:
+        raise INVALID_PAYLOAD(
+            f"photo_quality_tier must be one of {sorted(_VALID_TIERS)} when photos are included"
+        )
 
     # Image CDR (Content Disarm and Reconstruction).
     #
