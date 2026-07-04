@@ -162,32 +162,31 @@ class DeliveryRepository:
 
         Returns a dict of the claimed row, or None if the queue is empty.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT *
-                    FROM delivery_jobs
-                    WHERE status = 'pending'
-                      AND (next_retry_after IS NULL OR next_retry_after <= NOW())
-                    ORDER BY created_at ASC
-                    LIMIT 1
-                    FOR UPDATE SKIP LOCKED
-                    """
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return None
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM delivery_jobs
+                WHERE status = 'pending'
+                  AND (next_retry_after IS NULL OR next_retry_after <= NOW())
+                ORDER BY created_at ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                """
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
 
-                cur.execute(
-                    """
-                    UPDATE delivery_jobs
-                    SET next_retry_after = NOW() + INTERVAL '10 minutes',
-                        updated_at       = NOW()
-                    WHERE id = %s
-                    """,
-                    (row["id"],),
-                )
+            cur.execute(
+                """
+                UPDATE delivery_jobs
+                SET next_retry_after = NOW() + INTERVAL '10 minutes',
+                    updated_at       = NOW()
+                WHERE id = %s
+                """,
+                (row["id"],),
+            )
 
         return dict(row)
 
@@ -211,24 +210,23 @@ class DeliveryRepository:
 
         Raises DeliveryJobNotFound if the job_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    UPDATE delivery_jobs
-                    SET status              = 'provider_accepted',
-                        provider_message_id = %(provider_message_id)s,
-                        updated_at          = NOW()
-                    WHERE id = %(job_id)s
-                    RETURNING id
-                    """,
-                    {
-                        "job_id": job_id,
-                        "provider_message_id": provider_message_id,
-                    },
-                )
-                if cur.fetchone() is None:
-                    raise DeliveryJobNotFound(job_id)
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE delivery_jobs
+                SET status              = 'provider_accepted',
+                    provider_message_id = %(provider_message_id)s,
+                    updated_at          = NOW()
+                WHERE id = %(job_id)s
+                RETURNING id
+                """,
+                {
+                    "job_id": job_id,
+                    "provider_message_id": provider_message_id,
+                },
+            )
+            if cur.fetchone() is None:
+                raise DeliveryJobNotFound(job_id)
 
     def mark_sent(self, job_id: str) -> None:
         """
@@ -270,33 +268,32 @@ class DeliveryRepository:
 
         Raises DeliveryJobNotFound if the job_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    UPDATE delivery_jobs
-                    SET attempt_count    = attempt_count + 1,
-                        last_error       = %(error)s,
-                        next_retry_after = %(next_retry_after)s,
-                        status           = CASE
-                            WHEN attempt_count + 1 >= %(max_attempts)s THEN 'failed'
-                            ELSE 'pending'
-                        END,
-                        updated_at       = NOW()
-                    WHERE id = %(job_id)s
-                    RETURNING id, status
-                    """,
-                    {
-                        "job_id": job_id,
-                        "error": error,
-                        "next_retry_after": next_retry_after,
-                        "max_attempts": MAX_ATTEMPTS,
-                    },
-                )
-                result = cur.fetchone()
-                if result is None:
-                    raise DeliveryJobNotFound(job_id)
-                return result["status"] == "failed"
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE delivery_jobs
+                SET attempt_count    = attempt_count + 1,
+                    last_error       = %(error)s,
+                    next_retry_after = %(next_retry_after)s,
+                    status           = CASE
+                        WHEN attempt_count + 1 >= %(max_attempts)s THEN 'failed'
+                        ELSE 'pending'
+                    END,
+                    updated_at       = NOW()
+                WHERE id = %(job_id)s
+                RETURNING id, status
+                """,
+                {
+                    "job_id": job_id,
+                    "error": error,
+                    "next_retry_after": next_retry_after,
+                    "max_attempts": MAX_ATTEMPTS,
+                },
+            )
+            result = cur.fetchone()
+            if result is None:
+                raise DeliveryJobNotFound(job_id)
+            return result["status"] == "failed"
 
     # ------------------------------------------------------------------
     # Outcome recording — webhook router
@@ -393,13 +390,12 @@ class DeliveryRepository:
 
         Raises DeliveryJobNotFound if absent.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM delivery_jobs WHERE id = %s",
-                    (job_id,),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM delivery_jobs WHERE id = %s",
+                (job_id,),
+            )
+            row = cur.fetchone()
 
         if row is None:
             raise DeliveryJobNotFound(job_id)
