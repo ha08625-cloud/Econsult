@@ -105,34 +105,33 @@ class PDFRepository:
 
         The returned dict includes all columns of pdf_jobs.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT *
-                    FROM pdf_jobs
-                    WHERE status = 'pending'
-                      AND (next_retry_after IS NULL OR next_retry_after <= NOW())
-                    ORDER BY created_at ASC
-                    LIMIT 1
-                    FOR UPDATE SKIP LOCKED
-                    """
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return None
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM pdf_jobs
+                WHERE status = 'pending'
+                  AND (next_retry_after IS NULL OR next_retry_after <= NOW())
+                ORDER BY created_at ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+                """
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
 
-                # Push next_retry_after to prevent concurrent re-claim
-                # while this worker processes the job.
-                cur.execute(
-                    """
-                    UPDATE pdf_jobs
-                    SET next_retry_after = NOW() + INTERVAL '10 minutes',
-                        updated_at       = NOW()
-                    WHERE id = %s
-                    """,
-                    (row["id"],),
-                )
+            # Push next_retry_after to prevent concurrent re-claim
+            # while this worker processes the job.
+            cur.execute(
+                """
+                UPDATE pdf_jobs
+                SET next_retry_after = NOW() + INTERVAL '10 minutes',
+                    updated_at       = NOW()
+                WHERE id = %s
+                """,
+                (row["id"],),
+            )
 
         return dict(row)
 
@@ -219,13 +218,12 @@ class PDFRepository:
 
         Raises PDFJobNotFound if absent.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM pdf_jobs WHERE id = %s",
-                    (job_id,),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM pdf_jobs WHERE id = %s",
+                (job_id,),
+            )
+            row = cur.fetchone()
 
         if row is None:
             raise PDFJobNotFound(job_id)
