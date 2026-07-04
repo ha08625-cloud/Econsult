@@ -1,12 +1,14 @@
 # Testing Architecture
 
-**LLM INSTRUCTIONS:** This document describes the testing strategy, database separation rules, and test conventions. Read this before adding or modifying tests. Read the test files directly for individual test details and assertions.
+**LLM INSTRUCTIONS:** This document describes the testing strategy, database separation rules, test conventions, and the Test Index (the single source of truth for what each test file covers). Read this before adding or modifying tests. Read the test files directly for individual test details and assertions.
+
+**MAINTENANCE RULE:** When a test file is added, removed, or its scope materially changes, update its row in the Test Index below. Do not describe test files in any other document — `file_structure.md` records directory layout only and points here.
 
 ---
 
 ## Scope
 
-Testing conventions, database separation, test categories, and the obligations that come with each. Covers how to run tests, when each category applies, and what must be done when the schema changes.
+Testing conventions, database separation, test categories, the Test Index, and the obligations that come with each. Covers how to run tests, when each category applies, and what must be done when the schema changes.
 
 ---
 
@@ -46,6 +48,7 @@ Tests that do not require a database connection. Covers two suites that run toge
 **Frontend component tests** — screen component rendering and interaction behaviour.
 - Files: `*.test.tsx` in `frontend/src/screens/` and `frontend/admin-ui/src/screens/`. Pure helper/util modules are tested by `*.test.ts` files colocated with the module (e.g. `frontend/src/helpers.test.ts`, covering the quantity unit-toggle helpers). Vitest discovers any `*.test.ts(x)` under `frontend/`, not only screen tests.
 - Runner: Vitest (jsdom environment, configured in `frontend/vitest.config.ts`)
+- **Naming rule:** the filename must use the dot form (`Name.test.tsx`), not an underscore (`Name_test.tsx`). Vitest's default discovery pattern only matches the dot form; an underscore-named file is silently never run.
 
 **Frontend TypeScript type check** — full type-checking pass across the frontend codebase.
 - Runner: `tsc --noEmit` via the project `tsconfig.json`
@@ -72,6 +75,8 @@ This line must appear in every integration test file, after the `TEST_DATABASE_U
 
 The marker is registered in `pytest.ini` at the project root.
 
+**Integration status is conferred by the marker, not by directory.** All Python integration test files live flat in `tests/` alongside the unit tests. There is no `tests/integration/` folder.
+
 ### Guardrail variants (MESH sandbox tests)
 
 Three integration-test shapes exist; every integration file is exactly one of them:
@@ -81,18 +86,6 @@ Three integration-test shapes exist; every integration file is exactly one of th
 3. **Hybrid (DB + sandbox)** — needs both Postgres and the sandbox. Carries the marker, the `TEST_DATABASE_URL` guardrail (first, before any app imports), AND the `MESH_BASE_URL` module-level skip; remaining MESH env vars use direct subscripts as in shape 2. Sole example: `test_mesh_worker_sandbox.py` (the Phase 3 dispatch-tick test).
 
 In CI, shapes 2 and 3 self-skip because `MESH_BASE_URL` is unset there; they run locally with `make sandbox-up` and a populated `.env.sandbox` (which must include `MESH_WORKFLOW_ID` from Phase 3 onwards).
-
-Current integration test files:
-
-**`tests/test_form_routes.py`** — full request pipeline via FastAPI TestClient. Covers: happy-path end-to-end flow, delivery failure behaviour, availability fail-open, photo upload validation.
-
-**`tests/test_public_routes.py`** — public endpoint tests via FastAPI TestClient. Imports `main.py` directly, which triggers `alembic_upgrade()` at import time. Uses `DATABASE_URL` rather than `TEST_DATABASE_URL` (it tests the full app startup path).
-
-**`tests/test_repositories.py`** — repository layer tests for `RuntimeStateRepository`, `PracticeRepository`, `SubmissionRepository`, and `AttachmentRepository`.
-
-**`tests/test_pipeline_repositories.py`** — repository layer tests for `PDFRepository`, `DeliveryRepository`, and `PhotoRepository`. Exercises the `pdf_jobs`, `delivery_jobs`, and `submission_photos` tables.
-
-**`tests/test_webhook_router.py`** — integration tests for the Mailgun webhook router. Exercises HMAC signature verification, timestamp staleness, replay protection, and all status transitions (`delivered`, `failed`, `dropped`, informational events). Builds a minimal FastAPI app with the webhook router directly rather than importing `main.py`, so it does not trigger `alembic_upgrade()` or startup validation.
 
 **Run all integration tests with:**
 ```
@@ -107,6 +100,113 @@ make test-all
 ```
 
 Runs Python unit tests, then frontend Vitest, then Python integration tests, in that order. Stops on first failure.
+
+---
+
+## Test Index
+
+Single source of truth for what each test file covers. One row per file; details, assertions, and mocking strategy live in the file's own header docstring.
+
+### Python unit tests (`tests/`)
+
+Runner: `pytest tests/ -m "not integration"`. None of these touch a database or the network.
+
+| File | Subject under test | Scope |
+|---|---|---|
+| `test_settings.py` | `app/core/settings.py` | Env requiredness rules, `delivery_mode` selection (complete/partial Mailgun, SMTP, precedence), conditional signing-key rule, `MESH_DELIVERY` exact-value rejection, error message quality. Exercises the real env-sourcing path via monkeypatch from a fully cleared environment. |
+| `test_wiring.py` | `app/core/wiring.py` + `dependencies.py` | Dynamically enumerates every `get_*` getter and pins the getter-to-`AppContainer`-field contract; also pins container frozen-ness and `unpack_container`. |
+| `test_admin_context.py` | `app/core/admin_context.py` | Subprocess import-surface guard: importing `admin_context` must not pull in the repository/service/wiring closure. |
+| `test_email_mode.py` | `app/core/email_mode.py` | Pure predicates for complete/partial Mailgun configuration, called directly with plain arguments (no env plumbing — that is `test_settings.py`'s concern). |
+| `test_upload_constants.py` | `app/core/upload_constants.py` | JSON-backed constants load with the expected names, types, and values. |
+| `test_form_logic.py` | `engine/form_logic` | Number answer validation and normalisation tiers; answer provenance (`apply_patient_answers` deriving `source`, idempotency, `normalise_encoder_provenance` promotion and selectivity). |
+| `test_projection.py` | `engine/projection` | Locks `EXPLICIT_SOURCES` membership and the `None`-projection of every excluded source (raw `encoder`, `unanswered`). |
+| `test_ruleset.py` | `engine/ruleset` | Fail-fast startup validation of Number-question and `answer_type` configuration (quantity/unit-system rules); `load_ruleset` per-path caching. |
+| `test_serialisation.py` | `engine/serialisation` | Number-field passthrough in the client view (`decimal_places`/min/max/warning text), omission for other types, `current_value` as stored string; `change_count` surfaces only in `AuditOutput`. |
+| `test_unit_conversion.py` | `engine/unit_conversion` | Exactness of `imperial_weight_to_kg` and the whole/non-negative component guards (raises `ValueError`; domain translation happens in `form_logic`). |
+| `test_request_validation.py` | `request_validation.validate_patient_details` | All validation paths: DOB numeric checks and calendar assembly, future-date rejection, postcode format, submitter conditionals, gender/`nhs_number`/`preferred_name`. |
+| `test_sanitise_signposting.py` | `practice_repository.sanitise_signposting_html` | nh3-based HTML sanitisation accept/reject cases. Requires `nh3` installed. |
+| `test_practice_endpoint.py` | `public_router` `GET /practice` | Endpoint behaviour with a stub practice repo on a bare FastAPI app. |
+| `test_image_sanitizer.py` | `utils/image_sanitizer` | JPEG passthrough, PNG-to-JPEG normalisation, EXIF stripping, truncated/garbage input rejection, standard/high tier encodes, no upscaling within bounds. |
+| `test_pdf_generation.py` | `utils/pdf_formatter.generate_pdf` | PDF output structure assertions. Home of the shared `MINIMAL_JPEG` fixture (see Design Decisions). |
+| `test_delivery_service.py` | `delivery_service` | Static email body format; SMTP and Mailgun HTTP implementations; configuration validation, provider message-ID extraction, PDF attachment handling, error cases. |
+| `test_delivery_worker.py` | `delivery_worker` loop | One-job-per-iteration processing with all dependencies faked and `time.sleep` patched; provider-ID branching (`str` result marks accepted, `None` follows the legacy SMTP path). |
+| `test_pdf_worker.py` | `pdf_worker` loop | Successful job ordering (attachment UPSERT, downstream enqueue, mark done), photo-count mismatch failure, UPSERT idempotency. Mocked dependencies, patched sleep. |
+| `test_downstream_enqueuer.py` | `DownstreamEnqueuer` / `DeliveryEnqueuer` | Pure-forwarder coverage with MagicMock repositories (email path). Underlying repositories are integration-tested in `test_pipeline_repositories.py`. |
+| `test_mesh_enqueuer.py` | `MeshEnqueuer` | Pure-forwarder coverage with a mocked `MeshRepository` (MESH path). Repository itself is integration-tested in `test_mesh_repository.py`. |
+| `test_mesh_client.py` | `mesh` client library | `MeshClient` with `requests` mocked; a golden HMAC auth-header value is pinned as a literal so any header-construction refactor fails loudly. |
+| `test_mesh_payload.py` | `MeshPayloadBuilder` seam / `RawPdfPayloadBuilder` | Pure-function payload construction coverage. |
+| `test_mesh_worker.py` | `mesh_worker` processing helpers | Dispatcher helpers with mocked client and repositories, real `RawPdfPayloadBuilder`, no loop execution, no real sleeping. DB and sandbox coverage live in the integration files below. |
+
+### Admin sub-router unit tests (`tests/routers/`)
+
+Runner: same as above. All use `make_test_app`, `dummy_conn`, and the stubs from `tests/helpers/admin_test_helpers.py` (see Admin Unit Test Infrastructure below), authenticating via `TEST_SESSION_COOKIE`.
+
+| File | Subject under test | Scope |
+|---|---|---|
+| `test_admin_auth_router.py` | `admin_context` + `admin_auth_router` | Session-cookie auth behaviour; `POST /auth/login` (correct credentials, wrong password, lockout, no password set, missing fields); `POST /auth/verify` (OTP); `POST /auth/request-reset` (registered and unregistered emails); `POST /auth/set-password` (valid/expired/unknown token, weak password, token consumed on use); `POST /auth/logout`; SlowAPI rate limiting on all four unauthenticated auth endpoints. |
+| `test_admin_availability_router.py` | `admin_availability_router` | GET/PUT availability config, POST/DELETE override, GET/PUT/DELETE per-date exceptions. |
+| `test_admin_practice_router.py` | `admin_practice_router` | Conditions, practice settings, signposting (including HTML sanitisation logic), doctor list endpoints. |
+| `test_admin_audit_router.py` | `admin_audit_router` | `GET /admin/audit-log`. |
+| `test_admin_user_router.py` | `admin_user_router` | List, add, delete, resend-invitation for admin users, including email-delivery-failure reporting (`email_sent == False`) and rate limits. |
+
+### Python integration tests (`tests/`, marker `-m integration`)
+
+Runner: `make test-integration`. Shape refers to the Guardrail variants above.
+
+| File | Shape | Subject under test | Scope |
+|---|---|---|---|
+| `test_form_routes.py` | 1 | Full form-session pipeline | End-to-end happy path via FastAPI TestClient, delivery failure behaviour, availability fail-open, photo upload validation. Defines `MockDeliveryService` (see Design Decisions). |
+| `test_public_routes.py` | 1 | Public (unauthenticated) endpoints | Full HTTP-to-database path via TestClient. Imports `main.py` directly, triggering `alembic_upgrade()` at import; uses `DATABASE_URL` rather than `TEST_DATABASE_URL` because it exercises the full app startup path. |
+| `test_repositories.py` | 1 | `RuntimeStateRepository`, `PracticeRepository`, `SubmissionRepository`, `AttachmentRepository` | Repository-layer persistence; each test creates unique IDs and cleans up in a `finally` block. |
+| `test_pipeline_repositories.py` | 1 | `PDFRepository`, `DeliveryRepository`, `PhotoRepository` | Direct exercise of `pdf_jobs`, `delivery_jobs`, `submission_photos`; `claim_next_pending` eligibility via backdated `next_retry_after`. No HTTP layer. |
+| `test_webhook_router.py` | 1 | Mailgun webhook router | HMAC signature verification, timestamp staleness, replay protection, all status transitions (`delivered`, `failed`, `dropped`, informational). Builds a minimal app rather than importing `main.py` (see Design Decisions). |
+| `test_mesh_repository.py` | 1 | `MeshRepository` | Every method against `mesh_jobs`: idempotent `create_job`, claim/retry-push, the `mark_*` transitions, `MeshJobNotFound`. Pure persistence — no MESH protocol or network. |
+| `test_mesh_worker_db.py` | 1 | MESH dispatcher fallback + recovery sweep | Real repositories against real Postgres with a mocked `MeshClient`: terminal failure produces an `is_fallback=TRUE` `delivery_jobs` row with correct denormalised fields; a manufactured orphan is repaired idempotently by one sweep pass. |
+| `test_pdf_worker_mesh_path.py` | 1 | PDF worker on the MESH downstream path | `pdf_worker._process_job` wired with `MeshEnqueuer` writes a `mesh_jobs` row (not `delivery_jobs`) while preserving the ordering invariant; re-processing is idempotent. No dispatcher runs. |
+| `test_mesh_client_integration.py` | 2 | `MeshClient` against the local sandbox | mTLS + HMAC code path against the mesh-sandbox behind its nginx proxy. DB-free: the documented exception to the `TEST_DATABASE_URL` guardrail convention. Skips unless `MESH_BASE_URL` is set. |
+| `test_mesh_worker_sandbox.py` | 3 | Full dispatch tick | Real `mesh_jobs` row, real `MeshClient`, real repositories, end to end against DB plus sandbox. Requires `MESH_WORKFLOW_ID` in `.env.sandbox`. |
+
+### Frontend patient app tests (`frontend/src/`)
+
+Runner: Vitest (jsdom). Screen tests live in `frontend/src/screens/`; module tests are colocated with the module. All mock `./api` (or `../api`) with `vi.mock` so no real HTTP calls are made.
+
+| File | Subject under test | Scope |
+|---|---|---|
+| `App.test.tsx` | `App.tsx` | Condition-selection / free-text-preservation flow: drives SAFETY_WARNING through PATIENT_DETAILS, OUTCOME, SELECT_CONDITION to FREE_TEXT and back (ConditionCombobox mount-sync fix, `confirmedConditionId`, condition-change warning modal). Deliberately excludes EDIT, REVIEW, CONTACT, submission, photo upload, and error paths. |
+| `helpers.test.ts` | `helpers.ts` | Quantity unit-toggle helpers: editable-answer seeding, shared-toggle seed, component-key maps, string-to-number payload conversion. Pure functions, no React. |
+| `ConditionCombobox.test.tsx` | `ConditionCombobox.tsx` | Search and selection behaviour of the combobox in isolation. |
+| `screens/SafetyWarningScreen.test.tsx` | `SafetyWarningScreen` | Warning-text rendering from fetch state, confirmation gating, practice-closed message and after-hours notice variants. |
+| `screens/PatientDetailsScreen.test.tsx` | `PatientDetailsScreen` | Detail-field rendering and interaction driving the continue action. |
+| `screens/OutcomeScreen.test.tsx` | `OutcomeScreen` | Outcome option rendering and selection behaviour. |
+| `screens/SelectConditionScreen.test.tsx` | `SelectConditionScreen` | Condition list rendering, search, and selection. |
+| `screens/FreeTextScreen.test.tsx` | `FreeTextScreen` | Free-text entry and the `initForm` call path (helpers mocked). |
+| `screens/EditScreen.test.tsx` | `EditScreen` | Answer editing against `ClientStateView`, `updateForm` call path, photo tier handling. |
+| `screens/ReviewScreen.test.tsx` | `ReviewScreen` | Review rendering of client state, safety messages, and photo attachments. |
+| `screens/ContactScreen.test.tsx` | `ContactScreen` | Contact detail entry and the `finishForm` submission path. |
+| `screens/DoneScreen.test.tsx` | `DoneScreen` | Confirmation rendering including icon accessibility (`aria-hidden`) and the practice-was-closed variant. |
+
+### Frontend admin UI tests (`frontend/admin-ui/src/screens/`)
+
+Runner: Vitest (jsdom). All mock `../api` with `vi.mock`; `AuthError` is kept real where `instanceof` checks matter.
+
+| File | Subject under test | Scope |
+|---|---|---|
+| `LoginView.test.tsx` | `LoginView` | Step 1 rendering and behaviour (credential normalisation, advance to step 2, errors), forgot/set-up-password link, step 2 OTP rendering and behaviour, navigation between steps. |
+| `EditorView.test.tsx` | `EditorView` | Tab orchestration with all child components mocked; unsaved-change signalling via the children's `onUnsavedChange` (stubs expose `triggerUnsaved`). |
+| `SignpostingEditor.test.tsx` | `SignpostingEditor` | Editor behaviour using a hand-written Quill fake (Quill is imperative DOM and does not run in jsdom). |
+| `AvailabilityEditor.test.tsx` | `AvailabilityEditor` | Initial load, schedule editing, override panel, exception panel. `window.confirm` (save with no days selected) is deliberately untested. |
+| `PracticeSettingsTab.test.tsx` | `PracticeSettingsTab` | Shared load state; contact email display/edit/save; doctor list display, add, reorder, delete, save. |
+| `AuditLogTab.test.tsx` | `AuditLogTab` | Audit log fetching and rendering via mocked `fetchAuditLog`; `AuthError` handling. |
+| `UsersTab.test.tsx` | `UsersTab` | User list rendering, add, remove, resend invitation via mocked API functions; `AuthError` handling. |
+
+### Known coverage gaps
+
+Recorded so they are deliberate, not forgotten:
+
+- `SetPasswordView` (admin UI) has no test file.
+- `App.test.tsx` explicitly excludes the EDIT, REVIEW, CONTACT, submission, photo upload, and error paths at the App level (the individual screens are tested in isolation).
+- `AvailabilityEditor`'s `window.confirm` branch is untested by design (requires mocking a browser global).
+- The infinite `run_worker` loops (`delivery_worker`, `pdf_worker`, `mesh_worker`) are not executed by any test; their processing helpers are tested directly.
 
 ---
 
