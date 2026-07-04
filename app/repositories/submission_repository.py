@@ -1,22 +1,10 @@
 """
-Submission repository.
-
 Database access for submission records.
 Handles the submission_records table.
 
 This module is responsible for:
 - Creating submission records at the point of form completion
 - Retrieving submissions by ID
-
-Delivery status tracking, retry queries, and orphan detection have been
-moved to DeliveryRepository (delivery_repository.py) and PDFRepository
-(pdf_repository.py) as part of the pipeline refactor (Commit 2).
-
-delivery_email and attachment_count are no longer stored on
-submission_records (dropped by Migration 0013). They live on pdf_jobs,
-captured at job creation time by the form router.
-
-Table creation is handled by Alembic migrations at startup.
 
 This module must never:
 - Access clinical engine modules (form_logic, safety_engine, etc.)
@@ -143,17 +131,16 @@ class SubmissionRepository:
 
         Raises SubmissionNotFound if submission_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    f"""
-                    SELECT {_SUBMISSION_COLUMNS}
-                    FROM submission_records
-                    WHERE submission_id = %s
-                    """,
-                    (submission_id,),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT {_SUBMISSION_COLUMNS}
+                FROM submission_records
+                WHERE submission_id = %s
+                """,
+                (submission_id,),
+            )
+            row = cur.fetchone()
 
         if row is None:
             raise SubmissionNotFound(submission_id)
@@ -178,17 +165,16 @@ class SubmissionRepository:
 
         Raises SubmissionNotFound if submission_id does not exist.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT condition_label, submitted_at
-                    FROM submission_records
-                    WHERE submission_id = %s
-                    """,
-                    (submission_id,),
-                )
-                row = cur.fetchone()
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT condition_label, submitted_at
+                FROM submission_records
+                WHERE submission_id = %s
+                """,
+                (submission_id,),
+            )
+            row = cur.fetchone()
 
         if row is None:
             raise SubmissionNotFound(submission_id)
