@@ -146,10 +146,7 @@ class AuthRepository:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 return _execute(cur)
         else:
-            with (
-                get_conn(self.database_url) as own_conn,
-                own_conn.cursor(cursor_factory=RealDictCursor) as cur,
-            ):
+            with get_conn(self.database_url) as own_conn, own_conn.cursor(cursor_factory=RealDictCursor) as cur:
                 return _execute(cur)
 
     def count_users_for_practice(self, practice_id: str) -> int:
@@ -391,10 +388,7 @@ class AuthRepository:
         Returned dict keys: email, hashed_code, expires_at,
         attempts_count, last_requested_at.
         """
-        with (
-            get_conn(self.database_url) as conn,
-            conn.cursor(cursor_factory=RealDictCursor) as cur,
-        ):
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 SELECT email, hashed_code, expires_at,
@@ -500,10 +494,7 @@ class AuthRepository:
         session_id is returned so that the caller (require_admin) can
         populate AdminContext without needing to pass it separately.
         """
-        with (
-            get_conn(self.database_url) as conn,
-            conn.cursor(cursor_factory=RealDictCursor) as cur,
-        ):
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 SELECT u.id::text AS user_id,
@@ -588,10 +579,7 @@ class AuthRepository:
         Returned dict keys: token_hash, user_id (str), expires_at.
         user_id is cast to str for consistency with the rest of the auth layer.
         """
-        with (
-            get_conn(self.database_url) as conn,
-            conn.cursor(cursor_factory=RealDictCursor) as cur,
-        ):
+        with get_conn(self.database_url) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """
                 SELECT token_hash, user_id::text, expires_at
