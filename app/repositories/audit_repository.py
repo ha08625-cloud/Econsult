@@ -1,9 +1,5 @@
 """
-app/repositories/audit_repository.py
-
 Database access for the admin audit log.
-
-Handles the admin_audit_log table created by migration 0015.
 
 This module must never:
 - Contain business logic or validation
