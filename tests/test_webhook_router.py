@@ -39,10 +39,10 @@ pytestmark = pytest.mark.integration
 # Imports (after guardrail)
 # ---------------------------------------------------------------------------
 
-from app.models.serialisation_contracts import AuditOutput, ClinicalOutput, PatientDetails
-from app.repositories.delivery_repository import DeliveryRepository
-from app.repositories.submission_repository import SubmissionRepository
-from app.routers.webhook_router import router as webhook_router
+from app.models.serialisation_contracts import AuditOutput, ClinicalOutput, PatientDetails  # noqa: E402
+from app.repositories.delivery_repository import DeliveryRepository  # noqa: E402
+from app.repositories.submission_repository import SubmissionRepository  # noqa: E402
+from app.routers.webhook_router import router as webhook_router  # noqa: E402
 
 _SIGNING_KEY = "test-signing-key-abc123"
 
