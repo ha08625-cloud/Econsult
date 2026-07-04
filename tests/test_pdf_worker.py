@@ -26,6 +26,7 @@ longer threads delivery_email through; that lookup now lives in
 DeliveryEnqueuer and is covered by test_downstream_enqueuer.py.
 """
 
+import contextlib
 import logging
 import time
 from datetime import UTC, datetime
@@ -165,7 +166,7 @@ def _run_worker_n_sleeps(
             "app.services.delivery.pdf_worker.generate_pdf", return_value=b"%PDF-fake"
         ) as mock_generate,
     ):
-        try:
+        with contextlib.suppress(StopIteration):
             run_worker(
                 pdf_repo=pdf_repo,
                 photo_repo=photo_repo,
@@ -175,8 +176,6 @@ def _run_worker_n_sleeps(
                 poll_interval=poll_interval,
                 practice_name=practice_name,
             )
-        except StopIteration:
-            pass
 
     return mock_sleep, mock_generate
 
@@ -426,7 +425,7 @@ def test_worker_marks_job_failed_on_exception():
         ),
         patch("app.services.delivery.pdf_worker.time.sleep", side_effect=[None, StopIteration]),
     ):
-        try:
+        with contextlib.suppress(StopIteration):
             run_worker(
                 pdf_repo=pdf_repo,
                 photo_repo=_make_photo_repo(),
@@ -436,8 +435,6 @@ def test_worker_marks_job_failed_on_exception():
                 poll_interval=10,
                 practice_name=None,
             )
-        except StopIteration:
-            pass
 
     pdf_repo.mark_failed.assert_called_once()
     call_args = pdf_repo.mark_failed.call_args
@@ -462,7 +459,7 @@ def test_worker_does_not_enqueue_downstream_on_failed_generation():
         ),
         patch("app.services.delivery.pdf_worker.time.sleep", side_effect=[None, StopIteration]),
     ):
-        try:
+        with contextlib.suppress(StopIteration):
             run_worker(
                 pdf_repo=pdf_repo,
                 photo_repo=_make_photo_repo(),
@@ -472,8 +469,6 @@ def test_worker_does_not_enqueue_downstream_on_failed_generation():
                 poll_interval=10,
                 practice_name=None,
             )
-        except StopIteration:
-            pass
 
     downstream.enqueue.assert_not_called()
 
