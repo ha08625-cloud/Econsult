@@ -1,407 +1,318 @@
 """
-Delivery repository.
+Unit tests for delivery_service.py.
 
-Database access for the delivery_jobs table.
-
-Responsibilities:
-- Creating delivery jobs once the PDF attachment has been saved.
-- Claiming the next eligible pending job (SKIP LOCKED, single job per call).
-- Marking jobs as sent or failed (legacy SMTP path).
-- Marking jobs as provider_accepted (Mailgun path — worker sets this after
-  receiving the provider message ID from send_clinical_output).
-- Marking jobs as delivered or failed via webhook signals.
-- Appending raw webhook event payloads to the provider_events JSONB column.
-- Retrieving individual jobs by ID.
-
-Architecture rules:
-- This module must never import clinical engine modules.
-- This module must never send emails or generate PDFs.
-- Retry policy constants are imported from delivery_constants; this
-  module does not define policy.
-- All claim operations use SELECT ... FOR UPDATE SKIP LOCKED and
-  immediately update next_retry_after within the same transaction.
-- JSONB writes must wrap dicts in psycopg2.extras.Json() per the
-  infrastructure convention (psycopg2 does not auto-adapt Python dicts).
-
-Ordering invariant (enforced by the PDF worker, documented here):
-A delivery_jobs row can only exist after save_attachment has completed
-successfully. Therefore get_attachment will always find the attachment
-when a delivery job is claimed. Do not break this invariant in the PDF
-worker's operation ordering.
-
-Status lifecycle:
-  pending -> provider_accepted  (Mailgun path: worker marks after successful send)
-  pending -> sent               (SMTP/legacy path: worker marks after successful send)
-  provider_accepted -> delivered (webhook router marks on 'delivered' event)
-  provider_accepted -> failed    (webhook router marks on 'failed'/'dropped' event)
-  pending -> failed              (worker exhausts all retry attempts)
-
-Jobs in provider_accepted status are intentionally excluded from
-claim_next_pending. They must not be re-processed by the worker. Transition
-out of provider_accepted is exclusively the webhook router's responsibility.
+Tests the static email body format, EmailDeliveryService behaviour,
+and MailgunHttpDeliveryService behaviour.
+No database or SMTP connection required.
 """
 
-from datetime import datetime
+import os
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
-from psycopg2.extras import Json, RealDictCursor
+import pytest
 
-from app.core.db import get_conn
-from app.services.delivery.delivery_constants import MAX_ATTEMPTS
+from app.services.delivery.delivery_service import (
+    EmailDeliveryError,
+    EmailDeliveryService,
+    MailgunHttpDeliveryService,
+    _format_body,
+)
+
+# ---------------------------------------------------------------------------
+# _format_body
+# ---------------------------------------------------------------------------
 
 
-class DeliveryJobNotFound(Exception):
-    """Raised when a job_id does not exist in delivery_jobs."""
+class TestFormatBody:
+    def test_contains_submission_id(self):
+        body = _format_body(
+            condition_label="Earache",
+            submission_id="abc12345-0000-0000-0000-000000000000",
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+        )
+        assert "abc12345-0000-0000-0000-000000000000" in body
 
-    pass
+    def test_contains_condition_label(self):
+        body = _format_body(
+            condition_label="Earache",
+            submission_id="abc12345",
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+        )
+        assert "Earache" in body
+
+    def test_contains_submitted_at_formatted(self):
+        body = _format_body(
+            condition_label="Earache",
+            submission_id="abc12345",
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+        )
+        assert "2026-03-25 10:30:00" in body
+        assert "UTC" in body
+
+    def test_contains_pdf_instruction(self):
+        body = _format_body(
+            condition_label="Earache",
+            submission_id="abc12345",
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+        )
+        assert "attached PDF" in body
+
+    def test_contains_do_not_reply(self):
+        body = _format_body(
+            condition_label="Earache",
+            submission_id="abc12345",
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+        )
+        assert "Do not reply" in body
+
+    def test_does_not_contain_patient_details(self):
+        """The static body must never contain clinical or patient information."""
+        body = _format_body(
+            condition_label="Earache",
+            submission_id="abc12345",
+            submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+        )
+        assert "PATIENT DETAILS" not in body
+        assert "PATIENT DESCRIPTION" not in body
+        assert "ANSWERS" not in body
+        assert "CONTACT PREFERENCES" not in body
+        assert "SAFETY FLAGS" not in body
 
 
-class DeliveryRepository:
-    def __init__(self, database_url: str):
-        self.database_url = database_url
+# ---------------------------------------------------------------------------
+# EmailDeliveryService (SMTP)
+# ---------------------------------------------------------------------------
 
-    # ------------------------------------------------------------------
-    # Job creation
-    # ------------------------------------------------------------------
+_SMTP_ENV = {
+    "SMTP_HOST": "smtp.example.com",
+    "SMTP_USER": "user@example.com",
+    "SMTP_PASSWORD": "secret",
+    "EMAIL_FROM": "noreply@example.com",
+}
 
-    def create_job(
-        self,
-        submission_id: str,
-        to_email: str,
-        condition_label: str,
-        submitted_at: datetime,
-        *,
-        is_fallback: bool = False,
-    ) -> str:
+
+class TestEmailDeliveryService:
+    def test_send_returns_none(self):
         """
-        Insert a new delivery_jobs row with status = 'pending'.
-
-        The submission_id column has a UNIQUE constraint, so calling this
-        twice with the same submission_id is safe: the second call uses
-        ON CONFLICT DO NOTHING and the existing row is left untouched.
-        This makes the call idempotent and safe across PDF worker retries
-        and across the MESH dispatcher's orphaned-fallback recovery sweep.
-
-        to_email, condition_label, and submitted_at are denormalised here
-        so the delivery worker never needs to read submission_records.
-
-        is_fallback is operational metadata only: set True exclusively by
-        the MESH dispatcher when a terminal MESH failure (or transient
-        exhaustion) falls through to the email path. Nothing in the
-        delivery worker or webhook router routes on it — fallback emails
-        are identical to email-path emails by design (see
-        mesh_integration_plan.md, Governing Decisions).
-
-        Returns the job UUID as a string (the existing row's id if the
-        conflict path was taken).
+        EmailDeliveryService must return None — SMTP does not support
+        webhooks; the delivery worker takes the legacy 'sent' path.
         """
-        with get_conn(self.database_url) as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                    INSERT INTO delivery_jobs (
-                        submission_id,
-                        to_email,
-                        condition_label,
-                        submitted_at,
-                        is_fallback
-                    )
-                    VALUES (
-                        %(submission_id)s,
-                        %(to_email)s,
-                        %(condition_label)s,
-                        %(submitted_at)s,
-                        %(is_fallback)s
-                    )
-                    ON CONFLICT (submission_id) DO NOTHING
-                    RETURNING id
-                    """,
-                {
-                    "submission_id": submission_id,
-                    "to_email": to_email,
-                    "condition_label": condition_label,
-                    "submitted_at": submitted_at,
-                    "is_fallback": is_fallback,
-                },
-            )
-            row = cur.fetchone()
+        with patch.dict(os.environ, _SMTP_ENV, clear=True):
+            svc = EmailDeliveryService()
 
-            if row is not None:
-                # Fresh insert: return the new id.
-                return str(row[0])
+        mock_server = MagicMock()
 
-            # Conflict path: fetch the existing row's id.
-            cur.execute(
-                "SELECT id FROM delivery_jobs WHERE submission_id = %s",
-                (submission_id,),
-            )
-            existing = cur.fetchone()
-            return str(existing[0])
+        with patch("app.services.delivery.delivery_service.smtplib.SMTP") as mock_smtp:
+            mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
+            mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
 
-    # ------------------------------------------------------------------
-    # Job claiming
-    # ------------------------------------------------------------------
-
-    def claim_next_pending(self) -> dict | None:
-        """
-        Claim the next eligible pending delivery_jobs row.
-
-        A job is eligible when:
-        - status = 'pending'
-        - next_retry_after IS NULL OR next_retry_after <= NOW()
-
-        Jobs in provider_accepted, delivered, sent, or failed status are
-        intentionally excluded. A provider_accepted job must not be
-        re-processed by the worker; its status transitions exclusively via
-        the webhook router.
-
-        The claim is performed atomically:
-        1. SELECT ... FOR UPDATE SKIP LOCKED finds and locks the row.
-        2. An immediate UPDATE pushes next_retry_after 10 minutes into the
-           future, moving the row outside the eligible window for any
-           concurrent worker.
-        Both steps happen inside a single transaction.
-
-        Returns a dict of the claimed row, or None if the queue is empty.
-        """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT *
-                    FROM delivery_jobs
-                    WHERE status = 'pending'
-                      AND (next_retry_after IS NULL OR next_retry_after <= NOW())
-                    ORDER BY created_at ASC
-                    LIMIT 1
-                    FOR UPDATE SKIP LOCKED
-                    """
-                )
-                row = cur.fetchone()
-                if row is None:
-                    return None
-
-                cur.execute(
-                    """
-                    UPDATE delivery_jobs
-                    SET next_retry_after = NOW() + INTERVAL '10 minutes',
-                        updated_at       = NOW()
-                    WHERE id = %s
-                    """,
-                    (row["id"],),
-                )
-
-        return dict(row)
-
-    # ------------------------------------------------------------------
-    # Outcome recording — worker
-    # ------------------------------------------------------------------
-
-    def mark_as_accepted(self, job_id: str, provider_message_id: str) -> None:
-        """
-        Mark a delivery_job as accepted by the provider (Mailgun path).
-
-        Sets status = 'provider_accepted' and records the provider_message_id
-        returned by the Mailgun API. Called by the delivery worker immediately
-        after a successful send_clinical_output call.
-
-        The provider_message_id is the lookup key used by the webhook router
-        to match incoming delivery signals to this job. It must be committed
-        before any webhook can arrive (in practice there is a small window
-        where a webhook could arrive first; the router handles this by
-        returning 406 to trigger a provider retry).
-
-        Raises DeliveryJobNotFound if the job_id does not exist.
-        """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    UPDATE delivery_jobs
-                    SET status              = 'provider_accepted',
-                        provider_message_id = %(provider_message_id)s,
-                        updated_at          = NOW()
-                    WHERE id = %(job_id)s
-                    RETURNING id
-                    """,
-                    {
-                        "job_id": job_id,
-                        "provider_message_id": provider_message_id,
-                    },
-                )
-                if cur.fetchone() is None:
-                    raise DeliveryJobNotFound(job_id)
-
-    def mark_sent(self, job_id: str) -> None:
-        """
-        Mark a delivery_job as successfully sent (legacy SMTP path).
-
-        Sets status = 'sent' and updated_at. Used when the delivery service
-        returns None (SMTP or ConsoleDeliveryService), indicating no webhook
-        tracking is available. Does not clear last_error (historical error
-        context is useful if a job failed before eventually succeeding on a
-        later attempt).
-        """
-        with get_conn(self.database_url) as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                    UPDATE delivery_jobs
-                    SET status     = 'sent',
-                        updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                (job_id,),
+            result = svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
             )
 
-    def mark_failed(
-        self,
-        job_id: str,
-        error: str,
-        next_retry_after: datetime | None,
-    ) -> bool:
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# MailgunHttpDeliveryService
+# ---------------------------------------------------------------------------
+
+_MAILGUN_ENV = {
+    "MAILGUN_API_KEY": "key-test123",
+    "MAILGUN_DOMAIN": "mail.summertownhealthcentrechat.co.uk",
+    "EMAIL_FROM": "noreply@mail.summertownhealthcentrechat.co.uk",
+}
+
+
+class TestMailgunHttpDeliveryService:
+    def test_raises_without_api_key(self):
+        env = {**_MAILGUN_ENV}
+        del env["MAILGUN_API_KEY"]
+        with patch.dict(os.environ, env, clear=True), pytest.raises(RuntimeError, match="MAILGUN_API_KEY"):
+            MailgunHttpDeliveryService()
+
+    def test_raises_without_domain(self):
+        env = {**_MAILGUN_ENV}
+        del env["MAILGUN_DOMAIN"]
+        with patch.dict(os.environ, env, clear=True), pytest.raises(RuntimeError, match="MAILGUN_DOMAIN"):
+            MailgunHttpDeliveryService()
+
+    def test_raises_without_email_from(self):
+        env = {**_MAILGUN_ENV}
+        del env["EMAIL_FROM"]
+        with patch.dict(os.environ, env, clear=True), pytest.raises(RuntimeError, match="EMAIL_FROM"):
+            MailgunHttpDeliveryService()
+
+    def test_send_returns_provider_id_with_brackets_stripped(self):
         """
-        Record a failed delivery attempt.
-
-        Increments attempt_count by 1. If the new attempt_count reaches
-        MAX_ATTEMPTS, status is set to 'failed' permanently. Otherwise
-        status remains 'pending' and next_retry_after is set to the
-        supplied value.
-
-        Returns True if the job has been permanently exhausted (status is
-        now 'failed'), False if it remains pending for a future retry.
-
-        Raises DeliveryJobNotFound if the job_id does not exist.
+        send_clinical_output must return the Mailgun message ID with
+        angle brackets stripped. The worker persists this as the lookup
+        key for incoming webhook signals.
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    UPDATE delivery_jobs
-                    SET attempt_count    = attempt_count + 1,
-                        last_error       = %(error)s,
-                        next_retry_after = %(next_retry_after)s,
-                        status           = CASE
-                            WHEN attempt_count + 1 >= %(max_attempts)s THEN 'failed'
-                            ELSE 'pending'
-                        END,
-                        updated_at       = NOW()
-                    WHERE id = %(job_id)s
-                    RETURNING id, status
-                    """,
-                    {
-                        "job_id": job_id,
-                        "error": error,
-                        "next_retry_after": next_retry_after,
-                        "max_attempts": MAX_ATTEMPTS,
-                    },
-                )
-                result = cur.fetchone()
-                if result is None:
-                    raise DeliveryJobNotFound(job_id)
-                return result["status"] == "failed"
+        with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
+            svc = MailgunHttpDeliveryService()
 
-    # ------------------------------------------------------------------
-    # Outcome recording — webhook router
-    # ------------------------------------------------------------------
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "id": "<20260423123456.1.xyz@mailgun.org>",
+            "message": "Queued. Thank you.",
+        }
 
-    def mark_delivered(self, provider_message_id: str) -> bool:
-        """
-        Mark a job as delivered based on a Mailgun 'delivered' webhook event.
-
-        Sets status = 'delivered' and updated_at. Does not append the event
-        payload here — call append_provider_event separately to keep the
-        JSONB write and the status update decoupled.
-
-        Returns True if a row was found and updated, False if no row exists
-        for the given provider_message_id (signals the webhook router to
-        return 406 so Mailgun retries later).
-        """
-        with get_conn(self.database_url) as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                    UPDATE delivery_jobs
-                    SET status     = 'delivered',
-                        updated_at = NOW()
-                    WHERE provider_message_id = %s
-                    RETURNING id
-                    """,
-                (provider_message_id,),
-            )
-            return cur.fetchone() is not None
-
-    def mark_provider_failed(self, provider_message_id: str) -> bool:
-        """
-        Mark a job as failed based on a Mailgun 'failed' or 'dropped' webhook.
-
-        Sets status = 'failed' and updated_at. Does not append the event
-        payload here — call append_provider_event separately.
-
-        Returns True if a row was found and updated, False if no row exists
-        for the given provider_message_id (signals the webhook router to
-        return 406 so Mailgun retries later).
-        """
-        with get_conn(self.database_url) as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                    UPDATE delivery_jobs
-                    SET status     = 'failed',
-                        updated_at = NOW()
-                    WHERE provider_message_id = %s
-                    RETURNING id
-                    """,
-                (provider_message_id,),
-            )
-            return cur.fetchone() is not None
-
-    def append_provider_event(self, provider_message_id: str, event_payload: dict) -> None:
-        """
-        Append a raw webhook event payload to the provider_events JSONB column.
-
-        Uses jsonb_build_array and the concatenation operator (||) to append
-        to the existing array, initialising to an empty array if NULL.
-        This keeps the column as an ordered array of event objects.
-
-        Called for all webhook event types, including ones that do not change
-        status (e.g. 'opened', 'clicked'). The lossless audit trail is
-        maintained regardless of whether the event triggers a status change.
-
-        No-ops silently if the provider_message_id is not found — a missing
-        row at this point means the status update (mark_delivered / mark_provider_failed)
-        already returned False and the router will return 406. Appending to a
-        non-existent row would be a no-op anyway.
-        """
-        with get_conn(self.database_url) as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                    UPDATE delivery_jobs
-                    SET provider_events = COALESCE(provider_events, '[]'::jsonb)
-                                         || jsonb_build_array(%(payload)s::jsonb),
-                        updated_at      = NOW()
-                    WHERE provider_message_id = %(provider_message_id)s
-                    """,
-                {
-                    "provider_message_id": provider_message_id,
-                    "payload": Json(event_payload),
-                },
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ):
+            result = svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
             )
 
-    # ------------------------------------------------------------------
-    # Lookup
-    # ------------------------------------------------------------------
+        assert result == "20260423123456.1.xyz@mailgun.org"
+        assert not result.startswith("<")
+        assert not result.endswith(">")
 
-    def get(self, job_id: str) -> dict:
+    def test_send_returns_provider_id_without_brackets(self):
         """
-        Return the full delivery_jobs row for job_id.
-
-        Raises DeliveryJobNotFound if absent.
+        If Mailgun returns an ID without angle brackets, it should still
+        be returned as-is (strip is a no-op on a clean string).
         """
-        with get_conn(self.database_url) as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(
-                    "SELECT * FROM delivery_jobs WHERE id = %s",
-                    (job_id,),
-                )
-                row = cur.fetchone()
+        with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
+            svc = MailgunHttpDeliveryService()
 
-        if row is None:
-            raise DeliveryJobNotFound(job_id)
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {
+            "id": "20260423123456.1.xyz@mailgun.org",
+            "message": "Queued. Thank you.",
+        }
 
-        return dict(row)
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ):
+            result = svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+            )
+
+        assert result == "20260423123456.1.xyz@mailgun.org"
+
+    def test_send_calls_correct_eu_endpoint(self):
+        with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
+            svc = MailgunHttpDeliveryService()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"id": "<msg-id@mailgun.org>"}
+
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ) as mock_post:
+            svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+            )
+
+        mock_post.assert_called_once()
+        call_kwargs = mock_post.call_args
+        assert "api.eu.mailgun.net" in call_kwargs.args[0]
+        assert "mail.summertownhealthcentrechat.co.uk" in call_kwargs.args[0]
+
+    def test_send_uses_correct_auth(self):
+        with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
+            svc = MailgunHttpDeliveryService()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"id": "<msg-id@mailgun.org>"}
+
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ) as mock_post:
+            svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+            )
+
+        call_kwargs = mock_post.call_args
+        assert call_kwargs.kwargs["auth"] == ("api", "key-test123")
+
+    def test_send_includes_pdf_attachment(self):
+        with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
+            svc = MailgunHttpDeliveryService()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"id": "<msg-id@mailgun.org>"}
+
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ) as mock_post:
+            svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+            )
+
+        call_kwargs = mock_post.call_args
+        files = call_kwargs.kwargs["files"]
+        filename, content, mimetype = files["attachment"]
+        assert filename.endswith(".pdf")
+        assert content == b"%PDF-fake-content"
+        assert mimetype == "application/pdf"
+
+    def test_send_raises_email_delivery_error_on_http_failure(self):
+        import requests as req
+
+        with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
+            svc = MailgunHttpDeliveryService()
+
+        with patch(
+            "app.services.delivery.delivery_service.requests.post",
+            side_effect=req.RequestException("timeout"),
+        ), pytest.raises(EmailDeliveryError):
+            svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+            )
+
+    def test_send_raises_email_delivery_error_on_bad_status(self):
+        import requests as req
+
+        with patch.dict(os.environ, _MAILGUN_ENV, clear=True):
+            svc = MailgunHttpDeliveryService()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.side_effect = req.HTTPError("401 Unauthorized")
+
+        with patch(
+            "app.services.delivery.delivery_service.requests.post", return_value=mock_response
+        ), pytest.raises(EmailDeliveryError):
+            svc.send_clinical_output(
+                to_email="gp@example.com",
+                condition_label="Earache",
+                pdf_bytes=b"%PDF-fake-content",
+                submission_id="abc12345-0000-0000-0000-000000000000",
+                submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
+            )
