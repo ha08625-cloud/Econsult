@@ -1,6 +1,4 @@
 """
-Practice repository.
-
 Database access for practice identity and practice-specific configuration.
 Handles the practices, practice_signposting, and practice_doctors tables.
 
@@ -10,8 +8,6 @@ This module is responsible for:
 - CRUD operations for the doctor list
 - HTML sanitisation for signposting content
 - Email format validation
-
-Table creation is handled by Alembic migrations at startup.
 
 This module must never:
 - Access clinical data (rulesets, RuntimeState, answers)
