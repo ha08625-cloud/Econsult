@@ -2,11 +2,7 @@
 Centralised environment variable settings for the web service.
 
 Imported directly by main.py (load_web_settings), whose return value is
-then passed into app/core/wiring.py to construct the AppContainer. For
-the full startup sequence and the complete environment variable rules
-enforced here, see docs/arch_http_boundary.md -- this docstring covers
-only implementation detail not visible from reading the validators
-themselves.
+then passed into app/core/wiring.py to construct the AppContainer.
 
 Design rules:
 
@@ -22,8 +18,7 @@ Design rules:
   with its repr shown, not silently accepted).
 
 - EmailSettings.delivery_mode is the single definition of which email path
-  is configured, replacing two previously inconsistent predicates (see
-  docs/arch_http_boundary.md, "Delivery Service Instantiation"). Consequence
+  is configured. Consequence
   (deliberate, decided 2026-06): a partial Mailgun configuration (one of
   the pair set, not both) falls through to SMTP with a logged warning if
   SMTP is complete, or aborts startup if it is not. When both
@@ -52,7 +47,6 @@ build_container after this module's checks pass.
 
 import logging
 import os
-from typing import TypeVar
 
 from pydantic import ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -66,9 +60,6 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _VALUE_ERROR_PREFIX = "Value error, "
-
-_T = TypeVar("_T", bound=BaseSettings)
-
 
 def _blank_to_none(value: object) -> object:
     """Treat empty / whitespace-only env vars as unset (legacy truthiness)."""
@@ -88,7 +79,7 @@ def _clean_messages(exc: ValidationError) -> str:
     return "\n".join(messages)
 
 
-def _construct_clean(settings_cls: type[_T]) -> _T:
+def _construct_clean[T: BaseSettings](settings_cls: type[T]) -> T:
     """
     Construct a settings model, converting ValidationError into a plain
     ValueError carrying only the clean message text.
@@ -219,10 +210,6 @@ class MeshSettings(BaseSettings):
     Must be present and exactly "0" or "1". No defaulting is permitted --
     a deployment that has not made an explicit choice must abort, per the
     Fail-Fast Configuration project invariant.
-
-    Phase 1a only implements "0" (email path); "1" aborts with a clear
-    message. The worker entry points duplicate this validation and are
-    deliberately untouched by this refactor.
     """
 
     model_config = SettingsConfigDict(case_sensitive=True, extra="ignore")
