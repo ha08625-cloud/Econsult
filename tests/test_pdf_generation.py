@@ -1,6 +1,7 @@
 # tests/test_pdf_formatter.py
 import re
 import zlib
+import contextlib
 from datetime import UTC, datetime
 
 import pytest
@@ -673,12 +674,10 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
     parts = []
     for match in stream_pattern.finditer(pdf_bytes):
         raw = match.group(1)
-        try:
+        with contextlib.suppress(zlib.error):
             parts.append(zlib.decompress(raw).decode("latin-1"))
-        except zlib.error:
-            pass
-    return "\n".join(parts)
 
+    return "\n".join(parts)
 
 # ---------------------------------------------------------------------------
 # Shared test fixtures
