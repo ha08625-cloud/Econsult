@@ -1,6 +1,4 @@
 """
-app/repositories/auth_repository.py
-
 Database access for admin MFA authentication, password authentication,
 and user management.
 
