@@ -32,15 +32,13 @@ def evaluate_safety(
             is_true_key = cond.get("is_true")
             is_false_key = cond.get("is_false")
 
-            if is_true_key is not None:
-                if answers.get(is_true_key) is True:
-                    satisfied = True
-                    break
+            if is_true_key is not None and answers.get(is_true_key) is True:
+                satisfied = True
+                break
 
-            if is_false_key is not None:
-                if answers.get(is_false_key) is False:
-                    satisfied = True
-                    break
+            if is_false_key is not None and answers.get(is_false_key) is False:
+                satisfied = True
+                break
 
         if satisfied:
             evaluation.triggered_rules.append(rule_id)
