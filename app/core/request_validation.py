@@ -93,16 +93,14 @@ def validate_contact_preferences(cp: dict):
     methods_set = set(methods)
 
     # phone_number required if text or phone selected
-    if methods_set & {"text", "phone"}:
-        if not cp.get("phone_number"):
-            raise INVALID_PAYLOAD(
-                "phone_number is required when contact_methods includes 'text' or 'phone'"
-            )
+    if methods_set & {"text", "phone"} and not cp.get("phone_number"):
+        raise INVALID_PAYLOAD(
+            "phone_number is required when contact_methods includes 'text' or 'phone'"
+        )
 
     # email_address required if email selected
-    if "email" in methods_set:
-        if not cp.get("email_address"):
-            raise INVALID_PAYLOAD("email_address is required when contact_methods includes 'email'")
+    if "email" in methods_set and not cp.get("email_address"):
+        raise INVALID_PAYLOAD("email_address is required when contact_methods includes 'email'")
 
     # best_time_to_call — optional string, but must not be a non-string type if present
     best_time = cp.get("best_time_to_call")
