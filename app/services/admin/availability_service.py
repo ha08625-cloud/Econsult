@@ -97,7 +97,6 @@ def validate_override(
     if expires_at > max_expiry:
         raise ValueError("override expires_at must not exceed 24 hours from now")
 
-
 def validate_exception(
     exception_type: str,
     open_time: datetime.time | None,
@@ -129,10 +128,8 @@ def validate_exception(
                 "Overnight hours are not supported."
             )
 
-    if exception_type == "closed":
-        if open_time is not None or close_time is not None:
-            raise ValueError("closed exception must not have open_time or close_time")
-
+    if exception_type == "closed" and (open_time is not None or close_time is not None):
+        raise ValueError("closed exception must not have open_time or close_time")
 
 def deactivation_clears_override(is_active: bool) -> bool:
     """
