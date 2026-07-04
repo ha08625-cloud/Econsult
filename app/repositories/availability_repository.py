@@ -1,6 +1,4 @@
 """
-app/repositories/availability_repository.py — Availability database access.
-
 Database access only. No validation logic. No imports from service modules.
 
 Methods:
