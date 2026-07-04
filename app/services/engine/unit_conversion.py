@@ -14,9 +14,8 @@ whole numbers.
 """
 
 from decimal import Decimal
-from typing import Union
 
-Number = Union[int, Decimal]
+Number = int | Decimal
 
 # Exact, internationally-defined pound-to-kilogram factor. Decimal so the
 # multiplication is exact and finite with no binary-float rounding.
