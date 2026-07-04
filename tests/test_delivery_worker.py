@@ -19,6 +19,7 @@ exercise the Mailgun path by default. Tests that need the legacy path
 explicitly set send_clinical_output.return_value = None.
 """
 
+import contextlib
 import logging
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, call, patch
@@ -116,15 +117,13 @@ def _run_worker_n_sleeps(
     with patch(
         "app.services.delivery.delivery_worker.time.sleep", side_effect=fake_sleep
     ) as mock_sleep:
-        try:
+        with contextlib.suppress(StopIteration):
             run_worker(
                 delivery_repo=delivery_repo,
                 attachment_repo=attachment_repo,
                 delivery_service=delivery_service,
                 poll_interval=poll_interval,
             )
-        except StopIteration:
-            pass
 
     return mock_sleep
 
@@ -315,19 +314,19 @@ def test_worker_records_failed_backoff_on_send_error():
     delivery_service = _make_delivery_service()
     delivery_service.send_clinical_output.side_effect = EmailDeliveryError("SMTP down")
 
-    with patch(
-        "app.services.delivery.delivery_worker.time.sleep",
-        side_effect=[None, StopIteration],
+    with (
+        patch(
+            "app.services.delivery.delivery_worker.time.sleep",
+            side_effect=[None, StopIteration],
+        ),
+        contextlib.suppress(StopIteration),
     ):
-        try:
-            run_worker(
-                delivery_repo=delivery_repo,
-                attachment_repo=_make_attachment_repo(),
-                delivery_service=delivery_service,
-                poll_interval=10,
-            )
-        except StopIteration:
-            pass
+        run_worker(
+            delivery_repo=delivery_repo,
+            attachment_repo=_make_attachment_repo(),
+            delivery_service=delivery_service,
+            poll_interval=10,
+        )
 
     delivery_repo.mark_failed.assert_called_once()
     call_args = delivery_repo.mark_failed.call_args
@@ -359,16 +358,14 @@ def test_worker_logs_error_on_exhaustion(caplog):
             "app.services.delivery.delivery_worker.time.sleep",
             side_effect=[None, StopIteration],
         ),
+        contextlib.suppress(StopIteration),
     ):
-        try:
-            run_worker(
-                delivery_repo=delivery_repo,
-                attachment_repo=_make_attachment_repo(),
-                delivery_service=delivery_service,
-                poll_interval=10,
-            )
-        except StopIteration:
-            pass
+        run_worker(
+            delivery_repo=delivery_repo,
+            attachment_repo=_make_attachment_repo(),
+            delivery_service=delivery_service,
+            poll_interval=10,
+        )
 
     exhaustion_messages = [r.message for r in caplog.records if "permanently failed" in r.message]
     assert len(exhaustion_messages) == 1
@@ -389,19 +386,19 @@ def test_worker_logs_critical_on_attachment_not_found():
     attachment_repo = _make_attachment_repo()
     attachment_repo.get_attachment.side_effect = AttachmentNotFound("sub-aaa")
 
-    with patch(
-        "app.services.delivery.delivery_worker.time.sleep",
-        side_effect=[None, StopIteration],
+    with (
+        patch(
+            "app.services.delivery.delivery_worker.time.sleep",
+            side_effect=[None, StopIteration],
+        ),
+        contextlib.suppress(StopIteration),
     ):
-        try:
-            run_worker(
-                delivery_repo=delivery_repo,
-                attachment_repo=attachment_repo,
-                delivery_service=_make_delivery_service(),
-                poll_interval=10,
-            )
-        except StopIteration:
-            pass
+        run_worker(
+            delivery_repo=delivery_repo,
+            attachment_repo=attachment_repo,
+            delivery_service=_make_delivery_service(),
+            poll_interval=10,
+        )
 
     delivery_repo.mark_sent.assert_not_called()
     delivery_repo.mark_as_accepted.assert_not_called()
@@ -415,14 +412,16 @@ def test_worker_exits_on_db_failure():
     delivery_repo = MagicMock()
     delivery_repo.claim_next_pending.side_effect = psycopg2.OperationalError("connection refused")
 
-    with patch("app.services.delivery.delivery_worker.time.sleep"):
-        with pytest.raises(psycopg2.OperationalError):
-            run_worker(
-                delivery_repo=delivery_repo,
-                attachment_repo=_make_attachment_repo(),
-                delivery_service=_make_delivery_service(),
-                poll_interval=10,
-            )
+    with (
+        patch("app.services.delivery.delivery_worker.time.sleep"),
+        pytest.raises(psycopg2.OperationalError),
+    ):
+        run_worker(
+            delivery_repo=delivery_repo,
+            attachment_repo=_make_attachment_repo(),
+            delivery_service=_make_delivery_service(),
+            poll_interval=10,
+        )
 
 
 # ---------------------------------------------------------------------------
