@@ -270,9 +270,8 @@ class AuditRepository:
         limit = max(1, min(limit, _MAX_LIMIT))
 
         # Validate action_prefix before interpolating into a LIKE clause.
-        if action_prefix is not None:
-            if not _ACTION_PREFIX_RE.match(action_prefix):
-                raise ValueError(f"action_prefix must match ^[a-z0-9_.]+$, got: {action_prefix!r}")
+        if action_prefix is not None and not _ACTION_PREFIX_RE.match(action_prefix):
+            raise ValueError(f"action_prefix must match ^[a-z0-9_.]+$, got: {action_prefix!r}")
 
         # Decode cursor if present.
         last_id: int | None = None
