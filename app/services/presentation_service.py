@@ -36,7 +36,8 @@ from app.repositories.practice_repository import PracticeRepository
 # Displayed on the first screen the patient sees, before condition selection.
 # Also included in get_patient_presentation() for backwards compatibility.
 UNIVERSAL_SAFETY_WARNING = (
-    "If you or the person you are completing this form on behalf of are experiencing any of the following, do not use this service. "
+    "If you or the person you are completing this form on behalf "
+    "of are experiencing any of the following, do not use this service. "
     "Call 999 or go to A&E immediately:\n"
     "Central chest pain, often heavy, tight, or crushing.\n"
     "Struggling to breathe, gasping, or unable to speak in full sentences.\n"
@@ -44,7 +45,8 @@ UNIVERSAL_SAFETY_WARNING = (
     "Severe bleeding.\n"
     "Loss of consciousness: the person is unconscious or has collapsed.\n"
     "The person is having a fit or seizure.\n"
-    "Severe allergic reaction (anaphylaxis): sudden swelling of the lips, mouth, throat, or tongue.\n"
+    "Severe allergic reaction (anaphylaxis): "
+    "with difficulty breathing, confusion, light headedness or loss of consciousness.\n"
     "New onset of confusion, agitation, or odd behaviour.\n"
     "Major trauma: serious injuries from a high-speed accident or fall from height.\n"
     "If you are at immediate risk of harming yourself."
