@@ -1,8 +1,8 @@
 # tests/test_pdf_formatter.py
 import contextlib
-from datetime import UTC, datetime
 import re
 import zlib
+from datetime import UTC, datetime
 
 import pytest
 
