@@ -33,11 +33,13 @@ export class ApiError extends Error {
 
 export function friendlyErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.status === 503 && e.detail) {
+    if (e.status === 503) {
       // 503 from POST /form/init — practice is closed.
-      // detail contains the closed_message from the server.
-      return e.detail;
+      // detail contains the closed_message from the server, which is
+      // nullable — fall back to a generic closed notice if it is null.
+      return e.detail || "This practice is not currently accepting online forms.";
     }
+
     if (e.status === 422 && e.detail) {
       // 422 from POST /form/finish — server-side photo validation failure.
       // Attempt to convert the technical server string into patient-friendly
@@ -82,7 +84,7 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   }
 
   if (!res.ok) {
-    if (res.status >= 500) {
+    if (res.status >= 500 && res.status !== 503) {
       Sentry.withScope((scope) => {
         scope.setTag("http.status_code", res.status);
         scope.setTag("http.method", "POST");
