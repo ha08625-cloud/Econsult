@@ -165,17 +165,17 @@ def _run_worker_n_sleeps(
         patch(
             "app.services.delivery.pdf_worker.generate_pdf", return_value=b"%PDF-fake"
         ) as mock_generate,
+        contextlib.suppress(StopIteration),
     ):
-        with contextlib.suppress(StopIteration):
-            run_worker(
-                pdf_repo=pdf_repo,
-                photo_repo=photo_repo,
-                submission_repo=submission_repo,
-                attachment_repo=attachment_repo,
-                downstream=downstream,
-                poll_interval=poll_interval,
-                practice_name=practice_name,
-            )
+        run_worker(
+            pdf_repo=pdf_repo,
+            photo_repo=photo_repo,
+            submission_repo=submission_repo,
+            attachment_repo=attachment_repo,
+            downstream=downstream,
+            poll_interval=poll_interval,
+            practice_name=practice_name,
+        )
 
     return mock_sleep, mock_generate
 
