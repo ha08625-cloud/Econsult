@@ -114,9 +114,12 @@ def _run_worker_n_sleeps(
         if sleep_call_count[0] >= n_sleeps:
             raise StopIteration
 
-    with patch(
-        "app.services.delivery.delivery_worker.time.sleep", side_effect=fake_sleep
-    ) as mock_sleep, contextlib.suppress(StopIteration):
+    with (
+        patch(
+            "app.services.delivery.delivery_worker.time.sleep", side_effect=fake_sleep
+        ) as mock_sleep,
+        contextlib.suppress(StopIteration),
+    ):
         run_worker(
             delivery_repo=delivery_repo,
             attachment_repo=attachment_repo,

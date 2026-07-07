@@ -79,14 +79,13 @@ class RateLimitError(Exception):
 
 
 def RATE_LIMIT_EXCEEDED():
-    return RateLimitError(
-        "Code requested too recently. Wait 60 seconds before trying again."
-    )
+    return RateLimitError("Code requested too recently. Wait 60 seconds before trying again.")
 
 
 # ---------------------------------------------------------------------------
 # Password authentication errors
 # ---------------------------------------------------------------------------
+
 
 # INVALID_CREDENTIALS: all password-path failures map to this single error.
 # Deliberately generic — does not reveal whether the gate that failed was
@@ -122,6 +121,7 @@ def WEAK_PASSWORD(msg="Password is too weak."):
 # ---------------------------------------------------------------------------
 # User management errors (admin portal)
 # ---------------------------------------------------------------------------
+
 
 def USER_ALREADY_EXISTS():
     return APIError(

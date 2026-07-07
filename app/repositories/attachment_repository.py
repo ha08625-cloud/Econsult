@@ -113,4 +113,3 @@ class AttachmentRepository:
                     """,
                 (submission_id,),
             )
-

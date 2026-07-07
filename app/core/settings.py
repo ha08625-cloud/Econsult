@@ -61,6 +61,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 _VALUE_ERROR_PREFIX = "Value error, "
 
+
 def _blank_to_none(value: object) -> object:
     """Treat empty / whitespace-only env vars as unset (legacy truthiness)."""
     if isinstance(value, str) and not value.strip():
