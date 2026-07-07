@@ -440,4 +440,3 @@ def test_compute_backoff_first_failure():
 def test_compute_backoff_returns_none_when_exhausted():
     result = _compute_backoff(attempt_count=MAX_ATTEMPTS - 1)
     assert result is None
-    

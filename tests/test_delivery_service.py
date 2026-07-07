@@ -332,4 +332,3 @@ class TestMailgunHttpDeliveryService:
                 submission_id="abc12345-0000-0000-0000-000000000000",
                 submitted_at=datetime(2026, 3, 25, 10, 30, 0, tzinfo=UTC),
             )
-            
