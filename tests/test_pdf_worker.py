@@ -458,17 +458,17 @@ def test_worker_does_not_enqueue_downstream_on_failed_generation():
             side_effect=RuntimeError("crash"),
         ),
         patch("app.services.delivery.pdf_worker.time.sleep", side_effect=[None, StopIteration]),
+        contextlib.suppress(StopIteration),
     ):
-        with contextlib.suppress(StopIteration):
-            run_worker(
-                pdf_repo=pdf_repo,
-                photo_repo=_make_photo_repo(),
-                submission_repo=_make_submission_repo(),
-                attachment_repo=_make_attachment_repo(),
-                downstream=downstream,
-                poll_interval=10,
-                practice_name=None,
-            )
+        run_worker(
+            pdf_repo=pdf_repo,
+            photo_repo=_make_photo_repo(),
+            submission_repo=_make_submission_repo(),
+            attachment_repo=_make_attachment_repo(),
+            downstream=downstream,
+            poll_interval=10,
+            practice_name=None,
+        )
 
     downstream.enqueue.assert_not_called()
 
