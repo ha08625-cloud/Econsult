@@ -1,4 +1,0 @@
-# Development-only tooling.
-# Not installed in production — see requirements.txt for runtime dependencies.
-
-ruff==0.15.20
