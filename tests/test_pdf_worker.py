@@ -421,20 +421,20 @@ def test_worker_marks_job_failed_on_exception():
     with (
         patch(
             "app.services.delivery.pdf_worker.generate_pdf",
-            side_effect=RuntimeError("PDF library crash"),
+            side_effect=RuntimeError("crash"),
         ),
         patch("app.services.delivery.pdf_worker.time.sleep", side_effect=[None, StopIteration]),
+        contextlib.suppress(StopIteration),
     ):
-        with contextlib.suppress(StopIteration):
-            run_worker(
-                pdf_repo=pdf_repo,
-                photo_repo=_make_photo_repo(),
-                submission_repo=_make_submission_repo(),
-                attachment_repo=_make_attachment_repo(),
-                downstream=_make_downstream(),
-                poll_interval=10,
-                practice_name=None,
-            )
+        run_worker(
+            pdf_repo=pdf_repo,
+            photo_repo=_make_photo_repo(),
+            submission_repo=_make_submission_repo(),
+            attachment_repo=_make_attachment_repo(),
+            downstream=_make_downstream(),
+            poll_interval=10,
+            practice_name=None,
+        )
 
     pdf_repo.mark_failed.assert_called_once()
     call_args = pdf_repo.mark_failed.call_args
