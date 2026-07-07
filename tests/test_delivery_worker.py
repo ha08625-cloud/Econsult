@@ -116,14 +116,13 @@ def _run_worker_n_sleeps(
 
     with patch(
         "app.services.delivery.delivery_worker.time.sleep", side_effect=fake_sleep
-    ) as mock_sleep:
-        with contextlib.suppress(StopIteration):
-            run_worker(
-                delivery_repo=delivery_repo,
-                attachment_repo=attachment_repo,
-                delivery_service=delivery_service,
-                poll_interval=poll_interval,
-            )
+    ) as mock_sleep, contextlib.suppress(StopIteration):
+        run_worker(
+            delivery_repo=delivery_repo,
+            attachment_repo=attachment_repo,
+            delivery_service=delivery_service,
+            poll_interval=poll_interval,
+        )
 
     return mock_sleep
 

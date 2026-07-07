@@ -144,7 +144,10 @@ class AuthRepository:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 return _execute(cur)
         else:
-            with get_conn(self.database_url) as own_conn, own_conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with (
+                get_conn(self.database_url) as own_conn,
+                own_conn.cursor(cursor_factory=RealDictCursor) as cur,
+            ):
                 return _execute(cur)
 
     def count_users_for_practice(self, practice_id: str) -> int:
