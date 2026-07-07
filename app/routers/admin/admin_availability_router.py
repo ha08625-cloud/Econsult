@@ -745,3 +745,4 @@ async def delete_exception(
             status_code=500,
             detail="Failed to delete availability exception. Please try again.",
         ) from e
+        

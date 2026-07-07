@@ -427,3 +427,4 @@ async def form_finish(
     runtime_repo.close_session(runtime_id, version)
 
     return {"submission_id": submission_id}
+    
