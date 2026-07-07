@@ -153,6 +153,7 @@ def validate_ruleset(ruleset: dict[str, Any]) -> None:
         raise ValueError("Ruleset missing or empty: questions")
 
     seen_answer_keys = set()
+    answer_key_types: dict[str, str] = {}
 
     for q in ruleset["questions"]:
         if "answer_key" not in q:
@@ -171,6 +172,7 @@ def validate_ruleset(ruleset: dict[str, Any]) -> None:
                 f"Question '{q['answer_key']}' has invalid or missing answer_type: "
                 f"{answer_type!r}. Allowed: {sorted(VALID_ANSWER_TYPES)}"
             )
+        answer_key_types[q["answer_key"]] = answer_type
 
         if answer_type == "Number":
             _validate_number_question(q)
@@ -213,11 +215,53 @@ def validate_ruleset(ruleset: dict[str, Any]) -> None:
             if not isinstance(rule["message"], str) or not rule["message"].strip():
                 raise ValueError(f"Safety rule '{rule_id}' has an empty or non-string 'message'")
 
+            # Each clause must be a dict containing exactly one of
+            # is_true / is_false and nothing else. Previously
+            # clause.get("is_true") or clause.get("is_false") silently picked
+            # is_true when both were present (the is_false half of the clause
+            # was never checked, and never fired) and let through any clause
+            # with unrelated extra keys. A clause value must also reference a
+            # declared answer_key whose answer_type is "Boolean" -- a True/False
+            # comparison against a text or Number answer can never match, so a
+            # clause pointing at one would validate cleanly and then silently
+            # never fire in safety_engine.py.
             for clause in rule["any"]:
-                key = clause.get("is_true") or clause.get("is_false")
+                if not isinstance(clause, dict):
+                    raise ValueError(
+                        f"Safety rule '{rule_id}' has a clause that is not an object: {clause!r}"
+                    )
+
+                present = [k for k in ("is_true", "is_false") if k in clause]
+                if len(present) != 1:
+                    raise ValueError(
+                        f"Safety rule '{rule_id}' has a clause that must contain exactly "
+                        f"one of 'is_true' or 'is_false', got keys {list(clause.keys())}"
+                    )
+
+                extra_keys = set(clause.keys()) - {"is_true", "is_false"}
+                if extra_keys:
+                    raise ValueError(
+                        f"Safety rule '{rule_id}' has a clause with unexpected keys: "
+                        f"{sorted(extra_keys)}"
+                    )
+
+                clause_kind = present[0]
+                key = clause[clause_kind]
+                if not isinstance(key, str):
+                    raise ValueError(
+                        f"Safety rule '{rule_id}' clause '{clause_kind}' must be a string "
+                        f"answer_key, got {key!r}"
+                    )
                 if key not in seen_answer_keys:
                     raise ValueError(
                         f"Safety rule '{rule_id}' references unknown answer_key: {key}"
+                    )
+                if answer_key_types[key] != "Boolean":
+                    raise ValueError(
+                        f"Safety rule '{rule_id}' clause '{clause_kind}' references "
+                        f"answer_key '{key}' which is answer_type "
+                        f"'{answer_key_types[key]}', not 'Boolean'; a safety clause can "
+                        f"only compare Boolean answers to True/False"
                     )
 
 

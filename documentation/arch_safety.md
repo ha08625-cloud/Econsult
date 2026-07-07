@@ -32,7 +32,7 @@ All other sources (i.e. raw `encoder` answers) are projected as `None` regardles
 
 ### `None` semantics
 
-`None` means unknown, never `False`. A safety rule condition requiring `is_true` for a key that is `None` is not satisfied. This is not an edge case — it is a core semantic: absence of an answer must never accidentally satisfy a safety condition.
+`None` means unknown, never `False`. A safety rule clause requiring `is_true` or `is_false` for a key that is `None` is not satisfied by either. This is not an edge case — it is a core semantic: absence of an answer must never accidentally satisfy a safety condition, in either direction. An unconfirmed encoder guess of "No" projects to `None` under the boundary above, so it cannot satisfy an `is_false` clause; only a patient-explicit `False` can.
 
 ### Safety rules use ANY logic
 

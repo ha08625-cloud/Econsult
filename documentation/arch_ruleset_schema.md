@@ -79,6 +79,8 @@ Kilograms is the canonical unit and the single source of truth. `min`/`max` are 
 
 **Safety rules use `"any"` (OR) semantics.** A rule fires if **any** clause in its `"any"` list is satisfied. This is the correct clinical behaviour: a single red flag answer should trigger the rule. The key must be `"any"`, not `"all"` — both the validator in `ruleset.py` and the engine in `safety_engine.py` read this key.
 
+**Safety clauses have a strict, closed shape.** Each clause in a rule's `any` list must be an object containing exactly one of `is_true` or `is_false` — not both, not neither, and no other keys. Its value must be a string referencing a declared `answer_key`, and that `answer_key`'s `answer_type` must be `"Boolean"`. A clause pointing at a `text` or `Number` question is rejected at startup, because a True/False comparison against a non-Boolean answer can never match and the rule would silently never fire. Validated at startup by `ruleset.py`.
+
 **Safety rules reference only declared `answer_key`s.** Every key used in a safety rule's `any` clause must exist in the `questions` list. Validated at startup.
 
 **`answer_key`s must be unique within a ruleset.** Duplicate keys are rejected at startup.
