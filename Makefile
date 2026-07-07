@@ -10,6 +10,9 @@
 # All tests — Python unit + frontend Vitest + Python integration:
 #     make test-all
 #
+# Lint and format check — Python only, no database:
+#     make lint
+#
 # Migrations against test database:
 #     make migrate-test
 #
@@ -35,11 +38,15 @@
 include .env
 export
 
-.PHONY: test test-integration test-all migrate-test seed-test-db sandbox-up sandbox-down sandbox-check
+.PHONY: test test-integration test-all lint migrate-test seed-test-db sandbox-up sandbox-down sandbox-check
 
 test:
 	python -m pytest tests/ -m "not integration" -v
 	cd frontend && npx vitest run
+
+lint:
+	ruff check .
+	ruff format --check .
 
 seed-test-db:
 	DATABASE_URL=$(TEST_DATABASE_URL) \
