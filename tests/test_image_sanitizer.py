@@ -26,7 +26,7 @@ import pytest
 from PIL import Image
 
 from app.utils.image_sanitizer import ImageTooLargeError, sanitize_image
-from tests.test_pdf_generation import MINIMAL_JPEG
+from tests.test_pdf_formatter import MINIMAL_JPEG
 
 _5MB = 5 * 1024 * 1024
 

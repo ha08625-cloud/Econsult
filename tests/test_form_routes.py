@@ -64,7 +64,7 @@ from app.core.upload_constants import (  # noqa: E402
     MAX_TOTAL_SIZE_BYTES,
 )
 from main import app  # noqa: E402
-from tests.test_pdf_generation import MINIMAL_JPEG  # noqa: E402
+from tests.test_pdf_formatter import MINIMAL_JPEG  # noqa: E402
 
 DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 
