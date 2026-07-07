@@ -1,0 +1,18 @@
+# Runs automatically on `git commit` once installed — see `make hooks-install`.
+#
+# Only "safe" ruff fixes are applied automatically here. Fixes ruff itself
+# flags as unsafe are deliberately excluded (no --unsafe-fixes) and must
+# continue to be reviewed by hand, one at a time, the same way they were
+# reviewed for safety_engine.py.
+#
+# Version pin (v0.15.20) matches requirements-dev.txt / pyproject.toml.
+# If `pre-commit install` fails with a "revision not found" style error,
+# this tag may not match the ruff-pre-commit repo's tagging convention —
+# report the exact error and it can be corrected.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format

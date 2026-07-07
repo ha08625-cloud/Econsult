@@ -13,6 +13,9 @@
 # Lint and format check — Python only, no database:
 #     make lint
 #
+# One-time setup so ruff runs automatically on every commit:
+#     make hooks-install
+#
 # Migrations against test database:
 #     make migrate-test
 #
@@ -38,7 +41,7 @@
 include .env
 export
 
-.PHONY: test test-integration test-all lint migrate-test seed-test-db sandbox-up sandbox-down sandbox-check
+.PHONY: test test-integration test-all lint hooks-install migrate-test seed-test-db sandbox-up sandbox-down sandbox-check
 
 test:
 	python -m pytest tests/ -m "not integration" -v
@@ -47,6 +50,9 @@ test:
 lint:
 	ruff check .
 	ruff format --check .
+
+hooks-install:
+	pre-commit install
 
 seed-test-db:
 	DATABASE_URL=$(TEST_DATABASE_URL) \

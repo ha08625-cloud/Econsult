@@ -3,9 +3,7 @@
 A patient-facing online consultation system for a single GP practice. Patients
 answer a structured, condition-specific questionnaire; the system applies
 deterministic clinical safety rules, generates a PDF summary, and delivers it
-to the practice. Includes an admin portal for practice staff where staff can
-set opening times for the form, add signposting information for specific conditions,
-add admin users and check audit trails
+to the practice. Includes an admin portal for practice staff.
 
 ## Stack
 
@@ -37,9 +35,10 @@ See `docs/file_structure.md` for the full annotated layout.
 
 ## Architecture documentation
 
-Start with `docs/architecture.md`. It is the hub document: contains project-wide
-invariants and routes to domain-specific "spoke" documents in `docs/`. 
-Read the invariants section before writing any code.
+Start with `docs/architecture.md`. It is the hub document: it states the
+project-wide invariants (the rules that must never be violated) and routes to
+domain-specific "spoke" documents in `docs/`. Read the invariants section
+before writing any code.
 
 ## Prerequisites
 
@@ -54,18 +53,25 @@ Read the invariants section before writing any code.
 1. Clone the repository and install dependencies:
 
    ```
-   pip install -r requirements.txt pytest httpx
+   pip install -r requirements.txt -r requirements-dev.txt pytest httpx
    cd frontend && npm ci && cd ..
    ```
 
-2. Create a `.env` file in the project root (not committed). The Makefile
+2. Install the git hook that runs ruff automatically on every commit
+   (one-time, per clone):
+
+   ```
+   make hooks-install
+   ```
+
+3. Create a `.env` file in the project root (not committed). The Makefile
    loads it automatically. At minimum, set `DATABASE_URL` (your local dev
    database) and `TEST_DATABASE_URL` (a separate local test database). The
    full list of variables the app requires at startup is in
    `docs/deployment_checklist.md` — the app fails fast with a clear error
    message for each missing one, so you can also iterate from the errors.
 
-3. Run migrations and seed the dev database (practice record + first admin
+4. Run migrations and seed the dev database (practice record + first admin
    user):
 
    ```
@@ -73,7 +79,7 @@ Read the invariants section before writing any code.
    python scripts/create_admin_user.py you@example.com --create-practice
    ```
 
-4. Run the backend:
+5. Run the backend:
 
    ```
    uvicorn main:app --reload
