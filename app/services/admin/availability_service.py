@@ -27,6 +27,11 @@ VALID_DAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 # Day abbreviation mapping: Python weekday() returns 0=Monday..6=Sunday.
 _WEEKDAY_TO_ABBR = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
+# Maximum length for admin-authored patient-facing messages (closed_message,
+# override_message). Applies equally to both — they serve the same purpose
+# and are surfaced through the same UI.
+MAX_AVAILABILITY_MESSAGE_LENGTH = 500
+
 
 def validate_availability_config(
     weekly_open_days: list,
@@ -41,6 +46,7 @@ def validate_availability_config(
     - weekly_open_days contains any value not in the valid set
     - open_time == close_time
     - open_time >= close_time (overnight hours not supported)
+    - closed_message exceeds MAX_AVAILABILITY_MESSAGE_LENGTH characters
 
     Does not validate weekly_open_days being empty (UI concern only).
     """
@@ -60,11 +66,18 @@ def validate_availability_config(
             "Overnight hours are not supported."
         )
 
+    if closed_message is not None and len(closed_message) > MAX_AVAILABILITY_MESSAGE_LENGTH:
+        raise ValueError(
+            f"closed_message must not exceed {MAX_AVAILABILITY_MESSAGE_LENGTH} characters "
+            f"(got {len(closed_message)})"
+        )
+
 
 def validate_override(
     status: str,
     expires_at: datetime.datetime | None,
     now_utc: datetime.datetime,
+    message: str | None = None,
 ) -> None:
     """
     Validate override parameters.
@@ -75,6 +88,7 @@ def validate_override(
     - expires_at is timezone-naive (no tzinfo)
     - expires_at <= now_utc (must be in the future)
     - expires_at > now_utc + 24 hours (must not exceed 24 hours ahead)
+    - message exceeds MAX_AVAILABILITY_MESSAGE_LENGTH characters
 
     The valid window is: now_utc < expires_at <= now_utc + 24 hours.
     """
@@ -96,6 +110,12 @@ def validate_override(
     max_expiry = now_utc + timedelta(hours=24)
     if expires_at > max_expiry:
         raise ValueError("override expires_at must not exceed 24 hours from now")
+
+    if message is not None and len(message) > MAX_AVAILABILITY_MESSAGE_LENGTH:
+        raise ValueError(
+            f"override message must not exceed {MAX_AVAILABILITY_MESSAGE_LENGTH} characters "
+            f"(got {len(message)})"
+        )
 
 
 def validate_exception(
