@@ -404,6 +404,7 @@ async def post_override(
             status=status,
             expires_at=expires_at,
             now_utc=now_utc,
+            message=message,
         )
     except ValueError as e:
         raise INVALID_PAYLOAD(str(e)) from e
