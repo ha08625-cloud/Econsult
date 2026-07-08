@@ -178,6 +178,28 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
         res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
         self.assertEqual(res.status_code, 422)
 
+    def test_put_availability_closed_message_over_max_length_returns_422(self):
+        body = {
+            "is_active": True,
+            "weekly_open_days": ["mon"],
+            "open_time": "08:00",
+            "close_time": "18:00",
+            "closed_message": "x" * 501,
+        }
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
+        self.assertEqual(res.status_code, 422)
+
+    def test_put_availability_closed_message_at_max_length_returns_200(self):
+        body = {
+            "is_active": True,
+            "weekly_open_days": ["mon"],
+            "open_time": "08:00",
+            "close_time": "18:00",
+            "closed_message": "x" * 500,
+        }
+        res = self.client.put("/admin/availability", json=body, cookies=TEST_SESSION_COOKIE)
+        self.assertEqual(res.status_code, 200)
+
     # ---------------------------------------------------------------------------
     # POST /availability/override
     # ---------------------------------------------------------------------------
@@ -237,6 +259,28 @@ class TestAdminAvailabilityRouter(unittest.TestCase):
             "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
         )
         self.assertEqual(res.status_code, 422)
+
+    def test_post_override_message_over_max_length_returns_422(self):
+        body = {
+            "status": "closed",
+            "expires_at": self.override_expires.isoformat(),
+            "message": "x" * 501,
+        }
+        res = self.client.post(
+            "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
+        )
+        self.assertEqual(res.status_code, 422)
+
+    def test_post_override_message_at_max_length_returns_200(self):
+        body = {
+            "status": "closed",
+            "expires_at": self.override_expires.isoformat(),
+            "message": "x" * 500,
+        }
+        res = self.client.post(
+            "/admin/availability/override", json=body, cookies=TEST_SESSION_COOKIE
+        )
+        self.assertEqual(res.status_code, 200)
 
     def test_post_override_expires_at_beyond_24h_returns_422(self):
         too_far = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=25)).isoformat()
