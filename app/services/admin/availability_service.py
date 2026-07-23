@@ -4,6 +4,12 @@ Availability evaluation logic.
 No database access. No imports from any project module except
 app.models.availability_models. Fully testable without a database.
 
+Uses stdlib `logging` only, to warn on malformed exception rows in
+evaluate_availability — this is a deliberate, minimal loosening of the
+"pure logic" contract (stdlib logging is not IO in the app's sense: no
+project module, no database, no network). See the fallback comment in
+evaluate_availability for why the warning exists.
+
 Functions:
 - validate_availability_config: raises ValueError on invalid config input
 - validate_override: raises ValueError on invalid override input
@@ -13,6 +19,7 @@ Functions:
 """
 
 import datetime
+import logging
 from datetime import timedelta
 
 from app.models.availability_models import (
@@ -21,6 +28,8 @@ from app.models.availability_models import (
     AvailabilityException,
     AvailabilityResult,
 )
+
+logger = logging.getLogger(__name__)
 
 VALID_DAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 
@@ -240,6 +249,26 @@ def evaluate_availability(
                     after_hours_notice=None,
                 )
             # custom_hours
+            # Defensive guard: the DB CHECK constraint on
+            # practice_availability_exceptions (see migration 0006) should
+            # make this unreachable, but a malformed row (e.g. a manual DB
+            # edit predating that constraint) must not crash evaluation.
+            # Treat it as if no exception exists for today and fall through
+            # to the weekly schedule below — this matches the system's
+            # existing fail-open philosophy (a data problem must not lock
+            # patients out) without inventing a new failure mode.
+            if exc.open_time is None or exc.close_time is None:
+                logger.warning(
+                    "Malformed availability exception for practice_id=%s "
+                    "exception_date=%s: exception_type='custom_hours' but "
+                    "open_time=%r close_time=%r. Falling through to weekly "
+                    "schedule.",
+                    config.practice_id,
+                    exc.exception_date,
+                    exc.open_time,
+                    exc.close_time,
+                )
+                break
             time_open = exc.open_time <= current_time < exc.close_time
             if time_open:
                 after_hours_notice = _build_after_hours_notice(exc.close_time)
