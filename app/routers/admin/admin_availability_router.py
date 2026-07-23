@@ -73,12 +73,16 @@ def _format_availability_response(config: dict) -> dict:
 
     Converts time objects to HH:MM strings. Converts override_expires_at
     to ISO format string if present.
+
+    Returns a new dict; does not mutate the input, matching
+    _format_exception_response's pattern.
     """
-    config["open_time"] = config["open_time"].strftime("%H:%M")
-    config["close_time"] = config["close_time"].strftime("%H:%M")
+    result = dict(config)
+    result["open_time"] = config["open_time"].strftime("%H:%M")
+    result["close_time"] = config["close_time"].strftime("%H:%M")
     if config.get("override_expires_at") is not None:
-        config["override_expires_at"] = config["override_expires_at"].isoformat()
-    return config
+        result["override_expires_at"] = config["override_expires_at"].isoformat()
+    return result
 
 
 def _format_exception_response(exc: dict) -> dict:
@@ -626,6 +630,7 @@ async def put_exception(
             exception_type=exception_type,
             open_time=open_time,
             close_time=close_time,
+            note=note,
         )
     except ValueError as e:
         raise INVALID_PAYLOAD(str(e)) from e
