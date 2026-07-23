@@ -10,6 +10,7 @@ import json
 
 import pytest
 
+from app.services.engine import ruleset
 from app.services.engine.ruleset import load_ruleset, validate_ruleset
 
 
@@ -331,7 +332,16 @@ def test_accepts_agreeing_multi_system_quantity_questions():
     )
 
 
-def test_rejects_multi_system_quantity_questions_with_differing_allowed_systems():
+def test_rejects_multi_system_quantity_questions_with_differing_allowed_systems(monkeypatch):
+    # weight's registered systems map has only two entries (metric, imperial),
+    # so any multi-system question drawn from it must select exactly that
+    # pair -- there is no way to construct two multi-system questions that
+    # disagree on allowed_systems using the real registry alone until a
+    # second quantity_kind exists (Ticket 2). Temporarily widen weight's
+    # systems map for this test only, so the disagreement path in
+    # _validate_shared_toggle_consistency can be exercised now.
+    monkeypatch.setitem(ruleset.QUANTITY_KINDS["weight"]["systems"], "extra", ("x",))
+
     with pytest.raises(ValueError, match="must share the same allowed_systems"):
         validate_ruleset(
             _two_question_ruleset(
@@ -344,7 +354,7 @@ def test_rejects_multi_system_quantity_questions_with_differing_allowed_systems(
                 {
                     "quantity": True,
                     "quantity_kind": "weight",
-                    "allowed_systems": ["metric"],
+                    "allowed_systems": ["metric", "extra"],
                     "default_system": "metric",
                 },
             )
