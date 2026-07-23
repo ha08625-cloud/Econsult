@@ -137,6 +137,7 @@ def test_accepts_valid_quantity_question():
     validate_ruleset(
         _with(
             quantity=True,
+            quantity_kind="weight",
             allowed_systems=["metric", "imperial"],
             default_system="metric",
         )
@@ -144,7 +145,14 @@ def test_accepts_valid_quantity_question():
 
 
 def test_accepts_quantity_with_single_system():
-    validate_ruleset(_with(quantity=True, allowed_systems=["metric"], default_system="metric"))
+    validate_ruleset(
+        _with(
+            quantity=True,
+            quantity_kind="weight",
+            allowed_systems=["metric"],
+            default_system="metric",
+        )
+    )
 
 
 def test_accepts_quantity_false_without_unit_fields():
@@ -163,6 +171,7 @@ def test_rejects_quantity_on_non_number_question():
             _with(
                 answer_type="text",
                 quantity=True,
+                quantity_kind="weight",
                 allowed_systems=["metric"],
                 default_system="metric",
             )
@@ -171,38 +180,57 @@ def test_rejects_quantity_on_non_number_question():
 
 def test_rejects_quantity_missing_allowed_systems():
     with pytest.raises(ValueError, match="non-empty allowed_systems"):
-        validate_ruleset(_with(quantity=True, default_system="metric"))
+        validate_ruleset(_with(quantity=True, quantity_kind="weight", default_system="metric"))
 
 
 def test_rejects_quantity_empty_allowed_systems():
     with pytest.raises(ValueError, match="non-empty allowed_systems"):
-        validate_ruleset(_with(quantity=True, allowed_systems=[], default_system="metric"))
+        validate_ruleset(
+            _with(quantity=True, quantity_kind="weight", allowed_systems=[], default_system="metric")
+        )
 
 
-def test_rejects_unknown_allowed_system():
+def test_rejects_allowed_system_outside_kind_vocabulary():
+    # "nautical" is not in weight's systems map ({"metric", "imperial"}), even
+    # though it is a plausible-looking unit system name in the abstract.
     with pytest.raises(ValueError, match="unknown allowed_systems"):
         validate_ruleset(
-            _with(quantity=True, allowed_systems=["metric", "nautical"], default_system="metric")
+            _with(
+                quantity=True,
+                quantity_kind="weight",
+                allowed_systems=["metric", "nautical"],
+                default_system="metric",
+            )
         )
 
 
 def test_rejects_duplicate_allowed_systems():
     with pytest.raises(ValueError, match="duplicate allowed_systems"):
         validate_ruleset(
-            _with(quantity=True, allowed_systems=["metric", "metric"], default_system="metric")
+            _with(
+                quantity=True,
+                quantity_kind="weight",
+                allowed_systems=["metric", "metric"],
+                default_system="metric",
+            )
         )
 
 
 def test_rejects_default_system_not_in_allowed():
     with pytest.raises(ValueError, match="default_system"):
         validate_ruleset(
-            _with(quantity=True, allowed_systems=["metric"], default_system="imperial")
+            _with(
+                quantity=True,
+                quantity_kind="weight",
+                allowed_systems=["metric"],
+                default_system="imperial",
+            )
         )
 
 
 def test_rejects_missing_default_system():
     with pytest.raises(ValueError, match="default_system"):
-        validate_ruleset(_with(quantity=True, allowed_systems=["metric"]))
+        validate_ruleset(_with(quantity=True, quantity_kind="weight", allowed_systems=["metric"]))
 
 
 def test_rejects_allowed_systems_on_non_quantity_question():
@@ -215,6 +243,153 @@ def test_rejects_allowed_systems_on_non_quantity_question():
 def test_rejects_default_system_on_non_quantity_question():
     with pytest.raises(ValueError, match="must not set default_system"):
         validate_ruleset(_with(default_system="metric"))
+
+
+# ---------------------------------------------------------------------------
+# quantity_kind validation
+# ---------------------------------------------------------------------------
+
+
+def test_rejects_quantity_missing_kind():
+    with pytest.raises(ValueError, match="quantity_kind"):
+        validate_ruleset(
+            _with(quantity=True, allowed_systems=["metric"], default_system="metric")
+        )
+
+
+def test_rejects_unknown_quantity_kind():
+    with pytest.raises(ValueError, match="quantity_kind"):
+        validate_ruleset(
+            _with(
+                quantity=True,
+                quantity_kind="mass",
+                allowed_systems=["metric"],
+                default_system="metric",
+            )
+        )
+
+
+def test_rejects_quantity_kind_on_non_quantity_question():
+    with pytest.raises(ValueError, match="must not set quantity_kind"):
+        validate_ruleset(_with(quantity_kind="weight"))
+
+
+# ---------------------------------------------------------------------------
+# Shared-toggle consistency across multi-system quantity questions
+# ---------------------------------------------------------------------------
+
+
+def _two_question_ruleset(first_overrides, second_overrides):
+    """
+    A ruleset with two Number questions, each independently overridable, for
+    the shared-toggle consistency tests -- _base_ruleset() only has one
+    question and reshaping it would obscure the single-question tests above.
+    """
+    base_question = {
+        "question_id": "q1",
+        "question": "What is your weight in kg?",
+        "answer_key": "weight",
+        "answer_type": "Number",
+        "decimal_places": 1,
+        "min": 2,
+        "max": 400,
+        "send_to_encoder": False,
+        "encoder_prompt": None,
+    }
+    q1 = {**base_question, **first_overrides}
+    q2 = {
+        **base_question,
+        "question_id": "q2",
+        "question": "What is your height?",
+        "answer_key": "height",
+        **second_overrides,
+    }
+    return {
+        "condition_id": "demo",
+        "presentation": {"label": "Demo", "free_text_prompt": "x"},
+        "questions": [q1, q2],
+        "safety": {"rules": {}},
+    }
+
+
+def test_accepts_agreeing_multi_system_quantity_questions():
+    validate_ruleset(
+        _two_question_ruleset(
+            {
+                "quantity": True,
+                "quantity_kind": "weight",
+                "allowed_systems": ["metric", "imperial"],
+                "default_system": "metric",
+            },
+            {
+                "quantity": True,
+                "quantity_kind": "weight",
+                "allowed_systems": ["metric", "imperial"],
+                "default_system": "metric",
+            },
+        )
+    )
+
+
+def test_rejects_multi_system_quantity_questions_with_differing_allowed_systems():
+    with pytest.raises(ValueError, match="must share the same allowed_systems"):
+        validate_ruleset(
+            _two_question_ruleset(
+                {
+                    "quantity": True,
+                    "quantity_kind": "weight",
+                    "allowed_systems": ["metric", "imperial"],
+                    "default_system": "metric",
+                },
+                {
+                    "quantity": True,
+                    "quantity_kind": "weight",
+                    "allowed_systems": ["metric"],
+                    "default_system": "metric",
+                },
+            )
+        )
+
+
+def test_rejects_multi_system_quantity_questions_with_differing_default_system():
+    with pytest.raises(ValueError, match="must share the same allowed_systems"):
+        validate_ruleset(
+            _two_question_ruleset(
+                {
+                    "quantity": True,
+                    "quantity_kind": "weight",
+                    "allowed_systems": ["metric", "imperial"],
+                    "default_system": "metric",
+                },
+                {
+                    "quantity": True,
+                    "quantity_kind": "weight",
+                    "allowed_systems": ["metric", "imperial"],
+                    "default_system": "imperial",
+                },
+            )
+        )
+
+
+def test_accepts_single_system_question_alongside_multi_system_question():
+    # Single-system quantity questions are exempt from shared-toggle
+    # agreement -- there is nothing for them to toggle between.
+    validate_ruleset(
+        _two_question_ruleset(
+            {
+                "quantity": True,
+                "quantity_kind": "weight",
+                "allowed_systems": ["metric", "imperial"],
+                "default_system": "metric",
+            },
+            {
+                "quantity": True,
+                "quantity_kind": "weight",
+                "allowed_systems": ["metric"],
+                "default_system": "metric",
+            },
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
