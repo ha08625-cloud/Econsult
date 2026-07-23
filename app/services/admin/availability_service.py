@@ -4,12 +4,6 @@ Availability evaluation logic.
 No database access. No imports from any project module except
 app.models.availability_models. Fully testable without a database.
 
-Uses stdlib `logging` only, to warn on malformed exception rows in
-evaluate_availability — this is a deliberate, minimal loosening of the
-"pure logic" contract (stdlib logging is not IO in the app's sense: no
-project module, no database, no network). See the fallback comment in
-evaluate_availability for why the warning exists.
-
 Functions:
 - validate_availability_config: raises ValueError on invalid config input
 - validate_override: raises ValueError on invalid override input
@@ -19,7 +13,6 @@ Functions:
 """
 
 import datetime
-import logging
 from datetime import timedelta
 
 from app.models.availability_models import (
@@ -28,8 +21,6 @@ from app.models.availability_models import (
     AvailabilityException,
     AvailabilityResult,
 )
-
-logger = logging.getLogger(__name__)
 
 VALID_DAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 
@@ -40,6 +31,10 @@ _WEEKDAY_TO_ABBR = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 # override_message). Applies equally to both — they serve the same purpose
 # and are surfaced through the same UI.
 MAX_AVAILABILITY_MESSAGE_LENGTH = 500
+
+# Maximum length for the admin-only exception note. Not patient-facing, but
+# still flows into the audit log unbounded without this cap.
+MAX_EXCEPTION_NOTE_LENGTH = 500
 
 
 def validate_availability_config(
@@ -53,8 +48,7 @@ def validate_availability_config(
 
     Raises ValueError with a clear message if:
     - weekly_open_days contains any value not in the valid set
-    - open_time == close_time
-    - open_time >= close_time (overnight hours not supported)
+    - open_time >= close_time, including equal times (overnight hours not supported)
     - closed_message exceeds MAX_AVAILABILITY_MESSAGE_LENGTH characters
 
     Does not validate weekly_open_days being empty (UI concern only).
@@ -65,9 +59,6 @@ def validate_availability_config(
             f"Invalid day(s) in weekly_open_days: {sorted(invalid)}. "
             f"Valid values are: {sorted(VALID_DAYS)}"
         )
-
-    if open_time == close_time:
-        raise ValueError(f"open_time and close_time must not be equal (both are {open_time})")
 
     if open_time >= close_time:
         raise ValueError(
@@ -131,6 +122,7 @@ def validate_exception(
     exception_type: str,
     open_time: datetime.time | None,
     close_time: datetime.time | None,
+    note: str | None = None,
 ) -> None:
     """
     Validate exception parameters.
@@ -139,8 +131,9 @@ def validate_exception(
     - exception_type is not "closed" or "custom_hours"
     - exception_type is "custom_hours" and either open_time or close_time is None
     - exception_type is "closed" and either open_time or close_time is not None
-    - open_time == close_time when both are present
-    - open_time >= close_time when both are present (overnight hours not supported)
+    - open_time >= close_time when both are present, including equal times
+      (overnight hours not supported)
+    - note exceeds MAX_EXCEPTION_NOTE_LENGTH characters
     """
     if exception_type not in ("closed", "custom_hours"):
         raise ValueError(
@@ -150,8 +143,6 @@ def validate_exception(
     if exception_type == "custom_hours":
         if open_time is None or close_time is None:
             raise ValueError("custom_hours exception requires both open_time and close_time")
-        if open_time == close_time:
-            raise ValueError(f"open_time and close_time must not be equal (both are {open_time})")
         if open_time >= close_time:
             raise ValueError(
                 f"open_time ({open_time}) must be before close_time ({close_time}). "
@@ -160,6 +151,11 @@ def validate_exception(
 
     if exception_type == "closed" and (open_time is not None or close_time is not None):
         raise ValueError("closed exception must not have open_time or close_time")
+
+    if note is not None and len(note) > MAX_EXCEPTION_NOTE_LENGTH:
+        raise ValueError(
+            f"note must not exceed {MAX_EXCEPTION_NOTE_LENGTH} characters (got {len(note)})"
+        )
 
 
 def deactivation_clears_override(is_active: bool) -> bool:
@@ -249,26 +245,6 @@ def evaluate_availability(
                     after_hours_notice=None,
                 )
             # custom_hours
-            # Defensive guard: the DB CHECK constraint on
-            # practice_availability_exceptions (see migration 0006) should
-            # make this unreachable, but a malformed row (e.g. a manual DB
-            # edit predating that constraint) must not crash evaluation.
-            # Treat it as if no exception exists for today and fall through
-            # to the weekly schedule below — this matches the system's
-            # existing fail-open philosophy (a data problem must not lock
-            # patients out) without inventing a new failure mode.
-            if exc.open_time is None or exc.close_time is None:
-                logger.warning(
-                    "Malformed availability exception for practice_id=%s "
-                    "exception_date=%s: exception_type='custom_hours' but "
-                    "open_time=%r close_time=%r. Falling through to weekly "
-                    "schedule.",
-                    config.practice_id,
-                    exc.exception_date,
-                    exc.open_time,
-                    exc.close_time,
-                )
-                break
             time_open = exc.open_time <= current_time < exc.close_time
             if time_open:
                 after_hours_notice = _build_after_hours_notice(exc.close_time)
