@@ -13,6 +13,7 @@ Functions:
 """
 
 import datetime
+import logging
 from datetime import timedelta
 
 from app.models.availability_models import (
@@ -21,6 +22,8 @@ from app.models.availability_models import (
     AvailabilityException,
     AvailabilityResult,
 )
+
+logger = logging.getLogger(__name__)
 
 VALID_DAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
 
@@ -245,6 +248,22 @@ def evaluate_availability(
                     after_hours_notice=None,
                 )
             # custom_hours
+            if exc.open_time is None or exc.close_time is None:
+                # Defensive guard: the DB CHECK constraint (migration 0006)
+                # should make this unreachable, but a manual DB edit or a
+                # pre-migration row could still produce it. Treat the row as
+                # if it doesn't exist and fall through to the weekly
+                # schedule, matching the system's fail-open philosophy.
+                logger.warning(
+                    "Malformed availability exception for practice '%s' on %s: "
+                    "custom_hours row has open_time=%r, close_time=%r. "
+                    "Falling through to weekly schedule.",
+                    config.practice_id,
+                    exc.exception_date,
+                    exc.open_time,
+                    exc.close_time,
+                )
+                continue
             time_open = exc.open_time <= current_time < exc.close_time
             if time_open:
                 after_hours_notice = _build_after_hours_notice(exc.close_time)
