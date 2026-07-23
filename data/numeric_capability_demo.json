@@ -20,6 +20,7 @@
       "send_to_encoder": false,
       "encoder_prompt": null,
       "quantity": true,
+      "quantity_kind": "weight",
       "allowed_systems": ["metric", "imperial"],
       "default_system": "metric"
     }
