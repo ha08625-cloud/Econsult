@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as Sentry from "@sentry/react";
 import { friendlyPhotoErrorMessage } from "./helpers";
-import { finishForm, friendlyErrorMessage, initForm, ApiError } from "./api";
+import { finishForm, initForm, friendlyErrorMessage, ApiError } from "./api";
 import type { ContactPreferences, PatientDetails } from "./types";
 
-// Mock @sentry/react so postJson's error-reporting calls can be observed
-// without hitting a real Sentry instance. withScope invokes the callback
-// synchronously with a stub scope, mirroring the real SDK's behaviour
-// closely enough for assertions on captureException.
+// Sentry is mocked so tests can assert whether captureException was called,
+// without making the API module's real, unconfigured Sentry calls a source
+// of test flakiness.
 vi.mock("@sentry/react", () => ({
   captureException: vi.fn(),
   captureMessage: vi.fn(),
@@ -14,8 +14,6 @@ vi.mock("@sentry/react", () => ({
     callback({ setTag: vi.fn(), setExtra: vi.fn() });
   }),
 }));
-
-import * as Sentry from "@sentry/react";
 
 // ---------------------------------------------------------------------------
 // friendlyPhotoErrorMessage
@@ -97,23 +95,71 @@ describe("friendlyErrorMessage — 422 photo errors", () => {
 });
 
 // ---------------------------------------------------------------------------
-// friendlyErrorMessage — 503 branch (practice closed, from POST /form/init)
+// friendlyErrorMessage — 503 branch (practice closed)
 // ---------------------------------------------------------------------------
 
 describe("friendlyErrorMessage — 503 practice closed", () => {
-  it("returns the server-supplied closed_message when present", () => {
-    const err = new ApiError("HTTP 503", 503, "We reopen at 9am on Monday.");
-    expect(friendlyErrorMessage(err)).toBe("We reopen at 9am on Monday.");
+  it("returns the server-provided closed_message when present", () => {
+    const err = new ApiError("HTTP 503", 503, "We are closed for the bank holiday.");
+    expect(friendlyErrorMessage(err)).toBe("We are closed for the bank holiday.");
   });
 
-  it("falls back to a generic closed-practice message when closed_message is null", () => {
-    // closed_message defaults to NULL in the schema — a practice that enables
-    // scheduling without setting a custom message must not surface the
-    // generic 500 wording, since the server did not encounter a problem.
+  it("falls back to the generic closed-practice text when closed_message is null", () => {
     const err = new ApiError("HTTP 503", 503, null);
     expect(friendlyErrorMessage(err)).toBe(
       "This practice is not currently accepting online forms."
     );
+  });
+
+  it("falls back to the generic closed-practice text when closed_message is an empty string", () => {
+    const err = new ApiError("HTTP 503", 503, "");
+    expect(friendlyErrorMessage(err)).toBe(
+      "This practice is not currently accepting online forms."
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// postJson — 503 Sentry suppression (via initForm)
+// ---------------------------------------------------------------------------
+
+describe("postJson — 503 Sentry suppression", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.mocked(Sentry.captureException).mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("does not report a 503 (practice closed) to Sentry", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ detail: "We are closed for the bank holiday." }),
+        { status: 503 }
+      )
+    );
+
+    await expect(initForm("condition-1", null)).rejects.toMatchObject({
+      status: 503,
+    });
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("still reports a genuine 500 to Sentry", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "Internal error" }), {
+        status: 500,
+      })
+    );
+
+    await expect(initForm("condition-1", null)).rejects.toMatchObject({
+      status: 500,
+    });
+
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -272,51 +318,5 @@ describe("finishForm", () => {
     await expect(
       finishForm(RUNTIME_ID, VERSION, CONTACT_PREFS, PATIENT_DETAILS, [], null)
     ).rejects.toMatchObject({ status: null });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// postJson — Sentry reporting (exercised via initForm, which calls
-// postJson("/form/init", ...) and is the endpoint that returns the
-// deliberate 503 closed-practice response)
-// ---------------------------------------------------------------------------
-
-describe("postJson — Sentry reporting", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-    vi.mocked(Sentry.captureException).mockClear();
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("does not report to Sentry on a 503 (practice closed) response", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({ detail: "This practice is not currently accepting online forms." }),
-        { status: 503 }
-      )
-    );
-
-    await expect(initForm("cond-1", null)).rejects.toMatchObject({ status: 503 });
-
-    expect(Sentry.captureException).not.toHaveBeenCalled();
-  });
-
-  it("still reports to Sentry on a genuine 500 server error", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 500 }));
-
-    await expect(initForm("cond-1", null)).rejects.toMatchObject({ status: 500 });
-
-    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-  });
-
-  it("still reports to Sentry on other 5xx server errors (e.g. 502)", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 502 }));
-
-    await expect(initForm("cond-1", null)).rejects.toMatchObject({ status: 502 });
-
-    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
   });
 });
