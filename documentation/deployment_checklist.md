@@ -20,6 +20,27 @@ python -m alembic upgrade head
 The application runs this automatically at startup, but running it manually
 first lets you verify the database connection before proceeding.
 
+**Upgrading an existing deployment to include migration 0006** (CHECK
+constraints on `practice_availability` and `practice_availability_exceptions`
+time invariants): `ALTER TABLE ... ADD CONSTRAINT` validates every existing
+row. Since `alembic upgrade head` runs automatically at web service startup,
+a single violating row will fail the migration and prevent the app from
+starting until the row is fixed manually. Before deploying this migration
+against a database that already has data, run the following and confirm
+both return zero rows:
+
+```sql
+SELECT * FROM practice_availability
+WHERE open_time >= close_time;
+
+SELECT * FROM practice_availability_exceptions
+WHERE (exception_type = 'closed' AND (open_time IS NOT NULL OR close_time IS NOT NULL))
+   OR (exception_type = 'custom_hours' AND (open_time IS NULL OR close_time IS NULL OR open_time >= close_time));
+```
+
+A fresh install (empty tables) is unaffected — this check only matters when
+upgrading a database that already has practice data.
+
 ---
 
 ## 2. Set Required Environment Variables
