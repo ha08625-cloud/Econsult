@@ -35,11 +35,12 @@ export function friendlyErrorMessage(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.status === 503) {
       // 503 from POST /form/init — practice is closed.
-      // detail contains the closed_message from the server, which is
-      // nullable — fall back to a generic closed notice if it is null.
+      // detail contains the closed_message from the server, which is nullable
+      // (practices can enable scheduling without setting a message). Fall back
+      // to the same generic closed-practice text used on the availability
+      // screen (see SafetyWarningScreen.tsx) rather than the generic 500 message.
       return e.detail || "This practice is not currently accepting online forms.";
     }
-
     if (e.status === 422 && e.detail) {
       // 422 from POST /form/finish — server-side photo validation failure.
       // Attempt to convert the technical server string into patient-friendly
@@ -84,6 +85,9 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   }
 
   if (!res.ok) {
+    // 503 from this endpoint is a deliberate "practice is closed" response,
+    // not a server error — do not pollute Sentry with it. Any other 5xx is a
+    // genuine failure and should still be captured.
     if (res.status >= 500 && res.status !== 503) {
       Sentry.withScope((scope) => {
         scope.setTag("http.status_code", res.status);
