@@ -118,6 +118,7 @@ Runner: `pytest tests/ -m "not integration"`. None of these touch a database or 
 | `test_admin_context.py` | `app/core/admin_context.py` | Subprocess import-surface guard: importing `admin_context` must not pull in the repository/service/wiring closure. |
 | `test_email_mode.py` | `app/core/email_mode.py` | Pure predicates for complete/partial Mailgun configuration, called directly with plain arguments (no env plumbing — that is `test_settings.py`'s concern). |
 | `test_upload_constants.py` | `app/core/upload_constants.py` | JSON-backed constants load with the expected names, types, and values. |
+| `test_availability_service.py` | `app/services/admin/availability_service.py` | `MAX_AVAILABILITY_MESSAGE_LENGTH` checks on `validate_availability_config` and `validate_override`; `evaluate_availability`'s fallback to the weekly schedule on malformed `custom_hours` exception rows (three malformed shapes × weekly-open/weekly-closed outcomes, plus a `caplog` warning assertion). Deliberately excludes day/time validation and well-formed evaluation paths, covered indirectly via `test_admin_availability_router.py`. |
 | `test_form_logic.py` | `engine/form_logic` | Number answer validation and normalisation tiers; answer provenance (`apply_patient_answers` deriving `source`, idempotency, `normalise_encoder_provenance` promotion and selectivity). |
 | `test_projection.py` | `engine/projection` | Locks `EXPLICIT_SOURCES` membership and the `None`-projection of every excluded source (raw `encoder`, `unanswered`). |
 | `test_ruleset.py` | `engine/ruleset` | Fail-fast startup validation of Number-question and `answer_type` configuration (quantity/unit-system rules); `load_ruleset` per-path caching. |
@@ -217,8 +218,11 @@ Current Alembic migrations:
 - `0001_initial_schema.py` — creates the complete baseline schema.
 - `0002_user_management_cascade.py` — adds `ON DELETE CASCADE` to `admin_sessions.user_id` FK and adds `admin_users.last_login` (nullable `TIMESTAMPTZ`).
 - `0003_webhook_tracking.py` — adds `provider_message_id` and `provider_events` to `delivery_jobs`, extends the status check constraint, and creates the `webhook_tokens` replay protection table.
+- `0004_password_auth.py` — adds password columns (`hashed_password`, `failed_password_attempts`, `password_locked_until`, `password_changed_at`) to `admin_users`; creates `admin_password_reset_tokens`.
+- `0005_mesh_schema.py` — creates `mesh_jobs` (outbound MESH delivery queue); adds `delivery_jobs.is_fallback`.
+- `0006_availability_exception_constraint.py` — adds CHECK constraints backstopping the app-layer time invariants on `practice_availability` (`open_time < close_time`) and `practice_availability_exceptions` (`exception_type` tied to time-column nullability and ordering).
 
-New schema changes should be added as further numbered migrations (`0004_...` etc.) rather than modifying existing ones, now that real data is involved.
+See `file_structure.md` for the full per-migration detail; this list exists here only so the obligation below is self-contained. New schema changes should be added as further numbered migrations (`0007_...` etc.) rather than modifying existing ones, now that real data is involved.
 
 When the schema changes, the test database on Railway must be updated to match. Because the test database is not deployed to automatically, run:
 
