@@ -19,7 +19,6 @@ Controls when the patient-facing form is open or closed. Evaluates the current t
 - `GET /availability`: non-200 response → frontend shows form as normal, no banner
 - `POST /form/init`: availability check is wrapped in try/except; any exception is logged and the request proceeds as open
 - `POST /form/update` and `POST /form/finish`: do NOT check availability. A patient halfway through a form must not have their work discarded if the practice closes mid-session.
-- `submitted_after_hours` flag on `POST /form/finish`: if the check fails, defaults to `false`. Uncertainty must not alarm the patient.
 
 ---
 
@@ -32,7 +31,7 @@ Data shapes only. No logic, no IO. Contains `AvailabilityConfig`, `AvailabilityR
 Database access only. No validation logic. Must not import from `availability_service`. The caller is always responsible for validating before calling write methods.
 
 ### `availability_service.py`
-Pure logic. No database access, no IO. Fully testable without a database. The only project import allowed is `availability_models`. Contains all validation functions and `evaluate_availability`.
+Pure logic. No database access. The only project import allowed is `availability_models`. Contains all validation functions and `evaluate_availability`. Uses stdlib `logging` (module-level `logger = logging.getLogger(__name__)`) to warn when `evaluate_availability` falls through on a malformed exception row — a deliberate, minimal exception to "no IO", since stdlib logging is not a project import, database call, or network call. See the malformed-row design decision below.
 
 ---
 
@@ -65,7 +64,12 @@ Setting `is_active = false` auto-clears any existing override (all three overrid
 When the practice is open and `is_active` is true, an after-hours notice is constructed from `close_time`. During a `custom_hours` exception, the notice uses the exception's `close_time`, not the config's — it reflects the actual closing time for that day. During a `closed` exception or when `is_active` is false, `after_hours_notice` is null.
 
 ### `check_availability` Orchestration
-`check_availability(availability_repo, practice_id, now_utc)` is defined in `app/services/availability_orchestration.py`. It owns the full pipeline: fetch config → compute today's London date → fetch exceptions → call `evaluate_availability`. It does not belong in `availability_service` because the service has no database access. `GET /availability` (via `public_router.py`) and `POST /form/init` and `POST /form/finish` (via `main.py`) all call this function. The fail-open try/except wrapping lives in the callers, not in `check_availability` itself — exceptions propagate so callers can log them with appropriate context.
+`check_availability(availability_repo, practice_id, now_utc)` is defined in `app/services/admin/availability_orchestration.py`. It owns the full pipeline: fetch config → compute today's London date → fetch exceptions → call `evaluate_availability`. It does not belong in `availability_service` because the service has no database access. `GET /availability` (via `public_router.py`) and `POST /form/init` (via `form_router.py`) call this function. `POST /form/finish` does not — per the Fail-Open section above, finish never checks availability. The fail-open try/except wrapping lives in the callers, not in `check_availability` itself — exceptions propagate so callers can log them with appropriate context.
+
+### Malformed Exception Rows and the Time-Invariant CHECK Constraint
+Two independent invariants — `practice_availability.open_time < close_time`, and `practice_availability_exceptions`' pairing of `exception_type` with time-column nullability — were originally enforced only in the application layer (`validate_availability_config`, `validate_exception`), with no database backstop. A row bypassing that layer (manual DB edit, bad backfill) with `exception_type='custom_hours'` and a NULL time crashed `evaluate_availability` with `TypeError` when the time comparison ran. Because the fail-open wrapper on `POST /form/init` / `/form/finish` catches all exceptions, this was silently swallowed there (the schedule gate was invisibly disabled), while `GET /availability` — which has no such wrapper — surfaced it as an unhandled HTTP 500.
+
+Migration `0006_availability_exception_constraint.py` closes this with CHECK constraints on both tables, mirroring `validate_exception` and `validate_availability_config` exactly (see the migration's own docstring for the exact predicate). `evaluate_availability` also carries a defensive `None`-guard on the `custom_hours` branch as belt-and-braces: if it ever encounters a malformed row despite the constraint, it logs a warning and falls through to the weekly schedule for that date, treating the corrupt row as if it doesn't exist — this matches the system's fail-open philosophy rather than inventing a new failure mode (e.g. treating it as `closed`, which would risk locking patients out because of a data bug).
 
 ### Exception Note Field
 The `note` field on exceptions is for admin reference only (e.g. "Bank holiday"). It is not shown to patients and plays no role in evaluation.
@@ -77,7 +81,7 @@ Admin reads and writes raw config only. `GET /admin/availability` does not call 
 `init_availability()` is called at startup after the practice row exists. There is never a state post-startup where the availability row does not exist.
 
 ### Database Schema
-See migration files `0002_availability_table.py`, `0003_availability_override.py`, `0004_availability_exceptions.py` for the definitive schema. The `weekly_open_days` column has a Postgres `<@` CHECK constraint as a backstop; application-layer validation in `availability_service` runs first and produces a better error message.
+`practice_availability` and `practice_availability_exceptions` are both created in `0001_initial_schema.py` — there is no separate per-table migration history for this domain. The `weekly_open_days` column has a Postgres `<@` CHECK constraint as a backstop from `0001`; application-layer validation in `availability_service` runs first and produces a better error message. `0006_availability_exception_constraint.py` adds the two further CHECK constraints described above. See `alembic/versions/` directly for exact predicates — do not rely on migration filenames alone; check `file_structure.md`'s migration list for the current, accurate set.
 
 ---
 
@@ -92,8 +96,6 @@ See migration files `0002_availability_table.py`, `0003_availability_override.py
 
 ## Tests
 
-Unit tests for `availability_service.py`: `tests/test_availability_service.py`
+Unit tests for `availability_service.py`'s validators live in `tests/test_availability_service.py`: `MAX_AVAILABILITY_MESSAGE_LENGTH` checks on `validate_availability_config` and `validate_override`, and `evaluate_availability`'s fallback behaviour on malformed `custom_hours` exception rows (three malformed shapes, both weekly-open and weekly-closed outcomes, plus a warning-log assertion). It deliberately does not re-test the day/time validation rules or well-formed evaluation paths (schedule evaluation, overrides, well-formed exceptions, evaluation priority order) — those are exercised at the HTTP level via `tests/routers/test_admin_availability_router.py`, per that file's own scope note. See the Test Index in `arch_testing.md` for the authoritative per-file breakdown.
 
-Tests cover: schedule evaluation, config validation, fail-open pattern, force-open/closed overrides, override message fallback, expired override fallthrough, timezone-naive rejection, `is_active=false` ignoring overrides, auto-clear on deactivation, BST offset effects, exact time boundaries, per-date exceptions (closed and custom_hours), evaluation priority order.
-
-Run with: `python -m tests.test_availability_service`
+Run with: `pytest tests/test_availability_service.py`
