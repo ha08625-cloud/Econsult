@@ -10,10 +10,41 @@ from typing import Any
 # ruleset's original (capitalised-Boolean) casing; runtime lowercases it.
 VALID_ANSWER_TYPES = {"Boolean", "text", "Number"}
 
-# The unit systems a quantity (unit-toggle) question may offer. convert_unit_answers
-# relies on system membership here, so this allow-list is enforced fail-fast at
-# startup rather than discovered mid-request.
-VALID_UNIT_SYSTEMS = {"metric", "imperial"}
+# Registry of quantity kinds the engine can fully handle. For each kind:
+# canonical_system is the system whose single component is the value stored
+# as-is (every other system needs a converter), and systems maps each
+# offered system to its ordered component keys (e.g. imperial weight is
+# entered as stone + pounds, in that order).
+#
+# This is the single source of truth for which kinds exist. ruleset.py uses
+# it to validate quantity_kind and allowed_systems at startup. form_logic.py
+# (conversion) and pdf_formatter.py (formatting) hold their own parallel
+# tables keyed by the same kind names -- pdf_formatter.py is presentation
+# and must not import the core engine, so it cannot import this registry
+# directly. test_wiring.py asserts the three tables agree; a ruleset can
+# never declare a quantity_kind the engine cannot fully handle, because
+# quantity_kind is validated against VALID_QUANTITY_KINDS below.
+QUANTITY_KINDS: dict[str, dict[str, Any]] = {
+    "weight": {
+        "canonical_system": "metric",
+        "systems": {
+            "metric": ("kg",),
+            "imperial": ("st", "lb"),
+        },
+    },
+}
+
+VALID_QUANTITY_KINDS = frozenset(QUANTITY_KINDS)
+
+
+def canonical_system(kind: str) -> str:
+    """The system whose single component is the value stored as-is (no conversion)."""
+    return QUANTITY_KINDS[kind]["canonical_system"]
+
+
+def component_keys(kind: str, system: str) -> tuple[str, ...]:
+    """The ordered component keys a given quantity_kind/system pair is entered as."""
+    return QUANTITY_KINDS[kind]["systems"][system]
 
 
 @cache
@@ -93,23 +124,27 @@ def _validate_number_question(q: dict[str, Any]) -> None:
 
 def _validate_quantity_fields(q: dict[str, Any]) -> None:
     """
-    Validate the unit-toggle fields (quantity / allowed_systems / default_system).
+    Validate the unit-toggle fields (quantity / quantity_kind / allowed_systems /
+    default_system).
 
     These fields are only meaningful together and only on a Number question, so
     they are enforced fail-fast at startup:
 
       - quantity, if present, must be a bool.
-      - When quantity is True: answer_type must be "Number"; allowed_systems must
-        be a non-empty list drawn from VALID_UNIT_SYSTEMS with no duplicates; and
-        default_system must be present and one of allowed_systems.
-      - When quantity is not True: allowed_systems and default_system must be
-        absent, so an author who sets them but forgets the quantity flag (which
-        would otherwise be silently ignored) fails loudly instead. This mirrors
-        the existing "non-encoder question must not have encoder_prompt" rule.
+      - When quantity is True: answer_type must be "Number"; quantity_kind must
+        be present and a member of VALID_QUANTITY_KINDS (the closed set of kinds
+        the engine has complete wiring for); allowed_systems must be a non-empty
+        list drawn from that kind's own systems vocabulary with no duplicates;
+        and default_system must be present and one of allowed_systems.
+      - When quantity is not True: allowed_systems, default_system, and
+        quantity_kind must all be absent, so an author who sets them but forgets
+        the quantity flag (which would otherwise be silently ignored) fails
+        loudly instead. This mirrors the existing "non-encoder question must not
+        have encoder_prompt" rule.
 
     Note: min/max on a quantity question are expressed in the canonical unit
-    (kilograms) and are validated by _validate_number_question like any other
-    Number bound; nothing unit-specific is checked here.
+    for that quantity_kind and are validated by _validate_number_question like
+    any other Number bound; nothing unit-specific is checked here.
     """
     key = q["answer_key"]
     quantity = q.get("quantity")
@@ -121,14 +156,22 @@ def _validate_quantity_fields(q: dict[str, Any]) -> None:
         if q.get("answer_type") != "Number":
             raise ValueError(f"Question '{key}' sets quantity but is not a Number question")
 
+        kind = q.get("quantity_kind")
+        if not isinstance(kind, str) or kind not in VALID_QUANTITY_KINDS:
+            raise ValueError(
+                f"Quantity question '{key}' has invalid or missing quantity_kind: "
+                f"{kind!r}. Allowed: {sorted(VALID_QUANTITY_KINDS)}"
+            )
+        kind_systems = QUANTITY_KINDS[kind]["systems"]
+
         allowed = q.get("allowed_systems")
         if not isinstance(allowed, list) or not allowed:
             raise ValueError(f"Quantity question '{key}' requires a non-empty allowed_systems list")
-        unknown = [s for s in allowed if s not in VALID_UNIT_SYSTEMS]
+        unknown = [s for s in allowed if s not in kind_systems]
         if unknown:
             raise ValueError(
-                f"Quantity question '{key}' has unknown allowed_systems {unknown}; "
-                f"allowed: {sorted(VALID_UNIT_SYSTEMS)}"
+                f"Quantity question '{key}' has unknown allowed_systems {unknown} for "
+                f"quantity_kind '{kind}'; allowed: {sorted(kind_systems)}"
             )
         if len(set(allowed)) != len(allowed):
             raise ValueError(f"Quantity question '{key}' has duplicate allowed_systems: {allowed}")
@@ -140,9 +183,53 @@ def _validate_quantity_fields(q: dict[str, Any]) -> None:
                 f"be one of allowed_systems {allowed}"
             )
     else:
-        for unit_field in ("allowed_systems", "default_system"):
+        for unit_field in ("allowed_systems", "default_system", "quantity_kind"):
             if q.get(unit_field) is not None:
                 raise ValueError(f"Non-quantity question '{key}' must not set {unit_field}")
+
+
+def _validate_shared_toggle_consistency(ruleset: dict[str, Any]) -> None:
+    """
+    All multi-system quantity questions in a ruleset must agree on
+    allowed_systems (compared as sets) and on default_system.
+
+    The client renders a single, form-wide unit toggle that drives every
+    quantity question at once -- there is no per-question toggle (see
+    arch_frontend.md). If two multi-system quantity questions disagreed --
+    say weight offered metric and imperial while height offered metric
+    only -- the shared toggle would render at least one of them in a
+    system it does not accept, giving the patient an unclearable 422.
+    That is a broken deployment and must abort at startup, per the
+    fail-fast invariant, rather than surface at request time.
+
+    Single-system quantity questions are exempt: they sit outside the
+    shared toggle by definition, since there is nothing to toggle.
+    """
+    multi_system_questions = [
+        q
+        for q in ruleset["questions"]
+        if q.get("quantity") is True and len(q.get("allowed_systems") or []) > 1
+    ]
+
+    if len(multi_system_questions) < 2:
+        return
+
+    first = multi_system_questions[0]
+    first_systems = set(first["allowed_systems"])
+    first_default = first["default_system"]
+
+    disagreeing = [
+        q["answer_key"]
+        for q in multi_system_questions[1:]
+        if set(q["allowed_systems"]) != first_systems or q["default_system"] != first_default
+    ]
+
+    if disagreeing:
+        raise ValueError(
+            "Multi-system quantity questions must share the same allowed_systems "
+            "and default_system, since the client renders a single form-wide unit "
+            f"toggle: '{first['answer_key']}' disagrees with {disagreeing}"
+        )
 
 
 def validate_ruleset(ruleset: dict[str, Any]) -> None:
@@ -192,6 +279,8 @@ def validate_ruleset(ruleset: dict[str, Any]) -> None:
                 raise ValueError(
                     f"Non-encoder question must not have encoder_prompt: {q['answer_key']}"
                 )
+
+    _validate_shared_toggle_consistency(ruleset)
 
     if "safety" in ruleset:
         for rule_id, rule in ruleset["safety"]["rules"].items():
