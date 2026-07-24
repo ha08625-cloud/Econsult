@@ -1083,6 +1083,47 @@ def test_metric_quantity_renders_kilograms_verbatim(submission_kwargs):
     assert " lb (" not in pdf_text
 
 
+def test_quantity_dispatches_on_quantity_kind(submission_kwargs):
+    # Proves _format_quantity_answer routes on the sidecar's quantity_kind
+    # rather than always assuming weight -- "weight" is currently the only
+    # registered kind, so this exercises the dispatch path with the same
+    # kind rather than a second one, but it pins the lookup-by-kind behaviour
+    # so a future kind's registration is caught if the dispatch is broken.
+    output = _quantity_output("imperial", "74.8", {"st": 11, "lb": 11})
+    assert output.quantity_answers["patient_weight_kg"]["quantity_kind"] == "weight"
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    assert "11 st 11 lb" in pdf_text
+    assert "74.8 kg" in pdf_text
+
+
+def test_quantity_missing_kind_defaults_to_weight(submission_kwargs):
+    # Backward compatibility: a sidecar entry persisted before quantity_kind
+    # existed has no such key. The dispatcher must default to "weight" and
+    # render exactly as it would if the key were present, so PDF regeneration
+    # from records written before this field was added keeps working.
+    output = ClinicalOutput(
+        condition_id="numeric_capability_demo",
+        free_text="symptoms",
+        additional_text=None,
+        answers={"patient_weight_kg": "74.8"},
+        safety_messages=[],
+        question_labels={"patient_weight_kg": "What is your current weight?"},
+        patient_details=_make_patient(),
+        contact_preferences=None,
+        quantity_answers={
+            "patient_weight_kg": {
+                # quantity_kind deliberately omitted.
+                "raw_components": {"st": 11, "lb": 11},
+                "unit_system": "imperial",
+                "decimal_places": 1,
+            }
+        },
+    )
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    assert "11 st 11 lb" in pdf_text
+    assert "74.8 kg" in pdf_text
+
+
 def test_non_quantity_answer_still_renders_yes_no(submission_kwargs):
     # Regression: a normal boolean answer is unaffected by the quantity branch.
     output = ClinicalOutput(

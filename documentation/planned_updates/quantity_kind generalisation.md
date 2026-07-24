@@ -85,156 +85,6 @@ Component keys are ordered tuples so input order is authored once and shared wit
 
 ---
 
-## Task 1: Ruleset schema, kind registry and data migration
-
-### A. State of the world
-
-Nothing has been completed yet; this is the first task. The engine does not read `quantity_kind` at the end of this task — the validation is purely additive, and the JSON migration lands in the same commit so no ruleset is left invalid.
-
-### B. Files and deliverables
-
-| File | Deliverable |
-| --- | --- |
-| `app/services/engine/ruleset.py` | `QUANTITY_KINDS` registry, `VALID_QUANTITY_KINDS`, two accessors, `quantity_kind` validation, per-kind `allowed_systems` validation, shared-toggle check; `VALID_UNIT_SYSTEMS` deleted |
-| `data/numeric_capability_demo.json` | `"quantity_kind": "weight"` added |
-| `tests/test_ruleset.py` | Existing quantity fixtures updated; new accept/reject cases |
-
-### C. Instructions
-
-**`ruleset.py`**
-
-1. Delete `VALID_UNIT_SYSTEMS`. Add the `QUANTITY_KINDS` registry from design decision 9, `VALID_QUANTITY_KINDS = frozenset(QUANTITY_KINDS)`, and two module-level accessors:
-   - `canonical_system(kind: str) -> str`
-   - `component_keys(kind: str, system: str) -> tuple[str, ...]`
-
-   Document in a module comment that this registry is the single source of truth for kinds and that `form_logic.py` and `pdf_formatter.py` hold parallel tables kept in step by `test_wiring.py`.
-
-2. In `_validate_quantity_fields`, when `quantity is True`:
-   - `quantity_kind` must be present, a string, and in `VALID_QUANTITY_KINDS`. The error must list the allowed kinds.
-   - `allowed_systems` entries must be keys of `QUANTITY_KINDS[kind]["systems"]`, not a global set. Keep the existing non-empty, list-type and duplicate checks unchanged.
-   - `default_system` check is unchanged.
-
-3. In the `else` branch (non-quantity questions), add `quantity_kind` to the list of fields that must be absent, alongside `allowed_systems` and `default_system`. Same rationale as the existing rule: a field set without the flag would be silently ignored.
-
-4. Add `_validate_shared_toggle_consistency(ruleset)` and call it from `validate_ruleset` after the per-question loop. Collect every quantity question with `len(allowed_systems) > 1`. If there are two or more, assert they all share the same `set(allowed_systems)` and the same `default_system`; raise `ValueError` naming the disagreeing `answer_key`s. Questions with exactly one allowed system are excluded. The docstring must state the reason: the client toggle is form-wide, so a mismatch would render a question in a system it rejects and give the patient an unclearable 422.
-
-**`data/numeric_capability_demo.json`**
-
-Add `"quantity_kind": "weight"` to the `patient_weight_kg` question. Before merging, verify against the real `data/` directory that no other ruleset has a `quantity: true` question — startup is fail-fast, so a missed file takes the whole app down on deploy. The project files contain only `general.json` (no Number questions) and `numeric_capability_demo.json`, but the project files may not mirror `data/`.
-
-**`tests/test_ruleset.py`**
-
-5. Every existing `_with(quantity=True, ...)` call must gain `quantity_kind="weight"`. There are roughly ten, at lines 136–216. They will all fail otherwise; this is expected and is the first signal the validation is live.
-
-6. New cases:
-   - accepts a valid quantity question carrying `quantity_kind`
-   - rejects a quantity question with `quantity_kind` missing
-   - rejects an unknown `quantity_kind` (e.g. `"mass"`)
-   - rejects `allowed_systems` containing a value outside the kind's vocabulary (e.g. `["metric", "nautical"]`) — this replaces the existing global-set test
-   - rejects `quantity_kind` set on a non-quantity question
-   - accepts two multi-system quantity questions that agree
-   - rejects two multi-system quantity questions with differing `allowed_systems`
-   - rejects two multi-system quantity questions with differing `default_system`
-   - accepts a single-system quantity question alongside a multi-system one (proves the exemption)
-
-   The last four need a two-question fixture; `_base_ruleset()` has one question, so add a local helper rather than reshaping the existing one.
-
-7. `test_ruleset.py` gains cases: prompt for `arch_testing.md` update at the end of the ticket (Task 5).
-
----
-
-## Task 2: Data model and engine conversion
-
-### A. State of the world
-
-Task 1 is complete: `quantity_kind` is a required, validated field on every quantity question, the registry lives in `ruleset.py`, and the demo ruleset is migrated. Nothing reads `quantity_kind` yet and the unit system is still a form-wide field.
-
-This task moves the unit system onto the answer and makes the conversion path kind-generic. It is behaviour-preserving: identical inputs produce identical canonical values, identical `raw_components`, and an identical PDF.
-
-### B. Files and deliverables
-
-| File | Deliverable |
-| --- | --- |
-| `app/models/runtime_state.py` | `AnswerState.unit_system` added; `RuntimeState.unit_system` removed |
-| `app/services/engine/form_logic.py` | Kind-first conversion via the registry and a converter table; writes the per-answer system |
-| `app/services/engine/serialisation.py` | Client view emits `quantity_kind` and the per-answer system; sidecar gains `quantity_kind` and `unit_system` |
-| `app/models/serialisation_contracts.py` | `ClinicalOutput.unit_system` removed; sidecar docstring updated |
-| `app/utils/pdf_formatter.py` | Call site reads the sidecar; metric-vs-imperial derived from component keys |
-| `app/services/engine/unit_conversion.py` | Module comment only |
-| `tests/test_form_logic.py`, `tests/test_serialisation.py`, `tests/test_pdf_generation.py` | Fixtures and assertions updated |
-
-### C. Instructions
-
-**`runtime_state.py`**
-
-1. Add `unit_system: str | None = None` to `AnswerState`, immediately after `raw_components`, and include it in `to_dict` and in `from_dict` via `d.get("unit_system")` (same convention as `raw_components`). Type it `str | None`, not a `Literal` — systems are per-kind vocabulary now.
-
-2. Extend the `AnswerState` docstring: `unit_system` is `None` for every answer except an answered quantity-bearing Number question, where it records which of the question's `allowed_systems` the patient used. It is the per-answer companion to `raw_components` and is what lets the client view and the clinical record report the patient's unit without a form-level field.
-
-3. Remove `unit_system` from `RuntimeState`: the field, the `to_dict` entry and the `from_dict` line. Persisted states that still carry the key deserialise cleanly because `from_dict` enumerates fields explicitly and ignores extras.
-
-**`form_logic.py`**
-
-4. Delete `_COMPONENT_KEYS`. Import `QUANTITY_KINDS`, `canonical_system` and `component_keys` from `ruleset.py`.
-
-5. Add the converter table, keyed by `(kind, system)` for every non-canonical system:
-
-   ```python
-   _NON_CANONICAL_CONVERTERS: dict[tuple[str, str], Callable[[dict], Decimal]] = {
-       ("weight", "imperial"): lambda c: imperial_weight_to_kg(c["st"], c["lb"]),
-   }
-   ```
-
-   Comment that a new kind registers its conversion function here and its arithmetic in `unit_conversion.py`, and that `test_wiring.py` asserts every non-canonical `(kind, system)` pair has an entry.
-
-6. In `convert_unit_answers`:
-   - read `kind = q["quantity_kind"]` with direct access (validation guarantees presence; a `KeyError` here is a programming error, not client input)
-   - `expected_keys = set(component_keys(kind, system))` replaces the `_COMPONENT_KEYS[system]` lookup
-   - replace the `if system == "metric"` branch with `if system == canonical_system(kind)`. The canonical branch reads the kind's single canonical component key rather than the literal `"kg"`, runs it through `_validate_number_value`, and stores `{key: format(canonical, "f")}` in `raw_components`.
-   - the non-canonical branch looks up `_NON_CANONICAL_CONVERTERS[(kind, system)]`, calls it with the components dict, translates `ValueError` to `AnswerValidationError` as now, and quantizes to `decimal_places`. Persisting whole-number components as ints stays, but generalise it to iterate the kind's component keys instead of naming `st` and `lb`.
-   - replace `runtime.unit_system = system` with `a.unit_system = system`
-
-   Update the docstring: the canonical unit is the question's kind's canonical system, not kilograms; the chosen system is recorded per answer; the closing paragraph about deferred cross-question consistency is replaced by a note that agreement is a client convention enforced at authoring time in `ruleset.py`.
-
-**`unit_conversion.py`**
-
-7. Comment only, no functional change. Note that per-kind dispatch lives in `form_logic._NON_CANONICAL_CONVERTERS` and that a new kind adds its arithmetic here and registers it there.
-
-**`serialisation.py`**
-
-8. In `serialize_client_state`, for a quantity question: emit `question_dict["quantity_kind"] = q["quantity_kind"]`, and build `current_value` from `answer.unit_system` instead of `runtime.unit_system`.
-
-9. In `clinical_output`, each sidecar entry becomes:
-
-   ```python
-   quantity_answers[key] = {
-       "quantity_kind": q["quantity_kind"],
-       "raw_components": a.raw_components,
-       "unit_system": a.unit_system,
-       "decimal_places": q["decimal_places"],
-   }
-   ```
-
-   Remove `unit_system=runtime.unit_system` from the `ClinicalOutput(...)` call. Update the comments that describe the canonical value as kilograms.
-
-**`serialisation_contracts.py`**
-
-10. Remove the `unit_system` field from `ClinicalOutput` and its line in `from_dict`. Update the `quantity_answers` comment to describe the four-key entry shape. Keep `quantity_answers=data.get("quantity_answers") or {}`.
-
-**`pdf_formatter.py`**
-
-11. Change `_format_quantity_answer` to take `(canonical_value, raw_components, decimal_places)` — drop the `unit_system` parameter — and detect imperial by `"st" in raw_components`. Update the call site to stop passing `clinical_output.unit_system`. Comment that the component keys are unambiguous for weight and that this keeps PDF regeneration working for records written before the sidecar carried a system. The internal restructure into a kind-dispatched table is Task 3.
-
-**Tests**
-
-12. `test_form_logic.py`: add `"quantity_kind": "weight"` to `_quantity_ruleset` (line 455). This fixture never calls `validate_ruleset`, so it does not fail in Task 1 — it fails here, when `convert_unit_answers` reads the key. Rewrite the eight `rt.unit_system` assertions (lines 492, 525, 560, 607, 637, 649 and neighbours) to read `rt.answers["weight"].unit_system`.
-
-13. `test_serialisation.py`: add `"quantity_kind": "weight"` to `_quantity_ruleset` (line 149). `_quantity_runtime` (line 173) must set the system on the `AnswerState`, not on `RuntimeState`. Rewrite `test_clinical_output_records_unit_system` (line 266) to assert the sidecar entry, and the `from_dict` round-trip assertions at lines 306 and 331. Add a case asserting the client view emits `quantity_kind`. Check any assertion comparing a whole question dict for equality — the new key will break it.
-
-14. `test_pdf_generation.py`: `_quantity_output` (line 1043) drops the `unit_system=` constructor argument and moves the system into the sidecar entry. The existing imperial and metric rendering assertions must pass unchanged — that is the definition of done for this task.
-
----
-
 ## Task 3: PDF formatter kind dispatch and registry parity test
 
 ### A. State of the world
@@ -412,3 +262,154 @@ All code is complete and CI is green. These are user-maintained documents; the c
 2. Full pytest and vitest suites green.
 3. Deploy to Railway and walk the demo condition end to end in both systems, confirming the PDF renders `"11 st 11 lb (74.8 kg)"` and `"70.5 kg"` exactly as before.
 4. Any submissions persisted in dev or staging before this change: confirm PDF regeneration still succeeds, or clear them. The system is not live, so this is a convenience check rather than a data-integrity one.
+
+
+---
+
+## Task 1: Ruleset schema, kind registry and data migration
+
+### A. State of the world
+
+Nothing has been completed yet; this is the first task. The engine does not read `quantity_kind` at the end of this task — the validation is purely additive, and the JSON migration lands in the same commit so no ruleset is left invalid.
+
+### B. Files and deliverables
+
+| File | Deliverable |
+| --- | --- |
+| `app/services/engine/ruleset.py` | `QUANTITY_KINDS` registry, `VALID_QUANTITY_KINDS`, two accessors, `quantity_kind` validation, per-kind `allowed_systems` validation, shared-toggle check; `VALID_UNIT_SYSTEMS` deleted |
+| `data/numeric_capability_demo.json` | `"quantity_kind": "weight"` added |
+| `tests/test_ruleset.py` | Existing quantity fixtures updated; new accept/reject cases |
+
+### C. Instructions
+
+**`ruleset.py`**
+
+1. Delete `VALID_UNIT_SYSTEMS`. Add the `QUANTITY_KINDS` registry from design decision 9, `VALID_QUANTITY_KINDS = frozenset(QUANTITY_KINDS)`, and two module-level accessors:
+   - `canonical_system(kind: str) -> str`
+   - `component_keys(kind: str, system: str) -> tuple[str, ...]`
+
+   Document in a module comment that this registry is the single source of truth for kinds and that `form_logic.py` and `pdf_formatter.py` hold parallel tables kept in step by `test_wiring.py`.
+
+2. In `_validate_quantity_fields`, when `quantity is True`:
+   - `quantity_kind` must be present, a string, and in `VALID_QUANTITY_KINDS`. The error must list the allowed kinds.
+   - `allowed_systems` entries must be keys of `QUANTITY_KINDS[kind]["systems"]`, not a global set. Keep the existing non-empty, list-type and duplicate checks unchanged.
+   - `default_system` check is unchanged.
+
+3. In the `else` branch (non-quantity questions), add `quantity_kind` to the list of fields that must be absent, alongside `allowed_systems` and `default_system`. Same rationale as the existing rule: a field set without the flag would be silently ignored.
+
+4. Add `_validate_shared_toggle_consistency(ruleset)` and call it from `validate_ruleset` after the per-question loop. Collect every quantity question with `len(allowed_systems) > 1`. If there are two or more, assert they all share the same `set(allowed_systems)` and the same `default_system`; raise `ValueError` naming the disagreeing `answer_key`s. Questions with exactly one allowed system are excluded. The docstring must state the reason: the client toggle is form-wide, so a mismatch would render a question in a system it rejects and give the patient an unclearable 422.
+
+**`data/numeric_capability_demo.json`**
+
+Add `"quantity_kind": "weight"` to the `patient_weight_kg` question. Before merging, verify against the real `data/` directory that no other ruleset has a `quantity: true` question — startup is fail-fast, so a missed file takes the whole app down on deploy. The project files contain only `general.json` (no Number questions) and `numeric_capability_demo.json`, but the project files may not mirror `data/`.
+
+**`tests/test_ruleset.py`**
+
+5. Every existing `_with(quantity=True, ...)` call must gain `quantity_kind="weight"`. There are roughly ten, at lines 136–216. They will all fail otherwise; this is expected and is the first signal the validation is live.
+
+6. New cases:
+   - accepts a valid quantity question carrying `quantity_kind`
+   - rejects a quantity question with `quantity_kind` missing
+   - rejects an unknown `quantity_kind` (e.g. `"mass"`)
+   - rejects `allowed_systems` containing a value outside the kind's vocabulary (e.g. `["metric", "nautical"]`) — this replaces the existing global-set test
+   - rejects `quantity_kind` set on a non-quantity question
+   - accepts two multi-system quantity questions that agree
+   - rejects two multi-system quantity questions with differing `allowed_systems`
+   - rejects two multi-system quantity questions with differing `default_system`
+   - accepts a single-system quantity question alongside a multi-system one (proves the exemption)
+
+   The last four need a two-question fixture; `_base_ruleset()` has one question, so add a local helper rather than reshaping the existing one.
+
+7. `test_ruleset.py` gains cases: prompt for `arch_testing.md` update at the end of the ticket (Task 5).
+
+---
+
+## Task 2: Data model and engine conversion
+
+### A. State of the world
+
+Task 1 is complete: `quantity_kind` is a required, validated field on every quantity question, the registry lives in `ruleset.py`, and the demo ruleset is migrated. Nothing reads `quantity_kind` yet and the unit system is still a form-wide field.
+
+This task moves the unit system onto the answer and makes the conversion path kind-generic. It is behaviour-preserving: identical inputs produce identical canonical values, identical `raw_components`, and an identical PDF.
+
+### B. Files and deliverables
+
+| File | Deliverable |
+| --- | --- |
+| `app/models/runtime_state.py` | `AnswerState.unit_system` added; `RuntimeState.unit_system` removed |
+| `app/services/engine/form_logic.py` | Kind-first conversion via the registry and a converter table; writes the per-answer system |
+| `app/services/engine/serialisation.py` | Client view emits `quantity_kind` and the per-answer system; sidecar gains `quantity_kind` and `unit_system` |
+| `app/models/serialisation_contracts.py` | `ClinicalOutput.unit_system` removed; sidecar docstring updated |
+| `app/utils/pdf_formatter.py` | Call site reads the sidecar; metric-vs-imperial derived from component keys |
+| `app/services/engine/unit_conversion.py` | Module comment only |
+| `tests/test_form_logic.py`, `tests/test_serialisation.py`, `tests/test_pdf_generation.py` | Fixtures and assertions updated |
+
+### C. Instructions
+
+**`runtime_state.py`**
+
+1. Add `unit_system: str | None = None` to `AnswerState`, immediately after `raw_components`, and include it in `to_dict` and in `from_dict` via `d.get("unit_system")` (same convention as `raw_components`). Type it `str | None`, not a `Literal` — systems are per-kind vocabulary now.
+
+2. Extend the `AnswerState` docstring: `unit_system` is `None` for every answer except an answered quantity-bearing Number question, where it records which of the question's `allowed_systems` the patient used. It is the per-answer companion to `raw_components` and is what lets the client view and the clinical record report the patient's unit without a form-level field.
+
+3. Remove `unit_system` from `RuntimeState`: the field, the `to_dict` entry and the `from_dict` line. Persisted states that still carry the key deserialise cleanly because `from_dict` enumerates fields explicitly and ignores extras.
+
+**`form_logic.py`**
+
+4. Delete `_COMPONENT_KEYS`. Import `QUANTITY_KINDS`, `canonical_system` and `component_keys` from `ruleset.py`.
+
+5. Add the converter table, keyed by `(kind, system)` for every non-canonical system:
+
+   ```python
+   _NON_CANONICAL_CONVERTERS: dict[tuple[str, str], Callable[[dict], Decimal]] = {
+       ("weight", "imperial"): lambda c: imperial_weight_to_kg(c["st"], c["lb"]),
+   }
+   ```
+
+   Comment that a new kind registers its conversion function here and its arithmetic in `unit_conversion.py`, and that `test_wiring.py` asserts every non-canonical `(kind, system)` pair has an entry.
+
+6. In `convert_unit_answers`:
+   - read `kind = q["quantity_kind"]` with direct access (validation guarantees presence; a `KeyError` here is a programming error, not client input)
+   - `expected_keys = set(component_keys(kind, system))` replaces the `_COMPONENT_KEYS[system]` lookup
+   - replace the `if system == "metric"` branch with `if system == canonical_system(kind)`. The canonical branch reads the kind's single canonical component key rather than the literal `"kg"`, runs it through `_validate_number_value`, and stores `{key: format(canonical, "f")}` in `raw_components`.
+   - the non-canonical branch looks up `_NON_CANONICAL_CONVERTERS[(kind, system)]`, calls it with the components dict, translates `ValueError` to `AnswerValidationError` as now, and quantizes to `decimal_places`. Persisting whole-number components as ints stays, but generalise it to iterate the kind's component keys instead of naming `st` and `lb`.
+   - replace `runtime.unit_system = system` with `a.unit_system = system`
+
+   Update the docstring: the canonical unit is the question's kind's canonical system, not kilograms; the chosen system is recorded per answer; the closing paragraph about deferred cross-question consistency is replaced by a note that agreement is a client convention enforced at authoring time in `ruleset.py`.
+
+**`unit_conversion.py`**
+
+7. Comment only, no functional change. Note that per-kind dispatch lives in `form_logic._NON_CANONICAL_CONVERTERS` and that a new kind adds its arithmetic here and registers it there.
+
+**`serialisation.py`**
+
+8. In `serialize_client_state`, for a quantity question: emit `question_dict["quantity_kind"] = q["quantity_kind"]`, and build `current_value` from `answer.unit_system` instead of `runtime.unit_system`.
+
+9. In `clinical_output`, each sidecar entry becomes:
+
+   ```python
+   quantity_answers[key] = {
+       "quantity_kind": q["quantity_kind"],
+       "raw_components": a.raw_components,
+       "unit_system": a.unit_system,
+       "decimal_places": q["decimal_places"],
+   }
+   ```
+
+   Remove `unit_system=runtime.unit_system` from the `ClinicalOutput(...)` call. Update the comments that describe the canonical value as kilograms.
+
+**`serialisation_contracts.py`**
+
+10. Remove the `unit_system` field from `ClinicalOutput` and its line in `from_dict`. Update the `quantity_answers` comment to describe the four-key entry shape. Keep `quantity_answers=data.get("quantity_answers") or {}`.
+
+**`pdf_formatter.py`**
+
+11. Change `_format_quantity_answer` to take `(canonical_value, raw_components, decimal_places)` — drop the `unit_system` parameter — and detect imperial by `"st" in raw_components`. Update the call site to stop passing `clinical_output.unit_system`. Comment that the component keys are unambiguous for weight and that this keeps PDF regeneration working for records written before the sidecar carried a system. The internal restructure into a kind-dispatched table is Task 3.
+
+**Tests**
+
+12. `test_form_logic.py`: add `"quantity_kind": "weight"` to `_quantity_ruleset` (line 455). This fixture never calls `validate_ruleset`, so it does not fail in Task 1 — it fails here, when `convert_unit_answers` reads the key. Rewrite the eight `rt.unit_system` assertions (lines 492, 525, 560, 607, 637, 649 and neighbours) to read `rt.answers["weight"].unit_system`.
+
+13. `test_serialisation.py`: add `"quantity_kind": "weight"` to `_quantity_ruleset` (line 149). `_quantity_runtime` (line 173) must set the system on the `AnswerState`, not on `RuntimeState`. Rewrite `test_clinical_output_records_unit_system` (line 266) to assert the sidecar entry, and the `from_dict` round-trip assertions at lines 306 and 331. Add a case asserting the client view emits `quantity_kind`. Check any assertion comparing a whole question dict for equality — the new key will break it.
+
+14. `test_pdf_generation.py`: `_quantity_output` (line 1043) drops the `unit_system=` constructor argument and moves the system into the sidecar entry. The existing imperial and metric rendering assertions must pass unchanged — that is the definition of done for this task.

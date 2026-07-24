@@ -6,8 +6,10 @@ No database access. No imports from routers or delivery service.
 """
 
 import io
+from collections.abc import Callable
 from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
@@ -42,13 +44,15 @@ def _format_kg(canonical_value, decimal_places: int) -> str:
     return format(d.quantize(quantum, rounding=ROUND_HALF_UP), "f")
 
 
-def _format_quantity_answer(canonical_value, raw_components: dict, decimal_places: int) -> str:
+def _format_weight_quantity(canonical_value, sidecar_entry: dict) -> str:
     """
-    Format a quantity (unit-toggle) answer for the document.
+    Format a weight quantity (unit-toggle) answer for the document.
 
-    This is still weight-only (the Task 3 restructure into a kind-dispatched
-    table generalises it); imperial-vs-metric is detected from the raw
-    component keys rather than a passed-in system, which keeps PDF
+    Takes the whole sidecar entry, not just the fields it happens to need
+    today, so this signature does not have to churn as other kinds are
+    added alongside it. It reads raw_components and decimal_places, and
+    ignores unit_system: imperial-vs-metric is detected from the raw
+    component keys rather than the passed-in system, which keeps PDF
     regeneration working for records written before the sidecar carried a
     unit_system at all -- the component keys are unambiguous for weight and
     need no system field to disambiguate.
@@ -58,6 +62,8 @@ def _format_quantity_answer(canonical_value, raw_components: dict, decimal_place
     patient typed directly, e.g. "70.5 kg" -- no parenthetical, since the raw
     input already is the canonical unit.
     """
+    raw_components = sidecar_entry["raw_components"]
+    decimal_places = sidecar_entry["decimal_places"]
     if "st" in raw_components:
         st = raw_components.get("st")
         lb = raw_components.get("lb")
@@ -65,6 +71,30 @@ def _format_quantity_answer(canonical_value, raw_components: dict, decimal_place
         return f"{st} st {lb} lb ({kg_display} kg)"
     # metric: the patient typed kilograms; show them verbatim.
     return f"{raw_components.get('kg')} kg"
+
+
+# Parallel table to ruleset.QUANTITY_KINDS, deliberately not importing it:
+# pdf_formatter.py is presentation and must not import the core engine.
+# test_wiring.py asserts the key sets of the two tables agree.
+_QUANTITY_FORMATTERS: dict[str, Callable[[Any, dict], str]] = {
+    "weight": _format_weight_quantity,
+}
+
+
+def _format_quantity_answer(canonical_value, sidecar_entry: dict) -> str:
+    """
+    Dispatch a quantity (unit-toggle) answer to its kind's formatter.
+
+    quantity_kind defaults to "weight" for sidecar entries persisted before
+    the field was added, following the same .get() convention used for
+    photo_quality_tier elsewhere in this codebase. A KeyError on an
+    unregistered kind is left to propagate: it means the ruleset and the
+    formatter table have drifted apart, which is an internal wiring failure
+    that test_wiring.py should have caught, not bad input to handle gracefully.
+    """
+    kind = sidecar_entry.get("quantity_kind", "weight")
+    formatter = _QUANTITY_FORMATTERS[kind]
+    return formatter(canonical_value, sidecar_entry)
 
 
 def _dob_display(dob_iso: str) -> str:
@@ -346,11 +376,7 @@ def generate_pdf(
         label = clinical_output.question_labels.get(key, key)
         if key in clinical_output.quantity_answers:
             qa = clinical_output.quantity_answers[key]
-            formatted = _format_quantity_answer(
-                value,
-                qa["raw_components"],
-                qa["decimal_places"],
-            )
+            formatted = _format_quantity_answer(value, qa)
         else:
             formatted = _format_answer(value)
         pdf.row(f"{label}:", formatted)

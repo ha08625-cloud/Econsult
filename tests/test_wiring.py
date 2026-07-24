@@ -17,6 +17,17 @@ the existing integration tests that import main (test_public_routes.py,
 test_form_routes.py). Its ruleset-validation phase, however, runs before
 any repository is constructed, so it IS unit-tested below without a
 database.
+
+The quantity_kind registry-parity section below is a different kind of
+wiring test: ruleset.QUANTITY_KINDS, form_logic._NON_CANONICAL_CONVERTERS,
+and pdf_formatter._QUANTITY_FORMATTERS are three tables, in three layers,
+that must agree on the same set of quantity kinds. They cannot import each
+other to enforce this directly -- pdf_formatter.py is presentation and must
+not import the core engine -- so a cross-module test is the only place the
+contract can be checked at all. It lives here, alongside the other
+startup-adjacent contract checks, rather than in test_ruleset.py or
+test_pdf_formatter.py, because it is about agreement between modules, not
+about the behaviour of any one of them.
 """
 
 import dataclasses
@@ -28,7 +39,10 @@ import pytest
 from fastapi import FastAPI
 
 import app.core.dependencies as dependencies
+import app.services.engine.ruleset as ruleset
+import app.utils.pdf_formatter as pdf_formatter
 from app.core.wiring import AppContainer, build_container, unpack_container
+from app.services.engine.form_logic import _NON_CANONICAL_CONVERTERS
 
 
 def _stub_container() -> AppContainer:
@@ -198,3 +212,67 @@ def test_build_container_passes_ruleset_validation_for_valid_rulesets(tmp_path):
         build_container(_settings_for(data_dir))
 
     assert "Ruleset validation failed" not in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# quantity_kind registry parity
+#
+# ruleset.QUANTITY_KINDS is the single source of truth for which quantity
+# kinds exist. form_logic._NON_CANONICAL_CONVERTERS and
+# pdf_formatter._QUANTITY_FORMATTERS are parallel tables in other layers that
+# must stay in step with it. Neither can import ruleset.py to enforce this
+# directly (form_logic.py already does; pdf_formatter.py must not, since
+# presentation must not import the core engine), so this is the only place
+# the three-way contract can be checked. Pulling in pdf_formatter here pulls
+# fpdf into an otherwise dependency-light file, which is acceptable since
+# fpdf is already a hard dependency of the project.
+# ---------------------------------------------------------------------------
+
+
+def test_quantity_kinds_registry_is_non_empty():
+    # Guards against the assertions below becoming vacuous if the registry
+    # were ever emptied.
+    assert len(ruleset.QUANTITY_KINDS) > 0
+
+
+def test_pdf_formatter_table_matches_quantity_kinds_registry():
+    assert set(ruleset.QUANTITY_KINDS) == set(pdf_formatter._QUANTITY_FORMATTERS)
+
+
+def test_every_quantity_kind_canonical_system_is_a_declared_system():
+    for kind in ruleset.QUANTITY_KINDS:
+        canonical = ruleset.canonical_system(kind)
+        assert canonical in ruleset.QUANTITY_KINDS[kind]["systems"], (
+            f"quantity_kind '{kind}' has canonical_system '{canonical}', which "
+            "is not a key of its own systems map."
+        )
+
+
+def test_every_quantity_kind_canonical_system_has_exactly_one_component():
+    # The direct (no-conversion) storage path assumes the canonical system's
+    # value is a single scalar. A compound kind (e.g. blood pressure) needs a
+    # different seam, per design decision 2 in the implementation plan; this
+    # assertion is a tripwire so such a kind cannot be added to the registry
+    # without that seam being built first.
+    for kind in ruleset.QUANTITY_KINDS:
+        canonical = ruleset.canonical_system(kind)
+        components = ruleset.component_keys(kind, canonical)
+        assert len(components) == 1, (
+            f"quantity_kind '{kind}' has canonical system '{canonical}' with "
+            f"{len(components)} components {components}; the canonical system "
+            "must map to exactly one component key."
+        )
+
+
+def test_non_canonical_converters_match_registry_exactly():
+    # Every (kind, system) pair other than the canonical one must have a
+    # converter, and the converter table must contain no pair the registry
+    # does not declare (a stale converter left behind after a kind or system
+    # is removed).
+    expected_pairs = {
+        (kind, system)
+        for kind, spec in ruleset.QUANTITY_KINDS.items()
+        for system in spec["systems"]
+        if system != spec["canonical_system"]
+    }
+    assert set(_NON_CANONICAL_CONVERTERS) == expected_pairs
