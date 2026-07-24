@@ -247,6 +247,7 @@ describe("ReviewScreen", () => {
           required: true,
           suggested: false,
           quantity: true,
+          quantity_kind: "weight",
           allowed_systems: ["metric", "imperial"],
           default_system: "metric",
           decimal_places: 1,

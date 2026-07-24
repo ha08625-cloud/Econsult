@@ -576,6 +576,7 @@ const quantityQuestion = {
   range_warning_text:
     "That weight is outside the usual range. Please check you entered it correctly.",
   quantity: true,
+  quantity_kind: "weight" as const,
   allowed_systems: ["metric", "imperial"],
   default_system: "metric",
 };

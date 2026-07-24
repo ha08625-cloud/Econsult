@@ -85,51 +85,6 @@ Component keys are ordered tuples so input order is authored once and shared wit
 
 ---
 
-## Task 3: PDF formatter kind dispatch and registry parity test
-
-### A. State of the world
-
-Tasks 1 and 2 are complete: the registry and validation are in place, the unit system is per-answer, the sidecar carries `quantity_kind` and `unit_system`, and `form_logic` dispatches per kind. `pdf_formatter._format_quantity_answer` is still a single weight-shaped function.
-
-### B. Files and deliverables
-
-| File | Deliverable |
-| --- | --- |
-| `app/utils/pdf_formatter.py` | `_QUANTITY_FORMATTERS` table; weight logic moved into `_format_weight_quantity` |
-| `tests/test_wiring.py` | Registry parity assertions |
-| `tests/test_pdf_generation.py` | Dispatch case and missing-kind default case |
-
-### C. Instructions
-
-**`pdf_formatter.py`**
-
-1. Rename the existing function to `_format_weight_quantity(canonical_value, sidecar_entry) -> str`, taking the whole sidecar entry so each kind's formatter picks the fields it needs without churning signatures as kinds are added. It reads `raw_components` and `decimal_places`, and detects imperial by the presence of `"st"`. It ignores `unit_system` — the component keys are unambiguous for weight, and this keeps records written before Task 2 rendering correctly.
-
-2. Add `_QUANTITY_FORMATTERS: dict[str, Callable[[Any, dict], str]] = {"weight": _format_weight_quantity}`.
-
-3. `_format_quantity_answer(canonical_value, sidecar_entry)` becomes a thin dispatcher: `kind = sidecar_entry.get("quantity_kind", "weight")`, look up the formatter, call it. Comment the default: it exists for records persisted before the field was added, following the same `.get()` convention as `photo_quality_tier`. A `KeyError` on an unregistered kind is correct — it is an internal wiring failure, not bad input.
-
-4. Update the call site in the answers loop to pass `(value, qa)`.
-
-5. Comment above the table that this is a parallel table to `ruleset.QUANTITY_KINDS`, deliberately not importing it (presentation must not import the core engine), and that `test_wiring.py` asserts they agree.
-
-**`tests/test_wiring.py`**
-
-6. Add a section with these assertions:
-   - `set(ruleset.QUANTITY_KINDS) == set(pdf_formatter._QUANTITY_FORMATTERS)`
-   - for every kind, `canonical_system(kind)` is a key of its `systems` map
-   - for every kind, the canonical system maps to exactly one component key (the direct path assumes a single scalar; a compound kind needs a different seam)
-   - for every `(kind, system)` where `system` is not canonical, `(kind, system)` is in `form_logic._NON_CANONICAL_CONVERTERS`, and the converter table contains no pair outside the registry
-   - the registry is non-empty (guards against the assertions becoming vacuous)
-
-   Extend the module docstring to explain why a presentation-layer formatter table is asserted in a wiring test: the tables cannot import each other without breaching layering, so the test is the only place the contract can be enforced. Note that this pulls `fpdf` into an otherwise dependency-light file, which is acceptable as it is already a hard dependency.
-
-**`tests/test_pdf_generation.py`**
-
-7. Add a case proving dispatch happens on `quantity_kind`, and a case where the sidecar entry omits `quantity_kind` and still renders as weight (the backward-compatibility default).
-
----
-
 ## Task 4: Frontend
 
 ### A. State of the world
@@ -413,3 +368,49 @@ This task moves the unit system onto the answer and makes the conversion path ki
 13. `test_serialisation.py`: add `"quantity_kind": "weight"` to `_quantity_ruleset` (line 149). `_quantity_runtime` (line 173) must set the system on the `AnswerState`, not on `RuntimeState`. Rewrite `test_clinical_output_records_unit_system` (line 266) to assert the sidecar entry, and the `from_dict` round-trip assertions at lines 306 and 331. Add a case asserting the client view emits `quantity_kind`. Check any assertion comparing a whole question dict for equality — the new key will break it.
 
 14. `test_pdf_generation.py`: `_quantity_output` (line 1043) drops the `unit_system=` constructor argument and moves the system into the sidecar entry. The existing imperial and metric rendering assertions must pass unchanged — that is the definition of done for this task.
+
+
+---
+
+## Task 3: PDF formatter kind dispatch and registry parity test
+
+### A. State of the world
+
+Tasks 1 and 2 are complete: the registry and validation are in place, the unit system is per-answer, the sidecar carries `quantity_kind` and `unit_system`, and `form_logic` dispatches per kind. `pdf_formatter._format_quantity_answer` is still a single weight-shaped function.
+
+### B. Files and deliverables
+
+| File | Deliverable |
+| --- | --- |
+| `app/utils/pdf_formatter.py` | `_QUANTITY_FORMATTERS` table; weight logic moved into `_format_weight_quantity` |
+| `tests/test_wiring.py` | Registry parity assertions |
+| `tests/test_pdf_generation.py` | Dispatch case and missing-kind default case |
+
+### C. Instructions
+
+**`pdf_formatter.py`**
+
+1. Rename the existing function to `_format_weight_quantity(canonical_value, sidecar_entry) -> str`, taking the whole sidecar entry so each kind's formatter picks the fields it needs without churning signatures as kinds are added. It reads `raw_components` and `decimal_places`, and detects imperial by the presence of `"st"`. It ignores `unit_system` — the component keys are unambiguous for weight, and this keeps records written before Task 2 rendering correctly.
+
+2. Add `_QUANTITY_FORMATTERS: dict[str, Callable[[Any, dict], str]] = {"weight": _format_weight_quantity}`.
+
+3. `_format_quantity_answer(canonical_value, sidecar_entry)` becomes a thin dispatcher: `kind = sidecar_entry.get("quantity_kind", "weight")`, look up the formatter, call it. Comment the default: it exists for records persisted before the field was added, following the same `.get()` convention as `photo_quality_tier`. A `KeyError` on an unregistered kind is correct — it is an internal wiring failure, not bad input.
+
+4. Update the call site in the answers loop to pass `(value, qa)`.
+
+5. Comment above the table that this is a parallel table to `ruleset.QUANTITY_KINDS`, deliberately not importing it (presentation must not import the core engine), and that `test_wiring.py` asserts they agree.
+
+**`tests/test_wiring.py`**
+
+6. Add a section with these assertions:
+   - `set(ruleset.QUANTITY_KINDS) == set(pdf_formatter._QUANTITY_FORMATTERS)`
+   - for every kind, `canonical_system(kind)` is a key of its `systems` map
+   - for every kind, the canonical system maps to exactly one component key (the direct path assumes a single scalar; a compound kind needs a different seam)
+   - for every `(kind, system)` where `system` is not canonical, `(kind, system)` is in `form_logic._NON_CANONICAL_CONVERTERS`, and the converter table contains no pair outside the registry
+   - the registry is non-empty (guards against the assertions becoming vacuous)
+
+   Extend the module docstring to explain why a presentation-layer formatter table is asserted in a wiring test: the tables cannot import each other without breaching layering, so the test is the only place the contract can be enforced. Note that this pulls `fpdf` into an otherwise dependency-light file, which is acceptable as it is already a hard dependency.
+
+**`tests/test_pdf_generation.py`**
+
+7. Add a case proving dispatch happens on `quantity_kind`, and a case where the sidecar entry omits `quantity_kind` and still renders as weight (the backward-compatibility default).

@@ -7,6 +7,7 @@ import type {
   SafetyMessage,
   ClientAnswerReturn,
   QuantityAnswerPayload,
+  QuantityKind,
   QuantityValueView,
   UnitSystem,
 } from "../types";
@@ -15,7 +16,7 @@ import {
   emptyComponents,
   initialUnitSystem,
   quantityComponentsToNumbers,
-  UNIT_COMPONENTS,
+  QUANTITY_KINDS,
   type EditableAnswers,
 } from "../helpers";
 import {
@@ -34,13 +35,19 @@ const TIER_MAX_COUNT: Record<PhotoTier, number> = {
   standard: 5,
 };
 
-// Labels for quantity (unit-toggle) inputs. Keys match UNIT_COMPONENTS.
+// Labels for quantity (unit-toggle) inputs. Keys match the component keys in
+// helpers.QUANTITY_KINDS. Component keys are unique across kinds in practice,
+// so this stays a single flat table rather than being nested by kind.
 const COMPONENT_LABELS: Record<string, string> = {
   kg: "Kilograms (kg)",
   st: "Stones (st)",
   lb: "Pounds (lb)",
 };
 
+// Stays flat and unnested by kind: with only "weight" registered there is
+// nothing to disambiguate, and this table is exactly what a future ticket
+// relabels (e.g. to drop the unit hints) without touching structure. Do not
+// restructure this alongside a kind addition that doesn't also require it.
 const UNIT_SYSTEM_LABELS: Record<UnitSystem, string> = {
   metric: "Metric (kg)",
   imperial: "Imperial (st, lb)",
@@ -194,12 +201,17 @@ export default function EditScreen({
 
   const hasPrecisionError = Object.keys(numberPrecisionErrors).length > 0;
 
-  function handleComponentChange(answerKey: string, componentKey: string, value: string) {
+  function handleComponentChange(
+    answerKey: string,
+    kind: QuantityKind,
+    componentKey: string,
+    value: string
+  ) {
     const current = editableAnswers[answerKey];
     const base: QuantityValueView =
       current && typeof current === "object"
         ? current
-        : { system: unitSystem, components: emptyComponents(unitSystem) };
+        : { system: unitSystem, components: emptyComponents(kind, unitSystem) };
     onAnswersChange({
       ...editableAnswers,
       [answerKey]: {
@@ -218,7 +230,8 @@ export default function EditScreen({
     const cleared: EditableAnswers = { ...editableAnswers };
     for (const question of clientState.questions) {
       if (question.quantity) {
-        cleared[question.answer_key] = { system: sys, components: emptyComponents(sys) };
+        const kind: QuantityKind = question.quantity_kind ?? "weight";
+        cleared[question.answer_key] = { system: sys, components: emptyComponents(kind, sys) };
       }
     }
     onAnswersChange(cleared);
@@ -458,26 +471,31 @@ export default function EditScreen({
               const precisionError = numberPrecisionErrors[q.answer_key];
 
               if (q.quantity) {
+                const kind: QuantityKind = q.quantity_kind ?? "weight";
+                const kindConfig = QUANTITY_KINDS[kind];
                 const stored = editableAnswers[q.answer_key];
                 const qv: QuantityValueView =
                   stored && typeof stored === "object"
                     ? stored
-                    : { system: unitSystem, components: emptyComponents(unitSystem) };
+                    : { system: unitSystem, components: emptyComponents(kind, unitSystem) };
 
-                // Range notice is metric-only. It is suppressed for imperial
-                // (the kg bounds don't map cleanly onto stones/pounds), which
-                // matches the backend treating range as an advisory client-only
-                // notice rather than a validation rule.
-                const kgStr =
-                  unitSystem === "metric" ? (qv.components["kg"] ?? "").trim() : "";
-                const kgNum = kgStr === "" ? NaN : Number(kgStr);
+                // Range notice is canonical-system-only. It is suppressed for
+                // any other system (bounds don't map cleanly onto non-canonical
+                // components), which matches the backend treating range as an
+                // advisory client-only notice rather than a validation rule.
+                const isCanonicalSystem = unitSystem === kindConfig.canonicalSystem;
+                const canonicalComponentKey = kindConfig.systems[kindConfig.canonicalSystem][0];
+                const canonicalStr = isCanonicalSystem
+                  ? (qv.components[canonicalComponentKey] ?? "").trim()
+                  : "";
+                const canonicalNum = canonicalStr === "" ? NaN : Number(canonicalStr);
                 const showRangeNotice =
-                  unitSystem === "metric" &&
+                  isCanonicalSystem &&
                   q.range_warning_text != null &&
-                  kgStr !== "" &&
-                  !Number.isNaN(kgNum) &&
-                  ((q.min != null && kgNum < q.min) ||
-                    (q.max != null && kgNum > q.max));
+                  canonicalStr !== "" &&
+                  !Number.isNaN(canonicalNum) &&
+                  ((q.min != null && canonicalNum < q.min) ||
+                    (q.max != null && canonicalNum > q.max));
 
                 return (
                   <fieldset
@@ -518,7 +536,7 @@ export default function EditScreen({
                       className="unit-components"
                       style={{ display: "flex", gap: "var(--space-sm)" }}
                     >
-                      {UNIT_COMPONENTS[unitSystem].map((ck) => {
+                      {kindConfig.systems[unitSystem].map((ck) => {
                         const componentId = `question-${q.answer_key}-${ck}`;
                         return (
                           <div key={ck} style={{ flex: 1 }}>
@@ -534,7 +552,7 @@ export default function EditScreen({
                               aria-invalid={!!precisionError}
                               value={qv.components[ck] ?? ""}
                               onChange={(e) =>
-                                handleComponentChange(q.answer_key, ck, e.target.value)
+                                handleComponentChange(q.answer_key, kind, ck, e.target.value)
                               }
                             />
                           </div>

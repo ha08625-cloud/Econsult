@@ -4,6 +4,13 @@ export type AnswerType = "boolean" | "text" | "number";
 
 export type UnitSystem = "metric" | "imperial";
 
+// The clinical quantity a unit-toggle question represents. Only "weight" is
+// registered today (mirrors ruleset.QUANTITY_KINDS on the backend). UnitSystem
+// stays "metric" | "imperial" because that is the system vocabulary of every
+// registered kind today; a kind with its own systems (e.g. a temperature kind
+// using "celsius" | "fahrenheit") would widen UnitSystem rather than replace it.
+export type QuantityKind = "weight";
+
 // Server -> client shape for a quantity (unit-toggle) question's current value.
 // Components are strings, matching the scalar-Number convention: the value is
 // held verbatim in the edit form so trailing-zero precision errors can be
@@ -44,7 +51,10 @@ export interface ClientQuestion {
   // Quantity (unit-toggle) Number questions only. Absent otherwise.
   // allowed_systems lists the systems the patient may choose between;
   // default_system seeds the toggle before any answer is given.
+  // quantity_kind identifies which clinical quantity this is (e.g. "weight"),
+  // which selects the component-key set and formatter to use.
   quantity?: boolean;
+  quantity_kind?: QuantityKind;
   allowed_systems?: UnitSystem[];
   default_system?: UnitSystem;
 }

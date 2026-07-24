@@ -10,7 +10,8 @@ import {
   initialUnitSystem,
   emptyComponents,
   quantityComponentsToNumbers,
-  UNIT_COMPONENTS,
+  QUANTITY_KINDS,
+  QUANTITY_DISPLAY_FORMATTERS,
 } from "./helpers";
 import type { ClientStateView, ClientQuestion, QuantityValueView } from "./types";
 
@@ -43,6 +44,7 @@ const unansweredImperialDefault = mkState([
   mkQuestion({
     answer_key: "weight",
     quantity: true,
+    quantity_kind: "weight",
     default_system: "imperial",
     allowed_systems: ["metric", "imperial"],
     current_value: null,
@@ -53,6 +55,7 @@ const unansweredMetricDefault = mkState([
   mkQuestion({
     answer_key: "weight",
     quantity: true,
+    quantity_kind: "weight",
     default_system: "metric",
     allowed_systems: ["metric", "imperial"],
     current_value: null,
@@ -63,6 +66,7 @@ const answeredImperial = mkState([
   mkQuestion({
     answer_key: "weight",
     quantity: true,
+    quantity_kind: "weight",
     default_system: "metric",
     allowed_systems: ["metric", "imperial"],
     current_value: { system: "imperial", components: { st: "11", lb: "11" } },
@@ -70,23 +74,24 @@ const answeredImperial = mkState([
 ]);
 
 // ---------------------------------------------------------------------------
-// emptyComponents / UNIT_COMPONENTS
+// emptyComponents / QUANTITY_KINDS
 // ---------------------------------------------------------------------------
 
 describe("emptyComponents", () => {
-  it("returns a blank kg for metric", () => {
-    expect(emptyComponents("metric")).toEqual({ kg: "" });
+  it("returns a blank kg for weight/metric", () => {
+    expect(emptyComponents("weight", "metric")).toEqual({ kg: "" });
   });
 
-  it("returns blank st and lb for imperial", () => {
-    expect(emptyComponents("imperial")).toEqual({ st: "", lb: "" });
+  it("returns blank st and lb for weight/imperial", () => {
+    expect(emptyComponents("weight", "imperial")).toEqual({ st: "", lb: "" });
   });
 });
 
-describe("UNIT_COMPONENTS", () => {
-  it("maps each system to its component keys", () => {
-    expect(UNIT_COMPONENTS.metric).toEqual(["kg"]);
-    expect(UNIT_COMPONENTS.imperial).toEqual(["st", "lb"]);
+describe("QUANTITY_KINDS", () => {
+  it("maps weight's canonical system and each system to its component keys", () => {
+    expect(QUANTITY_KINDS.weight.canonicalSystem).toBe("metric");
+    expect(QUANTITY_KINDS.weight.systems.metric).toEqual(["kg"]);
+    expect(QUANTITY_KINDS.weight.systems.imperial).toEqual(["st", "lb"]);
   });
 });
 
@@ -108,6 +113,42 @@ describe("initialUnitSystem", () => {
 
   it("uses the answered system in preference to the default", () => {
     expect(initialUnitSystem(answeredImperial)).toBe("imperial");
+  });
+
+  it("skips a single-system quantity question and falls through to metric", () => {
+    const state = mkState([
+      mkQuestion({
+        answer_key: "weight",
+        quantity: true,
+        quantity_kind: "weight",
+        default_system: "imperial",
+        allowed_systems: ["imperial"],
+        current_value: null,
+      }),
+    ]);
+    expect(initialUnitSystem(state)).toBe("metric");
+  });
+
+  it("skips a single-system quantity question in favour of a later multi-system one", () => {
+    const state = mkState([
+      mkQuestion({
+        answer_key: "single",
+        quantity: true,
+        quantity_kind: "weight",
+        default_system: "imperial",
+        allowed_systems: ["imperial"],
+        current_value: null,
+      }),
+      mkQuestion({
+        answer_key: "weight",
+        quantity: true,
+        quantity_kind: "weight",
+        default_system: "metric",
+        allowed_systems: ["metric", "imperial"],
+        current_value: null,
+      }),
+    ]);
+    expect(initialUnitSystem(state)).toBe("metric");
   });
 });
 
@@ -145,6 +186,7 @@ describe("initialiseEditableAnswers", () => {
       mkQuestion({
         answer_key: "weight",
         quantity: true,
+        quantity_kind: "weight",
         default_system: "metric",
         allowed_systems: ["metric", "imperial"],
         current_value: null,
@@ -168,5 +210,27 @@ describe("quantityComponentsToNumbers", () => {
 
   it("converts a metric decimal component", () => {
     expect(quantityComponentsToNumbers({ kg: "70.5" })).toEqual({ kg: 70.5 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// QUANTITY_DISPLAY_FORMATTERS
+// ---------------------------------------------------------------------------
+
+describe("QUANTITY_DISPLAY_FORMATTERS.weight", () => {
+  it("formats an imperial value as stones and pounds", () => {
+    const formatted = QUANTITY_DISPLAY_FORMATTERS.weight({
+      system: "imperial",
+      components: { st: "11", lb: "11" },
+    });
+    expect(formatted).toBe("11 st 11 lb");
+  });
+
+  it("formats a metric value as kilograms", () => {
+    const formatted = QUANTITY_DISPLAY_FORMATTERS.weight({
+      system: "metric",
+      components: { kg: "70.5" },
+    });
+    expect(formatted).toBe("70.5 kg");
   });
 });

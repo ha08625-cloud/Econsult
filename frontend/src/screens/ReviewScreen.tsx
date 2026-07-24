@@ -1,23 +1,13 @@
 import { PageShell } from "../layout";
-import type {
-  ClientStateView,
-  SafetyMessage,
-  QuantityValueView,
-} from "../types";
+import type { ClientStateView, SafetyMessage } from "../types";
 import type { PhotoAttachment } from "../uiTypes";
+import { QUANTITY_DISPLAY_FORMATTERS } from "../helpers";
 
 // Render a quantity (unit-toggle) answer in the patient's chosen unit, e.g.
-// "11 st 11 lb" or "70.5 kg". This is what the patient typed; the kg conversion
-// for imperial appears on the clinical PDF, not here on the confirmation screen.
-function formatQuantityAnswer(value: QuantityValueView): string {
-  if (value.system === "imperial") {
-    const st = value.components.st ?? "";
-    const lb = value.components.lb ?? "";
-    return `${st} st ${lb} lb`;
-  }
-  const kg = value.components.kg ?? "";
-  return `${kg} kg`;
-}
+// "11 st 11 lb" or "70.5 kg". This is what the patient typed; the canonical
+// conversion appears on the clinical PDF, not here on the confirmation
+// screen. Looked up by quantity_kind, defaulting to "weight" when absent
+// (matches the backend's .get()-style default at the same seam).
 
 interface ReviewScreenProps {
   practiceName: string | null;
@@ -60,7 +50,7 @@ export default function ReviewScreen({
                   Not answered
                 </span>
               ) : q.quantity && typeof q.current_value === "object" ? (
-                formatQuantityAnswer(q.current_value)
+                QUANTITY_DISPLAY_FORMATTERS[q.quantity_kind ?? "weight"](q.current_value)
               ) : q.answer_type === "boolean" ? (
                 q.current_value === true ? "Yes" : "No"
               ) : (
