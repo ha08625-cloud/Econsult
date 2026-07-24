@@ -1050,10 +1050,11 @@ def _quantity_output(unit_system, answer_value, raw_components, decimal_places=1
         question_labels={"patient_weight_kg": "What is your current weight?"},
         patient_details=_make_patient(),
         contact_preferences=None,
-        unit_system=unit_system,
         quantity_answers={
             "patient_weight_kg": {
+                "quantity_kind": "weight",
                 "raw_components": raw_components,
+                "unit_system": unit_system,
                 "decimal_places": decimal_places,
             }
         },

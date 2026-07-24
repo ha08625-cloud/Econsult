@@ -35,11 +35,12 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
     stored string and the client decides when to warn.
 
     A quantity (unit-toggle) Number question additionally carries quantity,
-    allowed_systems and default_system. Its current_value is overridden to
-    {"system", "components"} when answered (else null). Components are emitted as
-    strings -- the same convention as a scalar Number's string current_value --
-    so the client holds them verbatim while editing and converts to JSON numbers
-    only at payload-build time.
+    quantity_kind, allowed_systems and default_system. Its current_value is
+    overridden to {"system", "components"} when answered (else null), built from
+    the answer's own unit_system rather than a form-level field. Components are
+    emitted as strings -- the same convention as a scalar Number's string
+    current_value -- so the client holds them verbatim while editing and
+    converts to JSON numbers only at payload-build time.
     """
 
     questions = []
@@ -64,11 +65,12 @@ def serialize_client_state(runtime: RuntimeState, ruleset: dict, condition_label
 
             if q.get("quantity"):
                 question_dict["quantity"] = True
+                question_dict["quantity_kind"] = q["quantity_kind"]
                 question_dict["allowed_systems"] = q["allowed_systems"]
                 question_dict["default_system"] = q["default_system"]
                 if answer.raw_components is not None:
                     question_dict["current_value"] = {
-                        "system": runtime.unit_system,
+                        "system": answer.unit_system,
                         "components": {k: str(v) for k, v in answer.raw_components.items()},
                     }
                 else:
@@ -95,10 +97,11 @@ def clinical_output(
     """
     question_labels = {q["answer_key"]: q["question"] for q in ruleset["questions"]}
 
-    # Sidecar for quantity (unit-toggle) answers: the lossless raw input plus a
-    # snapshot of decimal_places, so the PDF formatter (which has no ruleset) can
-    # render "11 st 11 lb (74.8 kg)". answers[key] still holds the canonical kg
-    # string for these keys, unchanged.
+    # Sidecar for quantity (unit-toggle) answers: the lossless raw input, the
+    # patient's chosen system, and a snapshot of quantity_kind and
+    # decimal_places, so the PDF formatter (which has no ruleset) can render
+    # "11 st 11 lb (74.8 kg)". answers[key] still holds the canonical value for
+    # these keys, unchanged.
     quantity_answers = {}
     for q in ruleset["questions"]:
         if not q.get("quantity"):
@@ -107,7 +110,9 @@ def clinical_output(
         a = runtime.answers[key]
         if a.raw_components is not None:
             quantity_answers[key] = {
+                "quantity_kind": q["quantity_kind"],
                 "raw_components": a.raw_components,
+                "unit_system": a.unit_system,
                 "decimal_places": q["decimal_places"],
             }
 
@@ -120,7 +125,6 @@ def clinical_output(
         question_labels=question_labels,
         patient_details=patient_details,
         contact_preferences=contact_preferences,
-        unit_system=runtime.unit_system,
         quantity_answers=quantity_answers,
     )
 

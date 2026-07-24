@@ -1,9 +1,10 @@
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from app.models.runtime_state import AnswerState, RuntimeState, SafetyEvaluation
-from app.services.engine.ruleset import ruleset_hash
+from app.services.engine.ruleset import canonical_system, component_keys, ruleset_hash
 from app.services.engine.unit_conversion import imperial_weight_to_kg
 
 
@@ -18,13 +19,13 @@ class AnswerValidationError(ValueError):
     """
 
 
-# Strict component-key sets per unit system. Hardcoded to weight (kilograms, or
-# stones+pounds) because weight is the only quantity kind today. A second
-# quantity type (height, temperature, ...) would drive these from the question's
-# `quantity` value instead; that belongs to the deferred multi-quantity epic.
-_COMPONENT_KEYS = {
-    "metric": {"kg"},
-    "imperial": {"st", "lb"},
+# Conversion functions for every non-canonical (quantity_kind, system) pair.
+# The canonical system for a kind never appears here -- its value is stored
+# as-is (see convert_unit_answers). A new kind registers its conversion
+# function here and its arithmetic in unit_conversion.py; test_wiring.py
+# asserts every non-canonical pair the ruleset registry declares has an entry.
+_NON_CANONICAL_CONVERTERS: dict[tuple[str, str], Callable[[dict], Decimal]] = {
+    ("weight", "imperial"): lambda c: imperial_weight_to_kg(c["st"], c["lb"]),
 }
 
 
@@ -155,9 +156,10 @@ def apply_patient_answers(runtime: RuntimeState, answers: dict[str, Any]) -> Non
 def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
     """
     Resolve quantity-bearing Number answers (those with a unit toggle) from the
-    transient client dict {"system", "components"} into a canonical kilogram
-    Decimal, recording the patient's raw input in raw_components and the chosen
-    system in runtime.unit_system.
+    transient client dict {"system", "components"} into a canonical Decimal in
+    the question's quantity_kind's canonical unit, recording the patient's raw
+    input in raw_components and the chosen system in the answer's own
+    unit_system.
 
     Ordering (enforced by pipeline.apply_update_and_evaluate): runs after
     apply_patient_answers, which placed the dict in a.value, and before
@@ -172,21 +174,23 @@ def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
     Per-question behaviour:
       - Unanswered (a.value is None): skipped, left to validate_required_answers'
         missing-answer check.
-      - Metric: the patient typed kilograms directly, so over-precision is a real
-        input error -- the value goes through the shared number-acceptance ladder
-        and is rejected if it exceeds decimal_places. The canonical value is the
-        typed kilograms.
-      - Imperial: stones and pounds are converted to an exact kg Decimal, then
-        ROUND_HALF_UP to decimal_places. The exact-but-long conversion artifact
-        never persists; raw_components keeps the patient's "11 st 11 lb" as the
-        lossless record.
+      - Canonical system (e.g. metric for weight): the patient typed the
+        canonical unit directly, so over-precision is a real input error -- the
+        value goes through the shared number-acceptance ladder and is rejected
+        if it exceeds decimal_places. The canonical value is the typed amount.
+      - Non-canonical system (e.g. imperial for weight): components are
+        converted to an exact canonical Decimal via the kind's registered
+        converter, then ROUND_HALF_UP to decimal_places. The exact-but-long
+        conversion artifact never persists; raw_components keeps the patient's
+        input (e.g. "11 st 11 lb") as the lossless record.
 
     A malformed payload (wrong dict shape, unknown system, bad component) raises
     AnswerValidationError so the HTTP boundary returns 422.
 
-    With a single quantity question runtime.unit_system is set to that question's
-    chosen system. A form-wide consistency check across multiple quantity
-    questions is intentionally out of scope until a second one exists.
+    The chosen system is recorded on the answer itself (a.unit_system), not on
+    the form. Cross-question agreement that every multi-system quantity
+    question offers the same systems is a client convention, enforced once at
+    startup in ruleset.py -- not a runtime check here.
     """
     questions_by_key = {q["answer_key"]: q for q in ruleset["questions"]}
 
@@ -205,6 +209,7 @@ def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
                 f"Quantity answer {answer_key} must be a {{system, components}} object"
             )
 
+        kind = q["quantity_kind"]
         allowed_systems = q.get("allowed_systems", [])
         system = a.value.get("system")
         if system not in allowed_systems:
@@ -216,10 +221,10 @@ def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
         if not isinstance(components, dict):
             raise AnswerValidationError(f"Quantity answer {answer_key} is missing its components")
 
-        # system is guaranteed to be in _COMPONENT_KEYS: ruleset validation
-        # restricts allowed_systems to the known set, and system is in
-        # allowed_systems by the check above.
-        expected_keys = _COMPONENT_KEYS[system]
+        # system is guaranteed to have known component keys: ruleset validation
+        # restricts allowed_systems to the kind's own systems vocabulary, and
+        # system is in allowed_systems by the check above.
+        expected_keys = set(component_keys(kind, system))
         if set(components.keys()) != expected_keys:
             raise AnswerValidationError(
                 f"Quantity answer {answer_key} for system {system!r} requires "
@@ -228,27 +233,25 @@ def convert_unit_answers(runtime: RuntimeState, ruleset: dict) -> None:
 
         decimal_places = questions_by_key[answer_key]["decimal_places"]
 
-        if system == "metric":
-            kg = components["kg"]
-            _validate_number_value(kg, decimal_places, answer_key)
-            canonical = Decimal(kg)
-            # Persisted kg is a string for the same exactness reason as value.
-            a.raw_components = {"kg": format(canonical, "f")}
-        else:  # imperial
+        if system == canonical_system(kind):
+            (canonical_key,) = component_keys(kind, system)
+            raw_value = components[canonical_key]
+            _validate_number_value(raw_value, decimal_places, answer_key)
+            canonical = Decimal(raw_value)
+            # Persisted as a string for the same exactness reason as value.
+            a.raw_components = {canonical_key: format(canonical, "f")}
+        else:
             try:
-                exact = imperial_weight_to_kg(components["st"], components["lb"])
+                exact = _NON_CANONICAL_CONVERTERS[(kind, system)](components)
             except ValueError as exc:
                 raise AnswerValidationError(f"Quantity answer {answer_key}: {exc}") from exc
             quantum = Decimal(1).scaleb(-decimal_places)
             canonical = exact.quantize(quantum, rounding=ROUND_HALF_UP)
-            # Stones and pounds are whole numbers; persist as ints.
-            a.raw_components = {
-                "st": int(components["st"]),
-                "lb": int(components["lb"]),
-            }
+            # Non-canonical components are whole numbers; persist as ints.
+            a.raw_components = {key: int(components[key]) for key in expected_keys}
 
         a.value = canonical
-        runtime.unit_system = system
+        a.unit_system = system
 
 
 def normalise_encoder_provenance(runtime: RuntimeState) -> None:

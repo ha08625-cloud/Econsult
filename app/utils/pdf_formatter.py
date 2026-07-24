@@ -42,18 +42,23 @@ def _format_kg(canonical_value, decimal_places: int) -> str:
     return format(d.quantize(quantum, rounding=ROUND_HALF_UP), "f")
 
 
-def _format_quantity_answer(
-    canonical_value, raw_components: dict, unit_system: str | None, decimal_places: int
-) -> str:
+def _format_quantity_answer(canonical_value, raw_components: dict, decimal_places: int) -> str:
     """
     Format a quantity (unit-toggle) answer for the document.
+
+    This is still weight-only (the Task 3 restructure into a kind-dispatched
+    table generalises it); imperial-vs-metric is detected from the raw
+    component keys rather than a passed-in system, which keeps PDF
+    regeneration working for records written before the sidecar carried a
+    unit_system at all -- the component keys are unambiguous for weight and
+    need no system field to disambiguate.
 
     Imperial shows the patient's stones and pounds with the converted kilograms
     in parentheses, e.g. "11 st 11 lb (74.8 kg)". Metric shows the kilograms the
     patient typed directly, e.g. "70.5 kg" -- no parenthetical, since the raw
     input already is the canonical unit.
     """
-    if unit_system == "imperial":
+    if "st" in raw_components:
         st = raw_components.get("st")
         lb = raw_components.get("lb")
         kg_display = _format_kg(canonical_value, decimal_places)
@@ -344,7 +349,6 @@ def generate_pdf(
             formatted = _format_quantity_answer(
                 value,
                 qa["raw_components"],
-                clinical_output.unit_system,
                 qa["decimal_places"],
             )
         else:

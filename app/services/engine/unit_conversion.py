@@ -11,6 +11,10 @@ component arrives as a Python int (whole) or Decimal (only if a direct-API
 client sent a fractional literal). Both are accepted for the type check; a
 genuine fractional part is then rejected, because stones and pounds must be
 whole numbers.
+
+Per-quantity-kind dispatch lives in form_logic._NON_CANONICAL_CONVERTERS, keyed
+by (quantity_kind, system); this module holds only the arithmetic. A new
+quantity kind adds its conversion function(s) here and registers them there.
 """
 
 from decimal import Decimal

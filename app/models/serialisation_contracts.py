@@ -26,14 +26,14 @@ class ClinicalOutput:
     question_labels: dict[str, str]  # answer_key -> question text at submission time
     patient_details: PatientDetails
     contact_preferences: dict[str, Any] | None = field(default=None)
-    # The form-wide unit system chosen by the patient, or None for a submission
-    # with no quantity question. answers[key] always holds the canonical kg
-    # string regardless; this records which unit the patient actually used.
-    unit_system: str | None = field(default=None)
-    # Per quantity answer_key: {"raw_components": {...}, "decimal_places": int}.
-    # raw_components is the lossless input ({"kg": "70.5"} or {"st": 11, "lb": 11})
-    # and decimal_places is snapshotted so the PDF (which has no ruleset) can
-    # format the canonical value. One sidecar dict, mirroring question_labels.
+    # Per quantity answer_key: {"quantity_kind": str, "raw_components": {...},
+    # "unit_system": str, "decimal_places": int}. raw_components is the lossless
+    # input ({"kg": "70.5"} or {"st": 11, "lb": 11}); unit_system is which of the
+    # question's allowed_systems the patient used (answers[key] always holds the
+    # canonical value regardless); quantity_kind and decimal_places are
+    # snapshotted so the PDF (which has no ruleset) can format the canonical
+    # value without a form-level unit_system field. One sidecar dict, mirroring
+    # question_labels.
     quantity_answers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
@@ -48,9 +48,11 @@ class ClinicalOutput:
 
         Raises KeyError if required fields are absent, which surfaces the
         schema mismatch as an immediate loud error rather than a silent wrong
-        value. unit_system and quantity_answers are read with .get() so records
-        predating quantity support deserialise cleanly, same as
-        photo_quality_tier on AuditOutput.
+        value. quantity_answers is read with .get() so records predating
+        quantity support deserialise cleanly, same as photo_quality_tier on
+        AuditOutput. A record from before this ticket may still carry a
+        top-level unit_system key; it is simply not read, since data.get(...) on
+        an unlisted key is a no-op.
         """
         patient_details_raw = data["patient_details"]
         patient_details = PatientDetails(
@@ -74,7 +76,6 @@ class ClinicalOutput:
             question_labels=data["question_labels"],
             patient_details=patient_details,
             contact_preferences=data.get("contact_preferences"),
-            unit_system=data.get("unit_system"),
             quantity_answers=data.get("quantity_answers") or {},
         )
 

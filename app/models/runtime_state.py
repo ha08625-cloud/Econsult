@@ -51,6 +51,14 @@ class AnswerState:
         exactness reason as value), while stones and pounds are whole numbers and
         stored as ints ({"st": 11, "lb": 11}). The mixed shape is deliberate.
 
+    unit_system:
+        None for every answer except an answered quantity-bearing Number
+        question, where it records which of the question's allowed_systems the
+        patient used. It is the per-answer companion to raw_components and is
+        what lets the client view and the clinical record report the patient's
+        unit without a form-level field -- the unit system is a property of the
+        answer, not of the form.
+
     change_count:
         Net change events recorded for this answer, accumulated across submits.
         Maintained only for encoder-suggested answers (encoder_value is not
@@ -70,6 +78,7 @@ class AnswerState:
     answer_type: Literal["boolean", "text", "number"]
     change_count: int = 0
     raw_components: dict[str, Any] | None = None
+    unit_system: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -79,6 +88,7 @@ class AnswerState:
             "answer_type": self.answer_type,
             "change_count": self.change_count,
             "raw_components": self.raw_components,
+            "unit_system": self.unit_system,
         }
 
     @classmethod
@@ -94,6 +104,9 @@ class AnswerState:
             # Default to None for the same reason: records predating quantity
             # support have no raw_components key.
             raw_components=d.get("raw_components"),
+            # Default to None for the same reason: records predating this ticket
+            # have no per-answer unit_system key.
+            unit_system=d.get("unit_system"),
         )
 
 
@@ -125,11 +138,6 @@ class RuntimeState:
     answers: dict[str, AnswerState]
     safety_evaluation: SafetyEvaluation
     metadata: dict[str, Any]
-    # The form-wide unit system, set once a quantity-bearing answer is processed
-    # in a submission. None until then. With a single quantity question this is
-    # effectively that question's chosen system; it is a form-level field rather
-    # than per-answer because the toggle is global.
-    unit_system: Literal["metric", "imperial"] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -140,7 +148,6 @@ class RuntimeState:
             "answers": {k: v.to_dict() for k, v in self.answers.items()},
             "safety_evaluation": self.safety_evaluation.to_dict(),
             "metadata": self.metadata,
-            "unit_system": self.unit_system,
         }
 
     @classmethod
@@ -157,7 +164,4 @@ class RuntimeState:
             answers={k: AnswerState.from_dict(v) for k, v in d["answers"].items()},
             safety_evaluation=SafetyEvaluation.from_dict(d["safety_evaluation"]),
             metadata=d["metadata"],
-            # Default to None so records predating quantity support deserialise
-            # cleanly.
-            unit_system=d.get("unit_system"),
         )

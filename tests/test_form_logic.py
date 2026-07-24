@@ -448,7 +448,8 @@ def test_answerstate_from_dict_defaults_missing_change_count_to_zero():
 #
 # Resolves a quantity-bearing Number answer from the transient client dict
 # {"system", "components"} into a canonical kg Decimal, recording raw_components
-# and runtime.unit_system. Metric rejects over-precision; imperial rounds.
+# and the answer's own unit_system. Metric rejects over-precision; imperial
+# rounds.
 # ---------------------------------------------------------------------------
 
 
@@ -467,6 +468,7 @@ def _quantity_ruleset(decimal_places=1, allowed=("metric", "imperial")):
                 "send_to_encoder": False,
                 "encoder_prompt": None,
                 "quantity": True,
+                "quantity_kind": "weight",
                 "allowed_systems": list(allowed),
                 "default_system": "metric",
             }
@@ -489,7 +491,7 @@ def test_convert_metric_decimal():
     a = rt.answers["weight"]
     assert a.value == Decimal("70.5")
     assert a.raw_components == {"kg": "70.5"}
-    assert rt.unit_system == "metric"
+    assert rt.answers["weight"].unit_system == "metric"
 
 
 def test_convert_metric_whole_int_kg():
@@ -522,7 +524,7 @@ def test_convert_imperial_rounds_to_decimal_places():
     a = rt.answers["weight"]
     assert a.value == Decimal("74.8")  # 74.84274105 rounded to 1 dp
     assert a.raw_components == {"st": 11, "lb": 11}
-    assert rt.unit_system == "imperial"
+    assert rt.answers["weight"].unit_system == "imperial"
 
 
 def test_convert_imperial_rounds_half_up_to_whole():
@@ -557,7 +559,7 @@ def test_convert_skips_unanswered():
     rt = _convert(None)
     assert rt.answers["weight"].value is None
     assert rt.answers["weight"].raw_components is None
-    assert rt.unit_system is None
+    assert rt.answers["weight"].unit_system is None
 
 
 def test_convert_rejects_bare_number_for_quantity_question():
@@ -604,7 +606,7 @@ def test_convert_ignores_non_quantity_number_question():
     convert_unit_answers(rt, _number_ruleset(1))
     assert rt.answers["weight"].value == Decimal("70.5")
     assert rt.answers["weight"].raw_components is None
-    assert rt.unit_system is None
+    assert rt.answers["weight"].unit_system is None
 
 
 # ---------------------------------------------------------------------------
@@ -634,7 +636,7 @@ def test_sequence_imperial_end_state():
     assert a.raw_components == {"st": 11, "lb": 11}
     assert a.source == "patient"
     assert a.change_count == 0
-    assert rt.unit_system == "imperial"
+    assert rt.answers["weight"].unit_system == "imperial"
 
 
 def test_sequence_metric_end_state():
@@ -646,7 +648,7 @@ def test_sequence_metric_end_state():
     assert a.value == "70.5"
     assert a.raw_components == {"kg": "70.5"}
     assert a.source == "patient"
-    assert rt.unit_system == "metric"
+    assert rt.answers["weight"].unit_system == "metric"
 
 
 def test_sequence_metric_whole_number_persists_cleanly():

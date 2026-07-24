@@ -162,6 +162,7 @@ def _quantity_ruleset(allowed=("metric", "imperial"), default="metric", decimal_
                 "send_to_encoder": False,
                 "encoder_prompt": None,
                 "quantity": True,
+                "quantity_kind": "weight",
                 "allowed_systems": list(allowed),
                 "default_system": default,
             }
@@ -183,11 +184,11 @@ def _quantity_runtime(value, raw_components, unit_system):
                 encoder_value=None,
                 answer_type="number",
                 raw_components=raw_components,
+                unit_system=unit_system,
             ),
         },
         safety_evaluation=SafetyEvaluation(),
         metadata={},
-        unit_system=unit_system,
     )
 
 
@@ -199,6 +200,7 @@ def test_quantity_question_emits_toggle_fields():
     )
     q = _weight_question(view)
     assert q["quantity"] is True
+    assert q["quantity_kind"] == "weight"
     assert q["allowed_systems"] == ["metric", "imperial"]
     assert q["default_system"] == "metric"
 
@@ -264,12 +266,14 @@ def _patient_details():
 
 
 def test_clinical_output_records_unit_system():
+    # The form-level ClinicalOutput.unit_system field is gone; the patient's
+    # chosen system now lives in the per-answer sidecar entry.
     out = clinical_output(
         _quantity_runtime("74.8", {"st": 11, "lb": 11}, "imperial"),
         _quantity_ruleset(),
         _patient_details(),
     )
-    assert out.unit_system == "imperial"
+    assert out.quantity_answers["weight"]["unit_system"] == "imperial"
 
 
 def test_clinical_output_quantity_answers_sidecar():
@@ -279,7 +283,12 @@ def test_clinical_output_quantity_answers_sidecar():
         _patient_details(),
     )
     assert out.quantity_answers == {
-        "weight": {"raw_components": {"st": 11, "lb": 11}, "decimal_places": 1}
+        "weight": {
+            "quantity_kind": "weight",
+            "raw_components": {"st": 11, "lb": 11},
+            "unit_system": "imperial",
+            "decimal_places": 1,
+        }
     }
 
 
@@ -303,9 +312,13 @@ def test_clinical_output_from_dict_roundtrip_preserves_quantity_fields():
     from dataclasses import asdict
 
     restored = ClinicalOutput.from_dict(asdict(out))
-    assert restored.unit_system == "metric"
     assert restored.quantity_answers == {
-        "weight": {"raw_components": {"kg": "70.5"}, "decimal_places": 1}
+        "weight": {
+            "quantity_kind": "weight",
+            "raw_components": {"kg": "70.5"},
+            "unit_system": "metric",
+            "decimal_places": 1,
+        }
     }
 
 
@@ -328,5 +341,4 @@ def test_clinical_output_from_dict_defaults_for_legacy_record():
         },
     }
     restored = ClinicalOutput.from_dict(legacy)
-    assert restored.unit_system is None
     assert restored.quantity_answers == {}
