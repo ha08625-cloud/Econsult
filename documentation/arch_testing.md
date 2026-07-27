@@ -114,21 +114,20 @@ Runner: `pytest tests/ -m "not integration"`. None of these touch a database or 
 | File | Subject under test | Scope |
 |---|---|---|
 | `test_settings.py` | `app/core/settings.py` | Env requiredness rules, `delivery_mode` selection (complete/partial Mailgun, SMTP, precedence), conditional signing-key rule, `MESH_DELIVERY` exact-value rejection, error message quality. Exercises the real env-sourcing path via monkeypatch from a fully cleared environment. |
-| `test_wiring.py` | `app/core/wiring.py` + `dependencies.py` | Dynamically enumerates every `get_*` getter and pins the getter-to-`AppContainer`-field contract; also pins container frozen-ness and `unpack_container`. |
+| `test_wiring.py` | `app/core/wiring.py` + `dependencies.py`; also `quantity_kind` registry parity | Dynamically enumerates every `get_*` getter and pins the getter-to-`AppContainer`-field contract; also pins container frozen-ness and `unpack_container`. Separately, asserts `ruleset.QUANTITY_KINDS`, `form_logic._NON_CANONICAL_CONVERTERS`, and `pdf_formatter._QUANTITY_FORMATTERS` agree on the same set of kinds, and that each kind's canonical system maps to exactly one component key. This cross-module check lives here rather than in `test_ruleset.py` or `test_pdf_formatter.py` because it is about agreement between layers, not the behaviour of any one of them. |
 | `test_admin_context.py` | `app/core/admin_context.py` | Subprocess import-surface guard: importing `admin_context` must not pull in the repository/service/wiring closure. |
 | `test_email_mode.py` | `app/core/email_mode.py` | Pure predicates for complete/partial Mailgun configuration, called directly with plain arguments (no env plumbing — that is `test_settings.py`'s concern). |
 | `test_upload_constants.py` | `app/core/upload_constants.py` | JSON-backed constants load with the expected names, types, and values. |
-| `test_availability_service.py` | `app/services/admin/availability_service.py` | `MAX_AVAILABILITY_MESSAGE_LENGTH` checks on `validate_availability_config` and `validate_override`; `evaluate_availability`'s fallback to the weekly schedule on malformed `custom_hours` exception rows (three malformed shapes × weekly-open/weekly-closed outcomes, plus a `caplog` warning assertion). Deliberately excludes day/time validation and well-formed evaluation paths, covered indirectly via `test_admin_availability_router.py`. |
 | `test_form_logic.py` | `engine/form_logic` | Number answer validation and normalisation tiers; answer provenance (`apply_patient_answers` deriving `source`, idempotency, `normalise_encoder_provenance` promotion and selectivity). |
 | `test_projection.py` | `engine/projection` | Locks `EXPLICIT_SOURCES` membership and the `None`-projection of every excluded source (raw `encoder`, `unanswered`). |
 | `test_ruleset.py` | `engine/ruleset` | Fail-fast startup validation of Number-question and `answer_type` configuration (quantity/unit-system rules); `load_ruleset` per-path caching. |
-| `test_serialisation.py` | `engine/serialisation` | Number-field passthrough in the client view (`decimal_places`/min/max/warning text), omission for other types, `current_value` as stored string; `change_count` surfaces only in `AuditOutput`. |
+| `test_serialisation.py` | `engine/serialisation` | Number-field passthrough in the client view (`decimal_places`/min/max/warning text), omission for other types, `current_value` as stored string; `change_count` surfaces only in `AuditOutput`. Quantity coverage: toggle fields on the client view, `current_value` as `{system, components}` with string components for both systems, null-but-present shape when unanswered, the `quantity_answers` sidecar on `ClinicalOutput`, and `from_dict` round-tripping the sidecar's four keys (`quantity_kind`, `raw_components`, `unit_system`, `decimal_places`). |
 | `test_unit_conversion.py` | `engine/unit_conversion` | Exactness of `imperial_weight_to_kg` and the whole/non-negative component guards (raises `ValueError`; domain translation happens in `form_logic`). |
 | `test_request_validation.py` | `request_validation.validate_patient_details` | All validation paths: DOB numeric checks and calendar assembly, future-date rejection, postcode format, submitter conditionals, gender/`nhs_number`/`preferred_name`. |
 | `test_sanitise_signposting.py` | `practice_repository.sanitise_signposting_html` | nh3-based HTML sanitisation accept/reject cases. Requires `nh3` installed. |
 | `test_practice_endpoint.py` | `public_router` `GET /practice` | Endpoint behaviour with a stub practice repo on a bare FastAPI app. |
 | `test_image_sanitizer.py` | `utils/image_sanitizer` | JPEG passthrough, PNG-to-JPEG normalisation, EXIF stripping, truncated/garbage input rejection, standard/high tier encodes, no upscaling within bounds. |
-| `test_pdf_generation.py` | `utils/pdf_formatter.generate_pdf` | PDF output structure assertions. Home of the shared `MINIMAL_JPEG` fixture (see Design Decisions). |
+| `test_pdf_formatter.py` | `utils/pdf_formatter.generate_pdf` | PDF output structure assertions. Home of the shared `MINIMAL_JPEG` fixture (see Design Decisions). Quantity coverage: imperial renders stones/pounds with a parenthetical kg conversion, zero-`decimal_places` rounding, metric renders the typed kilograms verbatim, formatter dispatch on `quantity_kind`, and a missing `quantity_kind` in a persisted sidecar entry defaulting to `"weight"`. This file was renamed from `test_pdf_generation.py`; if any import still references the old module path, that is a bug, not a stale doc. |
 | `test_delivery_service.py` | `delivery_service` | Static email body format; SMTP and Mailgun HTTP implementations; configuration validation, provider message-ID extraction, PDF attachment handling, error cases. |
 | `test_delivery_worker.py` | `delivery_worker` loop | One-job-per-iteration processing with all dependencies faked and `time.sleep` patched; provider-ID branching (`str` result marks accepted, `None` follows the legacy SMTP path). |
 | `test_pdf_worker.py` | `pdf_worker` loop | Successful job ordering (attachment UPSERT, downstream enqueue, mark done), photo-count mismatch failure, UPSERT idempotency. Mocked dependencies, patched sleep. |
@@ -182,7 +181,7 @@ Runner: Vitest (jsdom). Screen tests live in `frontend/src/screens/`; module tes
 | `screens/SelectConditionScreen.test.tsx` | `SelectConditionScreen` | Condition list rendering, search, and selection. |
 | `screens/FreeTextScreen.test.tsx` | `FreeTextScreen` | Free-text entry and the `initForm` call path (helpers mocked). |
 | `screens/EditScreen.test.tsx` | `EditScreen` | Answer editing against `ClientStateView`, `updateForm` call path, photo tier handling. |
-| `screens/ReviewScreen.test.tsx` | `ReviewScreen` | Review rendering of client state, safety messages, and photo attachments. |
+| `screens/ReviewScreen.test.tsx` | `ReviewScreen` | Review rendering of client state, safety messages, and photo attachments. Quantity coverage: imperial and metric display formatting via `QUANTITY_DISPLAY_FORMATTERS[quantity_kind]`, and the unanswered ("Not answered") case. |
 | `screens/ContactScreen.test.tsx` | `ContactScreen` | Contact detail entry and the `finishForm` submission path. |
 | `screens/DoneScreen.test.tsx` | `DoneScreen` | Confirmation rendering including icon accessibility (`aria-hidden`) and the practice-was-closed variant. |
 
@@ -218,11 +217,8 @@ Current Alembic migrations:
 - `0001_initial_schema.py` — creates the complete baseline schema.
 - `0002_user_management_cascade.py` — adds `ON DELETE CASCADE` to `admin_sessions.user_id` FK and adds `admin_users.last_login` (nullable `TIMESTAMPTZ`).
 - `0003_webhook_tracking.py` — adds `provider_message_id` and `provider_events` to `delivery_jobs`, extends the status check constraint, and creates the `webhook_tokens` replay protection table.
-- `0004_password_auth.py` — adds password columns (`hashed_password`, `failed_password_attempts`, `password_locked_until`, `password_changed_at`) to `admin_users`; creates `admin_password_reset_tokens`.
-- `0005_mesh_schema.py` — creates `mesh_jobs` (outbound MESH delivery queue); adds `delivery_jobs.is_fallback`.
-- `0006_availability_exception_constraint.py` — adds CHECK constraints backstopping the app-layer time invariants on `practice_availability` (`open_time < close_time`) and `practice_availability_exceptions` (`exception_type` tied to time-column nullability and ordering).
 
-See `file_structure.md` for the full per-migration detail; this list exists here only so the obligation below is self-contained. New schema changes should be added as further numbered migrations (`0007_...` etc.) rather than modifying existing ones, now that real data is involved.
+New schema changes should be added as further numbered migrations (`0004_...` etc.) rather than modifying existing ones, now that real data is involved.
 
 When the schema changes, the test database on Railway must be updated to match. Because the test database is not deployed to automatically, run:
 
@@ -287,7 +283,7 @@ Vitest requires the working directory to be `frontend/` so it resolves `vitest.c
 When `delivery_worker.py` imports `attempt_delivery` at the top of the file, Python binds the name in `delivery_worker`'s module namespace. Patching `delivery_orchestration.attempt_delivery` replaces the object in the source module but `delivery_worker` still holds the original reference. Patching `delivery_worker.attempt_delivery` intercepts all calls made by the worker. This is standard Python mock patching behaviour and is documented in the test file itself.
 
 ### MINIMAL_JPEG shared fixture
-`MINIMAL_JPEG` is a module-level constant in `tests/test_pdf_generation.py`. Any test that needs a valid JPEG — for PDF generation tests or for multipart upload tests — should import it from there rather than duplicating the bytes. Do not define it in more than one place.
+`MINIMAL_JPEG` is a module-level constant in `tests/test_pdf_formatter.py` (renamed from `test_pdf_generation.py`). Any test that needs a valid JPEG — for PDF generation tests or for multipart upload tests — should import it from there rather than duplicating the bytes. Do not define it in more than one place. `test_form_routes.py` and `test_image_sanitizer.py` must import `MINIMAL_JPEG` from `tests.test_pdf_formatter`; an import from `tests.test_pdf_generation` will fail collection now that the module has been renamed.
 
 ### Why does conftest.py reset the rate limiter before every test?
 The SlowAPI `Limiter` instance in `app/core/rate_limit.py` is module-level and uses in-memory storage. Its counters persist across test boundaries within a single pytest session. Any test class that fires multiple requests to a rate-limited endpoint (such as `TestMFARateLimiting`) would contaminate later tests that simulate normal single-request traffic, causing spurious 429 failures. The `autouse=True` fixture in `conftest.py` resets the storage before and after every test, making each test independent of request history from previous tests.
