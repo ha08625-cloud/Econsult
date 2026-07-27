@@ -46,6 +46,7 @@ from app.core.errors import (
     VERSION_CONFLICT,
     ConditionNotFound,
 )
+from app.core.max_body_size_route import MaxBodySizeRoute
 from app.core.rate_limit import limiter
 from app.core.request_validation import (
     validate_finish_payload,
@@ -78,10 +79,11 @@ logger = logging.getLogger(__name__)
 # form_init and form_update read a JSON body via read_json_body(request), which
 # requires route_class=BodyCapturingRoute. form_finish is exempt (D9): capturing
 # the raw body of a multipart upload would double-buffer up to ~6.3 MB of photo
-# data alongside FastAPI's own parsed Form/File data. It stays on a plain
-# APIRouter and is mounted into `router` below so main.py's single
-# `include_router(form_router)` still picks up all three routes.
-router = APIRouter()
+# data alongside FastAPI's own parsed Form/File data. It instead uses
+# MaxBodySizeRoute (a Content-Length pre-check, not a body-capturing one) and
+# is mounted into `router` below so main.py's single `include_router(form_router)`
+# still picks up all three routes.
+router = APIRouter(route_class=MaxBodySizeRoute)
 _body_capturing_router = APIRouter(route_class=BodyCapturingRoute)
 
 _VALID_TIERS = {"high", "standard"}
@@ -269,9 +271,14 @@ def form_finish(
     data = json.loads(payload)
     validate_finish_payload(data)
 
+    # Count check runs before any bytes are read. FastAPI does not enforce
+    # count limits on list[UploadFile], and reading N files into memory only
+    # to reject the request on count afterwards defeats the point of a count
+    # limit -- this is the primary enforcement point, not a redundant safety net.
+    if len(photos) > MAX_FILE_COUNT:
+        raise INVALID_PAYLOAD(f"Too many photos: maximum is {MAX_FILE_COUNT}")
+
     # Read all photo bytes and enforce size limits before any database access.
-    # FastAPI does not enforce count limits on list[UploadFile], so the count
-    # check here is the primary enforcement point, not a redundant safety net.
     photo_bytes = [f.file.read() for f in photos] if photos else []
 
     for i, b in enumerate(photo_bytes):
@@ -279,8 +286,6 @@ def form_finish(
             raise INVALID_PAYLOAD(f"Photo {i + 1} exceeds the {MAX_FILE_SIZE_BYTES} byte limit")
     if sum(len(b) for b in photo_bytes) > MAX_TOTAL_SIZE_BYTES:
         raise INVALID_PAYLOAD(f"Combined photo size exceeds the {MAX_TOTAL_SIZE_BYTES} byte limit")
-    if len(photo_bytes) > MAX_FILE_COUNT:
-        raise INVALID_PAYLOAD(f"Too many photos: maximum is {MAX_FILE_COUNT}")
 
     # Tier validation.
     #
