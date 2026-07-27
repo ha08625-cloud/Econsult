@@ -97,6 +97,21 @@ def _format_quantity_answer(canonical_value, sidecar_entry: dict) -> str:
     return formatter(canonical_value, sidecar_entry)
 
 
+def _format_display_value(value, quantity_entry: dict | None) -> str:
+    """
+    Render one answer for display, dispatching to the quantity formatter when
+    the answer has a sidecar entry.
+
+    Both the CLINICAL SUMMARY block and the ANSWERS section call this, so the
+    two can never disagree about the same answer -- in particular, a quantity
+    answer carries its units in both places rather than appearing as a bare
+    canonical number in the summary.
+    """
+    if quantity_entry is not None:
+        return _format_quantity_answer(value, quantity_entry)
+    return _format_answer(value)
+
+
 def _dob_display(dob_iso: str) -> str:
     """
     Convert ISO date string "YYYY-MM-DD" to "15 March 1990".
@@ -370,15 +385,27 @@ def generate_pdf(
     pdf.section_heading("PATIENT DESCRIPTION")
     pdf.body_text_indented(clinical_output.free_text or "(none provided)")
 
+    # --- Clinical summary ---
+    # A scannable at-a-glance block of the findings the ruleset author marked
+    # with pdf_label, in ruleset question order. Renders only when the ruleset
+    # carries at least one label, so a ruleset with none produces the same
+    # document as before this section existed. Negatives are included by design
+    # (see arch_submission.md): "asked and excluded" is a clinically different
+    # fact from "not mentioned".
+    if clinical_output.pdf_labels:
+        pdf.section_heading("CLINICAL SUMMARY")
+        for answer_key, short_label in clinical_output.pdf_labels.items():
+            formatted = _format_display_value(
+                clinical_output.answers.get(answer_key),
+                clinical_output.quantity_answers.get(answer_key),
+            )
+            pdf.row(f"{short_label}:", formatted)
+
     # --- Answers ---
     pdf.section_heading("ANSWERS")
     for key, value in clinical_output.answers.items():
         label = clinical_output.question_labels.get(key, key)
-        if key in clinical_output.quantity_answers:
-            qa = clinical_output.quantity_answers[key]
-            formatted = _format_quantity_answer(value, qa)
-        else:
-            formatted = _format_answer(value)
+        formatted = _format_display_value(value, clinical_output.quantity_answers.get(key))
         pdf.row(f"{label}:", formatted)
 
     # --- Additional information ---
