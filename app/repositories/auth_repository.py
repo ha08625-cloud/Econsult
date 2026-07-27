@@ -513,6 +513,28 @@ class AuthRepository:
             row = cur.fetchone()
         return dict(row) if row is not None else None
 
+    def update_session_expiry(self, session_id: str, ttl_minutes: int) -> None:
+        """
+        Extend the session's expires_at to ttl_minutes from now.
+
+        Implements the sliding-window TTL: called by require_admin on every
+        authenticated request so an active session never lapses. Time
+        arithmetic is done on the DB clock via make_interval, consistent
+        with get_session_context's expiry comparison. No conn parameter —
+        this is a fire-and-forget refresh that never joins another
+        transaction. Idempotent, no-ops silently if the session does not
+        exist (e.g. it expired or was deleted between validation and here).
+        """
+        with get_conn(self.database_url) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE admin_sessions
+                SET expires_at = NOW() + make_interval(mins => %s)
+                WHERE session_id = %s::uuid
+                """,
+                (ttl_minutes, session_id),
+            )
+
     def delete_session(self, session_id: str) -> None:
         """
         Delete the session with the given session_id.
