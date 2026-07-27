@@ -53,7 +53,7 @@ All fast checks (user lookup, cooldown, lockout, no-password guard) are evaluate
 - An attacker cannot distinguish "user not found" from "wrong password" via response time (the dummy bcrypt runs in the same CPU time as the real one).
 - The minimum 300ms window is always measured from before bcrypt, so bcrypt's CPU cost is inside the window, not additional to it.
 
-Uses `time.sleep` (not `asyncio.sleep`) because all repository calls are synchronous psycopg2. Revisit with `run_in_executor` if concurrent load becomes a concern.
+Uses `time.sleep` (not `asyncio.sleep`) because all repository calls are synchronous psycopg2. The router (`admin_auth_router.py`) calls these `auth_service` entry points via `run_in_threadpool`, so `time.sleep` is correct and must stay — the 300ms floor is measured on wall-clock time via `time.monotonic()`, which is unaffected by which thread it runs on.
 
 ---
 
@@ -117,6 +117,12 @@ All endpoints in `public_router.py` and `form_router.py` are decorated with `@li
 ### Storage and IP extraction
 
 In-memory storage (`limits.storage.MemoryStorage`) is used deliberately — single worker, no Redis overhead. `extract_ip` from `http_utils.py` is used as the key function to correctly handle Railway's reverse proxy headers.
+
+**Trust model.** Proxies *append* to `X-Forwarded-For`, so the leftmost entry is whatever the client sent — attacker-controlled — and the trustworthy entry is at the right end. `extract_ip` walks the header right to left and returns the first entry that parses as an IP address and is globally routable (`ipaddress.ip_address(s).is_global`), which correctly excludes Railway's private internal-network addresses (`10.0.0.0/8`, `fd00::/8`) along with loopback, link-local, CGNAT, and documentation ranges. This needs no configured hop count: it is robust to Railway changing its internal topology, and an attacker cannot defeat it because they cannot inject an entry to the right of the one Railway appends. If no entry qualifies, `x-real-ip` is tried, then the raw `client_host`. The one thing that breaks this: a CDN placed in front of Railway, whose public IP would become the rightmost globally-routable entry (see `docs/deployment_checklist.md`).
+
+Uvicorn's `ProxyHeadersMiddleware` is deliberately left at its defaults. `FORWARDED_ALLOW_IPS="*"` must **not** be set — it enables uvicorn's `always_trust` path, which returns the *leftmost* `X-Forwarded-For` entry and would silently reintroduce the exact spoofing bug this trust model fixes. Keeping resolution entirely inside `extract_ip` means the app stays correct even if that variable is set later.
+
+**Degraded-state detection.** If resolution falls all the way through to `client_host`, that value is the Railway proxy — identical for every client — so every caller would collapse into one rate-limit bucket, turning the 5/minute admin auth limit into a global one. `_ip_key` in `rate_limit.py` logs an ERROR when the resolved IP equals `request.client.host`, which is the signature of this failure. Absence of that log confirms IP resolution is working as designed.
 
 ### Error envelope
 

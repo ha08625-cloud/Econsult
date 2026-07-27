@@ -175,6 +175,12 @@ Do not proceed until this command exits with `Startup OK`.
 
 ---
 
+## 6a. Proxy Assumption — Do Not Put a CDN in Front of Railway
+
+Client IP resolution (`extract_ip` in `app/utils/http_utils.py`, see `docs/arch_security.md` §6) assumes Railway's edge is the **only** proxy in front of the app. It trusts the rightmost globally-routable address in `X-Forwarded-For`. If a CDN (Cloudflare, Fastly, etc.) is placed in front of Railway, the CDN's own public IP becomes the rightmost globally-routable entry in the header Railway forwards, and `extract_ip` would trust that instead of the real client IP. This silently breaks per-IP rate limiting and records the CDN's IP in the audit log for every admin action. Do not add a CDN without revisiting `extract_ip`.
+
+---
+
 ## 7. First Login
 
 Once the application is running:

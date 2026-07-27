@@ -484,7 +484,7 @@ async def set_password(
 
 
 @router.post("/auth/logout", status_code=200)
-async def logout(
+def logout(
     request: Request,
     auth_repo=Depends(get_auth_repo),
     audit_repo=Depends(get_audit_repo),

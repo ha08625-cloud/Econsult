@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 @router.get("/audit-log")
-async def get_audit_log(
+def get_audit_log(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     audit_repo=Depends(get_audit_repo),
