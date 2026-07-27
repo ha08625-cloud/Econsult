@@ -7,6 +7,7 @@ read_json_body's named error, not a bare AttributeError.
 """
 
 import unittest
+from decimal import Decimal
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.testclient import TestClient
@@ -70,6 +71,37 @@ class TestReadJsonBodyWithCapturingRoute(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 422)
         self.assertEqual(res.json()["error"]["code"], "INVALID_PAYLOAD")
+
+
+class TestReadJsonBodyParseFloat(unittest.TestCase):
+    """
+    Pins form_update's Decimal requirement: read_json_body(request,
+    parse_float=Decimal) must parse Number fields as exact Decimals rather
+    than lossy floats.
+    """
+
+    def test_parse_float_decimal_is_exact(self):
+        app = FastAPI()
+        _register_error_handlers(app)
+        router = APIRouter(route_class=BodyCapturingRoute)
+
+        captured = {}
+
+        @router.post("/echo")
+        def echo(request: Request):
+            body = read_json_body(request, parse_float=Decimal)
+            captured["weight"] = body["weight"]
+            return {"ok": True}
+
+        app.include_router(router)
+        client = TestClient(app, raise_server_exceptions=True)
+
+        res = client.post(
+            "/echo", content=b'{"weight": 70.15}', headers={"content-type": "application/json"}
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(captured["weight"], Decimal("70.15"))
+        self.assertIsInstance(captured["weight"], Decimal)
 
 
 if __name__ == "__main__":

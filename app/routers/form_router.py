@@ -27,8 +27,8 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
-from starlette.concurrency import run_in_threadpool
 
+from app.core.body_capture import BodyCapturingRoute, read_json_body
 from app.core.dependencies import (
     get_availability_repo,
     get_pdf_repo,
@@ -75,7 +75,14 @@ from app.utils.image_sanitizer import ImageTooLargeError, sanitize_image
 
 logger = logging.getLogger(__name__)
 
+# form_init and form_update read a JSON body via read_json_body(request), which
+# requires route_class=BodyCapturingRoute. form_finish is exempt (D9): capturing
+# the raw body of a multipart upload would double-buffer up to ~6.3 MB of photo
+# data alongside FastAPI's own parsed Form/File data. It stays on a plain
+# APIRouter and is mounted into `router` below so main.py's single
+# `include_router(form_router)` still picks up all three routes.
 router = APIRouter()
+_body_capturing_router = APIRouter(route_class=BodyCapturingRoute)
 
 _VALID_TIERS = {"high", "standard"}
 
@@ -84,12 +91,12 @@ def _sanitize_photos(photo_bytes: list[bytes], tier: str) -> list[bytes]:
     """
     Sanitize each photo via sanitize_image, translating failures to HTTPException.
 
-    Runs on the loop's threadpool via run_in_threadpool, not on the event loop
-    directly — the CDR passes (up to three full decode/resize/re-encode cycles
-    per photo at the "high" tier) are CPU-bound and can take seconds. It
+    Called directly from form_finish, itself a plain `def` dispatched onto the
+    anyio threadpool — the CDR passes (up to three full decode/resize/re-encode
+    cycles per photo at the "high" tier) are CPU-bound and can take seconds. It
     deliberately raises HTTPException despite looking otherwise pure: this is
-    safe because run_in_threadpool propagates exceptions from the worker
-    thread back to the caller unchanged.
+    safe because exceptions raised on a threadpool worker propagate back to the
+    caller unchanged.
     """
     sanitized = []
     for i, b in enumerate(photo_bytes):
@@ -107,9 +114,9 @@ def _sanitize_photos(photo_bytes: list[bytes], tier: str) -> list[bytes]:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/form/init")
+@_body_capturing_router.post("/form/init")
 @limiter.limit("30/minute")
-async def form_init(
+def form_init(
     request: Request,
     registry=Depends(get_registry),
     runtime_repo=Depends(get_runtime_repo),
@@ -131,7 +138,7 @@ async def form_init(
             "Availability check failed during form/init — proceeding as open (fail-open)"
         )
 
-    payload = await request.json()
+    payload = read_json_body(request)
     validate_init_payload(payload)
 
     condition_id = payload["condition_id"]
@@ -171,19 +178,19 @@ async def form_init(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/form/update")
+@_body_capturing_router.post("/form/update")
 @limiter.limit("30/minute")
-async def form_update(
+def form_update(
     request: Request,
     registry=Depends(get_registry),
     runtime_repo=Depends(get_runtime_repo),
 ):
-    # Parse with parse_float=Decimal (Starlette's request.json() cannot pass it)
-    # so Number answers arrive as exact Decimals rather than lossy floats. The
-    # only float-bearing field in this payload is "answers"; runtime_id and
-    # additional_text are strings and base_version is an integer token.
-    raw_body = await request.body()
-    payload = json.loads(raw_body, parse_float=Decimal)
+    # Parse with parse_float=Decimal (json.loads(..., parse_float=...) has no
+    # equivalent via request.json()) so Number answers arrive as exact Decimals
+    # rather than lossy floats. The only float-bearing field in this payload is
+    # "answers"; runtime_id and additional_text are strings and base_version is
+    # an integer token.
+    payload = read_json_body(request, parse_float=Decimal)
     validate_update_payload(payload)
 
     runtime_id = payload["runtime_id"]
@@ -247,7 +254,7 @@ async def form_update(
 
 @router.post("/form/finish")
 @limiter.limit("30/minute")
-async def form_finish(
+def form_finish(
     request: Request,
     payload: str = Form(...),
     photos: list[UploadFile] = File(default=[]),
@@ -265,7 +272,7 @@ async def form_finish(
     # Read all photo bytes and enforce size limits before any database access.
     # FastAPI does not enforce count limits on list[UploadFile], so the count
     # check here is the primary enforcement point, not a redundant safety net.
-    photo_bytes = [await f.read() for f in photos] if photos else []
+    photo_bytes = [f.file.read() for f in photos] if photos else []
 
     for i, b in enumerate(photo_bytes):
         if len(b) > MAX_FILE_SIZE_BYTES:
@@ -317,7 +324,7 @@ async def form_finish(
     # Re-encoding an already-compressed JPEG can marginally increase its size
     # in edge cases; these checks ensure the stored bytes invariant holds.
     effective_tier = tier if tier in _VALID_TIERS else "standard"
-    photo_bytes = await run_in_threadpool(_sanitize_photos, photo_bytes, effective_tier)
+    photo_bytes = _sanitize_photos(photo_bytes, effective_tier)
 
     for i, b in enumerate(photo_bytes):
         if len(b) > MAX_FILE_SIZE_BYTES:
@@ -442,3 +449,6 @@ async def form_finish(
     runtime_repo.close_session(runtime_id, version)
 
     return {"submission_id": submission_id}
+
+
+router.include_router(_body_capturing_router)
