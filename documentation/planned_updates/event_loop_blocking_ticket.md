@@ -177,90 +177,6 @@ match the existing convention.
 
 ---
 
-# Task 1: Proxy header trust model
-
-**A. State of the world**
-
-Nothing in this ticket has been completed yet. This is the first task and the rest
-depend on it landing first (D8).
-
-`app/utils/http_utils.py` contains a single function, `extract_ip`, which returns
-`headers["x-forwarded-for"].split(",")[0].strip()` — the leftmost entry, which is
-attacker-controlled. It has **no test coverage at all** despite being
-security-critical: no file in `tests/` references `extract_ip` or
-`x-forwarded-for`. It is called from 16 places, all passing the same two arguments.
-
-**B. Files and deliverables**
-
-| File | Deliverable |
-|---|---|
-| `app/utils/http_utils.py` | Rewritten `extract_ip` body per D1. Signature unchanged. Docstring header corrected. |
-| `app/core/rate_limit.py` | ERROR log in `_ip_key` when IP resolution degrades (D3); corrected module-path reference; comment pinning the `request` parameter name. |
-| `app/repositories/audit_repository.py` | Corrected module-path reference in the comment at line 85. |
-| `tests/test_http_utils.py` | New table-driven unit test file. |
-
-**C. Instructions**
-
-1. Rewrite the body of `extract_ip` in `app/utils/http_utils.py`. Keep the
-   signature `(headers, client_host: str | None) -> str | None`. Import
-   `ipaddress` (stdlib — this does not violate the purity rule in
-   `file_structure.md`). Resolution order:
-   - Split `x-forwarded-for` on commas and strip each entry. Iterate **in
-     reverse**. Return the first entry that parses as an IP address and has
-     `.is_global` true.
-   - If that yields nothing, apply the same validity check to `x-real-ip`.
-   - Otherwise return `client_host or None`.
-
-   Malformed entries must be skipped, not raise — `ipaddress.ip_address()` raises
-   `ValueError` on junk, so guard each entry.
-
-2. Rewrite the docstring to explain *why* the walk is right-to-left (proxies
-   append; the leftmost entry is client-supplied) and why the trust predicate is
-   "globally routable" rather than a hop count. State the one thing that breaks
-   it: a CDN placed in front of Railway, whose public IP would become the
-   rightmost global entry.
-
-3. Fix the stale module path in the docstring header at
-   `app/utils/http_utils.py:2` — it reads `app/core/http_utils.py`. The same wrong
-   path appears at `app/core/rate_limit.py:16` and
-   `app/repositories/audit_repository.py:85`. Fix all three.
-
-4. In `_ip_key` (`app/core/rate_limit.py`), after calling `extract_ip`, log at
-   ERROR level if the resolved value is non-None and equal to
-   `request.client.host`. That equality is the signature of D3's degraded state —
-   every client sharing one rate-limit bucket. Keep the existing `or "unknown"`
-   fallback. Add a module-level `logger = logging.getLogger(__name__)` if absent.
-
-5. Add a comment above `_ip_key` recording a slowapi landmine found during review:
-   `slowapi/extension.py:496` dispatches on `inspect.signature(lim.key_func)`
-   containing a parameter named **literally** `request`. Ours is named correctly.
-   Renaming it drops slowapi to calling `key_func()` with no arguments, which
-   raises `TypeError`.
-
-6. Write `tests/test_http_utils.py` as a table-driven unit test. This is a unit
-   test — do **not** add `pytestmark = pytest.mark.integration`. Cases:
-   - Spoofed leftmost entry ignored: `"1.2.3.4, 8.8.8.8"` resolves to `8.8.8.8`.
-   - Spoofed **private** leftmost entry ignored: `"10.0.0.1, 8.8.8.8"` → `8.8.8.8`.
-   - Private proxy hops on the right are skipped:
-     `"8.8.8.8, 10.0.0.1, 10.0.0.2"` → `8.8.8.8`.
-   - Single global entry returned as-is.
-   - All entries private → falls through to `x-real-ip`, then `client_host`.
-   - Malformed entries (`"junk, 8.8.8.8"`, empty strings, stray whitespace) do not
-     raise.
-   - No headers at all → `client_host`.
-   - Nothing determinable → `None`.
-
-   **Important:** use genuinely globally-routable addresses in the fixtures
-   (`8.8.8.8`, `1.1.1.1`). The RFC 5737 documentation ranges — `192.0.2.0/24`,
-   `198.51.100.0/24`, `203.0.113.0/24` — are the natural choice for test data but
-   `is_global` returns **False** for all of them, so tests written with those
-   would fail confusingly.
-
-7. Run `make test` (or `pytest -m "not integration"`). Existing tests assert
-   `ip_address=None` only, so regression risk is low.
-
----
-
 # Task 2: `require_admin` to plain `def`
 
 **A. State of the world**
@@ -523,3 +439,88 @@ already settled in D7: an `async def` shim that awaits the body, then delegates 
 a sync `_impl` via `run_in_threadpool`. Pydantic body models are rejected because
 they would replace the `request_validation.py` error envelope that the frontend
 and many tests depend on. Raise this now, while the reasoning is fresh.
+
+
+---
+
+# Task 1: Proxy header trust model
+
+**A. State of the world**
+
+Nothing in this ticket has been completed yet. This is the first task and the rest
+depend on it landing first (D8).
+
+`app/utils/http_utils.py` contains a single function, `extract_ip`, which returns
+`headers["x-forwarded-for"].split(",")[0].strip()` — the leftmost entry, which is
+attacker-controlled. It has **no test coverage at all** despite being
+security-critical: no file in `tests/` references `extract_ip` or
+`x-forwarded-for`. It is called from 16 places, all passing the same two arguments.
+
+**B. Files and deliverables**
+
+| File | Deliverable |
+|---|---|
+| `app/utils/http_utils.py` | Rewritten `extract_ip` body per D1. Signature unchanged. Docstring header corrected. |
+| `app/core/rate_limit.py` | ERROR log in `_ip_key` when IP resolution degrades (D3); corrected module-path reference; comment pinning the `request` parameter name. |
+| `app/repositories/audit_repository.py` | Corrected module-path reference in the comment at line 85. |
+| `tests/test_http_utils.py` | New table-driven unit test file. |
+
+**C. Instructions**
+
+1. Rewrite the body of `extract_ip` in `app/utils/http_utils.py`. Keep the
+   signature `(headers, client_host: str | None) -> str | None`. Import
+   `ipaddress` (stdlib — this does not violate the purity rule in
+   `file_structure.md`). Resolution order:
+   - Split `x-forwarded-for` on commas and strip each entry. Iterate **in
+     reverse**. Return the first entry that parses as an IP address and has
+     `.is_global` true.
+   - If that yields nothing, apply the same validity check to `x-real-ip`.
+   - Otherwise return `client_host or None`.
+
+   Malformed entries must be skipped, not raise — `ipaddress.ip_address()` raises
+   `ValueError` on junk, so guard each entry.
+
+2. Rewrite the docstring to explain *why* the walk is right-to-left (proxies
+   append; the leftmost entry is client-supplied) and why the trust predicate is
+   "globally routable" rather than a hop count. State the one thing that breaks
+   it: a CDN placed in front of Railway, whose public IP would become the
+   rightmost global entry.
+
+3. Fix the stale module path in the docstring header at
+   `app/utils/http_utils.py:2` — it reads `app/core/http_utils.py`. The same wrong
+   path appears at `app/core/rate_limit.py:16` and
+   `app/repositories/audit_repository.py:85`. Fix all three.
+
+4. In `_ip_key` (`app/core/rate_limit.py`), after calling `extract_ip`, log at
+   ERROR level if the resolved value is non-None and equal to
+   `request.client.host`. That equality is the signature of D3's degraded state —
+   every client sharing one rate-limit bucket. Keep the existing `or "unknown"`
+   fallback. Add a module-level `logger = logging.getLogger(__name__)` if absent.
+
+5. Add a comment above `_ip_key` recording a slowapi landmine found during review:
+   `slowapi/extension.py:496` dispatches on `inspect.signature(lim.key_func)`
+   containing a parameter named **literally** `request`. Ours is named correctly.
+   Renaming it drops slowapi to calling `key_func()` with no arguments, which
+   raises `TypeError`.
+
+6. Write `tests/test_http_utils.py` as a table-driven unit test. This is a unit
+   test — do **not** add `pytestmark = pytest.mark.integration`. Cases:
+   - Spoofed leftmost entry ignored: `"1.2.3.4, 8.8.8.8"` resolves to `8.8.8.8`.
+   - Spoofed **private** leftmost entry ignored: `"10.0.0.1, 8.8.8.8"` → `8.8.8.8`.
+   - Private proxy hops on the right are skipped:
+     `"8.8.8.8, 10.0.0.1, 10.0.0.2"` → `8.8.8.8`.
+   - Single global entry returned as-is.
+   - All entries private → falls through to `x-real-ip`, then `client_host`.
+   - Malformed entries (`"junk, 8.8.8.8"`, empty strings, stray whitespace) do not
+     raise.
+   - No headers at all → `client_host`.
+   - Nothing determinable → `None`.
+
+   **Important:** use genuinely globally-routable addresses in the fixtures
+   (`8.8.8.8`, `1.1.1.1`). The RFC 5737 documentation ranges — `192.0.2.0/24`,
+   `198.51.100.0/24`, `203.0.113.0/24` — are the natural choice for test data but
+   `is_global` returns **False** for all of them, so tests written with those
+   would fail confusingly.
+
+7. Run `make test` (or `pytest -m "not integration"`). Existing tests assert
+   `ip_address=None` only, so regression risk is low.
