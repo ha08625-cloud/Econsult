@@ -82,7 +82,7 @@ Two methods:
 # ---------------------------------------------------------------------------
 #
 # Callers are responsible for extracting the client IP using
-# app.core.http_utils.extract_ip and passing the result as ip_address.
+# app.utils.http_utils.extract_ip and passing the result as ip_address.
 # This module does not import FastAPI Request.
 """
 
