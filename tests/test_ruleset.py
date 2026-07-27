@@ -403,6 +403,63 @@ def test_accepts_single_system_question_alongside_multi_system_question():
 
 
 # ---------------------------------------------------------------------------
+# pdf_label
+# ---------------------------------------------------------------------------
+
+
+def test_accepts_absent_pdf_label():
+    validate_ruleset(_base_ruleset())
+
+
+def test_accepts_null_pdf_label():
+    validate_ruleset(_with(pdf_label=None))
+
+
+def test_accepts_pdf_label_on_number_question():
+    validate_ruleset(_with(pdf_label="Weight"))
+
+
+def test_accepts_pdf_label_on_boolean_question():
+    rs = _with(answer_type="Boolean", pdf_label="Fever")
+    for field_name in ("decimal_places", "min", "max"):
+        del rs["questions"][0][field_name]
+    validate_ruleset(rs)
+
+
+def test_rejects_empty_pdf_label():
+    with pytest.raises(ValueError, match="pdf_label"):
+        validate_ruleset(_with(pdf_label=""))
+
+
+def test_rejects_whitespace_only_pdf_label():
+    with pytest.raises(ValueError, match="pdf_label"):
+        validate_ruleset(_with(pdf_label="   "))
+
+
+def test_rejects_non_string_pdf_label():
+    with pytest.raises(ValueError, match="pdf_label"):
+        validate_ruleset(_with(pdf_label=42))
+
+
+def test_rejects_pdf_label_on_text_question():
+    rs = _with(answer_type="text", pdf_label="Onset")
+    for field_name in ("decimal_places", "min", "max"):
+        del rs["questions"][0][field_name]
+    with pytest.raises(ValueError, match="must not set pdf_label"):
+        validate_ruleset(rs)
+
+
+def test_rejects_duplicate_pdf_label():
+    rs = _with(pdf_label="Weight")
+    second = copy.deepcopy(rs["questions"][0])
+    second["question_id"] = "q2"
+    second["answer_key"] = "weight_again"
+    rs["questions"].append(second)
+    with pytest.raises(ValueError, match="Duplicate pdf_label"):
+        validate_ruleset(rs)
+
+
+# ---------------------------------------------------------------------------
 # Safety clause shape (is_true / is_false)
 # ---------------------------------------------------------------------------
 
