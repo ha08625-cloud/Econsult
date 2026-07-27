@@ -93,9 +93,20 @@ def clinical_output(
     contact_preferences: dict | None = None,
 ) -> ClinicalOutput:
     """
-    Lossy output safe for clinical and patient use.
+    Lossy output safe for clinical and patient use. pdf_labels is snapshotted
+    here so the PDF worker can render the CLINICAL SUMMARY block without
+    reloading the ruleset.
     """
     question_labels = {q["answer_key"]: q["question"] for q in ruleset["questions"]}
+
+    # Short display labels for the PDF's CLINICAL SUMMARY block, in ruleset
+    # question order. Only labelled questions appear; a ruleset with none
+    # produces an empty dict and no summary section. ruleset.py has already
+    # rejected an empty, non-string, duplicated, or text-question label at
+    # startup, so no filtering beyond presence is needed here.
+    pdf_labels = {
+        q["answer_key"]: q["pdf_label"] for q in ruleset["questions"] if q.get("pdf_label")
+    }
 
     # Sidecar for quantity (unit-toggle) answers: the lossless raw input, the
     # patient's chosen system, and a snapshot of quantity_kind and
@@ -123,6 +134,7 @@ def clinical_output(
         answers={k: v.value for k, v in runtime.answers.items()},
         safety_messages=runtime.safety_evaluation.messages,
         question_labels=question_labels,
+        pdf_labels=pdf_labels,
         patient_details=patient_details,
         contact_preferences=contact_preferences,
         quantity_answers=quantity_answers,

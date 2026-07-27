@@ -35,6 +35,13 @@ class ClinicalOutput:
     # value without a form-level unit_system field. One sidecar dict, mirroring
     # question_labels.
     quantity_answers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Per labelled answer_key: the short clinical label authored as pdf_label in
+    # the ruleset. Drives the PDF's CLINICAL SUMMARY block; empty when no
+    # question in the ruleset carries a label, in which case no summary section
+    # is rendered. Display only -- it has no clinical or logical meaning beyond
+    # naming a row. Mirrors question_labels, which is snapshotted for the same
+    # reason: the PDF worker has no ruleset when it regenerates a document.
+    pdf_labels: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "ClinicalOutput":
@@ -48,11 +55,11 @@ class ClinicalOutput:
 
         Raises KeyError if required fields are absent, which surfaces the
         schema mismatch as an immediate loud error rather than a silent wrong
-        value. quantity_answers is read with .get() so records predating
-        quantity support deserialise cleanly, same as photo_quality_tier on
-        AuditOutput. A record from before this ticket may still carry a
-        top-level unit_system key; it is simply not read, since data.get(...) on
-        an unlisted key is a no-op.
+        value. quantity_answers and pdf_labels are read with .get() so records
+        predating quantity support / the CLINICAL SUMMARY block deserialise
+        cleanly, same as photo_quality_tier on AuditOutput. A record from
+        before this ticket may still carry a top-level unit_system key; it is
+        simply not read, since data.get(...) on an unlisted key is a no-op.
         """
         patient_details_raw = data["patient_details"]
         patient_details = PatientDetails(
@@ -77,6 +84,7 @@ class ClinicalOutput:
             patient_details=patient_details,
             contact_preferences=data.get("contact_preferences"),
             quantity_answers=data.get("quantity_answers") or {},
+            pdf_labels=data.get("pdf_labels") or {},
         )
 
 
