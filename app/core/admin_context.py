@@ -43,6 +43,12 @@ closure into this module fails CI.
 
 The AuthProvider Protocol below documents the subset of AuthRepository
 used by this module without importing the repository class itself.
+
+require_admin is deliberately a sync `def`, not `async def`. FastAPI runs
+sync dependencies in the threadpool rather than on the event loop, and
+get_session_context and update_session_expiry are blocking psycopg2 calls
+that would otherwise stall the event loop on every authenticated admin
+request.
 """
 
 import logging
@@ -136,7 +142,7 @@ class AuthProvider(Protocol):
 # ---------------------------------------------------------------------------
 
 
-async def require_admin(request: Request, response: Response) -> AdminContext:
+def require_admin(request: Request, response: Response) -> AdminContext:
     """
     FastAPI dependency. Validates session cookie and returns AdminContext.
 
