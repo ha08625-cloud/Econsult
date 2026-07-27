@@ -37,6 +37,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.admin_context import AdminContext, require_admin
+from app.core.body_capture import BodyCapturingRoute, read_json_body
 from app.core.db import get_conn
 from app.core.dependencies import (
     get_audit_repo,
@@ -59,7 +60,7 @@ from app.utils.http_utils import extract_ip
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(route_class=BodyCapturingRoute)
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +127,7 @@ def get_practice(
 
 
 @router.put("/practice/email")
-async def put_practice_email(
+def put_practice_email(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     practice_repo=Depends(get_practice_repo),
@@ -151,10 +152,7 @@ async def put_practice_email(
     Audit: practice.email.updated with before/after detail. The mutation
     and audit log write are atomic in a single transaction.
     """
-    try:
-        body = await request.json()
-    except Exception as e:
-        raise INVALID_PAYLOAD("Invalid JSON body") from e
+    body = read_json_body(request)
 
     if not isinstance(body, dict) or "email" not in body:
         raise INVALID_PAYLOAD('Body must be {"email": "..."}')
@@ -236,7 +234,7 @@ def get_signposting(
 
 
 @router.put("/conditions/{condition_id}/signposting")
-async def put_signposting(
+def put_signposting(
     condition_id: str,
     request: Request,
     admin: AdminContext = Depends(require_admin),
@@ -268,10 +266,7 @@ async def put_signposting(
     if not registry.has_condition(condition_id):
         raise ConditionNotFound(condition_id)
 
-    try:
-        body = await request.json()
-    except Exception as e:
-        raise INVALID_PAYLOAD("Invalid JSON body") from e
+    body = read_json_body(request)
 
     if not isinstance(body, dict) or "signposting" not in body:
         raise INVALID_PAYLOAD('Body must be {"signposting": "..."}')
@@ -402,7 +397,7 @@ def get_doctors(
 
 
 @router.put("/doctors")
-async def put_doctors(
+def put_doctors(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     practice_repo=Depends(get_practice_repo),
@@ -430,10 +425,7 @@ async def put_doctors(
     Audit: doctors.updated with before/after detail.
     The mutation and audit log write are atomic in a single transaction.
     """
-    try:
-        body = await request.json()
-    except Exception as e:
-        raise INVALID_PAYLOAD("Invalid JSON body") from e
+    body = read_json_body(request)
 
     if not isinstance(body, dict) or "doctors" not in body:
         raise INVALID_PAYLOAD('Body must be {"doctors": [...]}')
