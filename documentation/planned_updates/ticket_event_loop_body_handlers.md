@@ -1,9 +1,13 @@
 # Ticket: Move blocking work off the event loop in the body-reading handlers
 
-**Status:** Reviewed (workflow step 2 complete). **Task 0 spike is done — see its
-results below.** It succeeded, so D1's shim/`_impl` split is replaced by D9 for
-almost every handler. Tasks 1–6 are ready to be expanded into full task specs
-(workflow step 3). No production code has changed yet.
+**Status:** Reviewed, spiked, and broken into tasks (workflow steps 2 and 3
+complete). **Task 0 spike is done — see its results below.** It succeeded, so D1's
+shim/`_impl` split is replaced by D9 for almost every handler. No production code
+has changed yet.
+
+**Task specs:** `docs/planned_updates/plan_event_loop_body_handlers.md`. This file
+remains the design record — the plan file references it rather than repeating it,
+so read this one first when picking up any task.
 
 **Raised by:** `docs/implementation_plans_completed/event_loop_blocking_ticket.md`,
 "Follow-up ticket to raise". The design is already settled there as D7; this ticket
