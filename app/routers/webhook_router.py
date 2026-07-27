@@ -5,8 +5,15 @@ Handles inbound delivery event signals from Mailgun. This router is the only
 public endpoint that receives external provider callbacks.
 
 Security model:
-1. Timestamp check: webhooks older than 15 minutes are silently dropped
-   (return 200 OK to prevent Mailgun from retrying a permanently stale signal).
+1. Timestamp check, in two parts:
+   a. Parse: a missing or non-numeric timestamp means the payload is
+      malformed (or forged without knowledge of the Mailgun format). This
+      returns 403 with an ERROR-level log — it is never silently
+      acknowledged, since a 200 here would stop Mailgun retrying a signal
+      that was never actually processed.
+   b. Staleness: a well-formed timestamp older than 15 minutes is silently
+      dropped (return 200 OK to prevent Mailgun from retrying a permanently
+      stale signal).
 
 2. HMAC verification: the signature in the payload is verified against
    MAILGUN_SIGNING_KEY using HMAC-SHA256 over (timestamp + token). Requests
@@ -86,17 +93,28 @@ def _verify_mailgun_signature(signing_key: str, token: str, timestamp: str, sign
     return hmac.compare_digest(expected, signature)
 
 
-def _is_stale(timestamp_str: str) -> bool:
+def _parse_timestamp(timestamp_str: str) -> int | None:
     """
-    Return True if the webhook timestamp is older than the tolerance window.
+    Parse the webhook timestamp field. Returns None if missing or non-numeric.
+
+    A missing/unparseable timestamp means the request is not a valid Mailgun
+    payload at all (malformed, or forged without knowledge of the format) —
+    this is distinct from a well-formed but genuinely old timestamp.
+    """
+    try:
+        return int(timestamp_str)
+    except (ValueError, TypeError):
+        return None
+
+
+def _is_stale(ts: int) -> bool:
+    """
+    Return True if a successfully parsed webhook timestamp is older than the
+    tolerance window.
 
     Stale webhooks are silently accepted (200 OK) to prevent Mailgun from
     retrying a signal that can no longer be useful.
     """
-    try:
-        ts = int(timestamp_str)
-    except (ValueError, TypeError):
-        return True
     return abs(time.time() - ts) > _TIMESTAMP_TOLERANCE_SECONDS
 
 
@@ -167,7 +185,7 @@ def _mailgun_webhook_impl(
 
     Returns:
         200 OK  — signal processed, or silently dropped (stale / replay)
-        403     — HMAC signature invalid
+        403     — malformed/unparseable timestamp, or HMAC signature invalid
         406     — provider_message_id not yet committed (race condition; Mailgun retries)
     """
     # Extract security fields.
@@ -179,8 +197,22 @@ def _mailgun_webhook_impl(
         payload.get("event-data[message][headers][message-id]") or payload.get("message-id", "")
     ).strip("<>")
 
-    # 1. Timestamp check — drop stale signals silently.
-    if _is_stale(timestamp):
+    # 1a. Timestamp parse check — a missing/unparseable timestamp means the
+    # request is not a genuine Mailgun payload (malformed, or forged without
+    # knowledge of the format). Reject loudly rather than acknowledging it.
+    parsed_timestamp = _parse_timestamp(timestamp)
+    if parsed_timestamp is None:
+        logger.error(
+            "Webhook: malformed/unparseable timestamp rejected event=%s "
+            "provider_message_id=%s raw_timestamp=%r",
+            event_type,
+            provider_message_id,
+            timestamp,
+        )
+        return JSONResponse(status_code=403, content={"error": "malformed timestamp"})
+
+    # 1b. Staleness check — drop genuinely old, well-formed signals silently.
+    if _is_stale(parsed_timestamp):
         logger.warning(
             "Webhook: stale timestamp dropped event=%s provider_message_id=%s",
             event_type,

@@ -156,7 +156,9 @@ MESH-specific. See `docs/arch_mesh.md`, "Retry Schedule."
 
 The webhook endpoint (`POST /webhooks/mailgun`) enforces three security checks in order before processing any event:
 
-1. **Timestamp check.** Webhooks with a timestamp older than 15 minutes are silently dropped (200 OK). This prevents stale replays and bounds the useful lifetime of tokens in the replay table.
+1. **Timestamp check**, in two parts:
+   - **Parse.** A missing or non-numeric `timestamp` field means the payload is not a genuine Mailgun webhook (malformed, or forged without knowledge of the format). This returns 403 with an ERROR-level log — it is never acknowledged with 200, since doing so would stop Mailgun retrying a signal that was never actually processed.
+   - **Staleness.** A well-formed timestamp older than 15 minutes is silently dropped (200 OK, WARNING-level log). This prevents stale replays and bounds the useful lifetime of tokens in the replay table.
 
 2. **HMAC verification.** The `signature` field in the payload is verified against `MAILGUN_SIGNING_KEY` using HMAC-SHA256 over `(timestamp + token)`. Requests failing verification return 403. `hmac.compare_digest` is used to prevent timing attacks. `MAILGUN_SIGNING_KEY` is required at startup when `MAILGUN_API_KEY` is set.
 
