@@ -48,6 +48,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.admin_context import AdminContext, require_admin
+from app.core.body_capture import BodyCapturingRoute, read_json_body
 from app.core.db import get_conn
 from app.core.dependencies import (
     get_admin_delivery_service,
@@ -63,7 +64,7 @@ from app.utils.http_utils import extract_ip
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(route_class=BodyCapturingRoute)
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +123,7 @@ def list_users(
 
 @router.post("/users", status_code=200)
 @limiter.limit("10/minute")
-async def add_user(
+def add_user(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     auth_repo=Depends(get_auth_repo),
@@ -156,10 +157,7 @@ async def add_user(
     Returns 422 if the email format is invalid.
     Returns 401 if the session has expired.
     """
-    try:
-        body = await request.json()
-    except Exception as exc:
-        raise INVALID_PAYLOAD("Invalid JSON body") from exc
+    body = read_json_body(request)
 
     if not isinstance(body, dict) or "email" not in body:
         raise INVALID_PAYLOAD('Body must be {"email": "..."}')
