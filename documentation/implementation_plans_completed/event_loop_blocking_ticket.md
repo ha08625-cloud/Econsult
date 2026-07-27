@@ -324,6 +324,12 @@ convention.
 
 # Follow-up ticket to raise
 
+**Raised — see `docs/planned_updates/ticket_event_loop_body_handlers.md`.** That
+ticket also picks up two things not known when this section was written: the
+`bcrypt.hashpw` call in `login` that Task 3 missed, and a blocking SMTP/HTTP send
+in `add_user` with a 30-second timeout, which is the largest remaining block at
+the HTTP boundary.
+
 **Move blocking DB work off the loop in the 15 body-reading handlers.** They
 remain `async def` with blocking psycopg2 calls on the event loop. The design is
 already settled in D7: an `async def` shim that awaits the body, then delegates to
