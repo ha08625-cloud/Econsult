@@ -20,7 +20,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         # MUST use v0.35.0 or higher due to the March 2026 supply chain attack
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: 'econsult:latest'
           format: 'table'
