@@ -39,6 +39,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.admin_context import AdminContext, require_admin
+from app.core.body_capture import BodyCapturingRoute, read_json_body
 from app.core.db import get_conn
 from app.core.dependencies import (
     get_audit_repo,
@@ -60,7 +61,7 @@ from app.utils.http_utils import extract_ip
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(route_class=BodyCapturingRoute)
 
 # ---------------------------------------------------------------------------
 # Private helpers
@@ -163,7 +164,7 @@ def get_availability(
 
 
 @router.put("/availability")
-async def put_availability(
+def put_availability(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
@@ -196,10 +197,7 @@ async def put_availability(
     The mutation, optional override clear, and audit log write are all
     atomic in a single transaction.
     """
-    try:
-        body = await request.json()
-    except Exception as e:
-        raise INVALID_PAYLOAD("Invalid JSON body") from e
+    body = read_json_body(request)
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -339,7 +337,7 @@ async def put_availability(
 
 
 @router.post("/availability/override")
-async def post_override(
+def post_override(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
@@ -364,10 +362,7 @@ async def post_override(
     Audit: availability.override.updated with before/after detail.
     The mutation and audit log write are atomic in a single transaction.
     """
-    try:
-        body = await request.json()
-    except Exception as e:
-        raise INVALID_PAYLOAD("Invalid JSON body") from e
+    body = read_json_body(request)
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -548,7 +543,7 @@ def list_exceptions(
 
 
 @router.put("/availability/exceptions/{date}")
-async def put_exception(
+def put_exception(
     date: str,
     request: Request,
     admin: AdminContext = Depends(require_admin),
@@ -583,10 +578,7 @@ async def put_exception(
         raise INVALID_DATE_FORMAT("date", date) from e
 
     # --- Parse body ---
-    try:
-        body = await request.json()
-    except Exception as e:
-        raise INVALID_PAYLOAD("Invalid JSON body") from e
+    body = read_json_body(request)
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
