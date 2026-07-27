@@ -177,42 +177,6 @@ match the existing convention.
 
 ---
 
-# Task 2: `require_admin` to plain `def`
-
-**A. State of the world**
-
-Task 1 is complete: `extract_ip` now resolves real client IPs and per-IP rate
-limiting is trustworthy.
-
-`require_admin` in `app/core/admin_context.py:139` is `async def` but makes two
-blocking psycopg2 calls — `get_session_context` and `update_session_expiry` — on
-every authenticated admin request. Both run directly on the event loop. FastAPI
-runs *sync* dependencies in the threadpool, so changing the keyword is the whole
-fix.
-
-**B. Files and deliverables**
-
-| File | Deliverable |
-|---|---|
-| `app/core/admin_context.py` | `async def require_admin` → `def require_admin`; docstring records why it is deliberately sync. |
-
-**C. Instructions**
-
-1. Change `async def require_admin(...)` to `def require_admin(...)` at
-   `app/core/admin_context.py:139`. No other change to the function body — there
-   is no `await` in it.
-
-2. Add a short paragraph to the module docstring stating that `require_admin` is
-   deliberately a sync `def` so FastAPI resolves it in the threadpool, because
-   `get_session_context` and `update_session_expiry` are blocking psycopg2 calls
-   that would otherwise stall the event loop on every authenticated request.
-
-3. All callers use `Depends(require_admin)`, and `tests/test_admin_context.py`
-   exercises it through the app rather than awaiting it directly — confirmed, no
-   test changes expected. Run `make test` to verify.
-
----
-
 # Task 3: CPU-bound work off the event loop
 
 **A. State of the world**
@@ -524,3 +488,40 @@ security-critical: no file in `tests/` references `extract_ip` or
 
 7. Run `make test` (or `pytest -m "not integration"`). Existing tests assert
    `ip_address=None` only, so regression risk is low.
+
+
+---
+
+# Task 2: `require_admin` to plain `def`
+
+**A. State of the world**
+
+Task 1 is complete: `extract_ip` now resolves real client IPs and per-IP rate
+limiting is trustworthy.
+
+`require_admin` in `app/core/admin_context.py:139` is `async def` but makes two
+blocking psycopg2 calls — `get_session_context` and `update_session_expiry` — on
+every authenticated admin request. Both run directly on the event loop. FastAPI
+runs *sync* dependencies in the threadpool, so changing the keyword is the whole
+fix.
+
+**B. Files and deliverables**
+
+| File | Deliverable |
+|---|---|
+| `app/core/admin_context.py` | `async def require_admin` → `def require_admin`; docstring records why it is deliberately sync. |
+
+**C. Instructions**
+
+1. Change `async def require_admin(...)` to `def require_admin(...)` at
+   `app/core/admin_context.py:139`. No other change to the function body — there
+   is no `await` in it.
+
+2. Add a short paragraph to the module docstring stating that `require_admin` is
+   deliberately a sync `def` so FastAPI resolves it in the threadpool, because
+   `get_session_context` and `update_session_expiry` are blocking psycopg2 calls
+   that would otherwise stall the event loop on every authenticated request.
+
+3. All callers use `Depends(require_admin)`, and `tests/test_admin_context.py`
+   exercises it through the app rather than awaiting it directly — confirmed, no
+   test changes expected. Run `make test` to verify.
