@@ -23,11 +23,13 @@
  * Both are refs (not state) so confirm dialogs can read them synchronously.
  * UsersTab has no unsaved state and requires no ref.
  *
- * Session expiry:
+ * Session expiry (sliding 60-minute TTL):
  * - If any child API call returns 401 (AuthError), the child calls
- *   onAuthError, which transitions App back to LoginView.
- * - Any unsaved data is lost on session expiry — no modal, no retry.
- *   This is intentional given the 24-hour session TTL. See arch_admin.md.
+ *   onAuthError, which App handles by showing a login overlay above this
+ *   component — EditorView itself stays mounted and unaware of the overlay.
+ * - Unsaved data (tab, selected condition, editor contents) therefore
+ *   survives session expiry. No refetch or remount happens on re-login;
+ *   the user re-clicks whatever action failed. See arch_admin.md.
  */
 
 import { useRef, useState } from "react";

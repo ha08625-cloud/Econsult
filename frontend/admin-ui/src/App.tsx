@@ -12,10 +12,15 @@
  *   session cookie is valid and EditorView is shown immediately. If it
  *   returns 401 (AuthError), LoginView is shown instead.
  *
- * Session expiry mid-session: any AuthError thrown by an EditorView API
- * call propagates to handleAuthError, which transitions back to LoginView.
- * Any unsaved data in EditorView is lost — this is intentional given the
- * 24-hour session TTL and infrequent use pattern. See arch_admin.md.
+ * Session expiry mid-session (sliding 60-minute TTL): any AuthError thrown
+ * by an EditorView API call propagates to handleAuthError, which sets
+ * sessionExpired instead of leaving the editor state. EditorView stays
+ * mounted underneath — SignpostingEditor/AvailabilityEditor state, the
+ * active tab, and the selected condition all survive — while LoginView is
+ * shown in a modal overlay on top. On successful re-login, the overlay is
+ * dismissed with no refetch and no remount; the user re-clicks whatever
+ * action failed. The explicit "Log out and discard changes" escape hatch
+ * and the full-page logout path both discard state, same as before.
  */
 
 import { useState, useEffect } from "react";
@@ -30,6 +35,7 @@ type AuthState = "checking" | "login" | "editor" | "set_password";
 export default function App() {
   const [authState, setAuthState] = useState<AuthState>("checking");
   const [conditions, setConditions] = useState<ConditionSummary[]>([]);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
     // Check for a password reset/setup hash before probing the session.
@@ -73,16 +79,30 @@ export default function App() {
     setAuthState("login");
   }
 
-  // Called by EditorView when any API call returns 401.
+  // Called by EditorView when any API call returns 401 mid-session.
+  // EditorView stays mounted; a login overlay is shown above it so
+  // unsaved work survives re-authentication.
   function handleAuthError() {
-    setConditions([]);
-    setAuthState("login");
+    setSessionExpired(true);
+  }
+
+  // Called by the overlay LoginView after successful re-authentication.
+  function handleReloginSuccess() {
+    setSessionExpired(false);
   }
 
   // Called when the user clicks the explicit "Log out" button.
   async function handleLogout() {
     await logout();
     setConditions([]);
+    setAuthState("login");
+  }
+
+  // Called from the overlay's "Log out and discard changes" escape hatch.
+  async function handleDiscardAndLogout() {
+    await logout();
+    setConditions([]);
+    setSessionExpired(false);
     setAuthState("login");
   }
 
@@ -127,6 +147,25 @@ export default function App() {
           />
         )}
       </main>
+
+      {sessionExpired && (
+        <div className="modal-overlay">
+          <div className="modal-panel">
+            <p className="card-subtitle" style={{ marginBottom: 20 }}>
+              Your session expired. Log in again to continue — your unsaved
+              changes are kept.
+            </p>
+            <LoginView onSuccess={handleReloginSuccess} />
+            <button
+              className="btn btn-ghost"
+              onClick={handleDiscardAndLogout}
+              style={{ marginTop: 12 }}
+            >
+              Log out and discard changes
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
