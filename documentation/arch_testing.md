@@ -119,6 +119,7 @@ Runner: `pytest tests/ -m "not integration"`. None of these touch a database or 
 | `test_admin_context.py` | `app/core/admin_context.py` | Subprocess import-surface guard: importing `admin_context` must not pull in the repository/service/wiring closure. |
 | `test_email_mode.py` | `app/core/email_mode.py` | Pure predicates for complete/partial Mailgun configuration, called directly with plain arguments (no env plumbing — that is `test_settings.py`'s concern). |
 | `test_upload_constants.py` | `app/core/upload_constants.py` | JSON-backed constants load with the expected names, types, and values. |
+| `test_http_utils.py` | `app/utils/http_utils.py` | Table-driven coverage of `extract_ip`'s right-to-left, globally-routable-only `X-Forwarded-For` trust walk: spoofed/private leftmost entries ignored, `x-real-ip` and `client_host` fallbacks, malformed entries, no-headers and nothing-determinable cases. |
 | `test_form_logic.py` | `engine/form_logic` | Number answer validation and normalisation tiers; answer provenance (`apply_patient_answers` deriving `source`, idempotency, `normalise_encoder_provenance` promotion and selectivity). |
 | `test_projection.py` | `engine/projection` | Locks `EXPLICIT_SOURCES` membership and the `None`-projection of every excluded source (raw `encoder`, `unanswered`). |
 | `test_ruleset.py` | `engine/ruleset` | Fail-fast startup validation of Number-question and `answer_type` configuration (quantity/unit-system rules); `load_ruleset` per-path caching. |

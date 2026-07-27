@@ -89,7 +89,7 @@ def _normalise_signposting(value) -> str | None:
 
 
 @router.get("/conditions")
-async def admin_list_conditions(
+def admin_list_conditions(
     _: AdminContext = Depends(require_admin),
     registry=Depends(get_registry),
 ):
@@ -106,7 +106,7 @@ async def admin_list_conditions(
 
 
 @router.get("/practice")
-async def get_practice(
+def get_practice(
     admin: AdminContext = Depends(require_admin),
     practice_repo=Depends(get_practice_repo),
 ):
@@ -214,7 +214,7 @@ async def put_practice_email(
 
 
 @router.get("/conditions/{condition_id}/signposting")
-async def get_signposting(
+def get_signposting(
     condition_id: str,
     admin: AdminContext = Depends(require_admin),
     registry=Depends(get_registry),
@@ -331,7 +331,7 @@ async def put_signposting(
 
 
 @router.delete("/conditions/{condition_id}/signposting", status_code=204)
-async def delete_signposting(
+def delete_signposting(
     condition_id: str,
     request: Request,
     admin: AdminContext = Depends(require_admin),
@@ -387,7 +387,7 @@ async def delete_signposting(
 
 
 @router.get("/doctors")
-async def get_doctors(
+def get_doctors(
     admin: AdminContext = Depends(require_admin),
     practice_repo=Depends(get_practice_repo),
 ):

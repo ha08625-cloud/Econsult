@@ -147,7 +147,7 @@ def _serialise_exception_for_audit(exc: dict) -> dict:
 
 
 @router.get("/availability")
-async def get_availability(
+def get_availability(
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
 ):
@@ -470,7 +470,7 @@ async def post_override(
 
 
 @router.delete("/availability/override")
-async def delete_override(
+def delete_override(
     request: Request,
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
@@ -530,7 +530,7 @@ async def delete_override(
 
 
 @router.get("/availability/exceptions")
-async def list_exceptions(
+def list_exceptions(
     admin: AdminContext = Depends(require_admin),
     availability_repo=Depends(get_availability_repo),
 ):
@@ -699,7 +699,7 @@ async def put_exception(
 
 
 @router.delete("/availability/exceptions/{date}", status_code=204)
-async def delete_exception(
+def delete_exception(
     date: str,
     request: Request,
     admin: AdminContext = Depends(require_admin),

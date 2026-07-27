@@ -72,7 +72,7 @@ router = APIRouter()
 
 
 @router.get("/users")
-async def list_users(
+def list_users(
     admin: AdminContext = Depends(require_admin),
     auth_repo=Depends(get_auth_repo),
 ):
@@ -264,7 +264,7 @@ def _get_user_by_email_in_conn(auth_repo, email: str, conn) -> dict:
 
 
 @router.delete("/users/{user_id}", status_code=200)
-async def remove_user(
+def remove_user(
     user_id: str,
     request: Request,
     admin: AdminContext = Depends(require_admin),
@@ -331,7 +331,7 @@ async def remove_user(
 
 @router.post("/users/{user_id}/resend-invitation", status_code=200)
 @limiter.limit("10/minute")
-async def resend_invitation(
+def resend_invitation(
     user_id: str,
     request: Request,
     admin: AdminContext = Depends(require_admin),

@@ -53,7 +53,7 @@ router = APIRouter()
 
 @router.get("/safety-warning")
 @limiter.limit("30/minute")
-async def get_safety_warning(
+def get_safety_warning(
     request: Request,
     presentation_service=Depends(get_presentation_service),
 ):
@@ -62,7 +62,7 @@ async def get_safety_warning(
 
 @router.get("/conditions")
 @limiter.limit("30/minute")
-async def list_conditions(
+def list_conditions(
     request: Request,
     registry=Depends(get_registry),
 ):
@@ -71,7 +71,7 @@ async def list_conditions(
 
 @router.get("/conditions/{condition_id}/presentation")
 @limiter.limit("30/minute")
-async def get_presentation(
+def get_presentation(
     request: Request,
     condition_id: str,
     presentation_service=Depends(get_presentation_service),
@@ -83,7 +83,7 @@ async def get_presentation(
 
 @router.get("/availability")
 @limiter.limit("30/minute")
-async def get_availability(
+def get_availability(
     request: Request,
     availability_repo=Depends(get_availability_repo),
     practice_id: str = Depends(get_practice_id),
@@ -106,7 +106,7 @@ async def get_availability(
 
 @router.get("/practice")
 @limiter.limit("30/minute")
-async def get_practice(
+def get_practice(
     request: Request,
     practice_repo=Depends(get_practice_repo),
     practice_id: str = Depends(get_practice_id),
@@ -130,7 +130,7 @@ async def get_practice(
 
 @router.get("/doctors")
 @limiter.limit("30/minute")
-async def get_doctors(
+def get_doctors(
     request: Request,
     practice_repo=Depends(get_practice_repo),
     practice_id: str = Depends(get_practice_id),
