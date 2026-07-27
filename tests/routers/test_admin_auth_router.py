@@ -25,9 +25,17 @@ import bcrypt
 from tests.helpers.admin_test_helpers import (
     TEST_SESSION_COOKIE,
     StubAdminDeliveryService,
+    StubAuditRepo,
     StubAuthRepo,
     make_test_app,
 )
+
+
+class RaisingAuditRepo(StubAuditRepo):
+    """Audit repo stub whose log_event always raises, for D8 500 tests."""
+
+    def log_event(self, *args, **kwargs):
+        raise RuntimeError("Simulated audit log failure")
 
 # ---------------------------------------------------------------------------
 # Shared SpyAuthRepo for auth router tests
@@ -165,10 +173,12 @@ class TestAuthBehaviour(unittest.TestCase):
 
 
 class TestLogin(unittest.TestCase):
-    def _make_client(self, auth_repo=None, delivery_service=None):
+    def _make_client(self, auth_repo=None, delivery_service=None, audit_repo=None):
         from fastapi.testclient import TestClient
 
-        app = make_test_app(auth_repo=auth_repo, delivery_service=delivery_service)
+        app = make_test_app(
+            auth_repo=auth_repo, delivery_service=delivery_service, audit_repo=audit_repo
+        )
         return TestClient(app, raise_server_exceptions=False)
 
     def tearDown(self):
@@ -292,6 +302,21 @@ class TestLogin(unittest.TestCase):
             json={"email": "ADMIN@NHS.NET", "password": password},
         )
         self.assertEqual(res.status_code, 200)
+
+    def test_audit_log_failure_returns_500(self):
+        """D8: if audit_repo.log_event raises, the endpoint returns 500 with
+        the standard 'audit logging failed' message, not a silent 200."""
+        repo, password = self._valid_user_repo()
+        client = self._make_client(auth_repo=repo, audit_repo=RaisingAuditRepo())
+        res = client.post(
+            "/admin/auth/login",
+            json={"email": "admin@nhs.net", "password": password},
+        )
+        self.assertEqual(res.status_code, 500)
+        self.assertEqual(
+            res.json()["detail"],
+            "Action succeeded but audit logging failed. Please report this.",
+        )
 
 
 # ---------------------------------------------------------------------------
