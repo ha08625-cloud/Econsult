@@ -1,6 +1,9 @@
 # Implementation Plan: Move blocking work off the event loop in the body-reading handlers
 
-**Source ticket:** `docs/planned_updates/ticket_event_loop_body_handlers.md`. That
+**Status:** Complete. All 6 tasks below are implemented, tested, and merged. See
+`docs/arch_http_boundary.md`'s handler concurrency rule for the settled state.
+
+**Source ticket:** `docs/implementation_plans_completed/ticket_event_loop_body_handlers.md`. That
 document holds the full design rationale (D1–D9), the severity ordering, the
 handler table, and the Task 0 spike evidence. **Read it before starting any task
 below.** This file is the task breakdown only and deliberately does not repeat it.
