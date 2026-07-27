@@ -1138,3 +1138,89 @@ def test_non_quantity_answer_still_renders_yes_no(submission_kwargs):
     )
     pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
     assert "Yes" in pdf_text
+
+
+# ---------------------------------------------------------------------------
+# CLINICAL SUMMARY block (pdf_label)
+#
+# The block renders between PATIENT DESCRIPTION and ANSWERS when pdf_labels is
+# non-empty, formats values through the same helper as ANSWERS (so a quantity
+# answer keeps its units), and disappears entirely when no label is authored.
+# ---------------------------------------------------------------------------
+
+
+def _summary_output(pdf_labels, answers=None, quantity_answers=None):
+    return ClinicalOutput(
+        condition_id="uti1",
+        free_text="symptoms",
+        additional_text=None,
+        answers=answers or {"dysuria_present": True, "fever_present": False},
+        safety_messages=[],
+        question_labels={
+            "dysuria_present": "Are you experiencing pain when passing urine?",
+            "fever_present": "Have you felt like you have had a fever during this episode?",
+        },
+        pdf_labels=pdf_labels,
+        patient_details=_make_patient(),
+        contact_preferences=None,
+        quantity_answers=quantity_answers or {},
+    )
+
+
+def test_clinical_summary_renders_when_labels_present(submission_kwargs):
+    output = _summary_output({"dysuria_present": "Dysuria", "fever_present": "Fever"})
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    assert "CLINICAL SUMMARY" in pdf_text
+    assert "Dysuria:" in pdf_text
+    assert "Fever:" in pdf_text
+
+
+def test_clinical_summary_absent_when_no_labels(submission_kwargs):
+    output = _summary_output({})
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    assert "CLINICAL SUMMARY" not in pdf_text
+
+
+def test_clinical_summary_adds_no_content_when_no_labels(submission_kwargs):
+    # Byte length, not bytes: the document must be structurally identical to one
+    # produced before the section existed. Same precedent as the photo tests.
+    with_labels = generate_pdf(
+        clinical_output=_summary_output({"dysuria_present": "Dysuria"}), **submission_kwargs
+    )
+    without_labels = generate_pdf(clinical_output=_summary_output({}), **submission_kwargs)
+    assert len(with_labels) > len(without_labels)
+
+
+def test_clinical_summary_quantity_answer_keeps_units(submission_kwargs):
+    # Regression: the summary must not render a bare canonical number where
+    # ANSWERS renders "11 st 11 lb (74.8 kg)".
+    output = _summary_output(
+        {"patient_weight_kg": "Weight"},
+        answers={"patient_weight_kg": "74.8"},
+        quantity_answers={
+            "patient_weight_kg": {
+                "quantity_kind": "weight",
+                "raw_components": {"st": 11, "lb": 11},
+                "unit_system": "imperial",
+                "decimal_places": 1,
+            }
+        },
+    )
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    assert "Weight:" in pdf_text
+    assert "11 st 11 lb" in pdf_text
+    assert "74.8 kg" in pdf_text
+
+
+def test_answers_section_complete_when_only_some_questions_labelled(submission_kwargs):
+    output = _summary_output({"dysuria_present": "Dysuria"})
+    pdf_text = extract_pdf_text(generate_pdf(clinical_output=output, **submission_kwargs))
+    # Both full question texts still appear in ANSWERS. These labels are long
+    # enough to wrap across two lines in the 65mm label column, so each half
+    # is checked rather than the full sentence as one contiguous string.
+    assert "Are you experiencing pain when" in pdf_text
+    assert "passing urine?" in pdf_text
+    assert "Have you felt like you have had a" in pdf_text
+    assert "fever during this episode?" in pdf_text
+    # ...and the one labelled question also appears in the summary.
+    assert "Dysuria:" in pdf_text
