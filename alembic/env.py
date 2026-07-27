@@ -42,6 +42,12 @@ if not database_url or not database_url.strip():
 
 config.set_main_option("sqlalchemy.url", database_url)
 
+# Deliberately duplicated from app/core/db.py rather than imported. Alembic
+# executes this file from inside command.upgrade(), which db.py itself calls,
+# so importing app.core.db here would re-enter a partially initialised module.
+# A single integer with a pointer is the lesser evil; keep the two in step.
+CONNECT_TIMEOUT_SECONDS = 5
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode — generates SQL without connecting."""
@@ -58,11 +64,19 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode — connects to the database."""
+    """Run migrations in 'online' mode — connects to the database.
+
+    connect_timeout bounds the connect attempt so an unreachable database
+    fails the deploy instead of hanging it. Note what is deliberately absent:
+    this engine sets no statement_timeout, unlike app/core/db.py. A migration
+    killed halfway is worse than a migration that runs long, and long is
+    exactly what a migration against a large table is expected to be.
+    """
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args={"connect_timeout": CONNECT_TIMEOUT_SECONDS},
     )
 
     with connectable.connect() as connection:
