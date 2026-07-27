@@ -1,8 +1,9 @@
 # Ticket: Move blocking work off the event loop in the body-reading handlers
 
-**Status:** Reviewed (workflow step 2 complete). Not started. Task 0 is a spike
-that gates the shape of D1 — run it before expanding tasks 1–6 into full task
-specs.
+**Status:** Reviewed (workflow step 2 complete). **Task 0 spike is done — see its
+results below.** It succeeded, so D1's shim/`_impl` split is replaced by D9 for
+almost every handler. Tasks 1–6 are ready to be expanded into full task specs
+(workflow step 3). No production code has changed yet.
 
 **Raised by:** `docs/implementation_plans_completed/event_loop_blocking_ticket.md`,
 "Follow-up ticket to raise". The design is already settled there as D7; this ticket
@@ -21,7 +22,8 @@ visible:
   what the provisional plan described. It is now D7.
 - **Q3 is resolved** — the behaviour is safe, but the test is new coverage rather
   than a re-verification. It is now D8.
-- A cheaper alternative to D1 was identified and is unverified. It is Task 0.
+- A cheaper alternative to D1 was identified, spiked, and adopted. It is **D9**;
+  the spike evidence is in Task 0.
 
 ---
 
@@ -156,8 +158,10 @@ This is an existing convention rather than a new one:
 `admin_auth_router._process_password_reset` (line 334) is already exactly this
 shape, and its docstring already states the rule. Follow it.
 
-**Subject to Task 0.** If the spike succeeds, most handlers become a single plain
-`def` and no `_impl` is needed. D1 is the fallback and is known to work.
+**Superseded by D9 for all but one handler.** Task 0 established that a plain `def`
+is achievable, so D1 now applies **only to `mailgun_webhook`**. It remains the
+documented fallback: if D9 causes trouble in implementation, D1 is known to work
+and can be reverted to per-handler without re-litigating anything.
 
 **D2. No Pydantic body models.** Inherited from D7. `request_validation.py`
 produces a specific error envelope that the frontend and a large number of tests
@@ -236,6 +240,64 @@ pattern and **zero** existing coverage of the error path. The test called for he
 is therefore new coverage, not a re-verification of something already pinned. Write
 one — it is cheap, and the audit trail is mandatory (`arch_admin.md`).
 
+Task 0 confirmed the behaviour empirically for the D9 shape too: `HTTPException`
+and `APIError` raised from a plain `def` handler both reach `main.py`'s registered
+handlers and produce identical responses. The test is still worth writing.
+
+**D9. Body-reading handlers become plain `def`; a `BodyCapturingRoute` supplies the
+raw body.** (Adopted on the strength of Task 0.) Supersedes D1 everywhere except
+`mailgun_webhook`.
+
+A ~10-line `APIRoute` subclass reads the body once in its async route handler and
+stashes it on `request.state.raw_body`. The endpoint itself is then a plain `def`
+that FastAPI dispatches to the threadpool, and it does its own
+`json.loads` + `INVALID_PAYLOAD` exactly as today — so the `request_validation.py`
+envelope is untouched, which is the constraint D2 exists to protect.
+
+```python
+class BodyCapturingRoute(APIRoute):
+    def get_route_handler(self) -> Callable:
+        original = super().get_route_handler()
+
+        async def custom_handler(request: Request) -> Response:
+            request.state.raw_body = await request.body()
+            return await original(request)
+
+        return custom_handler
+```
+
+Why this over D1: 12 handlers stay single functions instead of becoming 24, no
+dependency list is written twice, and the concurrency rule collapses to one
+sentence — *every* handler is a plain `def` — instead of a rule plus a
+body-reading exception.
+
+**The cost, stated plainly.** `request.state.raw_body` appears from nowhere when
+you read a handler; you have to know the route class exists. Worse, a handler added
+to a router *without* `route_class=BodyCapturingRoute` fails with an
+`AttributeError` at request time rather than at startup. Two required mitigations,
+neither optional:
+
+1. A single accessor in `request_validation.py` — `read_json_body(request)` — that
+   raises an explicit, named error when `raw_body` is absent. Handlers call that,
+   never `request.state.raw_body` directly. This turns the footgun into a message
+   that says what is wrong.
+2. `arch_http_boundary.md` documents the class, the accessor, and the fact that
+   the two are a pair.
+
+If those two feel like more indirection than the saving is worth, D1 is a
+legitimate choice and nothing else in this ticket changes. This is a judgement
+call, not a correctness one.
+
+**Two shapes are exempt:**
+
+- **`form_finish` must NOT use the route class.** Task 0 measured it: on a
+  6.3 MB multipart upload the captured raw body is held *in addition to* the
+  parsed form, roughly doubling peak memory for that request. It does not need the
+  class anyway — `Form(...)`/`File(...)` parameters work in a plain `def` today,
+  using `f.file.read()` in place of `await f.read()`.
+- **`mailgun_webhook` keeps D1's shim.** It needs a parsed form with dynamic field
+  names, which neither the route class nor `Form(...)` declaration can supply.
+
 ---
 
 ## Scope
@@ -249,9 +311,11 @@ one — it is cheap, and the audit trail is mandatory (`arch_admin.md`).
 - `app/routers/admin/admin_availability_router.py` — 3 handlers
 - `app/routers/form_router.py` — 3 handlers
 - `app/routers/webhook_router.py` — `mailgun_webhook` (confirmed in scope, D7)
-- `documentation/arch_http_boundary.md` — extend the handler-concurrency rule to
-  record whichever pattern Task 0 selects as the required shape for body-reading
-  handlers
+- `app/core/request_validation.py` — the `read_json_body(request)` accessor (D9)
+- a home for `BodyCapturingRoute` (D9) — `request_validation.py` or a new
+  `app/routers/_route_class.py`; decide in Task 1
+- `documentation/arch_http_boundary.md` — restate the handler-concurrency rule
+  around D9, including both exemptions and their reasons
 - Router tests for each converted handler, including:
   - **a new `tests/routers/test_admin_user_router.py`** — the module has no tests
     at all today
@@ -274,11 +338,16 @@ one — it is cheap, and the audit trail is mandatory (`arch_admin.md`).
 **Done when**
 
 - No handler in `app/routers/` performs blocking database, bcrypt, or network work
-  directly on the event loop. The only work left in an `async def` body is
-  awaiting the request body and delegating.
-- `add_user` no longer blocks the loop on SMTP/HTTP (via D5 thread-wrap or Q1
-  background task).
-- `arch_http_boundary.md` records the selected pattern.
+  directly on the event loop. Under D9 the stronger form holds: every handler in
+  `app/routers/` is a plain `def`, with `mailgun_webhook` the sole `async def`
+  (shim only) and `/healthz` the sole standing exemption.
+- `add_user` no longer blocks the loop on SMTP/HTTP (D6 thread-wrap).
+- `arch_http_boundary.md` records D9, the `read_json_body` accessor, and both
+  exemptions.
+- A test asserts the audit-failure 500 (D8) — new coverage, none exists today.
+- A test asserts that a handler on a router *without* `BodyCapturingRoute` fails
+  loudly via `read_json_body` rather than with a bare `AttributeError` (D9's
+  footgun mitigation).
 - Full test suite passes, including integration tests (`make test-integration`
   with `TEST_DATABASE_URL` set, per the two-database rule in `arch_testing.md`).
 - Concurrency smoke test: fire ~10 concurrent `POST /admin/auth/login` requests
@@ -292,51 +361,67 @@ One task per router file keeps each chat's context small and each diff
 independently reviewable. Severity first, then the mechanical remainder — with one
 gating spike ahead of everything.
 
-### Task 0 — Spike: can these handlers just be plain `def`? (gates D1)
+### Task 0 — Spike: can these handlers just be plain `def`? — **DONE**
 
-**Run this first. It is time-boxed to roughly 30 minutes and it may remove most of
-the ticket.**
+Run against the pinned versions from `requirements.txt` (FastAPI 0.136.3,
+Starlette 1.3.1, slowapi 0.1.9). **Outcome: yes, but not the way the review
+proposed.** Adopted as D9.
 
-D2 rejects Pydantic body models, correctly, and that is not being reopened. But
-note *why* the shim exists: solely because `await request.json()` forces
-`async def`. That is a property of how the body is read, not of Pydantic.
+**The proposed mechanism does not work.** `body: bytes = Body(...)` fails on
+exactly the case that matters:
 
-FastAPI can hand a raw body to a **sync** handler via `body: bytes = Body(...)`.
-`bytes` carries no Pydantic shape validation, so the handler does its own
-`json.loads` and raises `INVALID_PAYLOAD` exactly as it does today — the
-`request_validation.py` error envelope is preserved untouched, which is the whole
-constraint D2 exists to protect. If that holds, each handler stays a single plain
-`def` dispatched to the threadpool by FastAPI, with no shim, no `_impl`, and
-roughly 13 fewer functions than D1 produces.
+```
+POST with Content-Type: application/json
+  -> 422 {"detail":[{"type":"bytes_type","loc":["body"],
+                     "msg":"Input should be a valid bytes", ...}]}
+```
 
-Two handlers where it looks especially strong:
+FastAPI parses the body as JSON whenever the request's `Content-Type` is
+`application/json`, *then* validates the resulting dict against the declared
+`bytes` and rejects it. Since that is precisely what the frontend sends, every real
+request would have 422'd with FastAPI's envelope — the exact failure D2 exists to
+prevent. It only appeared to work under `text/plain` or a missing content-type.
+Had this been adopted from reasoning alone it would have broken every JSON endpoint
+in the application.
 
-- **`form_update`** already reads raw bytes (`await request.body()` at line 185)
-  because it needs `json.loads(..., parse_float=Decimal)`. It fits `Body(bytes)`
-  more naturally than it fits the current code.
-- **`form_finish`** may need none of this. `Form(...)` and `File(...)` parameters
-  work in a sync `def` today; the only change is `f.file.read()` in place of
-  `await f.read()`. That would eliminate the fiddliest conversion in the list.
+Separately, a **missing body** with `Body(...)` also produces FastAPI's own
+`{"detail":[{"type":"missing"...}]}` 422 before the handler runs — the second
+envelope bypass the review flagged as the decider. `Body(default=b"")` fixes that
+one, but not the content-type problem.
 
-**Unverified — this is why it is a spike, not a decision.** It could not be checked
-during the review because FastAPI is not installed in that environment. The edges
-to establish, on one handler, before adopting it anywhere:
+**What does work: a `BodyCapturingRoute` (D9).** Same goal, different mechanism.
+Verified results:
 
-1. What FastAPI returns for a **missing or empty** body with `bytes = Body(...)`.
-   If it emits its own 422 before the handler runs, that bypasses the envelope and
-   is exactly the failure D2 guards against.
-2. Content-type handling — whether a non-JSON or absent `Content-Type` changes the
-   parameter's resolution.
-3. OpenAPI schema churn, and whether anything consumes the generated schema.
-4. That `@limiter.limit` still behaves. Low risk: sync handlers with the decorator
-   are already proven in `public_router.py` and `resend_invitation`.
+| Check | Result |
+|---|---|
+| `Content-Type: application/json`, the real case | 200, handler sees raw bytes |
+| Handler thread | `AnyIO worker thread`, `is_main=False` — genuinely off the loop |
+| Sync `Depends` (stand-in for `require_admin`) | resolves, also on a worker thread |
+| Malformed JSON / missing body / non-object body | our own envelope, unchanged |
+| `parse_float=Decimal` (`form_update`'s requirement) | `Decimal('70.15')` preserved |
+| `APIError` raised from the sync handler | reaches `main.py`'s handler, 422 envelope intact |
+| `HTTPException(500)` (the audit path, D8) | propagates correctly |
+| `@limiter.limit("3/minute")` | 200, 200, 200, 429, 429 — correct |
+| OpenAPI schema | no distortion from the route class |
 
-**Outcome:** if it works, rewrite tasks 1–5 around plain `def` and drop the
-shim/`_impl` shape. If it does not, D1 stands unchanged and the cost was half an
-hour. Record the result in this file either way, then expand tasks 1–6 into full
-task specs (workflow step 3).
+**The one negative result, which changed the plan:** on a body-capturing route, a
+6.3 MB multipart upload holds the captured raw body *and* the parsed form
+simultaneously (`raw_body_also_held: 6291983` alongside `total: 6291462`). That is
+why `form_finish` is exempted in D9. On a plain router, `Form(...)`/`File(...)` +
+`f.file.read()` in a `def` handler works and runs on a worker thread, with no
+double-buffering.
+
+**Not carried forward:** the review's suggestion that `form_update` would fit
+`Body(bytes)` "more naturally". It would not — it fails the same content-type way
+as the rest. Its `parse_float=Decimal` requirement is satisfied by D9 instead.
+
+Spike scripts are scratch and were not committed; the table above is the record.
 
 ### Tasks 1–6
+
+All of these now assume D9. Task 1 lands the `BodyCapturingRoute` and the
+`read_json_body` accessor as part of its diff, since it is first; tasks 2–4 just
+apply them.
 
 1. **`admin_user_router.py` — `add_user`.** Thread-wrap the invitation send per D6;
    Q1 is closed, there is no design question left to resolve. The real work here is
@@ -345,25 +430,32 @@ task specs (workflow step 3).
    transaction rollback, *before* touching the handler. Build on the existing
    `FakeAuthRepo` in `tests/helpers/admin_test_helpers.py`.
 2. **`admin_auth_router.py` — `login` and `verify_mfa_code`,** including the D3
-   bcrypt fix. Two things to get right:
-   - `login` takes `BackgroundTasks`. It is injected into the shim and passed
-     through to `_impl`; `add_task` is a list append and is safe off-loop, but it
-     is easy to fumble during the split.
-   - `verify_mfa_code` builds a `JSONResponse` and calls `set_cookie` (lines
-     323–332). Construct and return it from inside `_impl` — do not split response
-     construction back out into the shim.
+   bcrypt fix. Under D9 both stay single functions, which removes the two hazards
+   the review flagged for the D1 shape — `login`'s `BackgroundTasks` and
+   `verify_mfa_code`'s `set_cookie` response no longer have to cross a
+   shim/`_impl` boundary at all. Just change `async def` to `def` and swap the
+   body read for `read_json_body(request)`.
 3. **`admin_practice_router.py` and `admin_availability_router.py`** — 6 handlers,
    all the same `get_conn` transaction shape (D4). One task.
-4. **`form_router.py`** — 3 handlers. Two corrections to the provisional plan:
-   - **`form_init` must move `check_availability` too**, with its fail-open
+4. **`form_router.py`** — 3 handlers, and the only file needing two different
+   shapes:
+   - `form_init` and `form_update` take D9 (`BodyCapturingRoute` + `def`).
+     **`form_init` must also move `check_availability`**, with its fail-open
      `try/except` and 503 return intact — see the table note. This is the
-     patient-facing hot path and the fail-open behaviour is a project invariant.
-   - **`form_finish` may be trivial** if Task 0 succeeds (`f.file.read()` in a sync
-     `def`). Under D1 it is the fiddliest of the three: the shim reads the uploads
-     and passes bytes into `_impl`, which then owns the already-threaded
-     sanitisation call.
-5. **`webhook_router.py` — `mailgun_webhook`.** Confirmed in scope. Per D7, `_impl`
-   takes the three accessor-resolved values as plain parameters; its signature will
-   not match the other handlers.
-6. **Documentation.** `arch_http_boundary.md` handler-concurrency rule, updated to
-   record the pattern Task 0 selected.
+     patient-facing hot path and fail-open is a project invariant.
+   - **`form_finish` is exempt from the route class** (D9, double-buffering). It
+     becomes a plain `def` with its existing `Form(...)`/`File(...)` parameters and
+     `f.file.read()`, and it keeps its `run_in_threadpool` sanitisation call — that
+     call is now redundant (the handler is already on a worker thread) but harmless;
+     simplify it or leave it, either is defensible.
+   - Because the two shapes differ, `form_finish` needs its own router instance or
+     an explicitly non-capturing route. Decide that when writing the task.
+5. **`webhook_router.py` — `mailgun_webhook`.** The one handler still on D1's
+   shim/`_impl` shape: it needs a parsed form with dynamic Mailgun field names,
+   which neither D9's route class nor `Form(...)` declaration can supply. Per D7,
+   `_impl` also takes the three accessor-resolved values as plain parameters, so
+   its signature will not match anything else in the ticket.
+6. **Documentation.** `arch_http_boundary.md` handler-concurrency rule, restated
+   around D9: every handler is a plain `def`; body-reading ones use
+   `BodyCapturingRoute` + `read_json_body`; the two exemptions are `form_finish`
+   (multipart) and `mailgun_webhook` (dynamic form fields), each with its reason.
