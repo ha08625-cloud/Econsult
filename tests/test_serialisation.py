@@ -342,3 +342,33 @@ def test_clinical_output_from_dict_defaults_for_legacy_record():
     }
     restored = ClinicalOutput.from_dict(legacy)
     assert restored.quantity_answers == {}
+    assert restored.pdf_labels == {}
+
+
+# ---------------------------------------------------------------------------
+# pdf_labels -- CLINICAL SUMMARY snapshot
+# ---------------------------------------------------------------------------
+
+
+def _pdf_label_ruleset():
+    rs = _ruleset()
+    rs["questions"][0]["pdf_label"] = "Weight"
+    return rs
+
+
+def test_clinical_output_collects_authored_pdf_labels():
+    out = clinical_output(_runtime("70.5"), _pdf_label_ruleset(), _patient_details())
+    assert out.pdf_labels == {"weight": "Weight"}
+
+
+def test_clinical_output_pdf_labels_empty_when_none_authored():
+    out = clinical_output(_runtime("70.5"), _ruleset(), _patient_details())
+    assert out.pdf_labels == {}
+
+
+def test_clinical_output_pdf_labels_round_trip():
+    from dataclasses import asdict
+
+    out = clinical_output(_runtime("70.5"), _pdf_label_ruleset(), _patient_details())
+    restored = ClinicalOutput.from_dict(asdict(out))
+    assert restored.pdf_labels == {"weight": "Weight"}
