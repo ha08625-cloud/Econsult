@@ -188,6 +188,40 @@ def _validate_quantity_fields(q: dict[str, Any]) -> None:
                 raise ValueError(f"Non-quantity question '{key}' must not set {unit_field}")
 
 
+def _validate_pdf_label(q: dict[str, Any]) -> None:
+    """
+    Validate the optional pdf_label field.
+
+    pdf_label is a PDF display concern only: it names a question in the
+    CLINICAL SUMMARY block (see arch_submission.md) and has no effect on form
+    logic, encoder behaviour, or safety rules. It is optional, so absence is
+    always valid, but a label that is present must be usable:
+
+      - a non-empty string, since an empty label renders a bare colon
+      - not on a text question, because a free-text answer cannot render
+        usefully in the summary's fixed-width value column
+
+    Uniqueness within the ruleset is enforced by the caller, which is the only
+    place with a view across questions.
+    """
+    key = q["answer_key"]
+    label = q.get("pdf_label")
+
+    if label is None:
+        return
+
+    if not isinstance(label, str) or not label.strip():
+        raise ValueError(
+            f"Question '{key}' pdf_label must be a non-empty string or null, got {label!r}"
+        )
+
+    if q.get("answer_type") == "text":
+        raise ValueError(
+            f"Text question '{key}' must not set pdf_label: a free-text answer "
+            f"cannot render usefully in the CLINICAL SUMMARY block"
+        )
+
+
 def _validate_shared_toggle_consistency(ruleset: dict[str, Any]) -> None:
     """
     All multi-system quantity questions in a ruleset must agree on
@@ -240,6 +274,7 @@ def validate_ruleset(ruleset: dict[str, Any]) -> None:
         raise ValueError("Ruleset missing or empty: questions")
 
     seen_answer_keys = set()
+    seen_pdf_labels: set[str] = set()
     answer_key_types: dict[str, str] = {}
 
     for q in ruleset["questions"]:
@@ -265,6 +300,16 @@ def validate_ruleset(ruleset: dict[str, Any]) -> None:
             _validate_number_question(q)
 
         _validate_quantity_fields(q)
+
+        _validate_pdf_label(q)
+        pdf_label = q.get("pdf_label")
+        if pdf_label is not None:
+            if pdf_label in seen_pdf_labels:
+                raise ValueError(
+                    f"Duplicate pdf_label {pdf_label!r} on question '{q['answer_key']}': "
+                    f"summary rows must be unambiguous"
+                )
+            seen_pdf_labels.add(pdf_label)
 
         if q.get("send_to_encoder"):
             if q.get("encoder_prompt") is None:
