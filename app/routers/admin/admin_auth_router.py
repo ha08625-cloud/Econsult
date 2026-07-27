@@ -22,10 +22,12 @@ the database so the user is not left waiting for a code that will never arrive.
 
 import logging
 from datetime import UTC, datetime, timedelta
+from functools import partial
 
 import sentry_sdk
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.core.admin_context import (
     SESSION_COOKIE_MAX_AGE,
@@ -150,10 +152,13 @@ async def login(
     )
 
     try:
-        auth_service.verify_login_credentials(
-            email=email,
-            password=password,
-            auth_repo=auth_repo,
+        await run_in_threadpool(
+            partial(
+                auth_service.verify_login_credentials,
+                email=email,
+                password=password,
+                auth_repo=auth_repo,
+            )
         )
     except APIError as exc:
         if exc.code == "INVALID_CREDENTIALS":
@@ -273,11 +278,14 @@ async def verify_mfa_code(
     )
 
     try:
-        session_id = auth_service.verify_mfa_code(
-            email=email,
-            code=code,
-            auth_repo=auth_repo,
-            session_ttl_minutes=SESSION_TTL_MINUTES,
+        session_id = await run_in_threadpool(
+            partial(
+                auth_service.verify_mfa_code,
+                email=email,
+                code=code,
+                auth_repo=auth_repo,
+                session_ttl_minutes=SESSION_TTL_MINUTES,
+            )
         )
     except APIError as exc:
         if exc.code == "INVALID_AUTH_CODE":
@@ -323,6 +331,40 @@ async def verify_mfa_code(
         max_age=SESSION_COOKIE_MAX_AGE,
     )
     return response
+
+
+def _process_password_reset(
+    email: str,
+    auth_repo,
+    delivery_service,
+    start: float,
+) -> None:
+    """
+    Look up the user, apply the fixed delay, and send the reset email if found.
+
+    Runs via run_in_threadpool: the fixed delay is a time.sleep() and the
+    lookup/token generation are blocking psycopg2 calls, none of which may
+    run directly on the event loop.
+    """
+    from app.services.admin.auth_service import _fixed_delay
+
+    user = auth_repo.get_user_by_email(email)
+
+    # Fixed delay applied regardless of whether the user exists, to prevent
+    # an attacker from distinguishing DB hit vs miss via response time.
+    _fixed_delay(start)
+
+    if user is not None:
+        raw_token = auth_service.generate_reset_token(user["id"], auth_repo)
+        try:
+            delivery_service.send_admin_invitation(email, raw_token)
+            logger.info("auth.request_reset.sent: %s", email)
+        except Exception:
+            # Delivery failure is logged but not surfaced — the response is
+            # always 200 to prevent enumeration.
+            logger.warning("auth.request_reset.delivery_failed: %s", email)
+    else:
+        logger.warning("auth.request_reset.unknown_email: %s", email)
 
 
 # ---------------------------------------------------------------------------
@@ -373,25 +415,9 @@ async def request_password_reset(
 
     email = email.strip().lower()
 
-    user = auth_repo.get_user_by_email(email)
-
-    # Fixed delay applied regardless of whether the user exists, to prevent
-    # an attacker from distinguishing DB hit vs miss via response time.
-    from app.services.admin.auth_service import _fixed_delay
-
-    _fixed_delay(start)
-
-    if user is not None:
-        raw_token = auth_service.generate_reset_token(user["id"], auth_repo)
-        try:
-            delivery_service.send_admin_invitation(email, raw_token)
-            logger.info("auth.request_reset.sent: %s", email)
-        except Exception:
-            # Delivery failure is logged but not surfaced — the response is
-            # always 200 to prevent enumeration.
-            logger.warning("auth.request_reset.delivery_failed: %s", email)
-    else:
-        logger.warning("auth.request_reset.unknown_email: %s", email)
+    await run_in_threadpool(
+        _process_password_reset, email, auth_repo, delivery_service, start
+    )
 
     return {"ok": True}
 
@@ -445,8 +471,8 @@ async def set_password(
 
     token = token.strip()
 
-    user_id = auth_service.verify_reset_token(token, auth_repo)
-    auth_service.set_new_password(user_id, password, auth_repo)
+    user_id = await run_in_threadpool(auth_service.verify_reset_token, token, auth_repo)
+    await run_in_threadpool(auth_service.set_new_password, user_id, password, auth_repo)
 
     logger.info("auth.set_password.success: user_id=%s", user_id)
     return {"ok": True}
