@@ -31,10 +31,10 @@ This means bcrypt's CPU cost is always accounted for within the minimum
 response window, regardless of which path was taken.
 
 bcrypt note:
-bcrypt.hashpw and bcrypt.checkpw are blocking CPU-bound operations.
-At current scale (single admin user, infrequent logins) this is acceptable.
-If this ever becomes a performance concern, wrap calls in
-asyncio.get_event_loop().run_in_executor(None, ...) from the async router.
+bcrypt.hashpw and bcrypt.checkpw are blocking CPU-bound operations. The
+async router now wraps every entry point into this module in
+starlette.concurrency.run_in_threadpool, so bcrypt (and the rest of this
+module's blocking work) never runs directly on the event loop.
 """
 
 import hashlib
@@ -108,12 +108,12 @@ def _fixed_delay(start: float) -> None:
     """
     Block until at least _MIN_RESPONSE_SECONDS have elapsed since start.
 
-    Uses time.sleep (not asyncio.sleep) because the repository calls in
-    verify_mfa_code and verify_login_credentials are synchronous psycopg2
-    calls. Mixing asyncio.sleep with synchronous code would require
-    run_in_executor for the entire function. At current scale this is
-    acceptable — revisit if the admin portal ever handles concurrent login
-    attempts under load.
+    Uses time.sleep (not asyncio.sleep): the caller (the async router) runs
+    this whole function — including this sleep — via run_in_threadpool, so
+    it executes on a worker thread rather than the event loop. time.sleep is
+    therefore the correct primitive here; asyncio.sleep would not work off
+    the loop. The timing-attack mitigation is unaffected by which thread it
+    runs on, since it depends only on wall-clock elapsed time.
     """
     elapsed = time.monotonic() - start
     remaining = _MIN_RESPONSE_SECONDS - elapsed

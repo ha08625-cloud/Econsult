@@ -27,6 +27,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.core.dependencies import (
     get_availability_repo,
@@ -77,6 +78,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _VALID_TIERS = {"high", "standard"}
+
+
+def _sanitize_photos(photo_bytes: list[bytes], tier: str) -> list[bytes]:
+    """
+    Sanitize each photo via sanitize_image, translating failures to HTTPException.
+
+    Runs on the loop's threadpool via run_in_threadpool, not on the event loop
+    directly — the CDR passes (up to three full decode/resize/re-encode cycles
+    per photo at the "high" tier) are CPU-bound and can take seconds. It
+    deliberately raises HTTPException despite looking otherwise pure: this is
+    safe because run_in_threadpool propagates exceptions from the worker
+    thread back to the caller unchanged.
+    """
+    sanitized = []
+    for i, b in enumerate(photo_bytes):
+        try:
+            sanitized.append(sanitize_image(b, tier=tier))
+        except ImageTooLargeError as exc:
+            raise INVALID_PAYLOAD(str(exc)) from None
+        except ValueError:
+            raise INVALID_PAYLOAD(f"Photo {i + 1} is not a valid image") from None
+    return sanitized
 
 
 # ---------------------------------------------------------------------------
@@ -294,15 +317,7 @@ async def form_finish(
     # Re-encoding an already-compressed JPEG can marginally increase its size
     # in edge cases; these checks ensure the stored bytes invariant holds.
     effective_tier = tier if tier in _VALID_TIERS else "standard"
-    sanitized = []
-    for i, b in enumerate(photo_bytes):
-        try:
-            sanitized.append(sanitize_image(b, tier=effective_tier))
-        except ImageTooLargeError as exc:
-            raise INVALID_PAYLOAD(str(exc)) from None
-        except ValueError:
-            raise INVALID_PAYLOAD(f"Photo {i + 1} is not a valid image") from None
-    photo_bytes = sanitized
+    photo_bytes = await run_in_threadpool(_sanitize_photos, photo_bytes, effective_tier)
 
     for i, b in enumerate(photo_bytes):
         if len(b) > MAX_FILE_SIZE_BYTES:
