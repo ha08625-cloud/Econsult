@@ -22,18 +22,17 @@ the database so the user is not left waiting for a code that will never arrive.
 
 import logging
 from datetime import UTC, datetime, timedelta
-from functools import partial
 
 import sentry_sdk
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
-from starlette.concurrency import run_in_threadpool
 
 from app.core.admin_context import (
     SESSION_COOKIE_MAX_AGE,
     SESSION_COOKIE_NAME,
     SESSION_TTL_MINUTES,
 )
+from app.core.body_capture import BodyCapturingRoute, read_json_body
 from app.core.dependencies import (
     get_admin_delivery_service,
     get_audit_repo,
@@ -50,7 +49,7 @@ _CODE_TTL_MINUTES = 10
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(route_class=BodyCapturingRoute)
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +99,7 @@ def _send_mfa_code_background(
 
 @router.post("/auth/login", status_code=200)
 @limiter.limit("5/minute")
-async def login(
+def login(
     request: Request,
     background_tasks: BackgroundTasks,
     auth_repo=Depends(get_auth_repo),
@@ -128,10 +127,7 @@ async def login(
     - auth.login.step1_failed on any INVALID_CREDENTIALS.
     - auth.login.step1_succeeded on success (OTP generated and queued).
     """
-    try:
-        body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body") from None
+    body = read_json_body(request)
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -152,13 +148,10 @@ async def login(
     )
 
     try:
-        await run_in_threadpool(
-            partial(
-                auth_service.verify_login_credentials,
-                email=email,
-                password=password,
-                auth_repo=auth_repo,
-            )
+        auth_service.verify_login_credentials(
+            email=email,
+            password=password,
+            auth_repo=auth_repo,
         )
     except APIError as exc:
         if exc.code == "INVALID_CREDENTIALS":
@@ -225,7 +218,7 @@ async def login(
 
 @router.post("/auth/verify", status_code=200)
 @limiter.limit("5/minute")
-async def verify_mfa_code(
+def verify_mfa_code(
     request: Request,
     auth_repo=Depends(get_auth_repo),
     audit_repo=Depends(get_audit_repo),
@@ -249,10 +242,7 @@ async def verify_mfa_code(
     INVALID_AUTH_CODE. The failed event is logged before re-raising so the
     422 response to the client is unchanged.
     """
-    try:
-        body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body") from None
+    body = read_json_body(request)
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -278,14 +268,11 @@ async def verify_mfa_code(
     )
 
     try:
-        session_id = await run_in_threadpool(
-            partial(
-                auth_service.verify_mfa_code,
-                email=email,
-                code=code,
-                auth_repo=auth_repo,
-                session_ttl_minutes=SESSION_TTL_MINUTES,
-            )
+        session_id = auth_service.verify_mfa_code(
+            email=email,
+            code=code,
+            auth_repo=auth_repo,
+            session_ttl_minutes=SESSION_TTL_MINUTES,
         )
     except APIError as exc:
         if exc.code == "INVALID_AUTH_CODE":
@@ -342,9 +329,10 @@ def _process_password_reset(
     """
     Look up the user, apply the fixed delay, and send the reset email if found.
 
-    Runs via run_in_threadpool: the fixed delay is a time.sleep() and the
-    lookup/token generation are blocking psycopg2 calls, none of which may
-    run directly on the event loop.
+    Called directly from request_password_reset, which is now a plain `def`
+    handler dispatched onto the anyio threadpool — the fixed delay
+    (time.sleep()) and the lookup/token generation (blocking psycopg2 calls)
+    are off the event loop because the whole handler runs on a worker thread.
     """
     from app.services.admin.auth_service import _fixed_delay
 
@@ -374,7 +362,7 @@ def _process_password_reset(
 
 @router.post("/auth/request-reset", status_code=200)
 @limiter.limit("5/minute")
-async def request_password_reset(
+def request_password_reset(
     request: Request,
     auth_repo=Depends(get_auth_repo),
     delivery_service=Depends(get_admin_delivery_service),
@@ -401,10 +389,7 @@ async def request_password_reset(
 
     start = time.monotonic()
 
-    try:
-        body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body") from None
+    body = read_json_body(request)
 
     if not isinstance(body, dict) or "email" not in body:
         raise INVALID_PAYLOAD('Body must be {"email": "..."}')
@@ -415,9 +400,7 @@ async def request_password_reset(
 
     email = email.strip().lower()
 
-    await run_in_threadpool(
-        _process_password_reset, email, auth_repo, delivery_service, start
-    )
+    _process_password_reset(email, auth_repo, delivery_service, start)
 
     return {"ok": True}
 
@@ -429,7 +412,7 @@ async def request_password_reset(
 
 @router.post("/auth/set-password", status_code=200)
 @limiter.limit("5/minute")
-async def set_password(
+def set_password(
     request: Request,
     auth_repo=Depends(get_auth_repo),
     practice_id: str = Depends(get_practice_id),
@@ -453,10 +436,7 @@ async def set_password(
     endpoint invoked before the user has a session. The password_changed_at
     column on admin_users provides the compliance audit trail.
     """
-    try:
-        body = await request.json()
-    except Exception:
-        raise INVALID_PAYLOAD("Invalid JSON body") from None
+    body = read_json_body(request)
 
     if not isinstance(body, dict):
         raise INVALID_PAYLOAD("Body must be a JSON object")
@@ -471,8 +451,8 @@ async def set_password(
 
     token = token.strip()
 
-    user_id = await run_in_threadpool(auth_service.verify_reset_token, token, auth_repo)
-    await run_in_threadpool(auth_service.set_new_password, user_id, password, auth_repo)
+    user_id = auth_service.verify_reset_token(token, auth_repo)
+    auth_service.set_new_password(user_id, password, auth_repo)
 
     logger.info("auth.set_password.success: user_id=%s", user_id)
     return {"ok": True}
