@@ -18,6 +18,8 @@ The patient-facing form is intentionally unauthenticated to ensure accessibility
 
 - **Two-Factor Authentication.** The admin portal uses password + email OTP (2FA). Login is a two-step flow: email and password are submitted first; if correct, a time-limited one-time code is generated and emailed; the code is then submitted to complete authentication and issue a session cookie. A session is only issued after both factors pass.
 
+- **Sliding Session Expiry.** Sessions use a 60-minute sliding TTL, not a fixed absolute one: every authenticated request that passes `require_admin` extends `expires_at` by another 60 minutes and re-issues the `httponly`/`secure`/`samesite=strict` session cookie, so an actively-used session never lapses mid-work. There is no absolute session cap — an admin who stays continuously active can remain logged in indefinitely. The refresh is best-effort (logged on failure, request proceeds) since a database outage would already have failed the session-validation step that precedes it.
+
 - **Password Requirements.** Passwords must be between 12 and 128 characters and achieve a minimum zxcvbn score of 3 ("good"). The same threshold is enforced independently on both the frontend (disabling the submit button) and the backend (`set_new_password` in `auth_service.py`). On the backend, if the score is below threshold, the specific zxcvbn feedback string is returned to the user as `WEAK_PASSWORD` (HTTP 422). This provides actionable guidance rather than a generic rejection.
 
 - **Password Storage.** Passwords are hashed with bcrypt (cost factor from `bcrypt.gensalt()` defaults). Raw passwords are never stored or logged. The `hashed_password` column on `admin_users` is `NULL` for newly invited accounts that have not yet completed setup.

@@ -61,7 +61,7 @@ The OTP is written to the database synchronously before the 200 response is retu
 Three consecutive wrong passwords lock the account for 15 minutes (`password_locked_until` on `admin_users`). The lockout timestamp is set atomically with the third failed attempt in a single UPDATE. `reset_password_attempts` is called on successful password verification to clear the counter. `set_password` also resets the counter atomically.
 
 **Session behaviour:**
-- Session TTL is 24 hours (`SESSION_TTL_MINUTES = 60 * 24` in `admin_context.py`).
+- Sessions use a sliding 60-minute TTL (`SESSION_TTL_MINUTES = 60` in `admin_context.py`), not a fixed absolute expiry. Every successful `require_admin` validation extends `expires_at` by another 60 minutes (`AuthRepository.update_session_expiry`, DB-clock arithmetic via `make_interval`) and re-issues the session cookie with the same attributes as login (`httponly=True, secure=True, samesite="strict"`, `max_age=SESSION_COOKIE_MAX_AGE`). An actively-used session therefore never lapses; only 60+ minutes of inactivity expires it. The refresh is best-effort — wrapped in try/except and logged on failure, since a dead DB would already have failed the validation step. There is still no absolute session cap: an actively-used session can remain valid indefinitely.
 - Single-session enforcement: `AuthRepository.create_session` deletes all existing sessions for the user before inserting the new one, in a single transaction.
 - `require_admin` reads the session cookie, calls `auth_repo.get_session_context(session_id)`, and raises HTTP 401 if the cookie is absent, not found, or expired. The expiry check is done in SQL (`expires_at > NOW()`) to avoid clock-skew.
 
@@ -89,7 +89,7 @@ All email addresses are normalised to lowercase at the point of entry in routers
 Set to `NOW()` by `AuthRepository.set_password` whenever a new password is stored. Required for Cyber Essentials Plus compliance auditing. Never updated by any other method.
 
 **Session expiry mid-session:**
-If a session expires while an admin is mid-edit, the next mutating API request returns 401. The frontend detects `AuthError` and redirects to `LoginView`. Any unsaved data is lost. No re-auth modal is provided.
+If a session expires while an admin is mid-edit (60+ minutes of inactivity), the next API request returns 401. The frontend detects `AuthError` and shows `LoginView` in a modal overlay above the still-mounted `EditorView`, rather than tearing it down — unsaved signposting/availability edits, the active tab, and the selected condition all survive. On successful re-login the overlay is dismissed with no refetch or remount; the user re-clicks whatever action failed. An explicit "Log out and discard changes" escape hatch in the overlay, and the separate full-page logout button, both discard state as before.
 
 **401 response contract (HTTP-first):**
 HTTP `401 Unauthorized` is the primary contract for session expiry. `admin_context.py` raises `HTTPException(status_code=401)`. `main.py` reshapes any 401 into `{"error": {"code": "UNAUTHORIZED", "message": "..."}}`. `api.ts` throws `AuthError` on `res.status === 401`.
@@ -171,7 +171,7 @@ The user's id is looked up within the same transaction (via a direct cursor quer
 The admin UI is a Vite + React app (TypeScript).
 
 **Component structure:**
-- `App.tsx` — root. On mount, checks `window.location.hash` before probing the session. If the hash matches `#reset:{token}`, bypasses the session probe and sets state to `set_password`. Otherwise, probes by calling `GET /admin/conditions`. Auth states: `"checking" | "login" | "editor" | "set_password"`.
+- `App.tsx` — root. On mount, checks `window.location.hash` before probing the session. If the hash matches `#reset:{token}`, bypasses the session probe and sets state to `set_password`. Otherwise, probes by calling `GET /admin/conditions`. Auth states: `"checking" | "login" | "editor" | "set_password"`, plus a separate `sessionExpired` boolean that overlays `LoginView` on top of a still-mounted `EditorView` on mid-session `AuthError`, instead of transitioning `authState` away from `"editor"`.
 - `LoginView.tsx` — two-step 2FA login. Step 1 ("login" state): email and password inputs; calls `POST /admin/auth/login`. Step 2 ("code" state): 6-digit OTP input; calls `POST /admin/auth/verify`. Also renders a "Forgot / Set up password?" button that calls `POST /admin/auth/request-reset` and shows a generic confirmation message regardless of outcome. On OTP success, calls `onSuccess()`.
 - `SetPasswordView.tsx` — rendered when `authState === "set_password"`. On mount: extracts the raw token from the URL hash and calls `history.replaceState` to clear it — this happens unconditionally (success, error, or no token) to prevent the token from persisting in browser history. Renders a password input with a real-time zxcvbn strength meter (4 colour-coded segments, score labels, actionable suggestions) and a confirm-password input. Submit is disabled until: length >= 12, zxcvbn score >= 3, and passwords match. On success, transitions to login via `onComplete()`. On `INVALID_RESET_TOKEN`, shows an expired-link message.
 - `EditorView.tsx` — five-tab container (Signposting, Availability, Practice settings, Audit log, Manage users).
