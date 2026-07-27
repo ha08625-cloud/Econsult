@@ -51,6 +51,7 @@ import logging
 import time
 
 from fastapi import APIRouter, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from app.core.db import get_conn
@@ -132,6 +133,34 @@ async def mailgun_webhook(request: Request) -> Response:
     """
     Receive and process a Mailgun delivery event webhook.
 
+    This is the one handler in the event-loop-body-handlers ticket that keeps
+    an async shim (D7): Mailgun's dynamic form field names
+    (`event-data[message][headers][message-id]`) mean the payload can only be
+    read via `await request.form()`, which neither BodyCapturingRoute nor a
+    declared `Form(...)` parameter can supply. The shim does the async form
+    read and app.state lookups, then dispatches the blocking work to
+    `_mailgun_webhook_impl` via run_in_threadpool. Do not "consistency-fix"
+    this into a plain `def` — it cannot read its own body without `await`.
+    """
+    form = await request.form()
+    payload = dict(form)
+    signing_key = get_mailgun_signing_key(request)
+    database_url = get_database_url(request)
+    delivery_repo = get_delivery_repo(request)
+    return await run_in_threadpool(
+        _mailgun_webhook_impl, payload, signing_key, database_url, delivery_repo
+    )
+
+
+def _mailgun_webhook_impl(
+    payload: dict,
+    signing_key: str | None,
+    database_url: str,
+    delivery_repo: DeliveryRepository,
+) -> Response:
+    """
+    Blocking body of mailgun_webhook, run on the threadpool by the async shim.
+
     Mailgun sends form-encoded payloads. The three security fields
     (timestamp, token, signature) are always present on valid requests.
     The event-data fields vary by event type.
@@ -141,9 +170,6 @@ async def mailgun_webhook(request: Request) -> Response:
         403     — HMAC signature invalid
         406     — provider_message_id not yet committed (race condition; Mailgun retries)
     """
-    form = await request.form()
-    payload = dict(form)
-
     # Extract security fields.
     timestamp = payload.get("timestamp", "")
     token = payload.get("token", "")
@@ -163,7 +189,6 @@ async def mailgun_webhook(request: Request) -> Response:
         return JSONResponse(status_code=200, content={"status": "ok"})
 
     # 2. HMAC verification.
-    signing_key = get_mailgun_signing_key(request)
     if not signing_key:
         # None on the SMTP path, or if never configured. Startup validation
         # guarantees presence on the Mailgun path; if it is somehow absent at
@@ -176,7 +201,6 @@ async def mailgun_webhook(request: Request) -> Response:
         return JSONResponse(status_code=403, content={"error": "invalid signature"})
 
     # 3. Replay protection.
-    database_url: str = get_database_url(request)
     is_fresh = _consume_token(database_url, token)
     if not is_fresh:
         logger.info(
@@ -187,8 +211,6 @@ async def mailgun_webhook(request: Request) -> Response:
         return JSONResponse(status_code=200, content={"status": "ok"})
 
     # All security checks passed. Process the event.
-    delivery_repo: DeliveryRepository = get_delivery_repo(request)
-
     logger.info(
         "Webhook: processing event=%s provider_message_id=%s",
         event_type,
