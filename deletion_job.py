@@ -56,6 +56,9 @@ init_telemetry("deletion-cron")
 
 logger = logging.getLogger(__name__)
 
+# Two minutes, against the 10s default in app/core/db.py. See run_deletion.
+DELETION_STATEMENT_TIMEOUT_MS = 120_000
+
 
 def _require_env(name: str) -> str:
     value = os.environ.get(name)
@@ -74,13 +77,23 @@ def run_deletion(database_url: str) -> None:
     their target rows by joining against delivery_jobs on submission_id
     and filtering on status = 'delivered'.
 
+    Raises the default statement timeout to two minutes. These are unbounded
+    bulk deletes — if the cron has not run for several days, or a backlog of
+    delivered submissions has built up, they legitimately take far longer
+    than the 10s default every other caller uses. A partial deletion is
+    harmless (the next run picks up whatever was left), but a job that
+    aborts every night while the backlog grows is not.
+
     Logs the number of rows deleted from each table. Raises on any
     database error so the caller can exit with a non-zero code.
     """
     # Import here so missing DATABASE_URL is caught before any app import.
     from app.core.db import get_conn
 
-    with get_conn(database_url) as conn, conn.cursor() as cur:
+    with (
+        get_conn(database_url, statement_timeout_ms=DELETION_STATEMENT_TIMEOUT_MS) as conn,
+        conn.cursor() as cur,
+    ):
         cur.execute(
             """
                 DELETE FROM submission_photos
