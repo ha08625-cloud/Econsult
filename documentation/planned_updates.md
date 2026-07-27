@@ -1,6 +1,5 @@
 ### Updates
 - timeout for forms after 30 minutes
-- Session refresh / sliding expiry
 - add eslint to CI
 - MYPY
 - calculations
@@ -11,7 +10,13 @@ gp connect and MESH (defer)
 - remove submissions after 7 days
 - Notification architecture
 - safety rules implemented on clicking yes/no, rather than on submit form (defer - big feature change and we need to know if blocking safety rules are desired or not)
+6. Test coverage has a meaningful gap
 
+The testing architecture is solid in structure, but I notice there are no tests mentioned for auth_service.py or the MFA flow specifically. Given that the admin portal holds configuration that affects clinical routing, and the MFA implementation includes timing attack mitigation and lockout logic, this needs unit test coverage. If those tests exist and just are not listed in the arch doc, that is fine, but worth checking.
+
+7. No smoke test or synthetic transaction in production
+
+You have good CI tests, but there is nothing that can verify the deployed system is working end-to-end after a deployment. A simple synthetic transaction - submit a test form, verify a delivery job was created - would catch deployment regressions that CI cannot catch (environment variable mismatches, Railway networking issues, etc.).
 
 ### Encoder updates
 - Deterministic data augmentation
