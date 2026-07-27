@@ -73,89 +73,6 @@ missing. See D9's footgun note.
 
 ---
 
-# Task 1: Body-capture foundation and `add_user`
-
-**A. State of the world**
-
-Nothing in this ticket has been implemented. This is the first task and every
-later task depends on the module it creates.
-
-`add_user` (`app/routers/admin/admin_user_router.py:125`) is the highest-severity
-handler in the ticket: it calls `delivery_service.send_admin_invitation` at line
-226, a synchronous SMTP connect-and-send with a 30-second timeout, or a
-`requests.post(timeout=30)` on the Mailgun path — directly on the event loop.
-
-`admin_user_router.py` has **no test coverage of any kind**. There is no
-`tests/routers/test_admin_user_router.py` and no test in the suite hits `/users`.
-Write the tests before touching the handler; they are the only regression net this
-task has.
-
-**B. Files and deliverables**
-
-| File | Deliverable |
-|---|---|
-| `app/core/body_capture.py` | New. `BodyCapturingRoute` (per D9) and `read_json_body(request)`. Module docstring explains that the two are a pair and why. |
-| `tests/routers/test_admin_user_router.py` | New. Covers `add_user` and `resend_invitation`. |
-| `app/routers/admin/admin_user_router.py` | `router = APIRouter(route_class=BodyCapturingRoute)`; `add_user` becomes plain `def`. |
-| `tests/test_body_capture.py` | New. Pins the `read_json_body` failure mode. |
-
-**C. Instructions**
-
-1. Create `app/core/body_capture.py`:
-
-   ```python
-   class BodyCapturingRoute(APIRoute):
-       def get_route_handler(self) -> Callable:
-           original = super().get_route_handler()
-
-           async def custom_handler(request: Request) -> Response:
-               request.state.raw_body = await request.body()
-               return await original(request)
-
-           return custom_handler
-   ```
-
-   Add `read_json_body(request)` alongside it. It must:
-   - raise a clear, named error (not a bare `AttributeError`) when
-     `request.state.raw_body` is absent, naming `BodyCapturingRoute` in the
-     message — this is the D9 footgun mitigation and is required;
-   - `json.loads` the bytes and raise `INVALID_PAYLOAD("Invalid JSON body")` on
-     failure, matching the existing message exactly;
-   - accept an optional `parse_float` argument for `form_update`'s `Decimal`
-     requirement (Task 4).
-
-   Do **not** put this in `request_validation.py` — that module is pure
-   payload-shape validation with no Starlette imports, and should stay that way.
-
-2. Write `tests/routers/test_admin_user_router.py` **before** changing the handler,
-   and confirm it passes against the current `async def` code. Cover:
-   `POST /users` 200 with `email_sent: true`; 200 with `email_sent: false` when
-   `send_admin_invitation` raises; 409 duplicate email; 403 disallowed domain; 422
-   invalid email format; 401 expired session; malformed JSON body; and the
-   transaction rollback path (audit write fails → 500, nothing committed).
-   Build on `FakeAuthRepo` in `tests/helpers/admin_test_helpers.py`, which already
-   has `get_users_by_practice` and `count_users_for_practice`. Also cover
-   `resend_invitation`, which is untested and is `add_user`'s sibling.
-
-3. Change `router = APIRouter()` to
-   `router = APIRouter(route_class=BodyCapturingRoute)` at line 66.
-
-4. Convert `add_user` to plain `def`. Replace the `try: body = await
-   request.json()` block at lines 159–162 with `body = read_json_body(request)`.
-   Everything else in the body is unchanged — the `get_conn` block, the
-   `send_admin_invitation` call, and the `email_sent` logic all stay exactly as
-   they are and are now off the loop by virtue of the handler being sync.
-
-5. Add a `tests/test_body_capture.py` asserting that a handler registered on a
-   router *without* `route_class=BodyCapturingRoute` fails via `read_json_body`'s
-   named error rather than an `AttributeError`.
-
-6. Run `make test`. Per the project test obligation, add
-   `pytestmark = pytest.mark.integration` to any new test file that needs a
-   database, and check whether `arch_testing.md` needs updating.
-
----
-
 # Task 2: `admin_auth_router.py`
 
 **A. State of the world**
@@ -436,3 +353,87 @@ rule: handlers that read the body "must stay `async def`" and delegate via
 
 5. Move both this file and the ticket into
    `documentation/implementation_plans_completed/`.
+
+
+---
+
+# Task 1: Body-capture foundation and `add_user`
+
+**A. State of the world**
+
+Nothing in this ticket has been implemented. This is the first task and every
+later task depends on the module it creates.
+
+`add_user` (`app/routers/admin/admin_user_router.py:125`) is the highest-severity
+handler in the ticket: it calls `delivery_service.send_admin_invitation` at line
+226, a synchronous SMTP connect-and-send with a 30-second timeout, or a
+`requests.post(timeout=30)` on the Mailgun path — directly on the event loop.
+
+`admin_user_router.py` has **no test coverage of any kind**. There is no
+`tests/routers/test_admin_user_router.py` and no test in the suite hits `/users`.
+Write the tests before touching the handler; they are the only regression net this
+task has.
+
+**B. Files and deliverables**
+
+| File | Deliverable |
+|---|---|
+| `app/core/body_capture.py` | New. `BodyCapturingRoute` (per D9) and `read_json_body(request)`. Module docstring explains that the two are a pair and why. |
+| `tests/routers/test_admin_user_router.py` | New. Covers `add_user` and `resend_invitation`. |
+| `app/routers/admin/admin_user_router.py` | `router = APIRouter(route_class=BodyCapturingRoute)`; `add_user` becomes plain `def`. |
+| `tests/test_body_capture.py` | New. Pins the `read_json_body` failure mode. |
+
+**C. Instructions**
+
+1. Create `app/core/body_capture.py`:
+
+   ```python
+   class BodyCapturingRoute(APIRoute):
+       def get_route_handler(self) -> Callable:
+           original = super().get_route_handler()
+
+           async def custom_handler(request: Request) -> Response:
+               request.state.raw_body = await request.body()
+               return await original(request)
+
+           return custom_handler
+   ```
+
+   Add `read_json_body(request)` alongside it. It must:
+   - raise a clear, named error (not a bare `AttributeError`) when
+     `request.state.raw_body` is absent, naming `BodyCapturingRoute` in the
+     message — this is the D9 footgun mitigation and is required;
+   - `json.loads` the bytes and raise `INVALID_PAYLOAD("Invalid JSON body")` on
+     failure, matching the existing message exactly;
+   - accept an optional `parse_float` argument for `form_update`'s `Decimal`
+     requirement (Task 4).
+
+   Do **not** put this in `request_validation.py` — that module is pure
+   payload-shape validation with no Starlette imports, and should stay that way.
+
+2. Write `tests/routers/test_admin_user_router.py` **before** changing the handler,
+   and confirm it passes against the current `async def` code. Cover:
+   `POST /users` 200 with `email_sent: true`; 200 with `email_sent: false` when
+   `send_admin_invitation` raises; 409 duplicate email; 403 disallowed domain; 422
+   invalid email format; 401 expired session; malformed JSON body; and the
+   transaction rollback path (audit write fails → 500, nothing committed).
+   Build on `FakeAuthRepo` in `tests/helpers/admin_test_helpers.py`, which already
+   has `get_users_by_practice` and `count_users_for_practice`. Also cover
+   `resend_invitation`, which is untested and is `add_user`'s sibling.
+
+3. Change `router = APIRouter()` to
+   `router = APIRouter(route_class=BodyCapturingRoute)` at line 66.
+
+4. Convert `add_user` to plain `def`. Replace the `try: body = await
+   request.json()` block at lines 159–162 with `body = read_json_body(request)`.
+   Everything else in the body is unchanged — the `get_conn` block, the
+   `send_admin_invitation` call, and the `email_sent` logic all stay exactly as
+   they are and are now off the loop by virtue of the handler being sync.
+
+5. Add a `tests/test_body_capture.py` asserting that a handler registered on a
+   router *without* `route_class=BodyCapturingRoute` fails via `read_json_body`'s
+   named error rather than an `AttributeError`.
+
+6. Run `make test`. Per the project test obligation, add
+   `pytestmark = pytest.mark.integration` to any new test file that needs a
+   database, and check whether `arch_testing.md` needs updating.
