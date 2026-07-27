@@ -177,79 +177,6 @@ match the existing convention.
 
 ---
 
-# Task 3: CPU-bound work off the event loop
-
-**A. State of the world**
-
-Tasks 1 and 2 are complete: the IP trust model is fixed and `require_admin` runs
-in the threadpool.
-
-Two pieces of blocking work remain on the loop inside handlers that must stay
-`async def` because they read the request body:
-
-- **Image sanitisation** (`form_router.py:296-305`). Up to 5 photos; the `high`
-  tier runs up to three full 4K decode/resize/re-encode cycles per photo.
-  Plausibly seconds of frozen loop, on the patient-facing critical path.
-- **`auth_service` calls** from `admin_auth_router.py`. `_fixed_delay`
-  (`auth_service.py:107`) is a deliberate `time.sleep()` enforcing a 300 ms floor
-  on every auth attempt for timing-attack resistance, plus bcrypt on top. The
-  module docstring already anticipates this fix and suggests `run_in_executor`.
-
-**B. Files and deliverables**
-
-| File | Deliverable |
-|---|---|
-| `app/routers/form_router.py` | Sanitisation loop extracted to a module-level sync helper, called via `run_in_threadpool`. |
-| `app/routers/admin/admin_auth_router.py` | `auth_service` entry points wrapped in `run_in_threadpool`. |
-| `app/services/admin/auth_service.py` | Docstring updates only. No behaviour change. |
-
-**C. Instructions**
-
-1. In `app/routers/form_router.py`, extract the loop at lines 296-305 into a
-   module-level sync helper (e.g. `_sanitize_photos(photo_bytes, tier)`) returning
-   the sanitised list. Call it with
-   `await run_in_threadpool(_sanitize_photos, photo_bytes, effective_tier)`.
-   Import from `starlette.concurrency`.
-
-   Preserve the per-index error messages exactly — `INVALID_PAYLOAD(str(exc))` for
-   `ImageTooLargeError` and `f"Photo {i + 1} is not a valid image"` for
-   `ValueError`. Document in the helper's docstring that it deliberately raises
-   `HTTPException` across the threadpool boundary; this works (exceptions
-   propagate from `run_in_threadpool` unchanged) but is unusual for a helper that
-   otherwise looks pure, so it needs stating.
-
-   Leave the post-sanitisation size checks at lines 307-315 on the loop — they are
-   cheap.
-
-   **Known gap, accept and state it:** `form_finish` still performs its submission,
-   PDF-job and photo writes on the loop. Out of scope for this ticket.
-
-2. In `app/routers/admin/admin_auth_router.py`, wrap the `auth_service` entry
-   points in `run_in_threadpool`: `verify_login_credentials`, `verify_mfa_code`,
-   `set_new_password`, and the reset-request path. Use `functools.partial` or
-   positional arguments as the existing call shapes require.
-
-   This moves both bcrypt and `_fixed_delay`'s `time.sleep` off the loop. The
-   timing-attack mitigation is unaffected: it depends on wall-clock elapsed time
-   measured with `time.monotonic()`, which does not care which thread it runs on.
-
-3. Update two stale docstrings in `app/services/admin/auth_service.py`:
-   - The `bcrypt note` (lines 34-38) says "If this ever becomes a performance
-     concern, wrap calls in `run_in_executor` from the async router." Change it to
-     record that the router now does this.
-   - `_fixed_delay`'s docstring (lines 111-117) justifies `time.sleep` over
-     `asyncio.sleep` on the grounds that moving to `run_in_executor` would be
-     needed for the whole function. That is now exactly what happens. Rewrite it
-     to say the caller runs this in the threadpool, so `time.sleep` is correct and
-     must stay.
-
-4. Run `make test`. Pay attention to `tests/routers/test_admin_auth_router.py` —
-   `arch_testing.md` notes that `TestMFARateLimiting` patches `auth_service`
-   functions, and patched targets must still be reached through the
-   `run_in_threadpool` call.
-
----
-
 # Task 4: Convert the 20 no-body handlers to plain `def`
 
 **A. State of the world**
@@ -525,3 +452,77 @@ fix.
 3. All callers use `Depends(require_admin)`, and `tests/test_admin_context.py`
    exercises it through the app rather than awaiting it directly — confirmed, no
    test changes expected. Run `make test` to verify.
+
+
+---
+
+# Task 3: CPU-bound work off the event loop
+
+**A. State of the world**
+
+Tasks 1 and 2 are complete: the IP trust model is fixed and `require_admin` runs
+in the threadpool.
+
+Two pieces of blocking work remain on the loop inside handlers that must stay
+`async def` because they read the request body:
+
+- **Image sanitisation** (`form_router.py:296-305`). Up to 5 photos; the `high`
+  tier runs up to three full 4K decode/resize/re-encode cycles per photo.
+  Plausibly seconds of frozen loop, on the patient-facing critical path.
+- **`auth_service` calls** from `admin_auth_router.py`. `_fixed_delay`
+  (`auth_service.py:107`) is a deliberate `time.sleep()` enforcing a 300 ms floor
+  on every auth attempt for timing-attack resistance, plus bcrypt on top. The
+  module docstring already anticipates this fix and suggests `run_in_executor`.
+
+**B. Files and deliverables**
+
+| File | Deliverable |
+|---|---|
+| `app/routers/form_router.py` | Sanitisation loop extracted to a module-level sync helper, called via `run_in_threadpool`. |
+| `app/routers/admin/admin_auth_router.py` | `auth_service` entry points wrapped in `run_in_threadpool`. |
+| `app/services/admin/auth_service.py` | Docstring updates only. No behaviour change. |
+
+**C. Instructions**
+
+1. In `app/routers/form_router.py`, extract the loop at lines 296-305 into a
+   module-level sync helper (e.g. `_sanitize_photos(photo_bytes, tier)`) returning
+   the sanitised list. Call it with
+   `await run_in_threadpool(_sanitize_photos, photo_bytes, effective_tier)`.
+   Import from `starlette.concurrency`.
+
+   Preserve the per-index error messages exactly — `INVALID_PAYLOAD(str(exc))` for
+   `ImageTooLargeError` and `f"Photo {i + 1} is not a valid image"` for
+   `ValueError`. Document in the helper's docstring that it deliberately raises
+   `HTTPException` across the threadpool boundary; this works (exceptions
+   propagate from `run_in_threadpool` unchanged) but is unusual for a helper that
+   otherwise looks pure, so it needs stating.
+
+   Leave the post-sanitisation size checks at lines 307-315 on the loop — they are
+   cheap.
+
+   **Known gap, accept and state it:** `form_finish` still performs its submission,
+   PDF-job and photo writes on the loop. Out of scope for this ticket.
+
+2. In `app/routers/admin/admin_auth_router.py`, wrap the `auth_service` entry
+   points in `run_in_threadpool`: `verify_login_credentials`, `verify_mfa_code`,
+   `set_new_password`, and the reset-request path. Use `functools.partial` or
+   positional arguments as the existing call shapes require.
+
+   This moves both bcrypt and `_fixed_delay`'s `time.sleep` off the loop. The
+   timing-attack mitigation is unaffected: it depends on wall-clock elapsed time
+   measured with `time.monotonic()`, which does not care which thread it runs on.
+
+3. Update two stale docstrings in `app/services/admin/auth_service.py`:
+   - The `bcrypt note` (lines 34-38) says "If this ever becomes a performance
+     concern, wrap calls in `run_in_executor` from the async router." Change it to
+     record that the router now does this.
+   - `_fixed_delay`'s docstring (lines 111-117) justifies `time.sleep` over
+     `asyncio.sleep` on the grounds that moving to `run_in_executor` would be
+     needed for the whole function. That is now exactly what happens. Rewrite it
+     to say the caller runs this in the threadpool, so `time.sleep` is correct and
+     must stay.
+
+4. Run `make test`. Pay attention to `tests/routers/test_admin_auth_router.py` —
+   `arch_testing.md` notes that `TestMFARateLimiting` patches `auth_service`
+   functions, and patched targets must still be reached through the
+   `run_in_threadpool` call.
