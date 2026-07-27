@@ -20,7 +20,7 @@ ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
 RUN npm run build
 
 # Final stage: Python runtime with built frontend
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 
