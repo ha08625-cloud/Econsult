@@ -14,7 +14,8 @@
       "answer_key": "dysuria_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate there is pain when passing urine?"
+      "encoder_prompt": "Does the response indicate there is pain when passing urine?",
+      "pdf_label": "Dysuria"
     },
     {
       "question_id": "urinary_symptoms_2",
@@ -22,7 +23,8 @@
       "answer_key": "urinary_frequency_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient is passing urine more frequently than usual?"
+      "encoder_prompt": "Does the response indicate the patient is passing urine more frequently than usual?",
+      "pdf_label": "Frequency"
     },
     {
       "question_id": "urinary_symptoms_3",
@@ -38,7 +40,8 @@
       "answer_key": "fever_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate there is fever in this episode?"
+      "encoder_prompt": "Does the response indicate there is fever in this episode?",
+      "pdf_label": "Fever"
     },
     {
       "question_id": "urinary_symptoms_5",
@@ -46,7 +49,8 @@
       "answer_key": "flank_pain_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient has pain in their sides or back below the ribs, suggesting flank pain?"
+      "encoder_prompt": "Does the response indicate the patient has pain in their sides or back below the ribs, suggesting flank pain?",
+      "pdf_label": "Flank pain"
     },
     {
       "question_id": "urinary_symptoms_6",
@@ -54,7 +58,8 @@
       "answer_key": "haematuria_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient has noticed blood in their urine?"
+      "encoder_prompt": "Does the response indicate the patient has noticed blood in their urine?",
+      "pdf_label": "Haematuria"
     },
     {
       "question_id": "urinary_symptoms_7",
@@ -62,7 +67,8 @@
       "answer_key": "recent_uti_present",
       "answer_type": "Boolean",
       "send_to_encoder": true,
-      "encoder_prompt": "Does the response indicate the patient has had a urine infection in the last 30 days?"
+      "encoder_prompt": "Does the response indicate the patient has had a urine infection in the last 30 days?",
+      "pdf_label": "UTI in last 30 days"
     },
     {
       "question_id": "urinary_symptoms_8",
