@@ -3,8 +3,13 @@ Admin authentication boundary.
 
 Defines AdminContext and the require_admin FastAPI dependency.
 
-Authentication is exclusively via session cookie (HttpOnly, set by
-POST /admin/auth/verify). Session cookie is the only authentication path.
+Authentication is exclusively via session cookie (HttpOnly, initially set
+by POST /admin/auth/verify). Session cookie is the only authentication
+path.
+
+Sessions use a sliding-window TTL: every successful call through
+require_admin extends the session's expiry and re-issues the cookie, so
+the cookie set by /auth/verify is not the only place it is written.
 
 Session-based auth rules:
 - Reads session_id from the HttpOnly cookie set by POST /admin/auth/verify.
@@ -12,6 +17,9 @@ Session-based auth rules:
   practice_id, email, user_id, and session_id.
 - Returns HTTP 401 if the cookie is absent or the session is not found
   or has expired.
+- On success, best-effort extends the session's expiry in the DB and
+  re-issues the Set-Cookie header with a fresh Max-Age, matching the
+  cookie attributes set at login.
 
 This module is a security boundary kept to a minimal import surface: it
 imports only stdlib, FastAPI, and app.core.state_keys (a leaf module that
@@ -40,7 +48,7 @@ used by this module without importing the repository class itself.
 import logging
 from typing import Any, Protocol, runtime_checkable
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 
 from app.core.state_keys import AUTH_REPO
 
@@ -52,9 +60,12 @@ SESSION_COOKIE_NAME = "session_id"
 
 # Session TTL in minutes. Used by verify_mfa_code in auth_service.py and
 # by the Set-Cookie Max-Age attribute in the verify endpoint.
-# 24 hours is appropriate for an infrequently-used admin portal.
+#
+# Sessions slide: each authenticated request through require_admin extends
+# expiry by another SESSION_TTL_MINUTES, so an active admin never hits this
+# limit. It only ends a session after SESSION_TTL_MINUTES of inactivity.
 # Make this an env-var if different TTLs are ever needed per deployment.
-SESSION_TTL_MINUTES = 60 * 24
+SESSION_TTL_MINUTES = 60
 
 # Cookie Max-Age in seconds (must match SESSION_TTL_MINUTES).
 SESSION_COOKIE_MAX_AGE = SESSION_TTL_MINUTES * 60
@@ -108,7 +119,7 @@ class AuthProvider(Protocol):
     Defined in this module to avoid importing AuthRepository directly,
     which would violate the no-project-module-imports constraint if the
     import graph ever changes. Any object implementing get_session_context
-    satisfies this protocol.
+    and update_session_expiry satisfies this protocol.
 
     get_session_context return value keys (when not None):
         user_id (str), role (str), practice_id (str), email (str),
@@ -117,20 +128,28 @@ class AuthProvider(Protocol):
 
     def get_session_context(self, session_id: str) -> dict[str, Any] | None: ...
 
+    def update_session_expiry(self, session_id: str, ttl_minutes: int) -> None: ...
+
 
 # ---------------------------------------------------------------------------
 # require_admin dependency
 # ---------------------------------------------------------------------------
 
 
-async def require_admin(request: Request) -> AdminContext:
+async def require_admin(request: Request, response: Response) -> AdminContext:
     """
     FastAPI dependency. Validates session cookie and returns AdminContext.
 
     1. Read session_id from the HttpOnly cookie.
     2. Call auth_repo.get_session_context(session_id).
     3. If context is None (session not found or expired), raise HTTP 401.
-    4. Return AdminContext populated with practice_id, user_id, role,
+    4. Best-effort: extend the session's expiry and re-issue the cookie
+       with a fresh Max-Age, implementing the sliding-window TTL. Failures
+       here are logged and swallowed — the request still proceeds, since
+       the session was already validated in step 2. A DB outage would have
+       failed that validation anyway, so this only covers transient
+       refresh failures.
+    5. Return AdminContext populated with practice_id, user_id, role,
        actor_email, and session_id from the context dict.
 
     Raises:
@@ -152,6 +171,19 @@ async def require_admin(request: Request) -> AdminContext:
             status_code=401,
             detail="Session expired or not found.",
         )
+
+    try:
+        auth_repo.update_session_expiry(session_id, SESSION_TTL_MINUTES)
+        response.set_cookie(
+            key=SESSION_COOKIE_NAME,
+            value=session_id,
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            max_age=SESSION_COOKIE_MAX_AGE,
+        )
+    except Exception:
+        logger.exception("Session expiry refresh failed for session %s", session_id)
 
     return AdminContext(
         practice_id=context["practice_id"],

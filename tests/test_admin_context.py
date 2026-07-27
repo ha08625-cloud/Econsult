@@ -27,6 +27,10 @@ import os
 import subprocess
 import sys
 
+from fastapi.testclient import TestClient
+
+from tests.helpers.admin_test_helpers import StubAuthRepo, make_test_app
+
 
 def test_admin_context_import_surface_stays_minimal():
     # tests/test_admin_context.py -> tests/ -> repo root
@@ -48,3 +52,75 @@ def test_admin_context_import_surface_stays_minimal():
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+# ---------------------------------------------------------------------------
+# require_admin — sliding-window session refresh
+# ---------------------------------------------------------------------------
+
+
+class RefreshSpyAuthRepo(StubAuthRepo):
+    """StubAuthRepo that records update_session_expiry calls, and can be
+    made to raise to exercise the best-effort refresh failure path."""
+
+    def __init__(self, raise_on_refresh=False):
+        super().__init__()
+        self.raise_on_refresh = raise_on_refresh
+        self.refresh_calls = []
+
+    def update_session_expiry(self, session_id, ttl_minutes):
+        self.refresh_calls.append((session_id, ttl_minutes))
+        if self.raise_on_refresh:
+            raise RuntimeError("simulated DB failure")
+
+
+def test_require_admin_refreshes_session_and_resets_cookie():
+    from app.core.admin_context import SESSION_COOKIE_MAX_AGE, SESSION_TTL_MINUTES
+
+    auth_repo = RefreshSpyAuthRepo()
+    app = make_test_app(auth_repo=auth_repo)
+    client = TestClient(app)
+
+    response = client.get(
+        "/admin/audit-log",
+        cookies={"session_id": "test-session-id"},
+    )
+
+    assert response.status_code == 200
+    assert auth_repo.refresh_calls == [("test-session-id", SESSION_TTL_MINUTES)]
+
+    set_cookie = response.headers.get("set-cookie")
+    assert set_cookie is not None
+    assert "session_id=test-session-id" in set_cookie
+    assert f"Max-Age={SESSION_COOKIE_MAX_AGE}" in set_cookie
+    assert "HttpOnly" in set_cookie
+    assert "samesite=strict" in set_cookie.lower()
+
+
+def test_require_admin_refresh_failure_does_not_break_request():
+    auth_repo = RefreshSpyAuthRepo(raise_on_refresh=True)
+    app = make_test_app(auth_repo=auth_repo)
+    client = TestClient(app)
+
+    response = client.get(
+        "/admin/audit-log",
+        cookies={"session_id": "test-session-id"},
+    )
+
+    # The request still succeeds even though the refresh raised.
+    assert response.status_code == 200
+    assert auth_repo.refresh_calls  # refresh was attempted
+
+
+def test_require_admin_still_401s_without_refresh_attempt():
+    auth_repo = RefreshSpyAuthRepo()
+    app = make_test_app(auth_repo=auth_repo)
+    client = TestClient(app)
+
+    response = client.get(
+        "/admin/audit-log",
+        cookies={"session_id": "wrong-session-id"},
+    )
+
+    assert response.status_code == 401
+    assert auth_repo.refresh_calls == []

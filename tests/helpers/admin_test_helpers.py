@@ -287,6 +287,9 @@ class StubAuthRepo:
     def create_session(self, user_id, expires_at):
         return "stub-session-id"
 
+    def update_session_expiry(self, session_id, ttl_minutes):
+        pass
+
     def delete_session(self, session_id):
         pass
 
