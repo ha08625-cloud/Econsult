@@ -23,7 +23,7 @@ import io
 import struct
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageOps
 
 from app.utils.image_sanitizer import ImageTooLargeError, sanitize_image
 from tests.test_pdf_formatter import MINIMAL_JPEG
@@ -77,6 +77,25 @@ def _make_jpeg_with_exif() -> bytes:
     soi = MINIMAL_JPEG[:2]
     rest = MINIMAL_JPEG[2:]
     return soi + app1_segment + rest
+
+
+def _make_jpeg_with_orientation(orientation: int) -> bytes:
+    """
+    Build a JPEG stored sensor-landscape (wide) with an EXIF Orientation tag,
+    the way a phone camera stores a portrait photo. Left half is red, right
+    half is blue, so the rotation direction is verifiable after sanitizing.
+    """
+    img = Image.new("RGB", (100, 50))
+    pixels = img.load()
+    for x in range(100):
+        for y in range(50):
+            pixels[x, y] = (255, 0, 0) if x < 50 else (0, 0, 255)
+
+    exif = img.getexif()
+    exif[0x0112] = orientation  # Orientation tag
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95, exif=exif)
+    return buf.getvalue()
 
 
 def _make_large_jpeg(long_edge_px: int) -> bytes:
@@ -155,6 +174,51 @@ def test_sanitize_strips_exif():
 
     assert b"\xff\xe1" not in result, (
         "Expected EXIF APP1 marker (FF E1) to be absent from sanitized output"
+    )
+
+
+def test_sanitize_applies_exif_orientation_before_stripping():
+    """
+    A JPEG carrying an EXIF Orientation tag must have that orientation baked
+    into the pixel data before the tag itself is stripped — otherwise the
+    output is silently rotated with no tag left for any downstream viewer to
+    correct it.
+
+    Orientation=6 ("rotate 90 CW to display correctly") on a 100x50 source
+    (red left half, blue right half) must produce a 50x100 output where the
+    former left/red half is now on top and the former right/blue half is on
+    the bottom, matching what ImageOps.exif_transpose defines as correct.
+    """
+    orientation = 6
+    raw = _make_jpeg_with_orientation(orientation)
+
+    # Confirm the input actually carries the Orientation tag before sanitizing.
+    original = Image.open(io.BytesIO(raw))
+    assert original.getexif().get(0x0112) == orientation, (
+        "Test setup error: input JPEG does not carry Orientation=6"
+    )
+
+    expected = ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
+    assert expected.size == (50, 100), "Test setup error: expected transpose to swap dimensions"
+
+    result = sanitize_image(raw)
+    result_img = Image.open(io.BytesIO(result))
+
+    assert result_img.size == (50, 100), (
+        f"Expected orientation-applied output to be 50x100 (portrait), got {result_img.size}"
+    )
+
+    top_pixel = result_img.getpixel((25, 10))
+    bottom_pixel = result_img.getpixel((25, 90))
+
+    assert top_pixel[0] > top_pixel[2], f"Expected top half to be red-ish, got {top_pixel}"
+    assert bottom_pixel[2] > bottom_pixel[0], (
+        f"Expected bottom half to be blue-ish, got {bottom_pixel}"
+    )
+
+    # The Orientation tag itself must not survive into the output.
+    assert result_img.getexif().get(0x0112) is None, (
+        "Expected Orientation tag to be stripped from sanitized output"
     )
 
 

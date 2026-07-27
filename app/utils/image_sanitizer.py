@@ -19,7 +19,7 @@ No logging is performed here. The calling layer owns that concern.
 
 import io
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 # Post-encode size limit imposed by the EMIS EHR ingestion layer.
 _EMIS_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -97,6 +97,13 @@ def sanitize_image(raw_bytes: bytes, tier: str = "standard") -> bytes:
 
     try:
         img = Image.open(io.BytesIO(raw_bytes))
+        # exif_transpose() must run before convert("RGB") — it reads the EXIF
+        # Orientation tag and physically rotates/flips the pixel data to match,
+        # which is the only chance to apply it before CDR strips all metadata.
+        # Camera-capture uploads (the primary use case) are routinely stored
+        # sensor-landscape with an Orientation tag; skipping this step leaves
+        # the output rotated 90 degrees with no tag left to correct it.
+        img = ImageOps.exif_transpose(img)
         # convert("RGB") must come before thumbnail(). Calling thumbnail() on
         # a palette-mode or RGBA image can produce unexpected results because
         # Pillow's internal resize path behaves differently per mode.
