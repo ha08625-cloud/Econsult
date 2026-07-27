@@ -281,6 +281,51 @@ class TestTimestampStaleness:
         assert job["status"] == "provider_accepted"  # unchanged
 
 
+class TestMalformedTimestamp:
+    """
+    A missing or non-numeric timestamp is not a valid Mailgun payload — it
+    must be rejected (403), not silently acknowledged as if it were merely
+    a genuinely old, well-formed signal.
+    """
+
+    def test_non_numeric_timestamp_returns_403(self, client, delivery_repo, submission_repo):
+        submission_id = _insert_test_submission(submission_repo)
+        provider_message_id = f"msg-{uuid.uuid4().hex}@mailgun.org"
+        job_id = _insert_delivery_job(delivery_repo, submission_id, provider_message_id)
+
+        garbage_ts = "not-a-timestamp"
+        tok = _fresh_token()
+        sig = _make_signature(_SIGNING_KEY, garbage_ts, tok)
+
+        payload = _make_payload(
+            "delivered",
+            provider_message_id,
+            timestamp=garbage_ts,
+            token=tok,
+            signature=sig,
+        )
+
+        response = client.post("/webhooks/mailgun", data=payload)
+
+        assert response.status_code == 403
+        job = delivery_repo.get(job_id)
+        assert job["status"] == "provider_accepted"  # unchanged
+
+    def test_missing_timestamp_returns_403(self, client, delivery_repo, submission_repo):
+        submission_id = _insert_test_submission(submission_repo)
+        provider_message_id = f"msg-{uuid.uuid4().hex}@mailgun.org"
+        job_id = _insert_delivery_job(delivery_repo, submission_id, provider_message_id)
+
+        payload = _make_payload("delivered", provider_message_id)
+        del payload["timestamp"]
+
+        response = client.post("/webhooks/mailgun", data=payload)
+
+        assert response.status_code == 403
+        job = delivery_repo.get(job_id)
+        assert job["status"] == "provider_accepted"  # unchanged
+
+
 # ---------------------------------------------------------------------------
 # Security: replay protection
 # ---------------------------------------------------------------------------

@@ -90,7 +90,7 @@ The system refuses to run in an insecure or partially configured state.
 - **Defensive Photo Count Check (PDF Worker).** The PDF worker validates the raw photo count against `attachment_count` on the `pdf_jobs` row.
 - **Input Sanitization (XSS).** Signposting (admin-authored HTML) is sanitized with `nh3` on the backend and `DOMPurify` on the frontend, with synchronised allowlists. Patient free text is stored and rendered as plain text throughout — no HTML rendering path exists.
 - **PDF Output — Injection Risk.** `fpdf2` does not use HTML rendering mode. PDF cell content cannot execute code.
-- **Webhook Endpoint Security.** Timestamp staleness check (>15 minutes dropped), HMAC-SHA256 signature verification, and token-based replay protection.
+- **Webhook Endpoint Security.** Timestamp parse check (missing/non-numeric rejected with 403, loud log) and staleness check (>15 minutes silently dropped, 200), HMAC-SHA256 signature verification, and token-based replay protection.
 
 ---
 
