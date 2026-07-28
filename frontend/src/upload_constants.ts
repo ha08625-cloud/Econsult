@@ -15,8 +15,7 @@
  *
  * Note: MIME type checking on the client is a usability guard against
  * accidental misuse, not a security control. The server validates the same
- * limits independently. Magic bytes checking in EditScreen provides a
- * stronger client-side check for file content.
+ * limits independently.
  */
 
 export const ALLOWED_MIME_TYPES: ReadonlyArray<string> = [
