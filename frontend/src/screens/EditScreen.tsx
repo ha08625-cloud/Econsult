@@ -457,8 +457,6 @@ export default function EditScreen({
             }
 
             if (q.answer_type === "number") {
-              const dp = q.decimal_places ?? 0;
-              const step = dp > 0 ? `0.${"0".repeat(Math.max(0, dp - 1))}1` : "1";
               const precisionError = numberPrecisionErrors[q.answer_key];
 
               if (q.quantity) {
@@ -536,10 +534,9 @@ export default function EditScreen({
                             </label>
                             <input
                               id={componentId}
-                              type="number"
+                              type="text"
                               inputMode={unitSystem === "imperial" ? "numeric" : "decimal"}
-                              step={unitSystem === "imperial" ? "1" : step}
-                              min={0}
+                              pattern={unitSystem === "imperial" ? "[0-9]*" : "[0-9]*[.,]?[0-9]*"}
                               aria-invalid={!!precisionError}
                               value={qv.components[ck] ?? ""}
                               onChange={(e) =>
@@ -595,11 +592,9 @@ export default function EditScreen({
 
                   <input
                     id={inputId}
-                    type="number"
+                    type="text"
                     inputMode="decimal"
-                    step={step}
-                    min={q.min}
-                    max={q.max}
+                    pattern="[0-9]*[.,]?[0-9]*"
                     aria-invalid={!!precisionError}
                     value={valueStr}
                     onChange={(e) => {
@@ -797,6 +792,7 @@ export default function EditScreen({
                     />
                     <button
                       type="button"
+                      className="photo-remove-btn"
                       aria-label={`Remove photo ${index + 1}`}
                       onClick={() => handleRemovePhoto(index)}
                       style={{
