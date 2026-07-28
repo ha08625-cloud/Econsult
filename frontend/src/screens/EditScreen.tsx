@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useMemo } from "react";
 import { PageShell, InlineError } from "../layout";
+import ConfirmDialog from "../ConfirmDialog";
 import { updateForm } from "../api";
 import { friendlyErrorMessage } from "../api";
 import type {
@@ -104,7 +105,6 @@ export default function EditScreen({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
-  const guideCloseRef = useRef<HTMLButtonElement>(null);
 
   // Move focus to the error summary when a new error appears.
   useEffect(() => {
@@ -112,27 +112,6 @@ export default function EditScreen({
       summaryRef.current?.focus();
     }
   }, [screenError, photoError]);
-
-  // Move focus to the close button when the guide modal opens.
-  // The close button is the first interactive element and is immediately
-  // actionable, making it the correct accessible focus target.
-  useEffect(() => {
-    if (isGuideOpen) {
-      guideCloseRef.current?.focus();
-    }
-  }, [isGuideOpen]);
-
-  // Attach an Escape key listener while the guide is open.
-  useEffect(() => {
-    if (!isGuideOpen) return;
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setIsGuideOpen(false);
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isGuideOpen]);
 
   const allRequiredAnswered = clientState.questions.every((q) => {
     if (!q.required) return true;
@@ -855,66 +834,55 @@ export default function EditScreen({
 
       {/* Photo guide modal */}
       {isGuideOpen && (
-        <div
-          className="modal-overlay"
-          onClick={() => setIsGuideOpen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-label="How to take a good photo"
+        <ConfirmDialog
+          title="Taking a good photo"
+          onEscape={() => setIsGuideOpen(false)}
+          onOverlayClick={() => setIsGuideOpen(false)}
         >
-          {/* Stop clicks inside the modal from closing it via the overlay handler */}
-          <div
-            className="modal-panel"
-            onClick={(e) => e.stopPropagation()}
+          <button
+            type="button"
+            className="modal-close"
+            aria-label="Close guidance"
+            onClick={() => setIsGuideOpen(false)}
           >
+            &times;
+          </button>
+
+          <ul className="modal-guide-list">
+            <li>Take the photo in a well-lit area</li>
+            <li>
+              For a close-up, hold the camera at least 15cm (6 inches) from
+              the skin or the image will be blurry
+            </li>
+            <li>
+              Tap the screen to focus on the area of interest rather than
+              the background
+            </li>
+          </ul>
+
+          <p className="modal-guide-subheading">For best results:</p>
+          <ul className="modal-guide-list">
+            <li>Ask someone else to take the photo for you</li>
+            <li>Rest the phone on a stable surface</li>
+            <li>Use the 3-second countdown timer if available</li>
+          </ul>
+
+          <img
+            src="/photo-guide.jpg"
+            alt="Example of a well-lit, clearly focused close-up photo"
+            className="modal-guide-image"
+          />
+
+          <div className="modal-footer">
             <button
-              ref={guideCloseRef}
               type="button"
-              className="modal-close"
-              aria-label="Close guidance"
+              className="btn btn-primary"
               onClick={() => setIsGuideOpen(false)}
             >
-              &times;
+              Got it
             </button>
-
-            <h2 className="modal-title">Taking a good photo</h2>
-
-            <ul className="modal-guide-list">
-              <li>Take the photo in a well-lit area</li>
-              <li>
-                For a close-up, hold the camera at least 15cm (6 inches) from
-                the skin or the image will be blurry
-              </li>
-              <li>
-                Tap the screen to focus on the area of interest rather than
-                the background
-              </li>
-            </ul>
-
-            <p className="modal-guide-subheading">For best results:</p>
-            <ul className="modal-guide-list">
-              <li>Ask someone else to take the photo for you</li>
-              <li>Rest the phone on a stable surface</li>
-              <li>Use the 3-second countdown timer if available</li>
-            </ul>
-
-            <img
-              src="/photo-guide.jpg"
-              alt="Example of a well-lit, clearly focused close-up photo"
-              className="modal-guide-image"
-            />
-
-            <div className="modal-footer">
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => setIsGuideOpen(false)}
-              >
-                Got it
-              </button>
-            </div>
           </div>
-        </div>
+        </ConfirmDialog>
       )}
     </PageShell>
   );

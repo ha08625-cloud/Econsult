@@ -131,9 +131,9 @@ Switching tier after photos have already been added clears the existing photos a
 
 **Photo guide modal:**
 
-A "How to take a good photo" button appears below the tier selection once a tier has been chosen. It opens a modal overlay with guidance text and a reference image (`/photo-guide.jpg` served from `frontend/public/`). The modal is self-contained local state in `EditScreen` — nothing outside the screen needs to know whether the guide is open.
+A "How to take a good photo" button appears below the tier selection once a tier has been chosen. It opens a modal overlay with guidance text and a reference image (`/photo-guide.jpg` served from `frontend/public/`). Whether the guide is open (`isGuideOpen`) is self-contained local state in `EditScreen` — nothing outside the screen needs to know about it — but the dialog itself is rendered via the shared `ConfirmDialog` component (see "Shared Dialog Primitive (`ConfirmDialog`)" below).
 
-Modal accessibility requirements: focus moves to the close button on open (not the container), the Escape key closes the modal via a `keydown` listener attached on open and removed on close, clicking the backdrop closes the modal, clicking inside the panel does not.
+Modal accessibility requirements: focus moves to the close button on open (the first focusable element in the panel), Escape closes the modal, focus is trapped inside the panel while open, clicking the backdrop closes the modal, clicking inside the panel does not, and focus returns to the "How to take a good photo" button on close.
 
 **Object URL lifecycle:** Each `PhotoAttachment` holds a `previewUrl` created with `URL.createObjectURL`. These must be explicitly revoked to avoid browser memory leaks. The rules are:
 
@@ -150,6 +150,23 @@ Modal accessibility requirements: focus moves to the close button on open (not t
 **Photos persist** when navigating back from REVIEW to EDIT — this is intentional. The patient has not changed their condition and their photos remain valid.
 
 **Photos do not persist** when navigating back from EDIT to FREE_TEXT. A warning dialog is shown before this navigation regardless of whether any photos are attached (simpler logic, consistent behaviour). The dialog message is: "If you have attached photos, they will be lost and may need to be re-uploaded." The dialog renders as an overlay on top of the EDIT screen so answers are not lost.
+
+---
+
+## Shared Dialog Primitive (`ConfirmDialog`)
+
+`ConfirmDialog` (`frontend/src/ConfirmDialog.tsx`) is the single implementation of an accessible modal overlay, used by all three modal dialogs in the patient flow: the condition-change warning and back-navigation warning in `App.tsx`, and the photo guide modal in `EditScreen`. It replaces three previously-duplicated `<div className="modal-overlay">` implementations, two of which (the `App.tsx` warnings) were plain overlays with none of the dialog behaviour below.
+
+It implements, in one place:
+- `role="dialog"` and `aria-modal="true"` on the overlay.
+- An accessible name via `aria-labelledby` (when a visible `title` is given, rendered as the panel's `<h2 className="modal-title">`) or `aria-label` (when the dialog has no visible heading — the two `App.tsx` warnings use this, since their text is a single paragraph rather than a titled dialog).
+- Focus moved to the first focusable element inside the panel on open. Callers control which element that is purely through DOM order — the safe/non-destructive button (or the close button, for the photo guide) must be first in the panel's markup.
+- A Tab/Shift+Tab focus trap confined to the panel while the dialog is open.
+- Escape closes the dialog via the caller-supplied `onEscape`, which **must** map to the same safe/non-destructive action as the first-focused button — there is no separate "cancel" concept, Escape and the first button are the same action.
+- Focus returned to whatever element triggered the dialog (captured via `document.activeElement` on mount) when the dialog closes.
+- Backdrop click is opt-in via `onOverlayClick` — the two `App.tsx` warnings omit it (clicking outside does nothing, matching their pre-existing behaviour); the photo guide passes it to close on backdrop click, matching its pre-existing behaviour.
+
+`ConfirmDialog` renders the overlay and panel only — buttons, body text, and any panel class override (`className`, e.g. `"modal-panel modal-panel--narrow"` for the two warning dialogs, which are narrower than the default `.modal-panel`) are supplied by the caller as `children`. It does not own any open/closed state itself; callers keep their own boolean and conditionally render `<ConfirmDialog>`, same as before this component existed.
 
 ---
 
