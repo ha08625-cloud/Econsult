@@ -227,6 +227,23 @@ A `useEffect` keyed on the computed `activeDescendant` id calls `scrollIntoView(
 
 ---
 
+## Doctor Preference (`ContactScreen`)
+
+`ContactScreen` has two doctor-preference UIs, chosen by whether the practice has configured a doctor list (`doctors` from `GET /doctors`):
+
+- **List path** (`doctors` non-empty): a dropdown of "Soonest available doctor" (`any`), "Someone not on this list" (`other`), and one option per configured doctor, plus a free text box that is **always visible**. The dropdown value is held in local state (`doctorSelection`) separate from `contactPreferences` and mapped onto the wire fields on submit.
+- **Legacy path** (`doctors` empty, including when the fetch failed): the original two-option dropdown (`any` / `usual`) with the free text box shown only when `usual` is selected. It writes `doctor_preference` / `usual_doctor_name` directly.
+
+**Mapping rules for the list path (submit-time precedence, highest first):**
+
+1. A named doctor selected from the list wins — free text is ignored. The explicit selection is the stronger signal, and the free text box is labelled for doctors *not* on the list.
+2. Otherwise, non-empty (trimmed) free text produces `doctor_preference: "usual"` with that name. This holds for `other` **and** for `any`: a name typed while the dropdown is left at its default is an **implicit `other` selection**. Never submit `any` while discarding a name the patient has typed — the practice would never see the preference and the patient gets no warning that it was dropped.
+3. Otherwise `doctor_preference: "any"`, `usual_doctor_name: null`. Whitespace-only free text falls here.
+
+Validation on the list path only requires a name when `other` is explicitly selected. The `any` + free text combination is valid, not an error — the dropdown is deliberately *not* auto-changed to `other` when the patient types, since silently rewriting one control from another is the change-of-context antipattern this codebase avoids elsewhere (WCAG 3.2.2).
+
+---
+
 ## Accessibility (WCAG 2.1 AA / NHS Digital)
 
 The patient frontend must comply with WCAG 2.1 Level AA and follow NHS Digital Service Manual patterns. This section records decisions made during the accessibility pass so they are applied consistently across all screens.
