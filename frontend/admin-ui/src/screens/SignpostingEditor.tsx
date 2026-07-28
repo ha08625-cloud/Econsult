@@ -21,7 +21,7 @@
  * is called and App transitions back to LoginView.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Quill from "quill";
 import DOMPurify from "dompurify";
 import { fetchSignposting, putSignposting, AuthError } from "../api";
@@ -48,6 +48,27 @@ export default function SignpostingEditor({
   const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
   const [hasUnsaved, setHasUnsaved] = useState(false);
   const [charCount, setCharCount] = useState(0);
+
+  // Re-points change detection at whatever the editor currently holds: the
+  // visible HTML becomes the new "unchanged" baseline and a fresh
+  // text-change listener compares against it. Callers must detach the
+  // previous listener (quill.off) before mutating content, otherwise
+  // listeners stack and compare against stale baselines.
+  const attachChangeTracking = useCallback(() => {
+    const quill = quillRef.current;
+    if (!quill) return;
+
+    const baseline = quill.getSemanticHTML();
+    setCharCount(baseline.length);
+
+    quill.on("text-change", () => {
+      const html = quill.getSemanticHTML();
+      const changed = html !== baseline;
+      setHasUnsaved(changed);
+      onUnsavedChange(changed);
+      setCharCount(html.length);
+    });
+  }, [onUnsavedChange]);
 
   // Step 1: instantiate Quill once after the component mounts.
   useEffect(() => {
@@ -93,16 +114,7 @@ export default function SignpostingEditor({
           quill.clipboard.dangerouslyPasteHTML(savedHtml);
         }
 
-        const baseline = quill.getSemanticHTML();
-        setCharCount(baseline.length);
-
-        quill.on("text-change", () => {
-          const html = quill.getSemanticHTML();
-          const changed = html !== baseline;
-          setHasUnsaved(changed);
-          onUnsavedChange(changed);
-          setCharCount(html.length);
-        });
+        attachChangeTracking();
       } catch (err) {
         if (cancelled) return;
         if (err instanceof AuthError) {
@@ -121,7 +133,7 @@ export default function SignpostingEditor({
       cancelled = true;
       quill.off("text-change");
     };
-  }, [conditionId, onUnsavedChange, onAuthError]);
+  }, [conditionId, attachChangeTracking, onAuthError]);
 
   async function handleSave() {
     const quill = quillRef.current;
@@ -143,33 +155,15 @@ export default function SignpostingEditor({
       const sanitisedHtml = DOMPurify.sanitize(rawHtml, SIGNPOSTING_PURIFY_CONFIG);
       const savedHtml = await putSignposting(conditionId, sanitisedHtml);
 
+      // Re-sync the editor to what the server actually stored (sanitisation
+      // may have altered it) and re-baseline against that.
+      quill.off("text-change");
       if (savedHtml) {
-        quill.off("text-change");
         quill.clipboard.dangerouslyPasteHTML(savedHtml);
-
-        const resyncedBaseline = quill.getSemanticHTML();
-        setCharCount(resyncedBaseline.length);
-        quill.on("text-change", () => {
-          const html = quill.getSemanticHTML();
-          const changed = html !== resyncedBaseline;
-          setHasUnsaved(changed);
-          onUnsavedChange(changed);
-          setCharCount(html.length);
-        });
       } else {
-        quill.off("text-change");
         quill.setText("");
-
-        const emptyBaseline = quill.getSemanticHTML();
-        setCharCount(emptyBaseline.length);
-        quill.on("text-change", () => {
-          const html = quill.getSemanticHTML();
-          const changed = html !== emptyBaseline;
-          setHasUnsaved(changed);
-          onUnsavedChange(changed);
-          setCharCount(html.length);
-        });
       }
+      attachChangeTracking();
 
       setHasUnsaved(false);
       onUnsavedChange(false);
