@@ -25,3 +25,5 @@ C: Instructions on completing the task
 #Task 2: Engine changes
 A: Data model changes have already been completed.  These are the changes to make in the engine files: etc.
 4. The tasks will then be used as context for new Sonnet chats for writing the code
+
+In-chat testing: drop the full local run, keep a cheap targeted check. Concretely, typecheck and run only the test files for whatever has been touched in that task, skip the full suite and skip npm run build, and let CI's unit job be the real gate. If CI fails, you will see it automatically via the PR subscription and push a fix
