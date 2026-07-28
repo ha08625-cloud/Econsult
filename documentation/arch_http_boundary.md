@@ -138,12 +138,15 @@ All four auth endpoints are unauthenticated. They are the mechanism by which an 
 |---|---|---|---|
 | `POST` | `/admin/auth/login` | 5/min | Step 1: verify password. On success, synchronously upserts OTP to `admin_auth_codes`, then dispatches email delivery as a `BackgroundTask`. Returns 200. |
 | `POST` | `/admin/auth/verify` | 5/min | Step 2: verify OTP. On success, creates session and sets `session_id` HttpOnly cookie. |
-| `POST` | `/admin/auth/request-reset` | 5/min | Request a password setup/reset link. Always returns 200 (anti-enumeration). |
+| `POST` | `/admin/auth/request-reset` | 5/min | Request a password setup/reset link. Always returns 200 (anti-enumeration). Token generation is synchronous; email delivery is dispatched as a `BackgroundTask`. |
 | `POST` | `/admin/auth/set-password` | 5/min | Set a new password using a reset token from the URL hash. |
 | `POST` | `/admin/auth/logout` | none | Delete session and clear cookie. Unauthenticated. |
 
 **`BackgroundTasks` usage in `POST /admin/auth/login`:**
 FastAPI injects `BackgroundTasks` automatically when it appears in the handler signature (no `Depends()` needed). The OTP DB upsert is synchronous — it happens before the 200 response is returned. Only the network call to the delivery service is backgrounded. If the background task fails, it catches the exception, reports to Sentry, and deletes the OTP record from the database to allow an immediate retry.
+
+**`BackgroundTasks` usage in `POST /admin/auth/request-reset`:**
+Same mechanism, applied for a different reason: the anti-enumeration fixed delay only protects the DB lookup. Without backgrounding, a registered email would additionally pay for token generation and a Mailgun HTTP round trip (100-500ms) synchronously before the response, while an unregistered email would not — a visible timing side-channel. The reset token is generated and stored synchronously (needed before the email can reference it); only the email send is backgrounded. Failure is reported to Sentry; no DB cleanup is needed since the token stays valid for a later retry.
 
 ---
 
