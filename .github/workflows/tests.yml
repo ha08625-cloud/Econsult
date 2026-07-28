@@ -2,36 +2,68 @@ name: Tests
 
 on:
   push:
-    branches: ["**"]
+    branches: ["main"]
   pull_request:
     branches: ["**"]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ---------------------------------------------------------------------------
+  # Detects whether anything other than markdown docs changed. Feeds unit/
+  # integration below so doc-only PRs skip the actual test run. This job
+  # always runs (no path filter on the workflow trigger itself), so unit/
+  # integration always report a status even when skipped -- safe for
+  # required status checks in branch protection.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+
   # ---------------------------------------------------------------------------
   # Unit tests: Python (no database) + frontend Vitest
   # Mirrors: make test
   # ---------------------------------------------------------------------------
   unit:
     name: Unit tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt pytest httpx2
+        run: pip install -r requirements.txt -r requirements-dev.txt pytest httpx
 
+      - name: Lint with ruff
+        run: |
+          ruff check .
+          ruff format --check .
 
       - name: Run Python unit tests
         run: python -m pytest tests/ -m "not integration" -v
 
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
@@ -52,6 +84,8 @@ jobs:
   # ---------------------------------------------------------------------------
   integration:
     name: Integration tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -79,15 +113,15 @@ jobs:
       MESH_DELIVERY: "0"
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install Python dependencies
-        run: pip install -r requirements.txt pytest httpx2
+        run: pip install -r requirements.txt pytest httpx
 
       - name: Assert TEST_DATABASE_URL is set
         run: |
