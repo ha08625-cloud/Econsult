@@ -408,7 +408,7 @@ export default function EditScreen({
 
                   {q.suggested && (
                     <div className="alert alert-info" style={{ marginBottom: "var(--space-sm)", padding: "8px 12px" }}>
-                      <p style={{ margin: 0, fontSize: "14px" }}>
+                      <p className="notice-compact" style={{ margin: 0 }}>
                         Pre-filled from your description — please check
                       </p>
                     </div>
@@ -546,7 +546,7 @@ export default function EditScreen({
                         className="alert alert-info"
                         style={{ marginTop: "var(--space-sm)", padding: "8px 12px" }}
                       >
-                        <p style={{ margin: 0, fontSize: "14px" }}>
+                        <p className="notice-compact" style={{ margin: 0 }}>
                           {q.range_warning_text}
                         </p>
                       </div>
@@ -607,7 +607,7 @@ export default function EditScreen({
                       className="alert alert-info"
                       style={{ marginTop: "var(--space-sm)", padding: "8px 12px" }}
                     >
-                      <p style={{ margin: 0, fontSize: "14px" }}>
+                      <p className="notice-compact" style={{ margin: 0 }}>
                         {q.range_warning_text}
                       </p>
                     </div>
@@ -626,7 +626,7 @@ export default function EditScreen({
 
                 {q.suggested && (
                   <div className="alert alert-info" style={{ marginBottom: "var(--space-sm)", padding: "8px 12px" }}>
-                    <p style={{ margin: 0, fontSize: "14px" }}>
+                    <p className="notice-compact" style={{ margin: 0 }}>
                       Pre-filled from your description — please check
                     </p>
                   </div>
@@ -747,8 +747,8 @@ export default function EditScreen({
 
             {photos.length > 0 && (
               <p
+                className="notice-compact"
                 style={{
-                  fontSize: "14px",
                   color: "var(--text-muted)",
                   marginTop: "8px",
                   marginBottom: "8px",
