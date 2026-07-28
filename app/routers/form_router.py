@@ -87,6 +87,7 @@ router = APIRouter(route_class=MaxBodySizeRoute)
 _body_capturing_router = APIRouter(route_class=BodyCapturingRoute)
 
 _VALID_TIERS = {"high", "standard"}
+_HIGH_TIER_MAX_PHOTOS = 1
 
 
 def _sanitize_photos(photo_bytes: list[bytes], tier: str) -> list[bytes]:
@@ -268,7 +269,13 @@ def form_finish(
     pdf_repo=Depends(get_pdf_repo),
     photo_repo=Depends(get_photo_repo),
 ):
-    data = json.loads(payload)
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        raise INVALID_PAYLOAD("payload is not valid JSON") from None
+    if not isinstance(data, dict):
+        raise INVALID_PAYLOAD("payload must be a JSON object")
+
     validate_finish_payload(data)
 
     # Count check runs before any bytes are read. FastAPI does not enforce
@@ -294,12 +301,30 @@ def form_finish(
     # present — spans both the JSON payload and the multipart file list.
     # validate_finish_payload only sees the JSON; this handler sees both.
     #
-    # When no photos are submitted, tier is accepted as None or absent and
-    # ignored. When photos are present, tier must be one of the valid values.
+    # The type/enum check below runs unconditionally, regardless of whether
+    # photos are present. The wire contract is Optional[str], not "whatever
+    # the client feels like sending when it omits photos" -- an untrusted
+    # client can still submit a photo-less request with a tampered tier, and
+    # that value is later stamped verbatim onto the audit record. Checking
+    # isinstance(tier, str) before the `in _VALID_TIERS` membership test also
+    # avoids a TypeError (-> unhandled 500) for unhashable values such as a
+    # dict or list.
     tier = data.get("photo_quality_tier")
-    if photo_bytes and tier not in _VALID_TIERS:
+    if tier is not None and (not isinstance(tier, str) or tier not in _VALID_TIERS):
+        raise INVALID_PAYLOAD(f"photo_quality_tier must be one of {sorted(_VALID_TIERS)} or null")
+    if photo_bytes and tier is None:
         raise INVALID_PAYLOAD(
             f"photo_quality_tier must be one of {sorted(_VALID_TIERS)} when photos are included"
+        )
+
+    # A "high" tier submission encodes at up to 4K per photo -- expensive
+    # relative to "standard". The frontend caps high-tier submissions to a
+    # single photo (EditScreen.tsx); enforce the same limit server-side so a
+    # tampered client can't force multiple full-resolution CDR passes before
+    # the post-CDR total-size check below has a chance to reject the request.
+    if tier == "high" and len(photo_bytes) > _HIGH_TIER_MAX_PHOTOS:
+        raise INVALID_PAYLOAD(
+            f"photo_quality_tier 'high' allows a maximum of {_HIGH_TIER_MAX_PHOTOS} photo"
         )
 
     # Image CDR (Content Disarm and Reconstruction).
@@ -328,6 +353,10 @@ def form_finish(
     # The post-sanitization size checks below remain as defensive guards.
     # Re-encoding an already-compressed JPEG can marginally increase its size
     # in edge cases; these checks ensure the stored bytes invariant holds.
+    #
+    # tier is guaranteed to be in _VALID_TIERS here whenever photo_bytes is
+    # non-empty (validated above); the "standard" fallback only applies to
+    # the photo-less case, where _sanitize_photos is never actually called.
     effective_tier = tier if tier in _VALID_TIERS else "standard"
     photo_bytes = _sanitize_photos(photo_bytes, effective_tier)
 
@@ -403,8 +432,9 @@ def form_finish(
     # dataclasses.replace() to produce an augmented AuditOutput without
     # mutating the value returned by the pipeline.
     #
-    # tier is None when no photos were submitted, which is the correct value
-    # for a text-only submission.
+    # tier has already been validated above to be either None or one of
+    # _VALID_TIERS, regardless of whether photos were submitted -- it is
+    # never stamped onto the audit record unchecked.
     audit = replace(audit, photo_quality_tier=tier)
 
     delivery_email = practice_repo.get_email(practice_id)
