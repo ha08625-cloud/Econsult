@@ -734,6 +734,7 @@ export default function EditScreen({
                   // multiple attribute prevents the OS picker from allowing
                   // more than one file, which is clearer than a post-selection error.
                   multiple={photoTier === "standard"}
+                  aria-label="Add photos"
                   aria-describedby="photo-upload-hint"
                   aria-invalid={!!photoError}
                   onChange={handleFileChange}
