@@ -187,7 +187,12 @@ def test_rejects_quantity_missing_allowed_systems():
 def test_rejects_quantity_empty_allowed_systems():
     with pytest.raises(ValueError, match="non-empty allowed_systems"):
         validate_ruleset(
-            _with(quantity=True, quantity_kind="weight", allowed_systems=[], default_system="metric")
+            _with(
+                quantity=True,
+                quantity_kind="weight",
+                allowed_systems=[],
+                default_system="metric",
+            )
         )
 
 
@@ -253,9 +258,7 @@ def test_rejects_default_system_on_non_quantity_question():
 
 def test_rejects_quantity_missing_kind():
     with pytest.raises(ValueError, match="quantity_kind"):
-        validate_ruleset(
-            _with(quantity=True, allowed_systems=["metric"], default_system="metric")
-        )
+        validate_ruleset(_with(quantity=True, allowed_systems=["metric"], default_system="metric"))
 
 
 def test_rejects_unknown_quantity_kind():
@@ -510,16 +513,12 @@ def test_accepts_is_false_clause():
 
 
 def test_accepts_mixed_is_true_and_is_false_clauses():
-    validate_ruleset(
-        _with_safety_rule([{"is_true": "diarrhoea"}, {"is_false": "diarrhoea"}])
-    )
+    validate_ruleset(_with_safety_rule([{"is_true": "diarrhoea"}, {"is_false": "diarrhoea"}]))
 
 
 def test_rejects_clause_with_both_keys():
     with pytest.raises(ValueError, match="exactly one"):
-        validate_ruleset(
-            _with_safety_rule([{"is_true": "diarrhoea", "is_false": "diarrhoea"}])
-        )
+        validate_ruleset(_with_safety_rule([{"is_true": "diarrhoea", "is_false": "diarrhoea"}]))
 
 
 def test_rejects_clause_with_neither_key():

@@ -28,6 +28,9 @@ jobs:
     name: Detect image-relevant changes
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       image-relevant: ${{ steps.filter.outputs.image-relevant }}
     steps:

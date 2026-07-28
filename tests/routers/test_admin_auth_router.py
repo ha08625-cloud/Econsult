@@ -37,6 +37,7 @@ class RaisingAuditRepo(StubAuditRepo):
     def log_event(self, *args, **kwargs):
         raise RuntimeError("Simulated audit log failure")
 
+
 # ---------------------------------------------------------------------------
 # Shared SpyAuthRepo for auth router tests
 # ---------------------------------------------------------------------------
