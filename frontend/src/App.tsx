@@ -35,6 +35,18 @@ import FreeTextScreen from "./screens/FreeTextScreen";
 import ContactScreen from "./screens/ContactScreen";
 import ConfirmDialog from "./ConfirmDialog";
 
+const SCREEN_TITLES: Record<string, string> = {
+  SAFETY_WARNING: "Before you continue",
+  PATIENT_DETAILS: "About the patient",
+  OUTCOME: "What do you need today?",
+  SELECT_CONDITION: "Start your consultation",
+  FREE_TEXT: "Describe your concern",
+  EDIT: "Edit your answers",
+  REVIEW: "Review your answers",
+  CONTACT: "How would you like to be contacted?",
+  DONE: "Consultation submitted",
+};
+
 export default function App() {
   const [screen, setScreen] = useState<
     | "SAFETY_WARNING"
@@ -105,6 +117,11 @@ export default function App() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [screen]);
+
+  useEffect(() => {
+    const title = fatalError ? "Unable to load the form" : SCREEN_TITLES[screen];
+    document.title = title ? `${title} — Econsult` : "Econsult";
+  }, [screen, fatalError]);
 
 
   function triggerFatalError(errorMsg: string) {
