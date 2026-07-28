@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { PageShell, InlineError } from "../layout";
 import { useFocusHeading } from "../useFocusHeading";
 import type { SafetyWarningFetchState } from "../types";
@@ -28,6 +29,7 @@ export default function SafetyWarningScreen({
   onContinue,
 }: SafetyWarningScreenProps) {
   const headingRef = useFocusHeading();
+  const gateHintRef = useRef<HTMLParagraphElement>(null);
 
   const isClosed = practiceIsOpen === false;
 
@@ -119,17 +121,23 @@ export default function SafetyWarningScreen({
           </div>
 
           {!safetyConfirmed && (
-            <p className="safety-gate-hint">
+            <p className="safety-gate-hint" ref={gateHintRef} tabIndex={-1}>
               If any of the above apply to you, please call 999 or go to A&amp;E
-              immediately. Do not use this form.
+              immediately. Do not use this form. Otherwise, confirm the box
+              above to continue.
             </p>
           )}
 
           <div className="btn-row">
             <button
               className="btn btn-primary"
-              disabled={!safetyConfirmed}
-              onClick={onContinue}
+              onClick={() => {
+                if (!safetyConfirmed) {
+                  gateHintRef.current?.focus();
+                  return;
+                }
+                onContinue();
+              }}
             >
               Continue
             </button>

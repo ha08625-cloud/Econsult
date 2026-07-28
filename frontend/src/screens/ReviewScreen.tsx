@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { PageShell } from "../layout";
 import { useFocusHeading } from "../useFocusHeading";
 import type { ClientStateView, SafetyMessage } from "../types";
@@ -29,6 +30,7 @@ export default function ReviewScreen({
 }: ReviewScreenProps) {
   const hasSafetyBlock = safetyMessages.length > 0;
   const headingRef = useFocusHeading();
+  const safetyAlertRef = useRef<HTMLDivElement>(null);
 
   return (
     <PageShell practiceName={practiceName}>
@@ -97,7 +99,7 @@ export default function ReviewScreen({
       )}
 
       {hasSafetyBlock && (
-        <div className="alert alert-warning" role="alert">
+        <div className="alert alert-warning" role="alert" ref={safetyAlertRef} tabIndex={-1}>
           <strong>
             <span className="sr-only">Important: </span>
             Action required
@@ -105,6 +107,9 @@ export default function ReviewScreen({
           {safetyMessages.map((m) => (
             <p key={m.rule_id} style={{ marginTop: "var(--space-sm)" }}>{m.message}</p>
           ))}
+          <p style={{ marginTop: "var(--space-sm)" }}>
+            Go back and change your answers before you can continue.
+          </p>
         </div>
       )}
 
@@ -115,8 +120,13 @@ export default function ReviewScreen({
 
         <button
           className="btn btn-primary"
-          disabled={hasSafetyBlock}
-          onClick={onContinue}
+          onClick={() => {
+            if (hasSafetyBlock) {
+              safetyAlertRef.current?.focus();
+              return;
+            }
+            onContinue();
+          }}
         >
           Continue
         </button>

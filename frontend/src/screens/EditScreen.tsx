@@ -222,6 +222,16 @@ export default function EditScreen({
   async function handleContinue() {
     setScreenError(null);
     setPhotoError(null);
+
+    if (!allRequiredAnswered) {
+      setScreenError("Answer all required questions before continuing.");
+      return;
+    }
+    if (hasPrecisionError) {
+      setScreenError("Fix the highlighted answers before continuing.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       // Number answers are held as strings in editableAnswers (so the input and
@@ -827,7 +837,7 @@ export default function EditScreen({
           </button>
           <button
             className="btn btn-primary"
-            disabled={!allRequiredAnswered || hasPrecisionError || isSubmitting}
+            disabled={isSubmitting}
             onClick={handleContinue}
           >
             {isSubmitting ? "Please wait\u2026" : "Review answers"}

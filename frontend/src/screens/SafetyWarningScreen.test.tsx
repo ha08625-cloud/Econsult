@@ -1,4 +1,6 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { vi } from "vitest";
 import SafetyWarningScreen from "./SafetyWarningScreen";
 
 const baseProps = {
@@ -21,9 +23,18 @@ test("Checkbox is correctly associated with its label for screen readers", () =>
   expect(checkbox).toHaveAttribute("type", "checkbox");
 });
 
-test("Continue is disabled when safetyConfirmed is false", () => {
-  render(<SafetyWarningScreen {...baseProps} safetyConfirmed={false} />);
-  expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+test("Continue remains enabled when safetyConfirmed is false, but clicking focuses the hint instead of continuing", async () => {
+  const onContinue = vi.fn();
+  render(
+    <SafetyWarningScreen {...baseProps} safetyConfirmed={false} onContinue={onContinue} />
+  );
+  const btn = screen.getByRole("button", { name: /continue/i });
+  expect(btn).not.toBeDisabled();
+  await userEvent.click(btn);
+  expect(onContinue).not.toHaveBeenCalled();
+  expect(screen.getByText(/please call 999 or go to A&E immediately/i)).toBe(
+    document.activeElement
+  );
 });
 
 test("Continue is enabled when safetyConfirmed is true and practice name loaded", () => {

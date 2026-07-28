@@ -62,10 +62,22 @@ describe("SelectConditionScreen", () => {
   // Button states
   // ---------------------------------------------------------------------------
 
-  it("Continue button is disabled when no condition is selected", () => {
-    render(<SelectConditionScreen {...defaultProps} selectedConditionId={null} />);
+  it("Continue button remains enabled when no condition is selected, but clicking focuses the hint instead of continuing", async () => {
+    const onContinue = vi.fn();
+    render(
+      <SelectConditionScreen
+        {...defaultProps}
+        selectedConditionId={null}
+        onContinue={onContinue}
+      />
+    );
     const btn = screen.getByRole("button", { name: /continue/i });
-    expect(btn.hasAttribute("disabled")).toBe(true);
+    expect(btn.hasAttribute("disabled")).toBe(false);
+    await userEvent.click(btn);
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(screen.getByText(/select or search for a condition to continue/i)).toBe(
+      document.activeElement
+    );
   });
 
   it("Continue button is enabled when a condition is selected", () => {

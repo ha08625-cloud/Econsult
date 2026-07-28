@@ -625,3 +625,25 @@ textarea:focus {
   justify-content: flex-end;
   margin-top: var(--space-lg);
 }
+
+/* ============================================================
+   Focus Indicators — WCAG 2.1 AA (1.4.11 Non-text Contrast)
+   ============================================================ */
+
+/* A consistent 3px dark outline for every interactive element on
+   keyboard focus. Declared last so it wins over the input[type="text"]/
+   textarea :focus rule above, whose --nhs-blue-light outline is ~1.07:1
+   against white and contributes almost nothing to contrast. Also covers
+   buttons (previously the unstyled browser default) and <select>
+   elements styled via .combobox-input, which the text-input focus rule
+   never reached. Same pattern already used by .error-summary:focus and
+   .guide-link:focus, generalised here to all interactive elements. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 2px;
+}

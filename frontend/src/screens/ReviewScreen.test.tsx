@@ -117,22 +117,25 @@ describe("ReviewScreen", () => {
     ).toBeTruthy();
   });
 
-  it("Continue button is disabled when safety messages are present", () => {
+  it("Continue button remains enabled when safety messages are present, but clicking focuses the alert instead of continuing", async () => {
     const safetyMessages: SafetyMessage[] = [
       { rule_id: "r1", message: "Seek urgent care immediately." },
     ];
+    const onContinue = vi.fn();
     render(
       <ReviewScreen
         clientState={baseClientState}
         safetyMessages={safetyMessages}
         photos={[]}
         onBack={noop}
-        onContinue={noop}
+        onContinue={onContinue}
       />
     );
-    expect(
-      screen.getByRole("button", { name: /continue/i }).hasAttribute("disabled")
-    ).toBe(true);
+    const btn = screen.getByRole("button", { name: /continue/i });
+    expect(btn.hasAttribute("disabled")).toBe(false);
+    await userEvent.click(btn);
+    expect(onContinue).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toBe(document.activeElement);
   });
 
   it("Continue button is enabled when no safety messages", () => {
