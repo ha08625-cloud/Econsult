@@ -137,6 +137,10 @@ class PracticeRepository:
         - the list exceeds MAX_DOCTOR_LIST_LENGTH items
         - any item is not a non-empty string
         - any item exceeds MAX_DOCTOR_NAME_LENGTH characters
+        - any two items are duplicates (case-insensitive, after stripping
+          whitespace) — the patient-facing dropdown keys options by name
+          (see ContactScreen.tsx), and duplicate names are indistinguishable
+          to patients anyway
         """
         if not isinstance(names, list):
             raise InvalidDoctorListError("Doctor list must be a list")
@@ -145,6 +149,7 @@ class PracticeRepository:
                 f"Doctor list must not exceed {MAX_DOCTOR_LIST_LENGTH} items "
                 f"(received {len(names)})"
             )
+        seen: dict[str, int] = {}
         for i, name in enumerate(names):
             if not isinstance(name, str) or not name.strip():
                 raise InvalidDoctorListError(f"Doctor name at index {i} must be a non-empty string")
@@ -152,6 +157,13 @@ class PracticeRepository:
                 raise InvalidDoctorListError(
                     f"Doctor name at index {i} exceeds {MAX_DOCTOR_NAME_LENGTH} characters"
                 )
+            key = name.strip().casefold()
+            if key in seen:
+                raise InvalidDoctorListError(
+                    f"Duplicate doctor name '{name.strip()}' at index {i} "
+                    f"(already present at index {seen[key]})"
+                )
+            seen[key] = i
 
     # --- Practices ---
 

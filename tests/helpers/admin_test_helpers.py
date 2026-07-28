@@ -125,6 +125,7 @@ class StubPracticeRepo:
                 f"Doctor list must not exceed {MAX_DOCTOR_LIST_LENGTH} items "
                 f"(received {len(names)})"
             )
+        seen = {}
         for i, name in enumerate(names):
             if not isinstance(name, str) or not name.strip():
                 raise InvalidDoctorListError(f"Doctor name at index {i} must be a non-empty string")
@@ -132,6 +133,13 @@ class StubPracticeRepo:
                 raise InvalidDoctorListError(
                     f"Doctor name at index {i} exceeds {MAX_DOCTOR_NAME_LENGTH} characters"
                 )
+            key = name.strip().casefold()
+            if key in seen:
+                raise InvalidDoctorListError(
+                    f"Duplicate doctor name '{name.strip()}' at index {i} "
+                    f"(already present at index {seen[key]})"
+                )
+            seen[key] = i
 
 
 class StubAvailabilityRepo:

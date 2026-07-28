@@ -297,6 +297,21 @@ describe("PracticeSettingsTab — doctor list display and editing", () => {
     expect(screen.getByText("Dr Patel")).toBeTruthy();
   });
 
+  it("rejects adding a duplicate doctor name and does not add it to the list", async () => {
+    setupSuccessfulLoad(["Dr Smith"]);
+    render(<PracticeSettingsTab onAuthError={noop} />);
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: /new doctor name/i })).toBeTruthy()
+    );
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /new doctor name/i }),
+      "dr smith"
+    );
+    await userEvent.click(screen.getByRole("button", { name: /^add$/i }));
+    expect(screen.getByText(/already on the list/i)).toBeTruthy();
+    expect(screen.queryAllByLabelText(/remove/i)).toHaveLength(1);
+  });
+
   it("Add button is disabled when the input is empty", async () => {
     setupSuccessfulLoad([]);
     render(<PracticeSettingsTab onAuthError={noop} />);

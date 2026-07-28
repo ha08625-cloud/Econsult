@@ -415,6 +415,7 @@ def put_doctors(
     - each item must be a non-empty string
     - each item must not exceed MAX_DOCTOR_NAME_LENGTH characters
     - list must not exceed MAX_DOCTOR_LIST_LENGTH items
+    - no two items may be duplicates (case-insensitive, after stripping whitespace)
 
     Catches InvalidDoctorListError and converts to INVALID_PAYLOAD.
     Does not catch PracticeNotFound — the practice is guaranteed to exist

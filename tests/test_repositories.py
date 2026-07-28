@@ -395,6 +395,30 @@ def test_doctors_set_raises_for_list_too_long():
         _cleanup_practice(pid)
 
 
+def test_doctors_set_raises_for_duplicate_name():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        with pytest.raises(InvalidDoctorListError):
+            repo.set_doctors(pid, ["Dr Smith", "Dr Jones", "Dr Smith"])
+    finally:
+        _cleanup_practice(pid)
+
+
+def test_doctors_set_raises_for_duplicate_name_case_and_whitespace_insensitive():
+    repo = _make_practice_repo()
+    pid = _uid()
+
+    try:
+        repo.create_practice(pid, "Test", "a@b.com")
+        with pytest.raises(InvalidDoctorListError):
+            repo.set_doctors(pid, ["Dr Smith", " dr smith "])
+    finally:
+        _cleanup_practice(pid)
+
+
 # ---------------------------------------------------------------------------
 # SubmissionRepository
 # ---------------------------------------------------------------------------
