@@ -547,6 +547,10 @@ textarea:focus {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
+.modal-panel--narrow {
+  max-width: 400px;
+}
+
 .modal-close {
   position: absolute;
   top: var(--space-md);

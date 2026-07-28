@@ -33,6 +33,7 @@ import ReviewScreen from "./screens/ReviewScreen";
 import EditScreen from "./screens/EditScreen";
 import FreeTextScreen from "./screens/FreeTextScreen";
 import ContactScreen from "./screens/ContactScreen";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function App() {
   const [screen, setScreen] = useState<
@@ -283,39 +284,49 @@ export default function App() {
     return (
       <>
         {showConditionChangeWarning && (
-          <div className="modal-overlay">
-            <div className="screen-card" style={{ maxWidth: '400px' }}>
-              <p>Switching conditions will clear the answer you've already typed.</p>
-              <div className="btn-row">
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setShowConditionChangeWarning(false);
-                    setPendingConditionId(null);
-                    // Restore selectedConditionId to the last confirmed pick —
-                    // necessary because it may already have been nulled by
-                    // typing before the pending switch was proposed.
-                    setSelectedConditionId(confirmedConditionId);
-                    setComboboxResetKey((k) => k + 1);
-                  }}
-                >
-                  Keep my answer
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => {
-                    setFreeText("");
-                    setSelectedConditionId(pendingConditionId);
-                    setConfirmedConditionId(pendingConditionId);
-                    setPendingConditionId(null);
-                    setShowConditionChangeWarning(false);
-                  }}
-                >
-                  Switch condition
-                </button>
-              </div>
+          <ConfirmDialog
+            ariaLabel="Switching conditions will clear the answer you've already typed"
+            className="modal-panel modal-panel--narrow"
+            onEscape={() => {
+              setShowConditionChangeWarning(false);
+              setPendingConditionId(null);
+              // Restore selectedConditionId to the last confirmed pick —
+              // necessary because it may already have been nulled by
+              // typing before the pending switch was proposed.
+              setSelectedConditionId(confirmedConditionId);
+              setComboboxResetKey((k) => k + 1);
+            }}
+          >
+            <p>Switching conditions will clear the answer you've already typed.</p>
+            <div className="btn-row">
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowConditionChangeWarning(false);
+                  setPendingConditionId(null);
+                  // Restore selectedConditionId to the last confirmed pick —
+                  // necessary because it may already have been nulled by
+                  // typing before the pending switch was proposed.
+                  setSelectedConditionId(confirmedConditionId);
+                  setComboboxResetKey((k) => k + 1);
+                }}
+              >
+                Keep my answer
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setFreeText("");
+                  setSelectedConditionId(pendingConditionId);
+                  setConfirmedConditionId(pendingConditionId);
+                  setPendingConditionId(null);
+                  setShowConditionChangeWarning(false);
+                }}
+              >
+                Switch condition
+              </button>
             </div>
-          </div>
+          </ConfirmDialog>
         )}
         <SelectConditionScreen
           practiceName={practiceName}
@@ -391,23 +402,25 @@ export default function App() {
     return (
       <>
         {showBackWarning && (
-          <div className="modal-overlay">
-            <div className="screen-card" style={{ maxWidth: '400px' }}>
-              <p>If you have attached photos, they will be lost and may need to be re-uploaded.</p>
-              <div className="btn-row">
-                <button className="btn btn-secondary" onClick={() => setShowBackWarning(false)}>Stay</button>
-                <button className="btn btn-primary" onClick={() => {
-                  photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
-                  setPhotos([]);
-                  setShowBackWarning(false);
-                  setPresentationState({ status: "loading" });
-                  setPresentationFetchTrigger((k) => k + 1);
-                  setScreen("FREE_TEXT");
-                  setPhotoTier(null);
-                }}>Go back</button>
-              </div>
+          <ConfirmDialog
+            ariaLabel="If you have attached photos, they will be lost and may need to be re-uploaded"
+            className="modal-panel modal-panel--narrow"
+            onEscape={() => setShowBackWarning(false)}
+          >
+            <p>If you have attached photos, they will be lost and may need to be re-uploaded.</p>
+            <div className="btn-row">
+              <button className="btn btn-secondary" onClick={() => setShowBackWarning(false)}>Stay</button>
+              <button className="btn btn-primary" onClick={() => {
+                photos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+                setPhotos([]);
+                setShowBackWarning(false);
+                setPresentationState({ status: "loading" });
+                setPresentationFetchTrigger((k) => k + 1);
+                setScreen("FREE_TEXT");
+                setPhotoTier(null);
+              }}>Go back</button>
             </div>
-          </div>
+          </ConfirmDialog>
         )}
         <EditScreen
           practiceName={practiceName}
