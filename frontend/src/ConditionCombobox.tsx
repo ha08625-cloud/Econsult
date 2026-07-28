@@ -28,6 +28,7 @@ interface ConditionComboboxProps {
   conditions: ConditionSummary[];
   selectedId: string | null;
   onChange: (id: string | null) => void;
+  labelId: string;
 }
 
 const SUGGESTION_LIST_MAX_HEIGHT = 300;
@@ -36,6 +37,7 @@ export default function ConditionCombobox({
   conditions,
   selectedId,
   onChange,
+  labelId,
 }: ConditionComboboxProps) {
   // One-time lookup on mount: if selectedId is already set (e.g. the patient
   // is returning to this screen having previously picked a condition), show
@@ -217,7 +219,7 @@ export default function ConditionCombobox({
         aria-autocomplete="list"
         aria-controls={listboxId}
         aria-activedescendant={activeDescendant}
-        aria-label="Search for a condition"
+        aria-labelledby={labelId}
         value={inputValue}
         onChange={handleInputChange}
         onFocus={handleFocus}
