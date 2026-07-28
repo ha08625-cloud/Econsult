@@ -21,9 +21,9 @@ export function PageShell({ children, practiceName }: PageShellProps) {
           )}
         </div>
       </header>
-      <div className="page-container">
+      <main className="page-container">
         <div className="screen-card">{children}</div>
-      </div>
+      </main>
     </>
   );
 }
