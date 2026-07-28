@@ -248,6 +248,7 @@ export default function PatientDetailsScreen({
           <input
             id="first-name"
             type="text"
+            autoComplete={forSomeoneElse ? "off" : "given-name"}
             value={details.first_name}
             onChange={(e) => setField("first_name", e.target.value)}
             aria-invalid={!!errors.first_name}
@@ -265,6 +266,7 @@ export default function PatientDetailsScreen({
           <input
             id="last-name"
             type="text"
+            autoComplete={forSomeoneElse ? "off" : "family-name"}
             value={details.last_name}
             onChange={(e) => setField("last_name", e.target.value)}
             aria-invalid={!!errors.last_name}
@@ -328,6 +330,7 @@ export default function PatientDetailsScreen({
                 type="text"
                 inputMode="numeric"
                 placeholder="DD"
+                autoComplete={forSomeoneElse ? "off" : "bday-day"}
                 className="input-dob-day-month"
                 value={details.date_of_birth.day}
                 onChange={(e) => handleDobChange("day", e.target.value)}
@@ -343,6 +346,7 @@ export default function PatientDetailsScreen({
                 type="text"
                 inputMode="numeric"
                 placeholder="MM"
+                autoComplete={forSomeoneElse ? "off" : "bday-month"}
                 className="input-dob-day-month"
                 value={details.date_of_birth.month}
                 onChange={(e) => handleDobChange("month", e.target.value)}
@@ -358,6 +362,7 @@ export default function PatientDetailsScreen({
                 type="text"
                 inputMode="numeric"
                 placeholder="YYYY"
+                autoComplete={forSomeoneElse ? "off" : "bday-year"}
                 className="input-dob-year"
                 value={details.date_of_birth.year}
                 onChange={(e) => handleDobChange("year", e.target.value)}
@@ -379,6 +384,7 @@ export default function PatientDetailsScreen({
           <input
             id="postcode"
             type="text"
+            autoComplete={forSomeoneElse ? "off" : "postal-code"}
             className="input-postcode"
             value={details.postcode}
             onChange={(e) => setField("postcode", e.target.value.toUpperCase())}
@@ -422,6 +428,7 @@ export default function PatientDetailsScreen({
             <input
               id="sub-name"
               type="text"
+              autoComplete="name"
               value={details.submitter_name ?? ""}
               onChange={(e) => setField("submitter_name", e.target.value)}
               aria-invalid={!!errors.submitter_name}

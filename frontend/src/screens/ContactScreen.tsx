@@ -246,6 +246,7 @@ export default function ContactScreen({
             <input
               id="contact-phone"
               type="tel"
+              autoComplete="tel"
               value={cp.phone_number ?? ""}
               onChange={(e) => {
                 setContactPreferences({ ...cp, phone_number: e.target.value });
@@ -273,6 +274,7 @@ export default function ContactScreen({
             <input
               id="contact-email"
               type="email"
+              autoComplete="email"
               value={cp.email_address ?? ""}
               onChange={(e) => {
                 setContactPreferences({ ...cp, email_address: e.target.value });
