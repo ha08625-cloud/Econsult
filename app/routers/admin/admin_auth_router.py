@@ -18,6 +18,15 @@ dispatched as a FastAPI BackgroundTask so that the SMTP/HTTP network delay
 does not block the response. If the background delivery fails, the task
 catches the exception, logs it to Sentry, and deletes the OTP record from
 the database so the user is not left waiting for a code that will never arrive.
+
+Background task pattern (POST /auth/request-reset):
+Same reasoning applies to the anti-enumeration fixed delay: any work that
+differs between a registered and an unregistered email must not add to
+response time, or the delay it is meant to protect is defeated. The reset
+token is written to the database synchronously (fast, and required before
+the email can reference it), but the email itself — a Mailgun HTTP round
+trip — is dispatched as a BackgroundTask after the fixed delay has already
+elapsed and the response is on its way out.
 """
 
 import logging
@@ -320,19 +329,47 @@ def verify_mfa_code(
     return response
 
 
+def _send_reset_email_background(
+    email: str,
+    raw_token: str,
+    delivery_service,
+) -> None:
+    """
+    Background task: deliver the password reset/setup email.
+
+    Called after the response has already been returned to the client, so
+    the Mailgun HTTP round trip cannot introduce a response-time difference
+    between registered and unregistered emails. Delivery failure is reported
+    to Sentry; no cleanup is needed since the reset token remains valid for
+    a later retry regardless of whether this delivery attempt succeeded.
+    """
+    try:
+        delivery_service.send_admin_invitation(email, raw_token)
+        logger.info("auth.request_reset.sent: %s", email)
+    except Exception:
+        logger.exception("auth.request_reset.delivery_failed: %s", email)
+        sentry_sdk.capture_exception()
+
+
 def _process_password_reset(
     email: str,
     auth_repo,
     delivery_service,
     start: float,
+    background_tasks: BackgroundTasks,
 ) -> None:
     """
-    Look up the user, apply the fixed delay, and send the reset email if found.
+    Look up the user, apply the fixed delay, and queue the reset email if found.
 
     Called directly from request_password_reset, which is now a plain `def`
     handler dispatched onto the anyio threadpool — the fixed delay
     (time.sleep()) and the lookup/token generation (blocking psycopg2 calls)
     are off the event loop because the whole handler runs on a worker thread.
+
+    Email delivery is dispatched as a BackgroundTask, exactly as
+    POST /auth/login does, so the Mailgun HTTP round trip happens after the
+    200 response is sent and cannot be timed by an attacker to distinguish
+    a registered address from an unregistered one.
     """
     from app.services.admin.auth_service import _fixed_delay
 
@@ -344,13 +381,12 @@ def _process_password_reset(
 
     if user is not None:
         raw_token = auth_service.generate_reset_token(user["id"], auth_repo)
-        try:
-            delivery_service.send_admin_invitation(email, raw_token)
-            logger.info("auth.request_reset.sent: %s", email)
-        except Exception:
-            # Delivery failure is logged but not surfaced — the response is
-            # always 200 to prevent enumeration.
-            logger.warning("auth.request_reset.delivery_failed: %s", email)
+        background_tasks.add_task(
+            _send_reset_email_background,
+            email,
+            raw_token,
+            delivery_service,
+        )
     else:
         logger.warning("auth.request_reset.unknown_email: %s", email)
 
@@ -364,6 +400,7 @@ def _process_password_reset(
 @limiter.limit("5/minute")
 def request_password_reset(
     request: Request,
+    background_tasks: BackgroundTasks,
     auth_repo=Depends(get_auth_repo),
     delivery_service=Depends(get_admin_delivery_service),
     practice_id: str = Depends(get_practice_id),
@@ -378,8 +415,12 @@ def request_password_reset(
     to prevent an attacker from distinguishing registered from unregistered
     addresses via DB I/O timing differences.
 
-    If the email is registered, a reset token is generated and a setup
-    link is emailed. If not, the request is silently discarded.
+    If the email is registered, a reset token is generated synchronously
+    and the setup email is dispatched as a BackgroundTask (see
+    _send_reset_email_background) so the Mailgun HTTP round trip happens
+    after the response is sent — otherwise that round trip alone would
+    reintroduce the timing leak the fixed delay is meant to prevent. If
+    not registered, the request is silently discarded.
 
     No audit log is written. Writing an audit log here would require
     recording whether the email was found, which would enumerate registered
@@ -400,7 +441,7 @@ def request_password_reset(
 
     email = email.strip().lower()
 
-    _process_password_reset(email, auth_repo, delivery_service, start)
+    _process_password_reset(email, auth_repo, delivery_service, start, background_tasks)
 
     return {"ok": True}
 

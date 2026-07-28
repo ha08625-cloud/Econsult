@@ -139,7 +139,7 @@ HTTP route handlers. No business logic; orchestration only.
 
 **`app/routers/admin/`** (Admin sub-router package)
 - `__init__.py` — Package marker.
-- `admin_auth_router.py` — Password login (step 1), OTP verify (step 2), password reset request, set-password, logout. Unauthenticated by design. `POST /auth/login` dispatches OTP email via FastAPI BackgroundTask; on delivery failure the background task deletes the OTP record and reports to Sentry.
+- `admin_auth_router.py` — Password login (step 1), OTP verify (step 2), password reset request, set-password, logout. Unauthenticated by design. `POST /auth/login` dispatches OTP email via FastAPI BackgroundTask; on delivery failure the background task deletes the OTP record and reports to Sentry. `POST /auth/request-reset` dispatches the setup email the same way, so the Mailgun round trip can't reintroduce the timing leak the anti-enumeration `_fixed_delay()` is meant to prevent.
 - `admin_practice_router.py` — Conditions list, practice settings, signposting, doctor list.
 - `admin_availability_router.py` — Weekly config, manual overrides, per-date exceptions.
 - `admin_audit_router.py` — Audit log read endpoint.

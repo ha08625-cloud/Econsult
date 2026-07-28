@@ -107,7 +107,7 @@ The IP limit is one layer of a defence-in-depth stack. Additional service-layer 
 
 - `verify_login_credentials` enforces a **60-second per-email OTP cooldown** (checked before password verification so a 429 cannot confirm a correct password guess) and a **3-attempt / 15-minute password lockout**, both backed by the database.
 - `verify_mfa_code` enforces a **3-attempt per-email OTP lockout** backed by `admin_auth_codes.attempts_count`.
-- `request-reset` always returns 200 regardless of whether the email is registered, and applies `_fixed_delay()` to prevent DB I/O timing leaks.
+- `request-reset` always returns 200 regardless of whether the email is registered, and applies `_fixed_delay()` to prevent DB I/O timing leaks. Email delivery (a Mailgun HTTP round trip) is dispatched as a `BackgroundTask` after the response is sent, so it cannot reintroduce the same timing leak — a registered email otherwise takes visibly longer than an unregistered one.
 
 The IP limit adds protection against distributed attacks cycling through different email addresses faster than per-email controls engage.
 
