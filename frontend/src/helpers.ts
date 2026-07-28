@@ -166,6 +166,9 @@ export function friendlyPhotoErrorMessage(detail: string): string | null {
   if (detail.startsWith("Photo") && detail.includes("exceeds")) {
     return "One of your photos is too large to send. Please go back and remove it, then try again.";
   }
+  if (detail.startsWith("Photo") && detail.includes("is not a valid image")) {
+    return "One of your photos could not be read. Please go back, remove it, and try again with a different photo.";
+  }
   if (detail.startsWith("Combined photo size")) {
     return "Your photos together are too large to send. Please go back and remove one or more, then try again.";
   }

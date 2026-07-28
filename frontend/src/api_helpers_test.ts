@@ -52,6 +52,13 @@ describe("friendlyPhotoErrorMessage", () => {
     expect(result).toBe(detail);
   });
 
+  it("returns a patient-friendly message for a corrupt/unreadable image", () => {
+    const result = friendlyPhotoErrorMessage("Photo 1 is not a valid image");
+    expect(result).toBe(
+      "One of your photos could not be read. Please go back, remove it, and try again with a different photo."
+    );
+  });
+
   it("returns null for an unrecognised detail string", () => {
     const result = friendlyPhotoErrorMessage("Something completely unexpected");
     expect(result).toBeNull();
