@@ -115,6 +115,7 @@ export default function SignpostingEditor({
 
     return () => {
       cancelled = true;
+      quill.off("text-change");
     };
   }, [conditionId, onUnsavedChange, onAuthError]);
 
