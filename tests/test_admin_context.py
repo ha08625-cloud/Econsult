@@ -29,7 +29,7 @@ import sys
 
 from fastapi.testclient import TestClient
 
-from tests.helpers.admin_test_helpers import StubAuthRepo, make_test_app
+from tests.helpers.admin_test_helpers import TEST_SESSION_ID, StubAuthRepo, make_test_app
 
 
 def test_admin_context_import_surface_stays_minimal():
@@ -83,15 +83,15 @@ def test_require_admin_refreshes_session_and_resets_cookie():
 
     response = client.get(
         "/admin/audit-log",
-        cookies={"session_id": "test-session-id"},
+        cookies={"session_id": TEST_SESSION_ID},
     )
 
     assert response.status_code == 200
-    assert auth_repo.refresh_calls == [("test-session-id", SESSION_TTL_MINUTES)]
+    assert auth_repo.refresh_calls == [(TEST_SESSION_ID, SESSION_TTL_MINUTES)]
 
     set_cookie = response.headers.get("set-cookie")
     assert set_cookie is not None
-    assert "session_id=test-session-id" in set_cookie
+    assert f"session_id={TEST_SESSION_ID}" in set_cookie
     assert f"Max-Age={SESSION_COOKIE_MAX_AGE}" in set_cookie
     assert "HttpOnly" in set_cookie
     assert "samesite=strict" in set_cookie.lower()
@@ -104,7 +104,7 @@ def test_require_admin_refresh_failure_does_not_break_request():
 
     response = client.get(
         "/admin/audit-log",
-        cookies={"session_id": "test-session-id"},
+        cookies={"session_id": TEST_SESSION_ID},
     )
 
     # The request still succeeds even though the refresh raised.
@@ -113,13 +113,16 @@ def test_require_admin_refresh_failure_does_not_break_request():
 
 
 def test_require_admin_still_401s_without_refresh_attempt():
+    """Well-formed UUID with no matching session row — exercises the
+    get_session_context-returns-None path, distinct from the malformed-
+    cookie-value path covered in test_admin_auth_router.py."""
     auth_repo = RefreshSpyAuthRepo()
     app = make_test_app(auth_repo=auth_repo)
     client = TestClient(app)
 
     response = client.get(
         "/admin/audit-log",
-        cookies={"session_id": "wrong-session-id"},
+        cookies={"session_id": "99999999-9999-9999-9999-999999999999"},
     )
 
     assert response.status_code == 401

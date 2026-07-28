@@ -24,6 +24,7 @@ import bcrypt
 
 from tests.helpers.admin_test_helpers import (
     TEST_SESSION_COOKIE,
+    TEST_SESSION_ID,
     StubAdminDeliveryService,
     StubAuditRepo,
     StubAuthRepo,
@@ -80,13 +81,13 @@ class SpyAuthRepo(StubAuthRepo):
         if self._session_context is not None:
             return self._session_context
         # Fall back to the default test session.
-        if session_id == "test-session-id":
+        if session_id == TEST_SESSION_ID:
             return {
                 "user_id": "00000000-0000-0000-0000-000000000001",
                 "role": "admin",
                 "practice_id": "test_practice",
                 "email": "admin@nhs.net",
-                "session_id": "test-session-id",
+                "session_id": TEST_SESSION_ID,
             }
         return None
 
@@ -159,8 +160,16 @@ class TestAuthBehaviour(unittest.TestCase):
         res = self._get()
         self.assertEqual(res.status_code, 401)
 
-    def test_invalid_session_cookie_returns_401(self):
+    def test_malformed_session_cookie_returns_401(self):
+        """Non-UUID cookie value must 401 without ever reaching the
+        repository — get_session_context casts with %s::uuid, so a
+        malformed value would otherwise raise a 500."""
         res = self._get(cookies={"session_id": "not-a-real-session"})
+        self.assertEqual(res.status_code, 401)
+
+    def test_wellformed_but_unknown_session_cookie_returns_401(self):
+        """A syntactically valid UUID that has no matching session row."""
+        res = self._get(cookies={"session_id": "99999999-9999-9999-9999-999999999999"})
         self.assertEqual(res.status_code, 401)
 
     def test_valid_session_cookie_returns_200(self):
@@ -667,15 +676,25 @@ class TestLogout(unittest.TestCase):
     def test_logout_with_cookie_deletes_session_and_returns_200(self):
         repo = SpyAuthRepo()
         client = self._make_client(auth_repo=repo)
-        client.cookies.set("session_id", "some-session-id")
+        client.cookies.set("session_id", "33333333-3333-3333-3333-333333333333")
         res = client.post("/admin/auth/logout")
         self.assertEqual(res.status_code, 200)
-        self.assertIn("some-session-id", repo.deleted_sessions)
+        self.assertIn("33333333-3333-3333-3333-333333333333", repo.deleted_sessions)
+
+    def test_logout_with_malformed_cookie_skips_delete_and_returns_200(self):
+        """A non-UUID cookie value must not reach delete_session (which casts
+        with %s::uuid) — logout should still succeed and clear the cookie."""
+        repo = SpyAuthRepo()
+        client = self._make_client(auth_repo=repo)
+        client.cookies.set("session_id", "not-a-real-session")
+        res = client.post("/admin/auth/logout")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(repo.deleted_sessions), 0)
 
     def test_logout_clears_cookie(self):
         repo = SpyAuthRepo()
         client = self._make_client(auth_repo=repo)
-        client.cookies.set("session_id", "some-session-id")
+        client.cookies.set("session_id", "33333333-3333-3333-3333-333333333333")
         res = client.post("/admin/auth/logout")
         set_cookie = res.headers.get("set-cookie", "")
         self.assertIn("session_id", set_cookie)
@@ -684,7 +703,7 @@ class TestLogout(unittest.TestCase):
     def test_logout_cookie_is_always_secure(self):
         repo = SpyAuthRepo()
         client = self._make_client(auth_repo=repo)
-        client.cookies.set("session_id", "some-session-id")
+        client.cookies.set("session_id", "33333333-3333-3333-3333-333333333333")
         res = client.post("/admin/auth/logout")
         set_cookie = res.headers.get("set-cookie", "").lower()
         self.assertIn("secure", set_cookie)
