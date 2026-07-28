@@ -26,13 +26,20 @@ _UK_POSTCODE_RE = re.compile(
 # Relaxed validation — checks digit count only, not the check digit algorithm.
 _NHS_DIGITS_RE = re.compile(r"^\d{10}$")
 
-# Length caps for free-text contact_preferences fields. These exist to
-# reject oversized/malformed values at the HTTP boundary (422) rather than
-# letting them reach pdf_formatter.py, where a non-string value would raise
-# a TypeError inside the PDF worker instead of failing the request cleanly.
+# Length caps for free-text fields. These exist to reject oversized/malformed
+# values at the HTTP boundary (422) rather than letting them reach
+# pdf_formatter.py (where a non-string value would raise a TypeError inside
+# the PDF worker instead of failing the request cleanly) or accumulate
+# unbounded in the append-only RuntimeState history (every /form/update call
+# re-stores the full state, so an unbounded field is also a storage-growth
+# and PDF-rendering-time DoS vector on this unauthenticated endpoint).
 _EMAIL_ADDRESS_MAX_LEN = 255
 _PHONE_NUMBER_MAX_LEN = 100
 _USUAL_DOCTOR_NAME_MAX_LEN = 255
+_NAME_FIELD_MAX_LEN = 255
+_BEST_TIME_TO_CALL_MAX_LEN = 255
+_FREE_TEXT_MAX_LEN = 5000
+_ADDITIONAL_TEXT_MAX_LEN = 5000
 
 
 def require_keys(obj: dict, allowed: set):
@@ -52,10 +59,20 @@ def _validate_optional_str(value, field_name: str, max_len: int):
         raise INVALID_PAYLOAD(f"{field_name} must be at most {max_len} characters")
 
 
+def _validate_required_str(value, field_name: str, max_len: int):
+    """Validate a value that must be a non-empty string within max_len
+    characters."""
+    if not isinstance(value, str) or not value.strip():
+        raise INVALID_PAYLOAD(f"{field_name} must be a non-empty string")
+    if len(value) > max_len:
+        raise INVALID_PAYLOAD(f"{field_name} must be at most {max_len} characters")
+
+
 def validate_init_payload(payload: dict):
     require_keys(payload, {"condition_id", "free_text"})
     if not isinstance(payload["condition_id"], str):
         raise INVALID_PAYLOAD("condition_id must be string")
+    _validate_optional_str(payload.get("free_text"), "free_text", _FREE_TEXT_MAX_LEN)
 
 
 def validate_update_payload(payload: dict):
@@ -73,9 +90,9 @@ def validate_update_payload(payload: dict):
     if not payload["answers"]:
         raise INVALID_PAYLOAD("answers must be complete and non-empty")
 
-    additional_text = payload.get("additional_text")
-    if additional_text is not None and not isinstance(additional_text, str):
-        raise INVALID_PAYLOAD("additional_text must be a string or null")
+    _validate_optional_str(
+        payload.get("additional_text"), "additional_text", _ADDITIONAL_TEXT_MAX_LEN
+    )
 
 
 def validate_contact_preferences(cp: dict):
@@ -126,10 +143,11 @@ def validate_contact_preferences(cp: dict):
     if "email" in methods_set and not cp.get("email_address"):
         raise INVALID_PAYLOAD("email_address is required when contact_methods includes 'email'")
 
-    # best_time_to_call — optional string, but must not be a non-string type if present
-    best_time = cp.get("best_time_to_call")
-    if best_time is not None and not isinstance(best_time, str):
-        raise INVALID_PAYLOAD("best_time_to_call must be a string or null")
+    # best_time_to_call — optional string, but must not be a non-string type
+    # or exceed a sensible length if present
+    _validate_optional_str(
+        cp.get("best_time_to_call"), "best_time_to_call", _BEST_TIME_TO_CALL_MAX_LEN
+    )
 
     # doctor_preference
     doctor_pref = cp.get("doctor_preference")
@@ -186,10 +204,12 @@ def validate_patient_details(pd: dict) -> None:
         raise INVALID_PAYLOAD(f"patient_for must be one of: {sorted(VALID_PATIENT_FOR_VALUES)}")
 
     # Required string fields
-    for field_name in ("first_name", "last_name", "postcode"):
-        value = pd.get(field_name)
-        if not isinstance(value, str) or not value.strip():
-            raise INVALID_PAYLOAD(f"{field_name} must be a non-empty string")
+    for field_name in ("first_name", "last_name"):
+        _validate_required_str(pd.get(field_name), field_name, _NAME_FIELD_MAX_LEN)
+
+    postcode = pd.get("postcode")
+    if not isinstance(postcode, str) or not postcode.strip():
+        raise INVALID_PAYLOAD("postcode must be a non-empty string")
 
     # date_of_birth — must be a dict with exactly day, month, year
     dob = pd.get("date_of_birth")
@@ -230,9 +250,7 @@ def validate_patient_details(pd: dict) -> None:
         raise INVALID_PAYLOAD(f"gender must be one of: {sorted(VALID_GENDER_VALUES)}")
 
     # preferred_name — optional, must be a string or null if present
-    preferred_name = pd.get("preferred_name")
-    if preferred_name is not None and not isinstance(preferred_name, str):
-        raise INVALID_PAYLOAD("preferred_name must be a string or null")
+    _validate_optional_str(pd.get("preferred_name"), "preferred_name", _NAME_FIELD_MAX_LEN)
 
     # nhs_number — optional, but if present must be exactly 10 digits (spaces already
     # stripped by the frontend before sending)
@@ -250,6 +268,10 @@ def validate_patient_details(pd: dict) -> None:
             if not isinstance(value, str) or not value.strip():
                 raise INVALID_PAYLOAD(
                     f"{field_name} is required when patient_for is 'someone_else'"
+                )
+            if len(value) > _NAME_FIELD_MAX_LEN:
+                raise INVALID_PAYLOAD(
+                    f"{field_name} must be at most {_NAME_FIELD_MAX_LEN} characters"
                 )
 
 

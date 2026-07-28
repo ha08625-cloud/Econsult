@@ -16,7 +16,12 @@ import unittest
 from datetime import date
 
 from app.core.errors import APIError
-from app.core.request_validation import validate_contact_preferences, validate_patient_details
+from app.core.request_validation import (
+    validate_contact_preferences,
+    validate_init_payload,
+    validate_patient_details,
+    validate_update_payload,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -340,6 +345,12 @@ class TestValidatePatientDetailsPreferredName(unittest.TestCase):
     def test_preferred_name_non_string_raises(self):
         _raises_with(_valid_pd(preferred_name=123), "preferred_name")
 
+    def test_preferred_name_too_long_raises(self):
+        _raises_with(_valid_pd(preferred_name="A" * 256), "preferred_name")
+
+    def test_preferred_name_at_max_len_passes(self):
+        validate_patient_details(_valid_pd(preferred_name="A" * 255))
+
 
 class TestValidatePatientDetailsSubmitterFields(unittest.TestCase):
     def test_someone_else_missing_submitter_name_raises(self):
@@ -358,6 +369,19 @@ class TestValidatePatientDetailsSubmitterFields(unittest.TestCase):
         pd = _valid_someone_else(submitter_relationship="")
         _raises_with(pd, "submitter_relationship")
 
+    def test_someone_else_submitter_name_too_long_raises(self):
+        pd = _valid_someone_else(submitter_name="A" * 256)
+        _raises_with(pd, "submitter_name")
+
+    def test_someone_else_submitter_relationship_too_long_raises(self):
+        pd = _valid_someone_else(submitter_relationship="A" * 256)
+        _raises_with(pd, "submitter_relationship")
+
+    def test_someone_else_submitter_fields_at_max_len_passes(self):
+        validate_patient_details(
+            _valid_someone_else(submitter_name="A" * 255, submitter_relationship="A" * 255)
+        )
+
     def test_me_with_null_submitter_fields_passes(self):
         # submitter fields are present but null — this is valid for patient_for="me"
         validate_patient_details(_valid_pd(submitter_name=None, submitter_relationship=None))
@@ -367,6 +391,20 @@ class TestValidatePatientDetailsSubmitterFields(unittest.TestCase):
         validate_patient_details(
             _valid_pd(submitter_name="Someone", submitter_relationship="carer")
         )
+
+
+class TestValidatePatientDetailsNameLength(unittest.TestCase):
+    def test_first_name_too_long_raises(self):
+        _raises_with(_valid_pd(first_name="A" * 256), "first_name")
+
+    def test_first_name_at_max_len_passes(self):
+        validate_patient_details(_valid_pd(first_name="A" * 255))
+
+    def test_last_name_too_long_raises(self):
+        _raises_with(_valid_pd(last_name="A" * 256), "last_name")
+
+    def test_last_name_at_max_len_passes(self):
+        validate_patient_details(_valid_pd(last_name="A" * 255))
 
 
 # ---------------------------------------------------------------------------
@@ -476,3 +514,116 @@ class TestValidateContactPreferencesFreeTextFieldGuards(unittest.TestCase):
 
     def test_phone_number_at_max_len_passes(self):
         validate_contact_preferences(_valid_cp(contact_methods=["phone"], phone_number="1" * 100))
+
+    def test_best_time_to_call_dict_raises(self):
+        _cp_raises_with(
+            _valid_cp(best_time_to_call={"nested": "object"}),
+            "best_time_to_call",
+        )
+
+    def test_best_time_to_call_too_long_raises(self):
+        _cp_raises_with(
+            _valid_cp(best_time_to_call="A" * 256),
+            "best_time_to_call",
+        )
+
+    def test_best_time_to_call_at_max_len_passes(self):
+        validate_contact_preferences(_valid_cp(best_time_to_call="A" * 255))
+
+
+# ---------------------------------------------------------------------------
+# Section 4: validate_init_payload
+# ---------------------------------------------------------------------------
+
+
+class TestValidateInitPayload(unittest.TestCase):
+    def test_valid_payload_with_free_text_passes(self):
+        validate_init_payload({"condition_id": "uti1", "free_text": "Burning sensation"})
+
+    def test_valid_payload_with_null_free_text_passes(self):
+        validate_init_payload({"condition_id": "uti1", "free_text": None})
+
+    def test_non_string_condition_id_raises(self):
+        try:
+            validate_init_payload({"condition_id": 123, "free_text": None})
+            self.fail("Expected APIError")
+        except APIError as e:
+            self.assertIn("condition_id", e.message)
+
+    def test_extra_field_raises(self):
+        try:
+            validate_init_payload({"condition_id": "uti1", "free_text": None, "extra": "sneaky"})
+            self.fail("Expected APIError")
+        except APIError as e:
+            self.assertIn("Illegal", e.message)
+
+    def test_free_text_object_raises(self):
+        # Regression: validate_init_payload previously never checked the type
+        # of free_text at all, so a JSON object or number passed validation
+        # and could reach the encoder/PDF pipeline as a non-string value.
+        try:
+            validate_init_payload({"condition_id": "uti1", "free_text": {"nested": "object"}})
+            self.fail("Expected APIError")
+        except APIError as e:
+            self.assertIn("free_text", e.message)
+
+    def test_free_text_number_raises(self):
+        try:
+            validate_init_payload({"condition_id": "uti1", "free_text": 12345})
+            self.fail("Expected APIError")
+        except APIError as e:
+            self.assertIn("free_text", e.message)
+
+    def test_free_text_too_long_raises(self):
+        try:
+            validate_init_payload({"condition_id": "uti1", "free_text": "A" * 5001})
+            self.fail("Expected APIError")
+        except APIError as e:
+            self.assertIn("free_text", e.message)
+
+    def test_free_text_at_max_len_passes(self):
+        validate_init_payload({"condition_id": "uti1", "free_text": "A" * 5000})
+
+
+# ---------------------------------------------------------------------------
+# Section 5: validate_update_payload
+# ---------------------------------------------------------------------------
+
+
+class TestValidateUpdatePayload(unittest.TestCase):
+    def _valid_update(self, **overrides) -> dict:
+        base = {
+            "runtime_id": "abc-123",
+            "base_version": 1,
+            "answers": {"some_key": "some_value"},
+            "additional_text": None,
+        }
+        base.update(overrides)
+        return base
+
+    def test_valid_payload_passes(self):
+        validate_update_payload(self._valid_update())
+
+    def test_additional_text_object_raises(self):
+        try:
+            validate_update_payload(self._valid_update(additional_text={"nested": "object"}))
+            self.fail("Expected APIError")
+        except APIError as e:
+            self.assertIn("additional_text", e.message)
+
+    def test_additional_text_too_long_raises(self):
+        try:
+            validate_update_payload(self._valid_update(additional_text="A" * 5001))
+            self.fail("Expected APIError")
+        except APIError as e:
+            self.assertIn("additional_text", e.message)
+
+    def test_additional_text_at_max_len_passes(self):
+        validate_update_payload(self._valid_update(additional_text="A" * 5000))
+
+    def test_empty_answers_raises(self):
+        try:
+            validate_update_payload(self._valid_update(answers={}))
+            self.fail("Expected APIError")
+        except APIError as e:
+            self.assertIn("answers", e.message)
