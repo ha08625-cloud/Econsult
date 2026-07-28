@@ -233,14 +233,14 @@ The patient frontend must comply with WCAG 2.1 Level AA and follow NHS Digital S
 
 ### Focus Management on Screen Load
 
-When a screen mounts in a loading state and then transitions to a ready state (i.e. the DOM mutates significantly after an async fetch), focus must be programmatically moved so screen reader users are notified that content is ready.
+Every screen focuses its `<h1>` on mount (or, for the two screens with an async loading -> ready transition, once that content is ready) so screen reader users are notified of every Continue/Back screen transition. This generalises what used to be a two-screen-only pattern to all nine screens plus the `App.tsx` fatal error view.
 
-The established pattern, used in `SelectConditionScreen`:
-- Attach a `ref` to the screen's `<h1>` element.
-- Add `tabIndex={-1}` to the `<h1>`. This allows programmatic focus without inserting the heading into the natural tab order.
-- Add a `useEffect` that calls `headingRef.current?.focus()` when the data prop transitions from `null` to a loaded value.
+The shared implementation is `useFocusHeading` (`frontend/src/useFocusHeading.ts`):
+- It returns a `ref` to attach to the screen's `<h1>`, alongside `tabIndex={-1}` (allows programmatic focus without inserting the heading into the natural tab order).
+- Called with no argument, it focuses on mount — the correct behaviour for any screen that renders synchronously.
+- Called with a value that starts falsy and becomes truthy once async data has loaded (e.g. `useFocusHeading(conditions)` in `SelectConditionScreen`, `useFocusHeading(presentationState.status === "success")` in `FreeTextScreen`), it defers focus until the heading's final content is in place — preserving the original loading-transition behaviour for those two screens.
 
-Any future screen that follows this loading pattern must replicate it. Do not focus the body or an arbitrary container — the heading is the correct target per the NHS Service Manual.
+Any new screen must call `useFocusHeading` and wire its return value to the `<h1>`. Do not focus the body or an arbitrary container — the heading is the correct target per the NHS Service Manual.
 
 ---
 
@@ -252,6 +252,22 @@ Two mandatory uses established during the accessibility pass, which must be repl
 
 - **Warning callouts:** A `<span className="sr-only">Important: </span>` must appear immediately before the visible heading text inside any NHS warning callout box. The visible heading should not contain the word "Important" — it belongs only in the hidden span.
 - **Error messages (`InlineError`):** The `InlineError` component in `layout.tsx` already prepends `<span className="sr-only">Error: </span>` to every message. Any new error display component that is not `InlineError` must follow the same pattern. Do not add a second "Error:" prefix on top of `InlineError`.
+
+---
+
+### Error Summary Links
+
+`PatientDetailsScreen` and `ContactScreen` render a per-field error summary (`.error-summary`) above the form on failed validation. Each list item is a link (`<a href="#field-id">`) to the offending field, per the NHS/GOV.UK error summary pattern — a `preventDefault` click handler calls `document.getElementById(id)?.focus()` so activating the link moves focus to the field, not just scrolls to it. The target id for each error key lives in that screen's `ERROR_FIELD_IDS` map, parallel to its existing `ERROR_LABELS` map. An error key with no entry in `ERROR_FIELD_IDS` renders as plain text (no known single field to link to).
+
+These two summaries deliberately omit `role="alert"`. Focus is already moved onto the summary container (`summaryRef.current.focus()`) on failed submission, and that focus move alone causes screen readers to announce the container's content — adding `role="alert"` on top produces a double announcement on some screen reader/browser pairs. `EditScreen`'s error summary (generic `screenError`/`photoError` messages, not per-field) still uses `role="alert"` and is out of scope for this pattern; do not assume the two are equivalent.
+
+---
+
+### Hint Text, Not Placeholders
+
+Field instructions and examples (date formats, "e.g." examples) must be a `.field-hint` paragraph wired via `aria-describedby`, never an input `placeholder`. Placeholders vanish on input, are skipped by some screen readers, and default placeholder grey is borderline against WCAG 1.4.3 in some browsers — NHS guidance is not to use them.
+
+The established convention (originally the phone-number hint in `ContactScreen`, now applied throughout `PatientDetailsScreen`, `ContactScreen`, and `ConditionCombobox`): give the hint paragraph a stable `id`, and set the input's `aria-describedby` to that id normally, switching to the field's error id when one is present (mutually exclusive — not both ids at once). Any new field with placeholder-style instructional text must follow this pattern rather than introducing a `placeholder` attribute.
 
 ---
 

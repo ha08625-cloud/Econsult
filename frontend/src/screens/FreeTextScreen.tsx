@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import DOMPurify from "dompurify";
 import { PageShell, InlineError } from "../layout";
+import { useFocusHeading } from "../useFocusHeading";
 import { initForm, friendlyErrorMessage } from "../api";
 import { initialiseEditableAnswers, type EditableAnswers } from "../helpers";
 import { SIGNPOSTING_PURIFY_CONFIG } from "../constants";
@@ -35,15 +36,10 @@ export default function FreeTextScreen({
 }: FreeTextScreenProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
-  const headingRef = useRef<HTMLHeadingElement>(null);
 
-  // When presentationState transitions from loading to success, move focus
-  // to the heading so screen reader users are notified the page is ready.
-  useEffect(() => {
-    if (presentationState.status === "success") {
-      headingRef.current?.focus();
-    }
-  }, [presentationState.status]);
+  // Focus the heading once presentationState transitions from loading to
+  // success, so screen reader users are notified the page is ready.
+  const headingRef = useFocusHeading(presentationState.status === "success");
 
   if (presentationState.status === "loading") {
     return (

@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { PageShell, InlineError, FieldError } from "../layout";
+import { useFocusHeading } from "../useFocusHeading";
 import { finishForm, friendlyErrorMessage } from "../api";
 import { initialiseContactPreferences, isValidUkPhone } from "../helpers";
 import type { ContactPreferences, ContactMethod, PatientDetails, ConsultationOutcome } from "../types";
@@ -27,6 +28,16 @@ const ERROR_LABELS: Record<string, string> = {
   usual_doctor_name: "Doctor preference",
 };
 
+// The id of the field each error summary item should link to and move
+// focus to, per the NHS/GOV.UK error summary pattern.
+const ERROR_FIELD_IDS: Record<string, string> = {
+  contact_methods: "contact-method-email",
+  phone_number: "contact-phone",
+  email_address: "contact-email",
+  free_text_doctor: "usual-doctor-name",
+  usual_doctor_name: "usual-doctor-name",
+};
+
 export default function ContactScreen({
   practiceName,
   runtimeId,
@@ -48,6 +59,7 @@ export default function ContactScreen({
 
   // Ref for programmatic focus on the error summary after failed submission
   const summaryRef = useRef<HTMLDivElement>(null);
+  const headingRef = useFocusHeading();
 
   // When a list is shown, this tracks the value of the dropdown separately
   // from doctor_preference / usual_doctor_name so we can map to those fields
@@ -180,7 +192,7 @@ export default function ContactScreen({
 
   return (
     <PageShell practiceName={practiceName}>
-      <h1>How would you like to be contacted?</h1>
+      <h1 ref={headingRef} tabIndex={-1}>How would you like to be contacted?</h1>
 
       <div className="alert alert-info" style={{ marginBottom: "var(--space-lg)" }}>
         <p>
@@ -193,18 +205,32 @@ export default function ContactScreen({
       {hasErrors && (
         <div
           className="error-summary"
-          role="alert"
           tabIndex={-1}
           ref={summaryRef}
         >
           <h2 className="error-summary-heading">There is a problem</h2>
           <ul className="error-summary-list">
-            {Object.entries(contactErrors).map(([key, message]) => (
-              <li key={key}>
-                {ERROR_LABELS[key] ? `${ERROR_LABELS[key]}: ` : ""}
-                {message}
-              </li>
-            ))}
+            {Object.entries(contactErrors).map(([key, message]) => {
+              const targetId = ERROR_FIELD_IDS[key];
+              const text = `${ERROR_LABELS[key] ? `${ERROR_LABELS[key]}: ` : ""}${message}`;
+              return (
+                <li key={key}>
+                  {targetId ? (
+                    <a
+                      href={`#${targetId}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById(targetId)?.focus();
+                      }}
+                    >
+                      {text}
+                    </a>
+                  ) : (
+                    text
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -222,6 +248,7 @@ export default function ContactScreen({
               return (
                 <label key={method} className="confirm-checkbox-label">
                   <input
+                    id={`contact-method-${method}`}
                     type="checkbox"
                     checked={methods.includes(method)}
                     onChange={() => toggleMethod(method)}
@@ -296,10 +323,11 @@ export default function ContactScreen({
         {wantsPhone && (
           <div className="field">
             <label htmlFor="contact-best-time">Best time to call <span className="field-label-optional">(optional)</span></label>
+            <p id="best-time-hint" className="field-hint">For example, Mornings before 11am</p>
             <input
               id="contact-best-time"
               type="text"
-              placeholder="e.g. Mornings before 11am"
+              aria-describedby="best-time-hint"
               value={cp.best_time_to_call ?? ""}
               onChange={(e) =>
                 setContactPreferences({ ...cp, best_time_to_call: e.target.value })

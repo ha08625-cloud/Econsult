@@ -1,4 +1,5 @@
 import { PageShell } from "../layout";
+import { useFocusHeading } from "../useFocusHeading";
 
 interface DoneScreenProps {
   practiceName: string | null;
@@ -6,6 +7,7 @@ interface DoneScreenProps {
 }
 
 export default function DoneScreen({ practiceName, practiceWasClosed }: DoneScreenProps) {
+  const headingRef = useFocusHeading();
   return (
     <PageShell practiceName={practiceName}>
       <div className="done-icon" aria-hidden="true">
@@ -23,7 +25,7 @@ export default function DoneScreen({ practiceName, practiceWasClosed }: DoneScre
         </svg>
       </div>
       
-      <h1>Consultation submitted</h1>
+      <h1 ref={headingRef} tabIndex={-1}>Consultation submitted</h1>
       
       <p style={{ marginBottom: "var(--space-md)" }}>
         Your consultation has been submitted successfully.

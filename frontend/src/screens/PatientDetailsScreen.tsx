@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { PageShell, FieldError } from "../layout";
+import { useFocusHeading } from "../useFocusHeading";
 import type { PatientDetails, Gender } from "../types";
 
 interface PatientDetailsScreenProps {
@@ -72,6 +73,19 @@ const ERROR_LABELS: Record<string, string> = {
   submitter_relationship: "Relationship to patient",
 };
 
+// The id of the field each error summary item should link to and move
+// focus to, per the NHS/GOV.UK error summary pattern.
+const ERROR_FIELD_IDS: Record<string, string> = {
+  first_name: "first-name",
+  last_name: "last-name",
+  dob: "dob-day",
+  postcode: "postcode",
+  gender: "gender-male",
+  nhs_number: "nhs-number",
+  submitter_name: "sub-name",
+  submitter_relationship: "sub-rel",
+};
+
 export default function PatientDetailsScreen({
   practiceName,
   onContinue,
@@ -82,6 +96,7 @@ export default function PatientDetailsScreen({
 
   // Ref for programmatic focus on the error summary after failed submission
   const summaryRef = useRef<HTMLDivElement>(null);
+  const headingRef = useFocusHeading();
 
   const forSomeoneElse = details.patient_for === "someone_else";
   const hasErrors = Object.keys(errors).length > 0;
@@ -178,25 +193,39 @@ export default function PatientDetailsScreen({
 
   return (
     <PageShell practiceName={practiceName}>
-      <h1>About the patient</h1>
+      <h1 ref={headingRef} tabIndex={-1}>About the patient</h1>
       <p className="screen-description">We need a few details before you continue.</p>
 
       {/* Error summary — rendered and focused on failed submission */}
       {hasErrors && (
         <div
           className="error-summary"
-          role="alert"
           tabIndex={-1}
           ref={summaryRef}
         >
           <h2 className="error-summary-heading">There is a problem</h2>
           <ul className="error-summary-list">
-            {Object.entries(errors).map(([key, message]) => (
-              <li key={key}>
-                {ERROR_LABELS[key] ? `${ERROR_LABELS[key]}: ` : ""}
-                {message}
-              </li>
-            ))}
+            {Object.entries(errors).map(([key, message]) => {
+              const targetId = ERROR_FIELD_IDS[key];
+              const text = `${ERROR_LABELS[key] ? `${ERROR_LABELS[key]}: ` : ""}${message}`;
+              return (
+                <li key={key}>
+                  {targetId ? (
+                    <a
+                      href={`#${targetId}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById(targetId)?.focus();
+                      }}
+                    >
+                      {text}
+                    </a>
+                  ) : (
+                    text
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -290,6 +319,7 @@ export default function PatientDetailsScreen({
                 className={`selection-card ${details.gender === value ? "selected" : ""}`}
               >
                 <input
+                  id={`gender-${value}`}
                   type="radio"
                   name="gender"
                   checked={details.gender === value}
@@ -310,6 +340,7 @@ export default function PatientDetailsScreen({
           <legend>
             {forSomeoneElse ? "Patient's date of birth" : "Date of birth"}
           </legend>
+          <p id="dob-hint" className="field-hint">For example, 27 3 1990</p>
           <div className="dob-inputs">
             <div className="dob-field">
               <label htmlFor="dob-day">Day</label>
@@ -317,13 +348,12 @@ export default function PatientDetailsScreen({
                 id="dob-day"
                 type="text"
                 inputMode="numeric"
-                placeholder="DD"
                 autoComplete={forSomeoneElse ? "off" : "bday-day"}
                 className="input-dob-day-month"
                 value={details.date_of_birth.day}
                 onChange={(e) => handleDobChange("day", e.target.value)}
                 aria-invalid={!!errors.dob}
-                aria-describedby={errors.dob ? "dob-error" : undefined}
+                aria-describedby={errors.dob ? "dob-error" : "dob-hint"}
               />
             </div>
             <div className="dob-field">
@@ -332,13 +362,12 @@ export default function PatientDetailsScreen({
                 id="dob-month"
                 type="text"
                 inputMode="numeric"
-                placeholder="MM"
                 autoComplete={forSomeoneElse ? "off" : "bday-month"}
                 className="input-dob-day-month"
                 value={details.date_of_birth.month}
                 onChange={(e) => handleDobChange("month", e.target.value)}
                 aria-invalid={!!errors.dob}
-                aria-describedby={errors.dob ? "dob-error" : undefined}
+                aria-describedby={errors.dob ? "dob-error" : "dob-hint"}
               />
             </div>
             <div className="dob-field">
@@ -347,13 +376,12 @@ export default function PatientDetailsScreen({
                 id="dob-year"
                 type="text"
                 inputMode="numeric"
-                placeholder="YYYY"
                 autoComplete={forSomeoneElse ? "off" : "bday-year"}
                 className="input-dob-year"
                 value={details.date_of_birth.year}
                 onChange={(e) => handleDobChange("year", e.target.value)}
                 aria-invalid={!!errors.dob}
-                aria-describedby={errors.dob ? "dob-error" : undefined}
+                aria-describedby={errors.dob ? "dob-error" : "dob-hint"}
               />
             </div>
           </div>
@@ -387,18 +415,18 @@ export default function PatientDetailsScreen({
             NHS number{" "}
             <span className="field-label-optional">(optional)</span>
           </label>
+          <p id="nhs-number-hint" className="field-hint">For example, 485 777 3456</p>
           <input
             id="nhs-number"
             type="text"
             inputMode="numeric"
-            placeholder="e.g. 485 777 3456"
             className="input-nhs-number"
             value={details.nhs_number ?? ""}
             onChange={(e) =>
               setField("nhs_number", formatNhsNumber(e.target.value))
             }
             aria-invalid={!!errors.nhs_number}
-            aria-describedby={errors.nhs_number ? "nhs-number-error" : undefined}
+            aria-describedby={errors.nhs_number ? "nhs-number-error" : "nhs-number-hint"}
           />
           {errors.nhs_number && (
             <FieldError id="nhs-number-error" message={errors.nhs_number} />
@@ -433,10 +461,10 @@ export default function PatientDetailsScreen({
             className={`field ${errors.submitter_relationship ? "has-error" : ""}`}
           >
             <label htmlFor="sub-rel">Relationship to patient</label>
+            <p id="submitter-relationship-hint" className="field-hint">For example, Parent</p>
             <input
               id="sub-rel"
               type="text"
-              placeholder="e.g. Parent"
               value={details.submitter_relationship ?? ""}
               onChange={(e) =>
                 setField("submitter_relationship", e.target.value)
@@ -445,7 +473,7 @@ export default function PatientDetailsScreen({
               aria-describedby={
                 errors.submitter_relationship
                   ? "submitter-relationship-error"
-                  : undefined
+                  : "submitter-relationship-hint"
               }
             />
             {errors.submitter_relationship && (

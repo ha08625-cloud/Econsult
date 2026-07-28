@@ -1,4 +1,5 @@
 import { PageShell } from "../layout";
+import { useFocusHeading } from "../useFocusHeading";
 import type { ClientStateView, SafetyMessage } from "../types";
 import type { PhotoAttachment } from "../uiTypes";
 import { QUANTITY_DISPLAY_FORMATTERS } from "../helpers";
@@ -27,10 +28,11 @@ export default function ReviewScreen({
   onContinue,
 }: ReviewScreenProps) {
   const hasSafetyBlock = safetyMessages.length > 0;
+  const headingRef = useFocusHeading();
 
   return (
     <PageShell practiceName={practiceName}>
-      <h1>Review your answers</h1>
+      <h1 ref={headingRef} tabIndex={-1}>Review your answers</h1>
 
       <h2>{clientState.condition_label}</h2>
 

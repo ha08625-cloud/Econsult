@@ -312,14 +312,15 @@ describe("PatientDetailsScreen", () => {
   it("shows the error summary with 'There is a problem' heading on failed submission", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    const summary = screen.getByRole("alert");
-    expect(within(summary).getByRole("heading", { name: /there is a problem/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /there is a problem/i })).toBeInTheDocument();
   });
 
   it("error summary lists each field error on failed submission", async () => {
     render(<PatientDetailsScreen {...defaultProps} />);
     await userEvent.click(screen.getByRole("button", { name: /continue/i }));
-    const summary = screen.getByRole("alert");
+    const summary = screen
+      .getByRole("heading", { name: /there is a problem/i })
+      .closest(".error-summary") as HTMLElement;
     // First name and last name errors should appear inside the summary
     expect(summary).toHaveTextContent(/first name/i);
     expect(summary).toHaveTextContent(/last name/i);
@@ -327,7 +328,15 @@ describe("PatientDetailsScreen", () => {
 
   it("error summary is not present before any submission attempt", () => {
     render(<PatientDetailsScreen {...defaultProps} />);
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /there is a problem/i })).toBeNull();
+  });
+
+  it("error summary items are links that move focus to the offending field", async () => {
+    render(<PatientDetailsScreen {...defaultProps} />);
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
+    const link = screen.getByRole("link", { name: /first name/i });
+    await userEvent.click(link);
+    expect(document.activeElement).toBe(screen.getByLabelText(/first name/i));
   });
 
   it("sets aria-invalid on first name input when that field has an error", async () => {
