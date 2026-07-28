@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PageShell } from "../layout";
 import { useFocusHeading } from "../useFocusHeading";
 import type { ConsultationOutcome } from "../types";
@@ -17,6 +17,7 @@ export default function OutcomeScreen({
 }: OutcomeScreenProps) {
   const [selected, setSelected] = useState<ConsultationOutcome | null>(null);
   const headingRef = useFocusHeading();
+  const hintRef = useRef<HTMLParagraphElement>(null);
 
   /**
    * Type Guard helper to safely cast string values from JSON to the
@@ -56,7 +57,7 @@ export default function OutcomeScreen({
           ))}
         </div>
         {selected === null && (
-          <p className="field-hint" aria-live="polite">
+          <p className="field-hint" aria-live="polite" ref={hintRef} tabIndex={-1}>
             Select an option to continue.
           </p>
         )}
@@ -68,9 +69,12 @@ export default function OutcomeScreen({
         </button>
         <button
           className="btn btn-primary"
-          disabled={selected === null}
           onClick={() => {
-            if (selected !== null) onContinue(selected);
+            if (selected === null) {
+              hintRef.current?.focus();
+              return;
+            }
+            onContinue(selected);
           }}
         >
           Continue

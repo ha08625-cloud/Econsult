@@ -134,18 +134,24 @@ describe("App — condition selection and free text", () => {
     expect(screen.getByRole("button", { name: /^continue$/i })).not.toBeDisabled();
   });
 
-  it("typing in the box disables Continue but does not touch the free text or show a warning until a different condition is actually chosen", async () => {
+  it("typing in the box leaves Continue enabled but non-functional (shows the hint instead) and does not touch the free text or show a warning until a different condition is actually chosen", async () => {
     await navigateToSelectCondition();
     await openComboboxAndPick("Back pain");
     const textarea = await continueToFreeText();
     await userEvent.type(textarea, "My back hurts");
     await backToSelectCondition();
 
-    // Mid-typing: Continue should disable, no modal should appear.
+    // Mid-typing: Continue stays enabled but clicking it does not navigate —
+    // it focuses the "select a condition" hint instead. No modal should appear.
     await userEvent.click(screen.getByRole("combobox"));
     await userEvent.clear(screen.getByRole("combobox"));
     await userEvent.type(screen.getByRole("combobox"), "x");
-    expect(screen.getByRole("button", { name: /^continue$/i })).toBeDisabled();
+    const continueBtn = screen.getByRole("button", { name: /^continue$/i });
+    expect(continueBtn).not.toBeDisabled();
+    await userEvent.click(continueBtn);
+    expect(screen.getByText(/select or search for a condition to continue/i)).toBe(
+      document.activeElement
+    );
     expect(screen.queryByText(/switching conditions will clear/i)).toBeNull();
 
     // Re-selecting the same condition the free text already belongs to:

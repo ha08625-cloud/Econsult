@@ -223,6 +223,15 @@ export default function ConditionCombobox({
       ? optionId(filteredConditions[activeIndex].id)
       : undefined;
 
+  // Keep the active option visible when arrow-key navigation moves it
+  // outside the fixed-height (300px) scroll area — otherwise there is no
+  // visible indication of position for sighted keyboard users.
+  useEffect(() => {
+    if (activeDescendant === undefined) return;
+    // scrollIntoView is unimplemented in jsdom (used by the test environment).
+    document.getElementById(activeDescendant)?.scrollIntoView?.({ block: "nearest" });
+  }, [activeDescendant]);
+
   return (
     <div className="combobox-wrapper">
       <input

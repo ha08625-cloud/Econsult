@@ -131,16 +131,20 @@ describe("EditScreen", () => {
     expect(optionalIndicators.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("Continue button is disabled when a required answer is missing", () => {
+  it("Continue button remains enabled when a required answer is missing, but clicking shows an error instead of submitting", async () => {
     render(
       <EditScreen
         {...defaultProps}
         editableAnswers={{ has_pain: null, duration: null }}
       />
     );
+    const btn = screen.getByRole("button", { name: /review answers/i });
+    expect(btn.hasAttribute("disabled")).toBe(false);
+    await userEvent.click(btn);
+    expect(mockUpdateForm).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
-    ).toBe(true);
+      screen.getByText(/answer all required questions before continuing/i)
+    ).toBeInTheDocument();
   });
 
   it("Continue button is enabled when all required answers are filled", () => {
@@ -502,6 +506,10 @@ function renderNumber(value: string | null) {
 }
 
 describe("EditScreen — number questions", () => {
+  beforeEach(() => {
+    mockUpdateForm.mockReset();
+  });
+
   it("renders a number input associated with its label", () => {
     renderNumber("");
     const input = screen.getByLabelText(/what is your weight in kg/i) as HTMLInputElement;
@@ -509,20 +517,27 @@ describe("EditScreen — number questions", () => {
     expect(input.type).toBe("number");
   });
 
-  it("shows an inline precision error and disables Continue when too many decimals are entered", () => {
+  it("shows an inline precision error and Continue click reports the error instead of submitting", async () => {
     renderNumber("70.55");
     expect(screen.getByText(/at most 1 decimal place/i)).toBeTruthy();
+    const btn = screen.getByRole("button", { name: /review answers/i });
+    expect(btn.hasAttribute("disabled")).toBe(false);
+    await userEvent.click(btn);
+    expect(mockUpdateForm).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
-    ).toBe(true);
+      screen.getByText(/fix the highlighted answers before continuing/i)
+    ).toBeInTheDocument();
   });
 
-  it("treats a typed trailing zero as too precise (string is held verbatim)", () => {
+  it("treats a typed trailing zero as too precise (string is held verbatim)", async () => {
     renderNumber("70.50");
     expect(screen.getByText(/at most 1 decimal place/i)).toBeTruthy();
+    const btn = screen.getByRole("button", { name: /review answers/i });
+    await userEvent.click(btn);
+    expect(mockUpdateForm).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("button", { name: /review answers/i }).hasAttribute("disabled")
-    ).toBe(true);
+      screen.getByText(/fix the highlighted answers before continuing/i)
+    ).toBeInTheDocument();
   });
 
   it("accepts a value at the allowed precision and enables Continue", () => {
@@ -629,9 +644,14 @@ describe("EditScreen — quantity questions", () => {
     expect(screen.queryByLabelText(/kilograms/i)).toBeNull();
   });
 
-  it("disables Continue when quantity components are blank", () => {
+  it("Continue click reports an error instead of submitting when quantity components are blank", async () => {
     renderQuantity({ patient_weight_kg: { system: "metric", components: { kg: "" } } });
-    expect(reviewBtn().hasAttribute("disabled")).toBe(true);
+    expect(reviewBtn().hasAttribute("disabled")).toBe(false);
+    await userEvent.click(reviewBtn());
+    expect(mockUpdateForm).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/answer all required questions before continuing/i)
+    ).toBeInTheDocument();
   });
 
   it("enables Continue when a metric kg value is filled", () => {
@@ -645,17 +665,27 @@ describe("EditScreen — quantity questions", () => {
     expect(reviewBtn().hasAttribute("disabled")).toBe(false);
   });
 
-  it("blocks Continue with a precision error for metric over-precision", () => {
+  it("reports a precision error on Continue click for metric over-precision, instead of submitting", async () => {
     renderQuantity({ patient_weight_kg: { system: "metric", components: { kg: "70.55" } } });
     expect(screen.getByText(/at most 1 decimal place/i)).toBeTruthy();
-    expect(reviewBtn().hasAttribute("disabled")).toBe(true);
+    expect(reviewBtn().hasAttribute("disabled")).toBe(false);
+    await userEvent.click(reviewBtn());
+    expect(mockUpdateForm).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/fix the highlighted answers before continuing/i)
+    ).toBeInTheDocument();
   });
 
-  it("blocks Continue with a precision error for fractional stones or pounds", () => {
+  it("reports a precision error on Continue click for fractional stones or pounds, instead of submitting", async () => {
     const frac = { system: "imperial", components: { st: "11", lb: "11.5" } };
     renderQuantity({ patient_weight_kg: frac }, frac);
     expect(screen.getByText(/whole numbers for stones and pounds/i)).toBeTruthy();
-    expect(reviewBtn().hasAttribute("disabled")).toBe(true);
+    expect(reviewBtn().hasAttribute("disabled")).toBe(false);
+    await userEvent.click(reviewBtn());
+    expect(mockUpdateForm).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/fix the highlighted answers before continuing/i)
+    ).toBeInTheDocument();
   });
 
   it("shows the range notice for an out-of-range metric value but does not block Continue", () => {

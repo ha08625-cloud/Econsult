@@ -58,11 +58,11 @@ describe("OutcomeScreen", () => {
     expect(radios.every((r) => !r.checked)).toBe(true);
   });
 
-  it("Continue button is disabled on initial render", () => {
+  it("Continue button remains enabled on initial render (clicking shows the hint instead)", () => {
     render(<OutcomeScreen {...defaultProps} />);
     expect(
       screen.getByRole("button", { name: /continue/i }).hasAttribute("disabled")
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("renders the hint text when no option is selected", () => {
@@ -153,16 +153,14 @@ describe("OutcomeScreen", () => {
     expect(onContinue).toHaveBeenCalledWith("admin_task");
   });
 
-  it("does not call onContinue when Continue is clicked with nothing selected", async () => {
-    // The button is disabled so a click should not fire; this is a belt-and-braces
-    // check of the guard inside the onClick handler.
+  it("does not call onContinue when Continue is clicked with nothing selected, and moves focus to the hint", async () => {
     const onContinue = vi.fn();
     render(<OutcomeScreen {...defaultProps} onContinue={onContinue} />);
-    const btn = screen.getByRole("button", { name: /continue/i });
-    // Interact directly — userEvent respects disabled, so use the DOM directly.
-    btn.removeAttribute("disabled");
-    await userEvent.click(btn);
+    await userEvent.click(screen.getByRole("button", { name: /continue/i }));
     expect(onContinue).not.toHaveBeenCalled();
+    expect(screen.getByText(/select an option to continue/i)).toBe(
+      document.activeElement
+    );
   });
 
   it("calls onBack when Back is clicked", async () => {

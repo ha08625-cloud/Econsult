@@ -1,4 +1,5 @@
 // File path: frontend/src/screens/SelectConditionScreen.tsx
+import { useRef } from "react";
 import { PageShell } from "../layout";
 import { useFocusHeading } from "../useFocusHeading";
 import ConditionCombobox from "../ConditionCombobox";
@@ -33,6 +34,7 @@ export default function SelectConditionScreen({
   // Focus the heading once conditions transition from null (loading) to
   // loaded, so screen reader users are notified that the form is ready.
   const headingRef = useFocusHeading(conditions);
+  const hintRef = useRef<HTMLParagraphElement>(null);
 
   return (
     <PageShell practiceName={practiceName}>
@@ -58,6 +60,11 @@ export default function SelectConditionScreen({
               onChange={onConditionChange}
               labelId="condition-label"
             />
+            {selectedConditionId === null && (
+              <p className="field-hint" aria-live="polite" ref={hintRef} tabIndex={-1}>
+                Select or search for a condition to continue.
+              </p>
+            )}
           </div>
 
           <div className="btn-row">
@@ -71,8 +78,13 @@ export default function SelectConditionScreen({
             <button
               type="button"
               className="btn btn-primary"
-              disabled={selectedConditionId === null}
-              onClick={onContinue}
+              onClick={() => {
+                if (selectedConditionId === null) {
+                  hintRef.current?.focus();
+                  return;
+                }
+                onContinue();
+              }}
             >
               Continue
             </button>

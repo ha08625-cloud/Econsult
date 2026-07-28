@@ -223,6 +223,8 @@ Active and selected option states use `outline: 2px solid` in addition to a back
 
 The informational rows inside the listbox (no-match notice, filtered count) use `--text-muted` (`#5a6a7a`), which passes the WCAG 2.1 AA 4.5:1 contrast threshold on a white background. Do not substitute a lighter colour.
 
+A `useEffect` keyed on the computed `activeDescendant` id calls `scrollIntoView({ block: "nearest" })` on the active option's DOM element whenever arrow-key navigation changes it. Without this, the fixed 300px `maxHeight` scroll area can move the active option out of view during keyboard navigation, leaving no visible indication of position. `scrollIntoView` is called via optional chaining (`?.scrollIntoView?.(...)`) since it is unimplemented in jsdom, the test environment.
+
 ---
 
 ## Accessibility (WCAG 2.1 AA / NHS Digital)
@@ -292,6 +294,24 @@ Using red for a clinical warning callout is wrong: it implies the page is in an 
 ### Loading States
 
 Loading containers must carry `role="status"`. This causes screen readers to announce the loading message when the container mounts. The `.status-container` / `.status-text` CSS classes are the standard pattern — use them for all loading states, and always pair them with `role="status"`.
+
+---
+
+### Focus Indicators (1.4.11)
+
+A single global rule in `index.css` gives every interactive element a consistent 3px `var(--border-focus)` outline on `:focus-visible`, declared after the element-specific focus rules so it wins by source order without removing them (e.g. it strengthens, rather than replaces, the border-colour change on `input[type="text"]:focus`). This is what makes `<select>` elements (styled via `.combobox-input`, which the text-input focus rule never reached) and buttons (previously the unstyled browser default) get a visible focus ring. Generalises the pattern already used by `.error-summary:focus` and `.guide-link:focus`.
+
+---
+
+### Gated Continue Buttons — Always Enabled, Never `disabled`
+
+None of the five screens with a Continue gate condition (`SafetyWarningScreen`, `OutcomeScreen`, `SelectConditionScreen`, `EditScreen`, `ReviewScreen`) use the `disabled` attribute on the Continue button. A `disabled` button is removed from the tab order, so a keyboard or screen reader user who misses the unmet condition tabs past it with no explanation.
+
+Instead, per the GOV.UK error-summary pattern already used by `PatientDetailsScreen` and `ContactScreen`, the button is always enabled and its `onClick` checks the gate condition itself:
+- If the gate is unmet, it moves focus to the existing hint/error text explaining why (a `ref`ed element with `tabIndex={-1}`) and does not call `onContinue`.
+- If met, it calls `onContinue` as normal.
+
+`EditScreen` reuses its existing `screenError` / `error-summary` / `summaryRef` mechanism for this — `handleContinue` sets `screenError` for the unmet-gate case before the async submit path, so the same focus-on-error `useEffect` handles it. `ReviewScreen`'s gate (`hasSafetyBlock`) is a genuine clinical block rather than a fixable field; clicking focuses the safety alert box rather than a fix-it hint, since the only remedy is going Back.
 
 ---
 
