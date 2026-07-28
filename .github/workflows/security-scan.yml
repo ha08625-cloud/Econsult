@@ -5,14 +5,55 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  schedule:
+    # Weekly re-scan so newly disclosed CVEs in unchanged dependencies or the
+    # base image are still caught, independent of commit activity.
+    # Matches Dependabot's weekly (Monday) cadence.
+    - cron: '0 3 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Detects whether anything that affects the built image changed. Assumes
+  # the image only depends on Dockerfile, requirements.txt, and the frontend
+  # package manifests -- verify against the actual Dockerfile COPY lines and
+  # extend this list if anything else feeds into installed dependencies or
+  # the base image. Skipped entirely on schedule since there's no diff to
+  # compute; build-and-scan below runs unconditionally for schedule instead.
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect image-relevant changes
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    outputs:
+      image-relevant: ${{ steps.filter.outputs.image-relevant }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            image-relevant:
+              - 'Dockerfile'
+              - 'requirements.txt'
+              - 'frontend/package.json'
+              - 'frontend/package-lock.json'
+
   build-and-scan:
     name: Build & Scan Docker Image
+    needs: changes
+    # always() prevents this job from being auto-skipped just because
+    # `changes` was itself skipped on the schedule trigger.
+    if: |
+      always() &&
+      (github.event_name == 'schedule' || needs.changes.outputs.image-relevant == 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       # Econsult uses a multi-stage Docker build, so we build it locally first
       - name: Build Econsult Image
@@ -20,17 +61,17 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         # MUST use v0.35.0 or higher due to the March 2026 supply chain attack
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: 'econsult:latest'
           format: 'table'
-          
+
           # This tells Trivy to only look for CVSS 7.0 and above
           severity: 'HIGH,CRITICAL'
-          
+
           # This forces the pipeline to fail (red X) if vulnerabilities are found
           exit-code: '1'
-          
+
           # Optional but recommended: Ignore vulnerabilities that don't have a patch yet
           # so your pipeline doesn't break over something you physically cannot fix
           ignore-unfixed: true
