@@ -80,7 +80,7 @@ describe("ConditionCombobox", () => {
     const input = getInput();
     await userEvent.click(input);
     await userEvent.type(input, "back");
-    expect(screen.getByText(/showing 1 of 3 conditions/i)).toBeTruthy();
+    expect(screen.getAllByText(/showing 1 of 3 conditions/i).length).toBeGreaterThan(0);
   });
 
   it("falls back to the full list and shows a no-match notice for an unmatched query", async () => {
@@ -88,10 +88,35 @@ describe("ConditionCombobox", () => {
     const input = getInput();
     await userEvent.click(input);
     await userEvent.type(input, "zzzzzzzzzz");
-    expect(screen.getByText(/no matching conditions/i)).toBeTruthy();
+    expect(screen.getAllByText(/no matching conditions/i).length).toBeGreaterThan(0);
     for (const c of sampleConditions) {
       expect(screen.getByRole("option", { name: c.label })).toBeTruthy();
     }
+  });
+
+  it("only exposes option children to the listbox role, with info rows announced via a live region instead", async () => {
+    renderCombobox({ selectedId: null, onChange: noop });
+    const input = getInput();
+    await userEvent.click(input);
+    await userEvent.type(input, "back");
+
+    const listbox = screen.getByRole("listbox");
+    for (const child of Array.from(listbox.children)) {
+      expect(["option", "presentation"]).toContain(child.getAttribute("role"));
+    }
+
+    expect(screen.getAllByRole("option").length).toBe(1);
+  });
+
+  it("announces the result count in an aria-live status region", async () => {
+    renderCombobox({ selectedId: null, onChange: noop });
+    const input = getInput();
+    await userEvent.click(input);
+    await userEvent.type(input, "back");
+
+    const status = document.querySelector('[aria-live="polite"]');
+    expect(status).not.toBeNull();
+    expect(status!.textContent).toMatch(/showing 1 of 3 conditions/i);
   });
 
   // ---------------------------------------------------------------------------

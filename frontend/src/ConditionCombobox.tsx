@@ -94,6 +94,20 @@ export default function ConditionCombobox({
       c.label.toLowerCase().includes(inputValue.toLowerCase().trim())
     );
 
+  // Announced via the aria-live status region below, not via the listbox
+  // (whose children must all be role="option"/"group" — see combobox-info-item
+  // rows further down, which are role="presentation" and thus invisible to
+  // aria-activedescendant navigation).
+  const statusMessage: string = !isOpen
+    ? ""
+    : noMatchFallback
+      ? "No matching conditions — try different words, or scroll below."
+      : filteredConditions.length < conditions.length
+        ? `Showing ${filteredConditions.length} of ${conditions.length} conditions`
+        : hasTyped
+          ? `${filteredConditions.length} conditions available`
+          : "";
+
   // --- Helpers ---
 
   function selectCondition(condition: ConditionSummary) {
@@ -230,6 +244,10 @@ export default function ConditionCombobox({
         className="combobox-input"
       />
 
+      <div aria-live="polite" className="sr-only">
+        {statusMessage}
+      </div>
+
       {isOpen && (
         <ul
           id={listboxId}
@@ -239,14 +257,14 @@ export default function ConditionCombobox({
           style={{ maxHeight: SUGGESTION_LIST_MAX_HEIGHT }}
         >
           {noMatchFallback && (
-            <li className="combobox-info-item">
+            <li className="combobox-info-item" role="presentation">
               No matching conditions — try different words, or scroll below.
             </li>
           )}
 
           {!noMatchFallback &&
             filteredConditions.length < conditions.length && (
-              <li className="combobox-info-item">
+              <li className="combobox-info-item" role="presentation">
                 Showing {filteredConditions.length} of {conditions.length}{" "}
                 conditions
               </li>
