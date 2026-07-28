@@ -475,6 +475,4 @@ class TestValidateContactPreferencesFreeTextFieldGuards(unittest.TestCase):
         )
 
     def test_phone_number_at_max_len_passes(self):
-        validate_contact_preferences(
-            _valid_cp(contact_methods=["phone"], phone_number="1" * 100)
-        )
+        validate_contact_preferences(_valid_cp(contact_methods=["phone"], phone_number="1" * 100))
