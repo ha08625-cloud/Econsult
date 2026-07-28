@@ -30,6 +30,10 @@ The shape and constraints of the JSON ruleset files that define clinical behavio
       "answer_type": "Boolean" | "text" | "Number",
       "send_to_encoder": true | false,
       "encoder_prompt": "<string>" | null,  // required if send_to_encoder; null otherwise
+      "pdf_label": "<string>" | null,   // optional; PDF display only — short clinical
+                                        // label naming this question's row in the
+                                        // CLINICAL SUMMARY block. Boolean and Number
+                                        // questions only. Omit to exclude.
 
       // Number questions only (omit these four for Boolean and text):
       "decimal_places": <non-negative integer>,  // 0 = whole numbers only
@@ -79,6 +83,10 @@ The shape and constraints of the JSON ruleset files that define clinical behavio
 **Shared-toggle authoring check.** The client renders a single, form-wide unit toggle (see `arch_frontend.md`) rather than a per-question selector. Because of this, every quantity question in a ruleset that offers more than one system must agree with every other such question on `allowed_systems` (compared as sets) and `default_system`. Without this check, a ruleset where one quantity question offers metric and imperial while another offers metric only would render the second question in a system it rejects, producing an unclearable 422 for the patient. This is treated as a broken deployment and aborts startup, per the fail-fast invariant. Single-system quantity questions are exempt from this check, since they sit outside the shared toggle by definition. Validated at startup by `ruleset.py`.
 
 Each quantity kind declares its own canonical system in the registry; `min`/`max` are expressed in that kind's canonical unit, not universally in kilograms. For weight, the canonical system is metric (kilograms). The advisory range notice is shown only when the patient's chosen system is the kind's canonical system — the canonical bounds do not map cleanly onto a non-canonical system's components, so non-canonical input gets no out-of-range notice (a recorded v1 limitation, unchanged by this generalisation). The stored answer is always the canonical-unit string; the patient's raw input in the system they used is preserved separately (for display on the Review screen and PDF, and for audit). Today the registry holds only `"weight"` (kilograms, or stones + pounds); adding a new kind means adding it to the registry with a complete converter and formatter — see `arch_core_engine.md` for the extension seam. Cross-question unit consistency is not enforced at runtime at all; see `arch_core_engine.md` for that decision.
+
+**`pdf_label` is a PDF display concern, validated like everything else.** An optional short label naming the question's row in the PDF's CLINICAL SUMMARY block (see `arch_submission.md`). It has no effect on form logic, encoder behaviour, or safety rules, and is never sent to the client. When present it must be a non-empty string, must not appear on a `text` question (a free-text answer cannot render usefully in the summary's fixed-width value column), and must be unique within the ruleset (exact match) so that no two summary rows carry the same name. Questions without one simply do not appear in the block, and a ruleset with none produces no block at all. Validated at startup by `ruleset.py`.
+
+**Authoring constraint: 4–6 labels per ruleset.** The block shows every labelled finding including negatives, because "asked and excluded" and "not mentioned" are clinically different facts. That only stays scannable if labels are reserved for red flags and the discriminators that change management. Labelling every question turns the block into a shorter copy of ANSWERS and defeats its purpose.
 
 **Safety rules use `"any"` (OR) semantics.** A rule fires if **any** clause in its `"any"` list is satisfied. This is the correct clinical behaviour: a single red flag answer should trigger the rule. The key must be `"any"`, not `"all"` — both the validator in `ruleset.py` and the engine in `safety_engine.py` read this key.
 
