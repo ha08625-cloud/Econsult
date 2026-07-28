@@ -21,15 +21,30 @@ function getInput() {
   return screen.getByRole("combobox") as HTMLInputElement;
 }
 
+function renderCombobox(props: {
+  selectedId: string | null;
+  onChange: (id: string | null) => void;
+}) {
+  return render(
+    <>
+      <label id="condition-label">What is your consultation about?</label>
+      <ConditionCombobox
+        conditions={sampleConditions}
+        selectedId={props.selectedId}
+        onChange={props.onChange}
+        labelId="condition-label"
+      />
+    </>
+  );
+}
+
 describe("ConditionCombobox", () => {
   // ---------------------------------------------------------------------------
   // Opening the list
   // ---------------------------------------------------------------------------
 
   it("opens the listbox and shows all conditions on focus", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={noop} />
-    );
+    renderCombobox({ selectedId: null, onChange: noop });
     await userEvent.click(getInput());
     expect(screen.getByRole("listbox")).toBeTruthy();
     for (const c of sampleConditions) {
@@ -39,9 +54,7 @@ describe("ConditionCombobox", () => {
 
   it("pressing Escape closes the listbox without selecting anything", async () => {
     const onChange = vi.fn();
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={onChange} />
-    );
+    renderCombobox({ selectedId: null, onChange: onChange });
     const input = getInput();
     await userEvent.click(input);
     fireEvent.keyDown(input, { key: "Escape" });
@@ -54,9 +67,7 @@ describe("ConditionCombobox", () => {
   // ---------------------------------------------------------------------------
 
   it("filters the list as the user types", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={noop} />
-    );
+    renderCombobox({ selectedId: null, onChange: noop });
     const input = getInput();
     await userEvent.click(input);
     await userEvent.type(input, "back");
@@ -65,9 +76,7 @@ describe("ConditionCombobox", () => {
   });
 
   it("shows a count footer when the list is filtered down", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={noop} />
-    );
+    renderCombobox({ selectedId: null, onChange: noop });
     const input = getInput();
     await userEvent.click(input);
     await userEvent.type(input, "back");
@@ -75,9 +84,7 @@ describe("ConditionCombobox", () => {
   });
 
   it("falls back to the full list and shows a no-match notice for an unmatched query", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={noop} />
-    );
+    renderCombobox({ selectedId: null, onChange: noop });
     const input = getInput();
     await userEvent.click(input);
     await userEvent.type(input, "zzzzzzzzzz");
@@ -93,9 +100,7 @@ describe("ConditionCombobox", () => {
 
   it("clicking a suggestion fills the input and calls onChange with the condition id", async () => {
     const onChange = vi.fn();
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={onChange} />
-    );
+    renderCombobox({ selectedId: null, onChange: onChange });
     const input = getInput();
     await userEvent.click(input);
     await userEvent.click(screen.getByRole("option", { name: "Back pain" }));
@@ -105,9 +110,7 @@ describe("ConditionCombobox", () => {
 
   it("ArrowDown then Enter selects the active option", async () => {
     const onChange = vi.fn();
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId={null} onChange={onChange} />
-    );
+    renderCombobox({ selectedId: null, onChange: onChange });
     const input = getInput();
     await userEvent.click(input);
     fireEvent.keyDown(input, { key: "ArrowDown" });
@@ -118,9 +121,7 @@ describe("ConditionCombobox", () => {
 
   it("typing after a selection clears it by calling onChange with null", async () => {
     const onChange = vi.fn();
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId="uti1" onChange={onChange} />
-    );
+    renderCombobox({ selectedId: "uti1", onChange: onChange });
     const input = getInput();
     await userEvent.click(input);
     await userEvent.type(input, "x");
@@ -132,9 +133,7 @@ describe("ConditionCombobox", () => {
   // ---------------------------------------------------------------------------
 
   it("marks the option matching selectedId as aria-selected", async () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId="back1" onChange={noop} />
-    );
+    renderCombobox({ selectedId: "back1", onChange: noop });
     await userEvent.click(getInput());
     expect(screen.getByRole("option", { name: "Back pain" })).toHaveAttribute(
       "aria-selected",
@@ -151,9 +150,7 @@ describe("ConditionCombobox", () => {
   // ---------------------------------------------------------------------------
 
   it("shows the selected condition's label when mounted with a selectedId", () => {
-    render(
-      <ConditionCombobox conditions={sampleConditions} selectedId="back1" onChange={noop} />
-    );
+    renderCombobox({ selectedId: "back1", onChange: noop });
     expect(getInput().value).toBe("Back pain");
   });
 });

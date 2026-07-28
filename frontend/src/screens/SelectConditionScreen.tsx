@@ -55,7 +55,7 @@ export default function SelectConditionScreen({
       ) : (
         <>
           <div className="field">
-            <label>
+            <label id="condition-label">
               What is your consultation about?
             </label>
             <ConditionCombobox
@@ -63,6 +63,7 @@ export default function SelectConditionScreen({
               conditions={conditions}
               selectedId={selectedConditionId}
               onChange={onConditionChange}
+              labelId="condition-label"
             />
           </div>
 
