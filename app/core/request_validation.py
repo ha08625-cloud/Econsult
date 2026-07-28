@@ -26,11 +26,30 @@ _UK_POSTCODE_RE = re.compile(
 # Relaxed validation — checks digit count only, not the check digit algorithm.
 _NHS_DIGITS_RE = re.compile(r"^\d{10}$")
 
+# Length caps for free-text contact_preferences fields. These exist to
+# reject oversized/malformed values at the HTTP boundary (422) rather than
+# letting them reach pdf_formatter.py, where a non-string value would raise
+# a TypeError inside the PDF worker instead of failing the request cleanly.
+_EMAIL_ADDRESS_MAX_LEN = 255
+_PHONE_NUMBER_MAX_LEN = 100
+_USUAL_DOCTOR_NAME_MAX_LEN = 255
+
 
 def require_keys(obj: dict, allowed: set):
     extra = set(obj.keys()) - allowed
     if extra:
         raise INVALID_PAYLOAD(f"Illegal fields present: {extra}")
+
+
+def _validate_optional_str(value, field_name: str, max_len: int):
+    """Validate a value that is optional but, if present, must be a
+    non-object string within max_len characters."""
+    if value is None:
+        return
+    if not isinstance(value, str):
+        raise INVALID_PAYLOAD(f"{field_name} must be a string or null")
+    if len(value) > max_len:
+        raise INVALID_PAYLOAD(f"{field_name} must be at most {max_len} characters")
 
 
 def validate_init_payload(payload: dict):
@@ -92,6 +111,11 @@ def validate_contact_preferences(cp: dict):
 
     methods_set = set(methods)
 
+    # phone_number and email_address — optional strings, but must not be a
+    # non-string type (e.g. a nested object) or exceed a sensible length if present
+    _validate_optional_str(cp.get("phone_number"), "phone_number", _PHONE_NUMBER_MAX_LEN)
+    _validate_optional_str(cp.get("email_address"), "email_address", _EMAIL_ADDRESS_MAX_LEN)
+
     # phone_number required if text or phone selected
     if methods_set & {"text", "phone"} and not cp.get("phone_number"):
         raise INVALID_PAYLOAD(
@@ -113,6 +137,12 @@ def validate_contact_preferences(cp: dict):
         raise INVALID_PAYLOAD(
             f"doctor_preference must be one of: {sorted(VALID_DOCTOR_PREFERENCES)}"
         )
+
+    # usual_doctor_name — optional string, but must not be a non-string type
+    # (e.g. a nested object) or exceed a sensible length if present
+    _validate_optional_str(
+        cp.get("usual_doctor_name"), "usual_doctor_name", _USUAL_DOCTOR_NAME_MAX_LEN
+    )
 
     # usual_doctor_name required if doctor_preference is "usual"
     if doctor_pref == "usual" and not cp.get("usual_doctor_name"):

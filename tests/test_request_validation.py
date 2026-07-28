@@ -424,3 +424,57 @@ class TestValidateContactPreferencesOutcomeRejection(unittest.TestCase):
         cp = _valid_cp()
         cp["unexpected"] = "value"
         _cp_raises_with(cp, "Illegal")
+
+
+# ---------------------------------------------------------------------------
+# Section 3: validate_contact_preferences — usual_doctor_name, email_address,
+# phone_number type/length guards
+# ---------------------------------------------------------------------------
+
+
+class TestValidateContactPreferencesFreeTextFieldGuards(unittest.TestCase):
+    def test_usual_doctor_name_dict_raises(self):
+        _cp_raises_with(
+            _valid_cp(doctor_preference="usual", usual_doctor_name={"nested": "object"}),
+            "usual_doctor_name",
+        )
+
+    def test_usual_doctor_name_too_long_raises(self):
+        _cp_raises_with(
+            _valid_cp(doctor_preference="usual", usual_doctor_name="A" * 256),
+            "usual_doctor_name",
+        )
+
+    def test_usual_doctor_name_at_max_len_passes(self):
+        validate_contact_preferences(
+            _valid_cp(doctor_preference="usual", usual_doctor_name="A" * 255)
+        )
+
+    def test_email_address_dict_raises(self):
+        _cp_raises_with(
+            _valid_cp(contact_methods=["email"], email_address={"nested": "object"}),
+            "email_address",
+        )
+
+    def test_email_address_too_long_raises(self):
+        _cp_raises_with(
+            _valid_cp(contact_methods=["email"], email_address="a" * 256 + "@example.com"),
+            "email_address",
+        )
+
+    def test_phone_number_dict_raises(self):
+        _cp_raises_with(
+            _valid_cp(contact_methods=["phone"], phone_number={"nested": "object"}),
+            "phone_number",
+        )
+
+    def test_phone_number_too_long_raises(self):
+        _cp_raises_with(
+            _valid_cp(contact_methods=["phone"], phone_number="1" * 101),
+            "phone_number",
+        )
+
+    def test_phone_number_at_max_len_passes(self):
+        validate_contact_preferences(
+            _valid_cp(contact_methods=["phone"], phone_number="1" * 100)
+        )
