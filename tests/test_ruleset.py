@@ -187,7 +187,12 @@ def test_rejects_quantity_missing_allowed_systems():
 def test_rejects_quantity_empty_allowed_systems():
     with pytest.raises(ValueError, match="non-empty allowed_systems"):
         validate_ruleset(
-            _with(quantity=True, quantity_kind="weight", allowed_systems=[], default_system="metric")
+            _with(
+                quantity=True,
+                quantity_kind="weight",
+                allowed_systems=[],
+                default_system="metric",
+            )
         )
 
 

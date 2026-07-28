@@ -9,7 +9,6 @@ import pytest
 
 from app.utils.http_utils import extract_ip
 
-
 CASES = [
     pytest.param(
         {"x-forwarded-for": "1.2.3.4, 8.8.8.8"},
