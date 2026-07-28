@@ -13,6 +13,11 @@
  *   2. This file               — SIGNPOSTING_PURIFY_CONFIG constant
  * rel is included because nh3 automatically injects rel="noopener noreferrer"
  * into stored HTML. DOMPurify must not strip it on render.
+ *
+ * MAX_SIGNPOSTING_LENGTH must match MAX_SIGNPOSTING_LENGTH in
+ * practice_repository.py exactly. It is duplicated here (rather than
+ * fetched from the server) so the admin UI can warn before the raw HTML
+ * is sent, matching the raw-HTML-length check the backend enforces.
  */
 
 export const GENERAL_CONSULTATION_ID = "general_consultation";
@@ -22,3 +27,5 @@ export const SIGNPOSTING_PURIFY_CONFIG = {
   ALLOWED_ATTR: ["href", "rel", "target"],
   ALLOWED_URI_REGEXP: /^https?:/i,
 };
+
+export const MAX_SIGNPOSTING_LENGTH = 5000;
