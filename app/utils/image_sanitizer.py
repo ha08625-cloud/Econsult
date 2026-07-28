@@ -21,6 +21,13 @@ import io
 
 from PIL import Image, ImageOps
 
+# Pillow's default MAX_IMAGE_PIXELS (~89M) only warns below 178M pixels and
+# raises above it, letting a crafted file decode to a huge bitmap (e.g. a 1MB
+# PNG expanding to ~500MB in memory) without ever hitting the error path. A
+# 12MP phone photo is 12M pixels, so 50M leaves generous legitimate headroom
+# while closing that decompression-bomb window.
+Image.MAX_IMAGE_PIXELS = 50_000_000
+
 # Post-encode size limit imposed by the EMIS EHR ingestion layer.
 _EMIS_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 
