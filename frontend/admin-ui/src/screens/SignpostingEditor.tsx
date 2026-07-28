@@ -92,10 +92,10 @@ export default function SignpostingEditor({
           quill.clipboard.dangerouslyPasteHTML(savedHtml);
         }
 
-        const baseline = quill.getText();
+        const baseline = quill.getSemanticHTML();
 
         quill.on("text-change", () => {
-          const changed = quill.getText() !== baseline;
+          const changed = quill.getSemanticHTML() !== baseline;
           setHasUnsaved(changed);
           onUnsavedChange(changed);
         });
@@ -130,15 +130,13 @@ export default function SignpostingEditor({
       const sanitisedHtml = DOMPurify.sanitize(rawHtml, SIGNPOSTING_PURIFY_CONFIG);
       const savedHtml = await putSignposting(conditionId, sanitisedHtml);
 
-      const newBaseline = savedHtml || "";
-
       if (savedHtml) {
         quill.off("text-change");
         quill.clipboard.dangerouslyPasteHTML(savedHtml);
 
-        const resyncedBaseline = quill.getText();
+        const resyncedBaseline = quill.getSemanticHTML();
         quill.on("text-change", () => {
-          const changed = quill.getText() !== resyncedBaseline;
+          const changed = quill.getSemanticHTML() !== resyncedBaseline;
           setHasUnsaved(changed);
           onUnsavedChange(changed);
         });
@@ -146,15 +144,13 @@ export default function SignpostingEditor({
         quill.off("text-change");
         quill.setText("");
 
-        const emptyBaseline = quill.getText();
+        const emptyBaseline = quill.getSemanticHTML();
         quill.on("text-change", () => {
-          const changed = quill.getText() !== emptyBaseline;
+          const changed = quill.getSemanticHTML() !== emptyBaseline;
           setHasUnsaved(changed);
           onUnsavedChange(changed);
         });
       }
-
-      void newBaseline;
 
       setHasUnsaved(false);
       onUnsavedChange(false);
