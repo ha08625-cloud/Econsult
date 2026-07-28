@@ -510,11 +510,12 @@ describe("EditScreen — number questions", () => {
     mockUpdateForm.mockReset();
   });
 
-  it("renders a number input associated with its label", () => {
+  it("renders a text input with a numeric inputmode, associated with its label", () => {
     renderNumber("");
     const input = screen.getByLabelText(/what is your weight in kg/i) as HTMLInputElement;
     expect(input.tagName).toBe("INPUT");
-    expect(input.type).toBe("number");
+    expect(input.type).toBe("text");
+    expect(input.getAttribute("inputmode")).toBe("decimal");
   });
 
   it("shows an inline precision error and Continue click reports the error instead of submitting", async () => {

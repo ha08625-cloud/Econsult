@@ -297,6 +297,18 @@ Loading containers must carry `role="status"`. This causes screen readers to ann
 
 ---
 
+### Number Questions Use `type="text"` + `inputMode`, Not `type="number"`
+
+`EditScreen`'s Number question inputs (both scalar and quantity-component) use `type="text"` with `inputMode="decimal"` (or `"numeric"` for imperial stones/pounds, which must be whole numbers) and a `pattern` attribute. GOV.UK moved away from `type="number"`: the scroll-wheel and arrow keys can silently change the value, some screen readers misreport the control, and letters are silently swallowed rather than rejected. Precision validation already operates on the raw string value in `editableAnswers`, so this was a low-risk swap. The native `step`/`min`/`max` attributes were dropped along with `type="number"` — they never did any blocking validation in this flow (the precision/range gates are the client-side JS logic above), so nothing was lost by removing them.
+
+---
+
+### Touch Target Size
+
+The photo thumbnail remove button in `EditScreen` is visually 28x28px (unchanged, to avoid disturbing the photo grid layout) but its hit area is enlarged to 44x44px per NHS/Apple/Google touch guidance via the `.photo-remove-btn` CSS class — a transparent `::before` pseudo-element with `inset: -8px` extends the clickable/tappable area without affecting appearance.
+
+---
+
 ### Focus Indicators (1.4.11)
 
 A single global rule in `index.css` gives every interactive element a consistent 3px `var(--border-focus)` outline on `:focus-visible`, declared after the element-specific focus rules so it wins by source order without removing them (e.g. it strengthens, rather than replaces, the border-colour change on `input[type="text"]:focus`). This is what makes `<select>` elements (styled via `.combobox-input`, which the text-input focus rule never reached) and buttons (previously the unstyled browser default) get a visible focus ring. Generalises the pattern already used by `.error-summary:focus` and `.guide-link:focus`.
@@ -311,7 +323,7 @@ Instead, per the GOV.UK error-summary pattern already used by `PatientDetailsScr
 - If the gate is unmet, it moves focus to the existing hint/error text explaining why (a `ref`ed element with `tabIndex={-1}`) and does not call `onContinue`.
 - If met, it calls `onContinue` as normal.
 
-`EditScreen` reuses its existing `screenError` / `error-summary` / `summaryRef` mechanism for this — `handleContinue` sets `screenError` for the unmet-gate case before the async submit path, so the same focus-on-error `useEffect` handles it. `ReviewScreen`'s gate (`hasSafetyBlock`) is a genuine clinical block rather than a fixable field; clicking focuses the safety alert box rather than a fix-it hint, since the only remedy is going Back.
+`EditScreen` reuses its existing `screenError` / `error-summary` / `summaryRef` mechanism for this — `handleContinue` sets `screenError` for the unmet-gate case before the async submit path, so the same focus-on-error `useEffect` handles it. `ReviewScreen`'s gate (`hasSafetyBlock`) is a genuine clinical block rather than a fixable field; clicking focuses the safety alert box rather than a fix-it hint, since the only remedy is going Back. The Continue button also carries `aria-describedby="review-safety-alert"` while blocked, so a screen reader user tabbing to the button (rather than clicking it) still hears the blocking reason attached to the control itself.
 
 ---
 
@@ -332,6 +344,14 @@ These must be observed on all screens; they are not enforced by the CSS and requ
 - **No all-caps** (BLOCK CAPITALS). Use sentence case for all headings and labels.
 - **Underlining is reserved for hyperlinks only.** Do not underline text for emphasis.
 - **Do not set font sizes with inline styles** on screen components — add or reuse a CSS class.
+
+---
+
+### Reduced Motion (2.3.3)
+
+A `@media (prefers-reduced-motion: reduce)` block in `index.css` zeroes the `border-color`/`all` transitions on text inputs and `.selection-card`, and the `.btn-primary:active` press transform. Any new transition or transform added to an interactive element must get a corresponding reduced-motion override in this block.
+
+**Known gap:** the Google Font (`Source Sans 3`) is still fetched at runtime from `fonts.googleapis.com` via `@import` in `index.css`. This is not an accessibility issue, but it is a render-blocking third-party dependency and a GDPR/NHS data-flow consideration (the font request leaks the patient's IP to Google). Self-hosting the font file is deferred to a future ticket.
 
 ---
 

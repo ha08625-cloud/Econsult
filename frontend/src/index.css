@@ -327,6 +327,18 @@ textarea:focus {
   box-shadow: 0 2px 0 var(--nhs-blue-dark);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  input[type="text"],
+  textarea,
+  .selection-card {
+    transition: none;
+  }
+
+  .btn-primary:active {
+    transform: none;
+  }
+}
+
 .btn-secondary {
   background: #f0f4f7;
   color: var(--text-label);
@@ -496,6 +508,19 @@ textarea:focus {
 .combobox-option--active.combobox-option--selected {
   outline-color: var(--nhs-blue);
 }
+/* Photo thumbnail remove button (visually 28x28, per NHS/Apple/Google
+   guidance the touch target is enlarged to 44x44 via a transparent
+   pseudo-element rather than changing the visible size). */
+.photo-remove-btn {
+  position: relative;
+}
+
+.photo-remove-btn::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+
 /* ============================================================
    Photo tier selection
    ============================================================ */

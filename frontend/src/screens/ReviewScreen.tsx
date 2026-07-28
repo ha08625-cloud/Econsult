@@ -99,7 +99,13 @@ export default function ReviewScreen({
       )}
 
       {hasSafetyBlock && (
-        <div className="alert alert-warning" role="alert" ref={safetyAlertRef} tabIndex={-1}>
+        <div
+          className="alert alert-warning"
+          role="alert"
+          ref={safetyAlertRef}
+          tabIndex={-1}
+          id="review-safety-alert"
+        >
           <strong>
             <span className="sr-only">Important: </span>
             Action required
@@ -120,6 +126,7 @@ export default function ReviewScreen({
 
         <button
           className="btn btn-primary"
+          aria-describedby={hasSafetyBlock ? "review-safety-alert" : undefined}
           onClick={() => {
             if (hasSafetyBlock) {
               safetyAlertRef.current?.focus();
