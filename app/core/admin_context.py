@@ -52,6 +52,7 @@ request.
 """
 
 import logging
+import uuid
 from typing import Any, Protocol, runtime_checkable
 
 from fastapi import HTTPException, Request, Response
@@ -75,6 +76,25 @@ SESSION_TTL_MINUTES = 60
 
 # Cookie Max-Age in seconds (must match SESSION_TTL_MINUTES).
 SESSION_COOKIE_MAX_AGE = SESSION_TTL_MINUTES * 60
+
+
+def is_valid_session_id(session_id: str) -> bool:
+    """
+    True if session_id is syntactically a valid UUID.
+
+    admin_sessions.session_id is a Postgres uuid column; get_session_context
+    and delete_session both cast the raw cookie value with %s::uuid. A
+    non-UUID value (corrupted, tampered, or hand-crafted cookie) would
+    otherwise raise psycopg2.errors.InvalidTextRepresentation, surfacing as
+    an unhandled 500 instead of the normal "not authenticated" outcome.
+    Callers must check this before passing a cookie-derived session_id to
+    the repository.
+    """
+    try:
+        uuid.UUID(session_id)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -147,20 +167,25 @@ def require_admin(request: Request, response: Response) -> AdminContext:
     FastAPI dependency. Validates session cookie and returns AdminContext.
 
     1. Read session_id from the HttpOnly cookie.
-    2. Call auth_repo.get_session_context(session_id).
-    3. If context is None (session not found or expired), raise HTTP 401.
-    4. Best-effort: extend the session's expiry and re-issue the cookie
+    2. Validate session_id is syntactically a UUID (is_valid_session_id).
+       This runs before any DB call — session_id is cast with %s::uuid in
+       the repository, so a malformed cookie would otherwise raise
+       psycopg2.errors.InvalidTextRepresentation and surface as an
+       unhandled 500 rather than a 401.
+    3. Call auth_repo.get_session_context(session_id).
+    4. If context is None (session not found or expired), raise HTTP 401.
+    5. Best-effort: extend the session's expiry and re-issue the cookie
        with a fresh Max-Age, implementing the sliding-window TTL. Failures
        here are logged and swallowed — the request still proceeds, since
-       the session was already validated in step 2. A DB outage would have
+       the session was already validated in step 3. A DB outage would have
        failed that validation anyway, so this only covers transient
        refresh failures.
-    5. Return AdminContext populated with practice_id, user_id, role,
+    6. Return AdminContext populated with practice_id, user_id, role,
        actor_email, and session_id from the context dict.
 
     Raises:
-        HTTP 401 if no valid session cookie is present or the session has
-        expired.
+        HTTP 401 if no valid session cookie is present, the cookie value
+        is not a well-formed UUID, or the session has expired.
     """
     auth_repo: AuthProvider = getattr(request.app.state, AUTH_REPO)
 
@@ -169,6 +194,12 @@ def require_admin(request: Request, response: Response) -> AdminContext:
         raise HTTPException(
             status_code=401,
             detail="Authentication required.",
+        )
+
+    if not is_valid_session_id(session_id):
+        raise HTTPException(
+            status_code=401,
+            detail="Session expired or not found.",
         )
 
     context = auth_repo.get_session_context(session_id)

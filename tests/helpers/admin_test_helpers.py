@@ -23,7 +23,10 @@ from app.routers.admin_router import router as admin_router
 # Minimal stubs
 # ---------------------------------------------------------------------------
 
-TEST_SESSION_COOKIE = {"session_id": "test-session-id"}
+# A well-formed UUID — require_admin rejects non-UUID cookie values before
+# ever reaching the repository (see app.core.admin_context.is_valid_session_id).
+TEST_SESSION_ID = "11111111-1111-1111-1111-111111111111"
+TEST_SESSION_COOKIE = {"session_id": TEST_SESSION_ID}
 
 
 class StubRegistry:
@@ -258,13 +261,13 @@ class StubAuthRepo:
         self._deleted = []  # records user_id from delete_user
 
     def get_session_context(self, session_id):
-        if session_id == "test-session-id":
+        if session_id == TEST_SESSION_ID:
             return {
                 "user_id": "00000000-0000-0000-0000-000000000001",
                 "role": "admin",
                 "practice_id": "test_practice",
                 "email": "admin@nhs.net",
-                "session_id": "test-session-id",
+                "session_id": TEST_SESSION_ID,
             }
         return None
 

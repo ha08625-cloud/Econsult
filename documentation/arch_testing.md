@@ -249,7 +249,7 @@ The `with_rate_limiting=True` flag additionally wires `SlowAPIMiddleware` and th
 
 **Key stubs:**
 
-`StubAuthRepo` — in-memory auth repo. Session lookup returns a valid context only for `"test-session-id"`. Also exposes the user management methods used by `admin_user_router`: `get_users_by_practice`, `get_user_by_id`, `insert_user`, `delete_user`. Tests that need to control user list contents should subclass or replace this stub.
+`StubAuthRepo` — in-memory auth repo. Session lookup returns a valid context only for `TEST_SESSION_ID` (a well-formed UUID constant — `require_admin` rejects non-UUID cookie values before the repository is ever called). Also exposes the user management methods used by `admin_user_router`: `get_users_by_practice`, `get_user_by_id`, `insert_user`, `delete_user`. Tests that need to control user list contents should subclass or replace this stub.
 
 `StubPracticeRepo` — in-memory practice repo. Includes `lock_practice(practice_id, conn)` which is a no-op in tests (the stub operates on in-memory state; no real lock is needed).
 

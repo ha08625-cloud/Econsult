@@ -40,6 +40,7 @@ from app.core.admin_context import (
     SESSION_COOKIE_MAX_AGE,
     SESSION_COOKIE_NAME,
     SESSION_TTL_MINUTES,
+    is_valid_session_id,
 )
 from app.core.body_capture import BodyCapturingRoute, read_json_body
 from app.core.dependencies import (
@@ -521,6 +522,11 @@ def logout(
     If no session cookie is present, skip the DB call and audit log entirely.
     Always returns an expired cookie to clear any browser state.
 
+    A cookie value that is not a well-formed UUID is treated the same way —
+    delete_session casts it with %s::uuid, so passing a malformed value
+    through would raise psycopg2.errors.InvalidTextRepresentation instead of
+    the clean no-op a corrupted cookie should produce.
+
     Audit: session_id is captured from the cookie BEFORE delete_session is
     called. This ordering is intentional — once the session is deleted the
     ID is no longer available from the database. actor_email is recorded as
@@ -530,7 +536,7 @@ def logout(
     """
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
 
-    if session_id:
+    if session_id and is_valid_session_id(session_id):
         auth_repo.delete_session(session_id)
 
         try:
