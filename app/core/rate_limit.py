@@ -53,8 +53,7 @@ def _ip_key(request: Request) -> str:
         # client. Every caller collapses into one rate-limit bucket, which
         # turns a per-IP limit into a global one.
         logger.error(
-            "IP resolution degraded to client_host (%s); rate limiting is "
-            "no longer per-client",
+            "IP resolution degraded to client_host (%s); rate limiting is no longer per-client",
             resolved,
         )
 
