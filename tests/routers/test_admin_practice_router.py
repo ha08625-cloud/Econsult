@@ -393,6 +393,22 @@ class TestPracticeEndpointBehaviour(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(len(res.json()["doctors"]), MAX_DOCTOR_LIST_LENGTH)
 
+    def test_put_doctors_duplicate_name_returns_422(self):
+        res = self.client.put(
+            "/admin/doctors",
+            json={"doctors": ["Dr Smith", "Dr Jones", "Dr Smith"]},
+            cookies=TEST_SESSION_COOKIE,
+        )
+        self.assertEqual(res.status_code, 422)
+
+    def test_put_doctors_duplicate_name_case_and_whitespace_insensitive_returns_422(self):
+        res = self.client.put(
+            "/admin/doctors",
+            json={"doctors": ["Dr Smith", " dr smith "]},
+            cookies=TEST_SESSION_COOKIE,
+        )
+        self.assertEqual(res.status_code, 422)
+
 
 # ---------------------------------------------------------------------------
 # Section 2: Signposting sanitisation logic

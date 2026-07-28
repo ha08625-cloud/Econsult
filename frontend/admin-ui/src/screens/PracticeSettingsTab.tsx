@@ -44,6 +44,7 @@ export default function PracticeSettingsTab({ onAuthError }: Props) {
 
   const [doctors, setDoctors] = useState<string[]>([]);
   const [addInput, setAddInput] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
   const [doctorSaveStatus, setDoctorSaveStatus] = useState<SaveStatus>("idle");
   const [doctorSaveError, setDoctorSaveError] = useState<string | null>(null);
 
@@ -112,6 +113,11 @@ export default function PracticeSettingsTab({ onAuthError }: Props) {
   function handleAdd() {
     const name = addInput.trim();
     if (!name) return;
+    if (doctors.some((d) => d.trim().toLowerCase() === name.toLowerCase())) {
+      setAddError(`"${name}" is already on the list.`);
+      return;
+    }
+    setAddError(null);
     setDoctors([...doctors, name]);
     setAddInput("");
     setDoctorSaveStatus("idle");
@@ -289,7 +295,10 @@ export default function PracticeSettingsTab({ onAuthError }: Props) {
           className="text-input"
           placeholder="e.g. Dr Smith"
           value={addInput}
-          onChange={(e) => setAddInput(e.target.value)}
+          onChange={(e) => {
+            setAddInput(e.target.value);
+            setAddError(null);
+          }}
           onKeyDown={handleAddKeyDown}
           aria-label="New doctor name"
         />
@@ -301,6 +310,10 @@ export default function PracticeSettingsTab({ onAuthError }: Props) {
           Add
         </button>
       </div>
+
+      {addError && (
+        <p className="error-message" style={{ marginTop: "-8px", marginBottom: "16px" }}>{addError}</p>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
         <button
