@@ -32,7 +32,7 @@
  *   the user re-clicks whatever action failed. See arch_admin.md.
  */
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import SignpostingEditor from "./SignpostingEditor";
 import AvailabilityEditor from "./AvailabilityEditor";
 import PracticeSettingsTab from "./PracticeSettingsTab";
@@ -55,6 +55,14 @@ export default function EditorView({ conditions, onAuthError }: Props) {
 
   const signpostingUnsavedRef = useRef(false);
   const availabilityUnsavedRef = useRef(false);
+
+  const handleSignpostingUnsavedChange = useCallback((hasChanges: boolean) => {
+    signpostingUnsavedRef.current = hasChanges;
+  }, []);
+
+  const handleAvailabilityUnsavedChange = useCallback((hasChanges: boolean) => {
+    availabilityUnsavedRef.current = hasChanges;
+  }, []);
 
   function handleTabChange(newTab: Tab) {
     if (newTab === activeTab) return;
@@ -130,9 +138,7 @@ export default function EditorView({ conditions, onAuthError }: Props) {
       {/* Availability tab — always mounted, shown/hidden to preserve state */}
       <div style={{ display: activeTab === "availability" ? "block" : "none" }}>
         <AvailabilityEditor
-          onUnsavedChange={(hasChanges) => {
-            availabilityUnsavedRef.current = hasChanges;
-          }}
+          onUnsavedChange={handleAvailabilityUnsavedChange}
           onAuthError={onAuthError}
         />
       </div>
@@ -163,9 +169,7 @@ export default function EditorView({ conditions, onAuthError }: Props) {
             <SignpostingEditor
               key={selectedId}
               conditionId={selectedId}
-              onUnsavedChange={(hasChanges) => {
-                signpostingUnsavedRef.current = hasChanges;
-              }}
+              onUnsavedChange={handleSignpostingUnsavedChange}
               onAuthError={onAuthError}
             />
           ) : (
