@@ -35,6 +35,7 @@ import { vi, type Mock } from "vitest";
 
 let fakeQuillInstance: {
   text: string;
+  formatMarker: string;
   handlers: Record<string, Array<() => void>>;
   getText: () => string;
   setText: (v: string) => void;
@@ -48,11 +49,15 @@ let fakeQuillInstance: {
 vi.mock("quill", () => {
   class FakeQuill {
     text: string;
+    // Simulates a formatting toggle (e.g. bold) that changes the HTML
+    // representation without changing plain-text content.
+    formatMarker: string;
     handlers: Record<string, Array<() => void>>;
     clipboard: { dangerouslyPasteHTML: (html: string) => void };
 
     constructor() {
       this.text = "\n"; // Quill's empty state is a single newline
+      this.formatMarker = "";
       this.handlers = {};
       this.clipboard = {
         dangerouslyPasteHTML: (html: string) => {
@@ -82,7 +87,7 @@ vi.mock("quill", () => {
     }
 
     getSemanticHTML() {
-      return `<p>${this.text.trim()}</p>`;
+      return `<p${this.formatMarker}>${this.text.trim()}</p>`;
     }
 
     simulateChange() {
@@ -387,6 +392,23 @@ describe("SignpostingEditor — unsaved change tracking", () => {
     renderEditor();
     await waitFor(() => screen.getByRole("button", { name: /save/i }));
     expect(screen.queryByText(/unsaved changes/i)).toBeNull();
+  });
+
+  it("detects formatting-only changes (e.g. bold) that leave plain text unchanged", async () => {
+    const onUnsavedChange = vi.fn();
+    mockFetch.mockResolvedValueOnce(null);
+
+    renderEditor({ onUnsavedChange });
+    await waitFor(() => screen.getByRole("button", { name: /save/i }));
+
+    // Text content is identical; only the HTML formatting changes (e.g. bold).
+    act(() => {
+      fakeQuillInstance.formatMarker = ' class="ql-bold"';
+      fakeQuillInstance.simulateChange();
+    });
+
+    expect(onUnsavedChange).toHaveBeenCalledWith(true);
+    expect(screen.getByText(/unsaved changes/i)).toBeTruthy();
   });
 
   it("loads existing content into the editor on mount", async () => {
