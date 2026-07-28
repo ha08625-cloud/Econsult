@@ -780,6 +780,125 @@ def test_finish_without_photos_and_no_tier_returns_200():
         )
 
 
+def test_finish_without_photos_and_invalid_tier_returns_422():
+    """
+    A tampered client can submit no photos but still include a garbage
+    photo_quality_tier value. Previously this was accepted verbatim (the
+    tier check only ran when photos were present) and stamped straight onto
+    the audit record. It must now return 422 regardless of photo presence.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+            "photo_quality_tier": "ultra",
+        }
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[],
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for invalid tier with no photos, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
+
+
+def test_finish_without_photos_and_unhashable_tier_returns_422():
+    """
+    An unhashable photo_quality_tier (e.g. a JSON object) must return 422,
+    not an unhandled 500 from `tier in _VALID_TIERS` raising TypeError.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+            "photo_quality_tier": {"nested": "object"},
+        }
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[],
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for unhashable tier, got {finish_res.status_code}: {finish_res.text}"
+        )
+
+
+def test_finish_with_high_tier_and_multiple_photos_returns_422():
+    """
+    "high" tier is limited to a single photo (the frontend enforces this in
+    EditScreen.tsx). A tampered client sending tier=high with several photos
+    must be rejected server-side, before the expensive per-photo 4K CDR pass
+    runs for each one.
+    """
+    with TestClient(app) as client:
+        runtime_id, version = _run_full_flow(client)
+
+        payload = {
+            "runtime_id": runtime_id,
+            "version": version,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+            "photo_quality_tier": "high",
+        }
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[
+                ("photos", ("photo1.jpg", MINIMAL_JPEG, "image/jpeg")),
+                ("photos", ("photo2.jpg", MINIMAL_JPEG, "image/jpeg")),
+            ],
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for high-tier submission with multiple photos, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
+
+
+def test_finish_with_malformed_json_payload_returns_422():
+    """
+    A payload field that isn't valid JSON must return 422, not an unhandled
+    500 from json.loads raising JSONDecodeError.
+    """
+    with TestClient(app) as client:
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": "{not valid json"},
+            files=[],
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for malformed JSON payload, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
+
+
+def test_finish_with_non_object_json_payload_returns_422():
+    """
+    A payload field that parses as valid JSON but isn't a JSON object (e.g.
+    a bare list) must return 422, not an unhandled 500 from require_keys
+    calling .keys() on a non-dict.
+    """
+    with TestClient(app) as client:
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(["not", "an", "object"])},
+            files=[],
+        )
+        assert finish_res.status_code == 422, (
+            f"Expected 422 for non-object JSON payload, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Quantity (unit-toggle) Number answer — boundary behaviour at /form/update
 #
