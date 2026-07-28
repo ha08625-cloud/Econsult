@@ -59,7 +59,12 @@ export default function SafetyWarningScreen({
       <h1>Before you continue</h1>
 
       {safetyWarningFetchState.status === "loading" && (
-        <div className="status-container" style={{ minHeight: "200px" }}>
+        <div
+          className="status-container"
+          style={{ minHeight: "200px" }}
+          role="status"
+          aria-live="polite"
+        >
           <p className="status-text">Loading safety information...</p>
         </div>
       )}

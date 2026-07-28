@@ -405,6 +405,11 @@ textarea:focus {
   margin-bottom: var(--space-md);
 }
 
+/* Compact secondary text, e.g. pre-filled notices, range notices, photo size counter */
+.notice-compact {
+  font-size: 14px;
+}
+
 /* Status container for loading states */
 .status-container {
   display: flex;

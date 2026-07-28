@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
 import { PageShell, InlineError } from "../layout";
 import { initForm, friendlyErrorMessage } from "../api";
@@ -35,6 +35,15 @@ export default function FreeTextScreen({
 }: FreeTextScreenProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [screenError, setScreenError] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  // When presentationState transitions from loading to success, move focus
+  // to the heading so screen reader users are notified the page is ready.
+  useEffect(() => {
+    if (presentationState.status === "success") {
+      headingRef.current?.focus();
+    }
+  }, [presentationState.status]);
 
   if (presentationState.status === "loading") {
     return (
@@ -92,7 +101,7 @@ export default function FreeTextScreen({
 
   return (
     <PageShell practiceName={practiceName}>
-      <h1>{presentation.label}</h1>
+      <h1 ref={headingRef} tabIndex={-1}>{presentation.label}</h1>
 
       {presentation.practice_signposting && (
         <div
