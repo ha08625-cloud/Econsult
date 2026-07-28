@@ -23,6 +23,7 @@ import type { PhotoAttachment } from "./uiTypes";
 import type { PhotoTier } from "./screens/EditScreen";
 import { GENERAL_CONSULTATION_ID } from './constants';
 import { PageShell } from "./layout";
+import { useFocusHeading } from "./useFocusHeading";
 import { initialiseEditableAnswers, type EditableAnswers } from "./helpers";
 import DoneScreen from "./screens/DoneScreen";
 import SafetyWarningScreen from "./screens/SafetyWarningScreen";
@@ -123,6 +124,11 @@ export default function App() {
     document.title = title ? `${title} — Econsult` : "Econsult";
   }, [screen, fatalError]);
 
+
+  // Focuses the fatal error heading once fatalError transitions from null to
+  // set, since this screen is rendered inline in App.tsx rather than as a
+  // separate screen component.
+  const fatalErrorHeadingRef = useFocusHeading(fatalError);
 
   function triggerFatalError(errorMsg: string) {
     setFatalError(errorMsg);
@@ -245,7 +251,7 @@ export default function App() {
     return (
       <PageShell>
         <div className="screen-card">
-          <h1>Unable to load the form</h1>
+          <h1 ref={fatalErrorHeadingRef} tabIndex={-1}>Unable to load the form</h1>
           <p className="error-message">{fatalError}</p>
           <div className="btn-row">
             <button className="btn btn-primary" onClick={() => window.location.reload()}>Try again</button>

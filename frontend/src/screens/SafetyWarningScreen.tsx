@@ -1,4 +1,5 @@
 import { PageShell, InlineError } from "../layout";
+import { useFocusHeading } from "../useFocusHeading";
 import type { SafetyWarningFetchState } from "../types";
 
 export type { SafetyWarningFetchState };
@@ -26,6 +27,8 @@ export default function SafetyWarningScreen({
   onRetry,
   onContinue,
 }: SafetyWarningScreenProps) {
+  const headingRef = useFocusHeading();
+
   const isClosed = practiceIsOpen === false;
 
   // Logic to handle string splitting for the safety warning
@@ -40,7 +43,7 @@ export default function SafetyWarningScreen({
   if (isClosed) {
     return (
       <PageShell practiceName={practiceName}>
-        <h1>This service is currently closed</h1>
+        <h1 ref={headingRef} tabIndex={-1}>This service is currently closed</h1>
         <div className="alert alert-warning" style={{ marginBottom: "24px" }}>
           <p style={{ margin: 0 }}>
             {availabilityClosedMessage || "This practice is not currently accepting online forms."}
@@ -56,7 +59,7 @@ export default function SafetyWarningScreen({
 
   return (
     <PageShell practiceName={practiceName}>
-      <h1>Before you continue</h1>
+      <h1 ref={headingRef} tabIndex={-1}>Before you continue</h1>
 
       {safetyWarningFetchState.status === "loading" && (
         <div

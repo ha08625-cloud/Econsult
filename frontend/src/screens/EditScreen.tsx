@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useMemo } from "react";
 import { PageShell, InlineError } from "../layout";
+import { useFocusHeading } from "../useFocusHeading";
 import ConfirmDialog from "../ConfirmDialog";
 import { updateForm } from "../api";
 import { friendlyErrorMessage } from "../api";
@@ -105,6 +106,7 @@ export default function EditScreen({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
+  const headingRef = useFocusHeading();
 
   // Move focus to the error summary when a new error appears.
   useEffect(() => {
@@ -371,7 +373,7 @@ export default function EditScreen({
 
   return (
     <PageShell practiceName={practiceName}>
-      <h1>{clientState.condition_label}</h1>
+      <h1 ref={headingRef} tabIndex={-1}>{clientState.condition_label}</h1>
 
       {clientState.free_text && (
         <p className="screen-description">{clientState.free_text}</p>

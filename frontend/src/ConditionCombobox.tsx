@@ -76,6 +76,7 @@ export default function ConditionCombobox({
   // multiple times on the same page.
   const baseId = useId();
   const listboxId = `${baseId}-listbox`;
+  const hintId = `${baseId}-hint`;
   const optionId = (conditionId: string) => `${baseId}-option-${conditionId}`;
 
   // Derived — never stored in state. Always computed from the full canonical list.
@@ -234,15 +235,19 @@ export default function ConditionCombobox({
         aria-controls={listboxId}
         aria-activedescendant={activeDescendant}
         aria-labelledby={labelId}
+        aria-describedby={hintId}
         value={inputValue}
         onChange={handleInputChange}
         onFocus={handleFocus}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
-        placeholder="Start typing or click to see all conditions..."
         autoComplete="off"
         className="combobox-input"
       />
+
+      <p id={hintId} className="field-hint">
+        Start typing, or click to see all conditions.
+      </p>
 
       <div aria-live="polite" className="sr-only">
         {statusMessage}

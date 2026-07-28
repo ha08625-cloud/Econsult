@@ -194,6 +194,11 @@ legend {
   margin-bottom: var(--space-xs);
 }
 
+.error-summary-list a {
+  color: var(--danger);
+  text-decoration: underline;
+}
+
 /* Specific-width inputs */
 .input-dob-day-month {
   width: 64px;

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PageShell } from "../layout";
+import { useFocusHeading } from "../useFocusHeading";
 import type { ConsultationOutcome } from "../types";
 import outcomes from "../../consultation_outcomes.json";
 
@@ -15,6 +16,7 @@ export default function OutcomeScreen({
   onBack,
 }: OutcomeScreenProps) {
   const [selected, setSelected] = useState<ConsultationOutcome | null>(null);
+  const headingRef = useFocusHeading();
 
   /**
    * Type Guard helper to safely cast string values from JSON to the
@@ -26,7 +28,7 @@ export default function OutcomeScreen({
 
   return (
     <PageShell practiceName={practiceName}>
-      <h1>What do you need today?</h1>
+      <h1 ref={headingRef} tabIndex={-1}>What do you need today?</h1>
       <p className="screen-description">
         Please select the option that best describes your request.
       </p>

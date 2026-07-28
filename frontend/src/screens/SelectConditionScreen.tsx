@@ -1,6 +1,6 @@
 // File path: frontend/src/screens/SelectConditionScreen.tsx
-import { useRef, useEffect } from "react";
 import { PageShell } from "../layout";
+import { useFocusHeading } from "../useFocusHeading";
 import ConditionCombobox from "../ConditionCombobox";
 import type { ConditionSummary } from "../types";
 
@@ -30,16 +30,9 @@ export default function SelectConditionScreen({
   onBlankForm,
   onBack,
 }: SelectConditionScreenProps) {
-  const headingRef = useRef<HTMLHeadingElement>(null);
-
-  // Issue 9: when conditions transition from null (loading) to loaded,
-  // programmatically move focus to the heading so screen reader users
-  // are notified that the form is ready.
-  useEffect(() => {
-    if (conditions !== null) {
-      headingRef.current?.focus();
-    }
-  }, [conditions]);
+  // Focus the heading once conditions transition from null (loading) to
+  // loaded, so screen reader users are notified that the form is ready.
+  const headingRef = useFocusHeading(conditions);
 
   return (
     <PageShell practiceName={practiceName}>
