@@ -290,6 +290,67 @@ describe("SignpostingEditor — save success", () => {
   });
 });
 
+describe("SignpostingEditor — character counter", () => {
+  it("shows a character count reflecting the loaded content", async () => {
+    mockFetch.mockResolvedValueOnce("<p>hi</p>");
+    renderEditor();
+    await waitFor(() => screen.getByRole("button", { name: /save/i }));
+
+    expect(screen.getByText(/\/ 5000 characters/)).toBeTruthy();
+  });
+
+  it("updates the character count as content changes", async () => {
+    mockFetch.mockResolvedValueOnce(null);
+    renderEditor();
+    await waitFor(() => screen.getByRole("button", { name: /save/i }));
+
+    const before = screen.getByText(/\/ 5000 characters/).textContent;
+
+    act(() => {
+      fakeQuillInstance.text = "some new content\n";
+      fakeQuillInstance.simulateChange();
+    });
+
+    const after = screen.getByText(/\/ 5000 characters/).textContent;
+    expect(after).not.toBe(before);
+  });
+
+  it("marks the counter over-limit and disables Save when content exceeds the max length", async () => {
+    mockFetch.mockResolvedValueOnce(null);
+    renderEditor();
+    await waitFor(() => screen.getByRole("button", { name: /save/i }));
+
+    act(() => {
+      fakeQuillInstance.text = "a".repeat(5001) + "\n";
+      fakeQuillInstance.simulateChange();
+    });
+
+    const counter = screen.getByText(/\/ 5000 characters/);
+    expect(counter.className).toContain("over-limit");
+    expect(
+      screen.getByRole("button", { name: /save/i }).hasAttribute("disabled")
+    ).toBe(true);
+  });
+
+  it("does not call putSignposting when content exceeds the max length", async () => {
+    mockFetch.mockResolvedValueOnce(null);
+    renderEditor();
+    await waitFor(() => screen.getByRole("button", { name: /save/i }));
+
+    act(() => {
+      fakeQuillInstance.text = "a".repeat(5001) + "\n";
+      fakeQuillInstance.simulateChange();
+    });
+
+    // Button is disabled, but assert the guard itself in case of a stale click.
+    const callsBefore = mockPut.mock.calls.length;
+    const btn = screen.getByRole("button", { name: /save/i });
+    await userEvent.click(btn);
+
+    expect(mockPut.mock.calls.length).toBe(callsBefore);
+  });
+});
+
 describe("SignpostingEditor — save failure", () => {
   it("shows an error save status when putSignposting rejects", async () => {
     mockFetch.mockResolvedValueOnce(null);

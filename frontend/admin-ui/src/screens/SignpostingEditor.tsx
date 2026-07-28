@@ -25,7 +25,7 @@ import { useEffect, useRef, useState } from "react";
 import Quill from "quill";
 import DOMPurify from "dompurify";
 import { fetchSignposting, putSignposting, AuthError } from "../api";
-import { SIGNPOSTING_PURIFY_CONFIG } from "../../../src/constants";
+import { MAX_SIGNPOSTING_LENGTH, SIGNPOSTING_PURIFY_CONFIG } from "../../../src/constants";
 import type { SaveStatus } from "../types";
 
 interface Props {
@@ -47,6 +47,7 @@ export default function SignpostingEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(null);
   const [hasUnsaved, setHasUnsaved] = useState(false);
+  const [charCount, setCharCount] = useState(0);
 
   // Step 1: instantiate Quill once after the component mounts.
   useEffect(() => {
@@ -93,11 +94,14 @@ export default function SignpostingEditor({
         }
 
         const baseline = quill.getSemanticHTML();
+        setCharCount(baseline.length);
 
         quill.on("text-change", () => {
-          const changed = quill.getSemanticHTML() !== baseline;
+          const html = quill.getSemanticHTML();
+          const changed = html !== baseline;
           setHasUnsaved(changed);
           onUnsavedChange(changed);
+          setCharCount(html.length);
         });
       } catch (err) {
         if (cancelled) return;
@@ -123,11 +127,19 @@ export default function SignpostingEditor({
     const quill = quillRef.current;
     if (!quill) return;
 
+    const rawHtml = quill.getSemanticHTML();
+    if (rawHtml.length > MAX_SIGNPOSTING_LENGTH) {
+      setSaveStatus({
+        type: "error",
+        text: `Save failed: content is ${rawHtml.length} characters, which exceeds the ${MAX_SIGNPOSTING_LENGTH} character limit`,
+      });
+      return;
+    }
+
     setIsSaving(true);
     setSaveStatus(null);
 
     try {
-      const rawHtml = quill.getSemanticHTML();
       const sanitisedHtml = DOMPurify.sanitize(rawHtml, SIGNPOSTING_PURIFY_CONFIG);
       const savedHtml = await putSignposting(conditionId, sanitisedHtml);
 
@@ -136,20 +148,26 @@ export default function SignpostingEditor({
         quill.clipboard.dangerouslyPasteHTML(savedHtml);
 
         const resyncedBaseline = quill.getSemanticHTML();
+        setCharCount(resyncedBaseline.length);
         quill.on("text-change", () => {
-          const changed = quill.getSemanticHTML() !== resyncedBaseline;
+          const html = quill.getSemanticHTML();
+          const changed = html !== resyncedBaseline;
           setHasUnsaved(changed);
           onUnsavedChange(changed);
+          setCharCount(html.length);
         });
       } else {
         quill.off("text-change");
         quill.setText("");
 
         const emptyBaseline = quill.getSemanticHTML();
+        setCharCount(emptyBaseline.length);
         quill.on("text-change", () => {
-          const changed = quill.getSemanticHTML() !== emptyBaseline;
+          const html = quill.getSemanticHTML();
+          const changed = html !== emptyBaseline;
           setHasUnsaved(changed);
           onUnsavedChange(changed);
+          setCharCount(html.length);
         });
       }
 
@@ -195,11 +213,17 @@ export default function SignpostingEditor({
           <div ref={editorDivRef} />
         </div>
 
+        <div
+          className={`char-counter${charCount > MAX_SIGNPOSTING_LENGTH ? " over-limit" : ""}`}
+        >
+          {charCount} / {MAX_SIGNPOSTING_LENGTH} characters
+        </div>
+
         <div className="editor-actions">
           <button
             className="btn btn-primary"
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || charCount > MAX_SIGNPOSTING_LENGTH}
           >
             {isSaving ? (
               <>
