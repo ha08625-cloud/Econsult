@@ -66,7 +66,8 @@ export default function ContactScreen({
   // on submit. Values: "any" | "other" | <a doctor name from the list>.
   const [doctorSelection, setDoctorSelection] = useState<string>("any");
   // Free text box is always visible when a list is shown; also the sole
-  // input when no list is configured.
+  // input when no list is configured. When a list is shown, a non-empty value
+  // here is treated as an implicit "other" selection on submit.
   const [freeTextDoctor, setFreeTextDoctor] = useState<string>("");
 
   const cp = contactPreferences;
@@ -145,17 +146,20 @@ export default function ContactScreen({
     let usualDoctorName: string | null;
 
     if (hasDoctorList) {
-      if (doctorSelection === "any") {
-        doctorPreference = "any";
-        usualDoctorName = null;
-      } else if (doctorSelection === "other") {
-        // Patient typed their own name.
-        doctorPreference = "usual";
-        usualDoctorName = freeTextDoctor.trim() || null;
-      } else {
+      const typedDoctor = freeTextDoctor.trim();
+      if (doctorSelection !== "any" && doctorSelection !== "other") {
         // A named doctor was selected from the list — takes precedence over free text.
         doctorPreference = "usual";
         usualDoctorName = doctorSelection;
+      } else if (typedDoctor) {
+        // Either "other" was selected, or the dropdown was left on "any" and the
+        // patient typed a name anyway. A non-empty free text box is an implicit
+        // "other" selection — never discard a name the patient has given us.
+        doctorPreference = "usual";
+        usualDoctorName = typedDoctor;
+      } else {
+        doctorPreference = "any";
+        usualDoctorName = null;
       }
     } else {
       // Legacy path.

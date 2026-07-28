@@ -200,6 +200,29 @@ describe("ContactScreen", () => {
     expect(prefs.usual_doctor_name).toBe("Dr Patel");
   });
 
+  it("treats free text as an implicit 'other' selection when the dropdown is left on soonest available", async () => {
+    render(<ContactScreen {...defaultProps} doctors={["Dr Smith"]} />);
+    // Leave the dropdown at its default "any".
+    const freeText = document.getElementById("usual-doctor-name") as HTMLInputElement;
+    await userEvent.type(freeText, "Dr Patel");
+    await submitWithEmail();
+    expect(mockFinishForm).toHaveBeenCalledOnce();
+    const prefs = mockFinishForm.mock.calls[0][2];
+    expect(prefs.doctor_preference).toBe("usual");
+    expect(prefs.usual_doctor_name).toBe("Dr Patel");
+  });
+
+  it("ignores whitespace-only free text when the dropdown is left on soonest available", async () => {
+    render(<ContactScreen {...defaultProps} doctors={["Dr Smith"]} />);
+    const freeText = document.getElementById("usual-doctor-name") as HTMLInputElement;
+    await userEvent.type(freeText, "   ");
+    await submitWithEmail();
+    expect(mockFinishForm).toHaveBeenCalledOnce();
+    const prefs = mockFinishForm.mock.calls[0][2];
+    expect(prefs.doctor_preference).toBe("any");
+    expect(prefs.usual_doctor_name).toBeNull();
+  });
+
   it("shows validation error when 'Someone not on this list' is selected but free text is empty", async () => {
     render(<ContactScreen {...defaultProps} doctors={["Dr Smith"]} />);
     const select = document.getElementById("doctor-preference") as HTMLSelectElement;
