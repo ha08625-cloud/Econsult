@@ -61,6 +61,7 @@ from app.core.dependencies import get_availability_repo  # noqa: E402
 from app.core.upload_constants import (  # noqa: E402
     MAX_FILE_COUNT,
     MAX_FILE_SIZE_BYTES,
+    MAX_FINISH_REQUEST_BYTES,
     MAX_TOTAL_SIZE_BYTES,
 )
 from main import app  # noqa: E402
@@ -584,6 +585,36 @@ def test_finish_rejects_combined_size_exceeding_total_limit():
             f"Expected 422 for combined size over limit, "
             f"got {finish_res.status_code}: {finish_res.text}"
         )
+
+
+def test_finish_rejects_oversized_content_length_before_reading_body():
+    """
+    A request whose Content-Length exceeds MAX_FINISH_REQUEST_BYTES must be
+    rejected with 413 by MaxBodySizeRoute (app/core/max_body_size_route.py),
+    which runs before FastAPI parses the multipart body.
+
+    Uses a bogus, nonexistent runtime_id/version to prove the rejection
+    happens ahead of any payload/runtime lookup — those would otherwise
+    fail with a different error before the byte-count checks ever ran.
+    """
+    with TestClient(app) as client:
+        payload = {
+            "runtime_id": "does-not-exist",
+            "version": 1,
+            "contact_preferences": _valid_contact_preferences(),
+            "patient_details": _valid_patient_details(),
+        }
+        oversized = b"\xff\xd8\xff" + b"\x00" * (MAX_FINISH_REQUEST_BYTES - 2)
+        finish_res = client.post(
+            "/form/finish",
+            data={"payload": json.dumps(payload)},
+            files=[("photos", ("big.jpg", oversized, "image/jpeg"))],
+        )
+        assert finish_res.status_code == 413, (
+            f"Expected 413 for oversized Content-Length, "
+            f"got {finish_res.status_code}: {finish_res.text}"
+        )
+        assert finish_res.json()["error"]["code"] == "PAYLOAD_TOO_LARGE"
 
 
 def test_finish_rejects_truncated_jpeg():

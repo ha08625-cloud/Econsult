@@ -35,6 +35,10 @@ def SESSION_CLOSED():
     return APIError("SESSION_CLOSED", "Session already closed")
 
 
+def PAYLOAD_TOO_LARGE(msg="Request body too large"):
+    return APIError("PAYLOAD_TOO_LARGE", msg, status_code=413)
+
+
 # Admin-specific errors
 def INVALID_DATE_FORMAT(field, value):
     return APIError(

@@ -26,3 +26,13 @@ ALLOWED_MIME_TYPES: list[str] = _data["ALLOWED_MIME_TYPES"]
 MAX_FILE_SIZE_BYTES: int = _data["MAX_FILE_SIZE_BYTES"]
 MAX_TOTAL_SIZE_BYTES: int = _data["MAX_TOTAL_SIZE_BYTES"]
 MAX_FILE_COUNT: int = _data["MAX_FILE_COUNT"]
+
+# Derived, not part of the shared JSON: this is a server-side multipart
+# request-size ceiling, not a photo limit, so it has no frontend mirror.
+# It caps the raw Content-Length of a POST /form/finish request -- photo
+# bytes plus multipart boundaries/headers plus the JSON 'payload' form
+# field -- used by app/core/max_body_size_route.py to reject oversized
+# requests before FastAPI parses the body. The 2 MiB margin comfortably
+# covers multipart framing overhead for MAX_FILE_COUNT parts and the JSON
+# payload field.
+MAX_FINISH_REQUEST_BYTES: int = MAX_TOTAL_SIZE_BYTES + 2 * 1024 * 1024
