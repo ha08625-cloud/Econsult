@@ -83,10 +83,6 @@ export default function PatientDetailsScreen({
   // Ref for programmatic focus on the error summary after failed submission
   const summaryRef = useRef<HTMLDivElement>(null);
 
-  // Refs for auto-tabbing DOB fields
-  const monthRef = useRef<HTMLInputElement>(null);
-  const yearRef = useRef<HTMLInputElement>(null);
-
   const forSomeoneElse = details.patient_for === "someone_else";
   const hasErrors = Object.keys(errors).length > 0;
 
@@ -107,14 +103,6 @@ export default function PatientDetailsScreen({
 
     const newDob = { ...details.date_of_birth, [part]: cleanVal };
     setField("date_of_birth", newDob);
-
-    if (cleanVal.length === 2) {
-      if (part === "day") {
-        monthRef.current?.focus();
-      } else if (part === "month") {
-        yearRef.current?.focus();
-      }
-    }
   }
 
   function validate(): boolean {
@@ -342,7 +330,6 @@ export default function PatientDetailsScreen({
               <label htmlFor="dob-month">Month</label>
               <input
                 id="dob-month"
-                ref={monthRef}
                 type="text"
                 inputMode="numeric"
                 placeholder="MM"
@@ -358,7 +345,6 @@ export default function PatientDetailsScreen({
               <label htmlFor="dob-year">Year</label>
               <input
                 id="dob-year"
-                ref={yearRef}
                 type="text"
                 inputMode="numeric"
                 placeholder="YYYY"
