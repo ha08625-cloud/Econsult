@@ -57,7 +57,35 @@ from app.utils.http_utils import extract_ip
 # OTP TTL re-used from auth_service constants (10 minutes).
 _CODE_TTL_MINUTES = 10
 
+# Maximum accepted length for a submitted email address (RFC 5321 caps a
+# forward-path at 254 characters). These endpoints are unauthenticated, and
+# a failed login writes the submitted value straight into admin_audit_log
+# (actor_email and detail), so without a cap an attacker can persist
+# arbitrarily large strings in the audit table. Rate limiting bounds how
+# often that happens, not how big each one is.
+_EMAIL_MAX_LENGTH = 254
+
 logger = logging.getLogger(__name__)
+
+
+def _require_email(value) -> str:
+    """
+    Validate and normalise a submitted email address.
+
+    Returns the trimmed, lowercased value. Raises INVALID_PAYLOAD if the
+    value is not a non-empty string or exceeds _EMAIL_MAX_LENGTH. The length
+    check runs against the trimmed value so trailing whitespace cannot be
+    used to push a legitimate address over the limit.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise INVALID_PAYLOAD("email must be a non-empty string")
+
+    normalised = value.strip().lower()
+    if len(normalised) > _EMAIL_MAX_LENGTH:
+        raise INVALID_PAYLOAD(f"email must be at most {_EMAIL_MAX_LENGTH} characters")
+
+    return normalised
+
 
 router = APIRouter(route_class=BodyCapturingRoute)
 
@@ -136,6 +164,9 @@ def login(
     Audit:
     - auth.login.step1_failed on any INVALID_CREDENTIALS.
     - auth.login.step1_succeeded on success (OTP generated and queued).
+
+    The submitted email is capped at _EMAIL_MAX_LENGTH before any work is
+    done, because a failed attempt persists it verbatim to admin_audit_log.
     """
     body = read_json_body(request)
 
@@ -145,12 +176,10 @@ def login(
     email = body.get("email")
     password = body.get("password")
 
-    if not isinstance(email, str) or not email.strip():
-        raise INVALID_PAYLOAD("email must be a non-empty string")
+    email = _require_email(email)
+
     if not isinstance(password, str) or not password:
         raise INVALID_PAYLOAD("password must be a non-empty string")
-
-    email = email.strip().lower()
 
     ip_address = extract_ip(
         request.headers,
@@ -260,12 +289,11 @@ def verify_mfa_code(
     email = body.get("email")
     code = body.get("code")
 
-    if not isinstance(email, str) or not email.strip():
-        raise INVALID_PAYLOAD("email must be a non-empty string")
+    email = _require_email(email)
+
     if not isinstance(code, str) or not code.strip():
         raise INVALID_PAYLOAD("code must be a non-empty string")
 
-    email = email.strip().lower()
     code = code.strip()
 
     # Format validation: code must be exactly 6 digits.
@@ -436,11 +464,7 @@ def request_password_reset(
     if not isinstance(body, dict) or "email" not in body:
         raise INVALID_PAYLOAD('Body must be {"email": "..."}')
 
-    email = body["email"]
-    if not isinstance(email, str) or not email.strip():
-        raise INVALID_PAYLOAD("email must be a non-empty string")
-
-    email = email.strip().lower()
+    email = _require_email(body["email"])
 
     _process_password_reset(email, auth_repo, delivery_service, start, background_tasks)
 

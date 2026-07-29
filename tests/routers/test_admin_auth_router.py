@@ -313,6 +313,33 @@ class TestLogin(unittest.TestCase):
         )
         self.assertEqual(res.status_code, 200)
 
+    def test_oversized_email_returns_422_without_audit_write(self):
+        """An unbounded email would otherwise be persisted verbatim to
+        admin_audit_log on the step1_failed path. Reject before any work."""
+        repo, password = self._valid_user_repo()
+        audit_repo = StubAuditRepo()
+        client = self._make_client(auth_repo=repo, audit_repo=audit_repo)
+        res = client.post(
+            "/admin/auth/login",
+            json={"email": "a" * 250 + "@nhs.net", "password": password},
+        )
+        self.assertEqual(res.status_code, 422)
+        self.assertEqual(res.json()["error"]["code"], "INVALID_PAYLOAD")
+        self.assertEqual(audit_repo.logged, [])
+
+    def test_email_at_max_length_is_accepted(self):
+        """254 characters is the RFC 5321 maximum — it must not be rejected."""
+        repo, password = self._valid_user_repo()
+        local_part = "a" * (254 - len("@nhs.net"))
+        client = self._make_client(auth_repo=repo)
+        res = client.post(
+            "/admin/auth/login",
+            json={"email": f"{local_part}@nhs.net", "password": password},
+        )
+        # The stub repo resolves any address to the configured user, so a
+        # 200 here proves the length check did not reject a legal address.
+        self.assertEqual(res.status_code, 200)
+
     def test_audit_log_failure_returns_500(self):
         """D8: if audit_repo.log_event raises, the endpoint returns 500 with
         the standard 'audit logging failed' message, not a silent 200."""
