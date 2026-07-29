@@ -31,7 +31,7 @@
  * recreated on each tab switch) so it always performs a fresh fetch on entry.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { Fragment, useEffect, useRef, useState, useCallback } from "react";
 import { fetchAuditLog, AuthError } from "../api";
 import type { AuditEvent } from "../types";
 
@@ -482,8 +482,8 @@ export default function AuditLogTab({ onAuthError }: Props) {
                   {events.map((event) => {
                     const isExpanded = expandedIds.has(event.id);
                     return (
-                      <>
-                        <tr key={event.id} style={trStyle}>
+                      <Fragment key={event.id}>
+                        <tr style={trStyle}>
                           <td style={tdStyle}>
                             <span className="mono" style={{ whiteSpace: "nowrap" }}>
                               {new Date(event.occurred_at).toLocaleString()}
@@ -522,13 +522,13 @@ export default function AuditLogTab({ onAuthError }: Props) {
 
                         {/* Expanded detail row */}
                         {isExpanded && (
-                          <tr key={`${event.id}-detail`} style={detailRowStyle}>
+                          <tr style={detailRowStyle}>
                             <td colSpan={5} style={detailCellStyle}>
                               <DetailCell detail={event.detail} />
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>
