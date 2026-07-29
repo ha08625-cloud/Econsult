@@ -38,6 +38,10 @@ export interface AvailabilityException {
  * detail shape varies by action type — see AuditRepository module docstring
  * for the per-action contract. The frontend treats detail as an opaque object
  * and renders it structurally without interpreting action-specific semantics.
+ *
+ * There is no session_id field. The server records one per event but never
+ * returns it: the stored value is the raw session cookie, so exposing it
+ * would let one admin impersonate another.
  */
 export interface AuditEvent {
   id: number;
@@ -47,7 +51,6 @@ export interface AuditEvent {
   resource: string | null;
   detail: Record<string, unknown> | null;
   ip_address: string | null;
-  session_id: string | null;
 }
 
 export interface AuditLogPage {

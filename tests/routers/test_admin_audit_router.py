@@ -156,6 +156,66 @@ class TestAuditLogEndpoint(unittest.TestCase):
         self.assertIn("2024-06-01", occurred_at)
 
     # ------------------------------------------------------------------
+    # Session token must never leave via this endpoint
+    # ------------------------------------------------------------------
+
+    def test_session_id_column_is_stripped_from_response(self):
+        """The stored session_id is the live session cookie. Even if a
+        repository hands one back, the endpoint must not return it."""
+        repo = ConfigurableAuditRepo(
+            return_value={
+                "events": [
+                    {
+                        "id": 1,
+                        "actor_email": "a@b.com",
+                        "action": "auth.login.succeeded",
+                        "occurred_at": None,
+                        "practice_id": "test_practice",
+                        "resource": None,
+                        "detail": {"email": "a@b.com"},
+                        "ip_address": None,
+                        "session_id": "33333333-3333-3333-3333-333333333333",
+                    }
+                ],
+                "next_cursor": None,
+            }
+        )
+        client = self._make_client(audit_repo=repo)
+        res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE)
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn("session_id", res.json()["events"][0])
+        self.assertNotIn("33333333-3333-3333-3333-333333333333", res.text)
+
+    def test_session_id_inside_detail_is_stripped_from_response(self):
+        """Legacy rows may carry a raw session id in the detail JSON."""
+        repo = ConfigurableAuditRepo(
+            return_value={
+                "events": [
+                    {
+                        "id": 1,
+                        "actor_email": "unknown",
+                        "action": "auth.logout",
+                        "occurred_at": None,
+                        "practice_id": "test_practice",
+                        "resource": None,
+                        "detail": {
+                            "session_id": "33333333-3333-3333-3333-333333333333",
+                            "email": "a@b.com",
+                        },
+                        "ip_address": None,
+                    }
+                ],
+                "next_cursor": None,
+            }
+        )
+        client = self._make_client(audit_repo=repo)
+        res = client.get("/admin/audit-log", cookies=TEST_SESSION_COOKIE)
+        self.assertEqual(res.status_code, 200)
+        detail = res.json()["events"][0]["detail"]
+        self.assertNotIn("session_id", detail)
+        self.assertEqual(detail, {"email": "a@b.com"})
+
+    # ------------------------------------------------------------------
     # Query parameter forwarding
     # ------------------------------------------------------------------
 

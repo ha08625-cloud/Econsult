@@ -57,7 +57,12 @@ def get_audit_log(
     set. Pass it back as ?cursor= on the next request to load the next page.
 
     Each event contains: id, occurred_at (ISO 8601), practice_id,
-    actor_email, action, resource, detail, ip_address, session_id.
+    actor_email, action, resource, detail, ip_address.
+
+    session_id is never returned. The column holds the raw session cookie
+    value, so exposing it here would let one admin lift a colleague's live
+    token and impersonate them — which defeats the point of the audit log.
+    It remains in the database for incident correlation via direct SQL.
 
     Returns 400 if the cursor is malformed or the action prefix is invalid.
     Returns 422 if from_date or to_date cannot be parsed as YYYY-MM-DD.
@@ -105,6 +110,18 @@ def get_audit_log(
         serialised = dict(row)
         if isinstance(serialised.get("occurred_at"), datetime.datetime):
             serialised["occurred_at"] = serialised["occurred_at"].isoformat()
+
+        # Belt-and-braces redaction of live session tokens. list_events
+        # already omits the session_id column and no writer puts a raw
+        # session id in detail, but this endpoint is the only path by which
+        # a token could reach a browser, so strip both here regardless of
+        # what the repository hands back.
+        serialised.pop("session_id", None)
+        if isinstance(serialised.get("detail"), dict):
+            serialised["detail"] = {
+                k: v for k, v in serialised["detail"].items() if k != "session_id"
+            }
+
         events.append(serialised)
 
     return {

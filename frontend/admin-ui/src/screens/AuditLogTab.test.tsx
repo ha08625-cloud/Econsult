@@ -38,7 +38,6 @@ function makeEvent(id: number, overrides: Partial<import("../types").AuditEvent>
     resource: "availability",
     detail: null,
     ip_address: null,
-    session_id: null,
     ...overrides,
   };
 }
