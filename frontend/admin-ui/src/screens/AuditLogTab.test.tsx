@@ -305,6 +305,75 @@ describe("AuditLogTab — debounced text filter inputs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Text filter normalisation
+//
+// Stored actor emails are lowercase and the server's action prefix must match
+// ^[a-z0-9_.]+$, so an unnormalised value returns nothing or 400s.
+// ---------------------------------------------------------------------------
+
+describe("AuditLogTab — text filter normalisation", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockFetchAuditLog.mockReset();
+    mockFetchAuditLog.mockResolvedValue(emptyPage);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function typeInto(id: string, value: string) {
+    render(<AuditLogTab onAuthError={noop} />);
+    await act(async () => { vi.runAllTimers(); });
+    mockFetchAuditLog.mockClear();
+
+    const input = document.getElementById(id) as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(input, { target: { value } });
+      vi.advanceTimersByTime(400);
+    });
+    return input;
+  }
+
+  it("lowercases and trims the actor filter before sending", async () => {
+    await typeInto("audit-actor", "  Alice@Example.COM  ");
+    expect(mockFetchAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ actor: "alice@example.com" })
+    );
+  });
+
+  it("lowercases and trims the action filter before sending", async () => {
+    await typeInto("audit-action", "  Availability  ");
+    expect(mockFetchAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "availability" })
+    );
+  });
+
+  it("keeps the raw text the user typed in the input", async () => {
+    const input = await typeInto("audit-actor", "Alice@Example.COM");
+    expect(input.value).toBe("Alice@Example.COM");
+  });
+
+  it("does not send an action the server would reject", async () => {
+    await typeInto("audit-action", "auth login");
+    expect(mockFetchAuditLog).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline hint for an action the server would reject", async () => {
+    const input = await typeInto("audit-action", "auth login");
+    expect(screen.getByText(/lowercase letters, numbers, dots and underscores/i)).toBeTruthy();
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(input.getAttribute("aria-describedby")).toBe("audit-action-hint");
+  });
+
+  it("shows no hint for a valid action", async () => {
+    const input = await typeInto("audit-action", "Availability");
+    expect(screen.queryByText(/lowercase letters, numbers, dots and underscores/i)).toBeNull();
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Load more
 // ---------------------------------------------------------------------------
 

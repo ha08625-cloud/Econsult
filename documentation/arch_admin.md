@@ -82,6 +82,9 @@ Both `verify_mfa_code` and `verify_login_credentials` in `auth_service.py` use `
 **Email normalisation:**
 All email addresses are normalised to lowercase at the point of entry in routers and services. Stored emails are always lowercase.
 
+**Email length cap:**
+`admin_auth_router._require_email` trims, lowercases, and rejects anything over 254 characters (the RFC 5321 forward-path maximum) for `login`, `verify`, and `request-reset`. These endpoints are unauthenticated, and a failed attempt writes the submitted value verbatim into `admin_audit_log` (`actor_email` and `detail`) — rate limiting bounds how often that happens but not how large each entry is.
+
 **`last_login` field:**
 `admin_users.last_login` is `NULL` until the user first completes OTP verification — the frontend displays `NULL` as "Pending". Set to `NOW()` atomically inside `AuthRepository.create_session`.
 
@@ -133,6 +136,10 @@ Each mutating endpoint wraps the repository mutation and `audit_repo.log_event` 
 **IP address extraction** is centralised in `app/utils/http_utils.py` (`extract_ip`).
 
 **Read endpoint:** `GET /admin/audit-log` accepts `cursor`, `from_date`, `to_date`, `actor`, `action` (prefix match), `limit` (default 50, max 200). Pagination uses an opaque base64 cursor.
+
+**Date filter timezone:** `occurred_at` is `TIMESTAMPTZ`. `from_date` / `to_date` are converted to **explicitly tz-aware UTC** datetimes in `list_events` — naive values would be interpreted by Postgres in the session timezone, making the boundary depend on database configuration rather than on the code. The admin UI renders `occurred_at` in the browser's local time, so during BST the two frames differ by an hour: an event at 00:30 local is 23:30 UTC the previous day, and therefore displays under one date but filters under the one before. This is accepted rather than fixed — filtering in the same frame the value is stored in keeps the boundary unambiguous. Switching to Europe/London day boundaries is the alternative if the one-hour edge case proves confusing in practice.
+
+**Filter normalisation:** `actor` is an exact, case-sensitive match against lowercase-stored emails, and `action` must match `^[a-z0-9_.]+$` (a 400 otherwise). `AuditLogTab` trims and lowercases both before sending, and blocks a request whose action still contains rejected characters, showing an inline field hint instead of an error banner. The raw text stays in the input — only the outgoing value is normalised.
 
 **`session_id` is never returned by the read endpoint.** The `admin_audit_log.session_id` column stores the raw session cookie value, and sessions stay valid while in use, so returning it would let any admin lift a colleague's live token from the JSON and impersonate them — destroying the attribution the audit log exists to provide. The column is retained for incident correlation via direct SQL. Enforced in three places: `list_events` omits the column from its SELECT, the router strips both a stray `session_id` key and a `session_id` inside `detail` before responding, and no writer puts a session id into `detail` (`auth.logout` records it in the column only). The admin UI never displayed the field.
 

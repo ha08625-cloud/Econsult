@@ -312,5 +312,75 @@ class TestAuditLogEndpoint(unittest.TestCase):
         self.assertEqual(res.status_code, 400)
 
 
+# ---------------------------------------------------------------------------
+# AuditRepository.list_events — SQL parameter construction
+# ---------------------------------------------------------------------------
+
+
+class _RecordingCursor:
+    """Minimal psycopg2 cursor stand-in that captures execute() arguments."""
+
+    def __init__(self, sink):
+        self._sink = sink
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, query, params):
+        self._sink["query"] = query
+        self._sink["params"] = params
+
+    def fetchall(self):
+        return []
+
+
+class _RecordingConn:
+    def __init__(self, sink):
+        self._sink = sink
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def cursor(self, **kwargs):
+        return _RecordingCursor(self._sink)
+
+
+class TestListEventsDateBoundaries(unittest.TestCase):
+    """
+    occurred_at is TIMESTAMPTZ. Naive boundary datetimes would be interpreted
+    by Postgres in the session timezone, so the documented "midnight UTC"
+    window would silently depend on database configuration.
+    """
+
+    def _run(self, **kwargs):
+        from unittest.mock import patch
+
+        from app.repositories.audit_repository import AuditRepository
+
+        sink = {}
+        with patch(
+            "app.repositories.audit_repository.get_conn",
+            return_value=_RecordingConn(sink),
+        ):
+            AuditRepository("postgresql://unused").list_events(practice_id="practice-1", **kwargs)
+        return sink["params"]
+
+    def test_from_date_boundary_is_utc_aware(self):
+        params = self._run(from_date=date(2024, 6, 1))
+        self.assertEqual(params["from_date"], datetime(2024, 6, 1, 0, 0, 0, tzinfo=UTC))
+        self.assertIsNotNone(params["from_date"].tzinfo)
+
+    def test_to_date_boundary_is_utc_aware(self):
+        params = self._run(to_date=date(2024, 6, 1))
+        self.assertEqual(params["to_date"], datetime(2024, 6, 1, 23, 59, 59, 999999, tzinfo=UTC))
+        self.assertIsNotNone(params["to_date"].tzinfo)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

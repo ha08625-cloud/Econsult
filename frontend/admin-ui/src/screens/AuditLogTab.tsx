@@ -11,6 +11,18 @@
  * - Date inputs fetch immediately on change.
  * - Any filter change discards the current cursor and re-fetches from the top.
  *   This matches the cursor/filter independence contract in AuditRepository.
+ * - Text filters are trimmed and lowercased before being sent. Actor is an
+ *   exact, case-sensitive match against lowercase-stored emails, so
+ *   "Alice@x.com" would otherwise return nothing; action must match
+ *   ^[a-z0-9_.]+$ server-side, so "Availability" would otherwise 400.
+ *   The raw text stays in the input — only the outgoing value is normalised.
+ * - An action containing characters the server rejects is caught here and
+ *   surfaced as an inline hint instead of a failed request and error banner.
+ *
+ * Date filters:
+ * The backend applies from_date/to_date at UTC day boundaries, while the
+ * table renders occurred_at in the browser's local time. During BST these
+ * differ by an hour: an event at 00:30 local falls on the previous UTC day.
  *
  * Detail rendering:
  * Each row has a "Show detail" toggle. When expanded, DetailCell renders
@@ -238,6 +250,23 @@ const styles = {
 
 type LoadState = "loading" | "ready" | "error";
 
+/**
+ * Normalise a text filter value for transmission.
+ *
+ * Stored actor emails are always lowercase and the server's action prefix
+ * must match ^[a-z0-9_.]+$, so both filters are trimmed and lowercased
+ * before they leave the client.
+ */
+function normaliseFilter(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** Characters the server accepts in an action prefix. */
+const ACTION_PREFIX_RE = /^[a-z0-9_.]*$/;
+
+const ACTION_HINT =
+  "Use lowercase letters, numbers, dots and underscores only — e.g. auth.login";
+
 export default function AuditLogTab({ onAuthError }: Props) {
   const [events,     setEvents]     = useState<AuditEvent[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -272,6 +301,14 @@ export default function AuditLogTab({ onAuthError }: Props) {
       actor: string;
       action: string;
     }) => {
+      const actorParam  = normaliseFilter(filters.actor);
+      const actionParam = normaliseFilter(filters.action);
+
+      // An action the server would reject is surfaced as an inline hint on
+      // the field instead of a 400 and a red error banner. Leave the current
+      // results in place until the input becomes valid again.
+      if (!ACTION_PREFIX_RE.test(actionParam)) return;
+
       setLoadState("loading");
       setLoadError(null);
       setEvents([]);
@@ -282,8 +319,8 @@ export default function AuditLogTab({ onAuthError }: Props) {
         const page = await fetchAuditLog({
           ...(filters.fromDate ? { from_date: filters.fromDate } : {}),
           ...(filters.toDate   ? { to_date:   filters.toDate   } : {}),
-          ...(filters.actor    ? { actor:      filters.actor    } : {}),
-          ...(filters.action   ? { action:     filters.action   } : {}),
+          ...(actorParam       ? { actor:  actorParam  } : {}),
+          ...(actionParam      ? { action: actionParam } : {}),
         });
         setEvents(page.events);
         setNextCursor(page.next_cursor);
@@ -360,15 +397,23 @@ export default function AuditLogTab({ onAuthError }: Props) {
 
   async function handleLoadMore() {
     if (!nextCursor || loadingMore) return;
+
+    const actorParam  = normaliseFilter(actor);
+    const actionParam = normaliseFilter(action);
+
+    // The displayed page may predate an edit that made the action filter
+    // invalid — don't page forward with a value the server will reject.
+    if (!ACTION_PREFIX_RE.test(actionParam)) return;
+
     setLoadingMore(true);
 
     try {
       const page = await fetchAuditLog({
         cursor: nextCursor,
-        ...(fromDate ? { from_date: fromDate } : {}),
-        ...(toDate   ? { to_date:   toDate   } : {}),
-        ...(actor    ? { actor                } : {}),
-        ...(action   ? { action               } : {}),
+        ...(fromDate   ? { from_date: fromDate    } : {}),
+        ...(toDate     ? { to_date:   toDate      } : {}),
+        ...(actorParam  ? { actor:  actorParam  } : {}),
+        ...(actionParam ? { action: actionParam } : {}),
       });
       setEvents((prev) => [...prev, ...page.events]);
       setNextCursor(page.next_cursor);
@@ -396,6 +441,10 @@ export default function AuditLogTab({ onAuthError }: Props) {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+
+  // Derived from the raw input so the hint tracks what the user typed, not
+  // whatever the last successful fetch used.
+  const actionInvalid = !ACTION_PREFIX_RE.test(normaliseFilter(action));
 
   return (
     <div className="card">
@@ -442,7 +491,14 @@ export default function AuditLogTab({ onAuthError }: Props) {
             placeholder="e.g. availability"
             value={action}
             onChange={(e) => handleActionChange(e.target.value)}
+            aria-invalid={actionInvalid || undefined}
+            aria-describedby={actionInvalid ? "audit-action-hint" : undefined}
           />
+          {actionInvalid && (
+            <p id="audit-action-hint" style={hintStyle}>
+              {ACTION_HINT}
+            </p>
+          )}
         </div>
       </div>
 
@@ -582,6 +638,12 @@ const filterRowStyle: React.CSSProperties = {
 const filterFieldStyle: React.CSSProperties = {
   flex: "1 1 160px",
   minWidth: "140px",
+};
+
+const hintStyle: React.CSSProperties = {
+  margin: "4px 0 0",
+  fontSize: "12px",
+  color: "var(--text-muted)",
 };
 
 const tableStyle: React.CSSProperties = {

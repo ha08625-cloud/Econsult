@@ -18,19 +18,35 @@ Two methods:
 # Action types and their detail shapes
 # ---------------------------------------------------------------------------
 #
-# auth.code_requested
+# auth.login.step1_succeeded
 #   detail: { "email": str }
+#   (password accepted, OTP generated and queued for delivery)
+#
+# auth.login.step1_failed
+#   detail: { "email": str }
+#   (password step rejected — the generic INVALID_CREDENTIALS path)
 #
 # auth.login.succeeded
 #   detail: { "email": str }
+#   (OTP verified, session issued)
 #
 # auth.login.failed
 #   detail: { "email": str, "reason": str }
+#   (OTP step rejected)
 #
 # auth.logout
 #   detail: None
 #   (the session is recorded in the session_id column, never in detail —
 #    detail is returned verbatim by GET /admin/audit-log)
+#
+# auth.user_added
+#   detail: { "target_email": str }
+#
+# auth.user_deleted
+#   detail: { "target_user_id": str }
+#
+# auth.invitation_resent
+#   detail: { "target_user_id": str }
 #
 # practice.email.updated
 #   detail: { "before": str, "after": str }
@@ -92,7 +108,7 @@ import base64
 import json
 import logging
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import psycopg2.extras
@@ -242,10 +258,20 @@ class AuditRepository:
         from_date / to_date:
             Inclusive date-range filters on occurred_at. Date boundaries
             are applied at midnight UTC (from_date 00:00:00, to_date
-            23:59:59.999999). Pass date objects, not datetimes.
+            23:59:59.999999) using explicitly tz-aware datetimes, so the
+            window does not depend on the database session timezone.
+            Pass date objects, not datetimes.
+
+            Note: the admin UI renders occurred_at in the browser's local
+            time. During BST an event at 00:30 local is 23:30 UTC on the
+            previous day, so it displays under one date but filters under
+            the one before. Filtering on UTC boundaries is the deliberate
+            choice here — it keeps the stored value and the filter in the
+            same frame of reference.
 
         actor:
-            Exact match on actor_email. Case-sensitive.
+            Exact match on actor_email. Case-sensitive. Stored emails are
+            always lowercase, so callers must normalise before passing.
 
         action_prefix:
             Left-anchored prefix match: "availability" matches
@@ -293,14 +319,27 @@ class AuditRepository:
             params["last_occurred_at"] = last_occurred_at
             params["last_id"] = last_id
 
+        # occurred_at is TIMESTAMPTZ. The boundaries below are built with an
+        # explicit UTC tzinfo so Postgres does not fall back to interpreting a
+        # naive value in the session timezone — that would silently shift the
+        # window whenever the database is not configured for UTC.
         if from_date is not None:
             conditions.append("occurred_at >= %(from_date)s")
-            params["from_date"] = datetime(from_date.year, from_date.month, from_date.day, 0, 0, 0)
+            params["from_date"] = datetime(
+                from_date.year, from_date.month, from_date.day, 0, 0, 0, tzinfo=UTC
+            )
 
         if to_date is not None:
             conditions.append("occurred_at <= %(to_date)s")
             params["to_date"] = datetime(
-                to_date.year, to_date.month, to_date.day, 23, 59, 59, 999999
+                to_date.year,
+                to_date.month,
+                to_date.day,
+                23,
+                59,
+                59,
+                999999,
+                tzinfo=UTC,
             )
 
         if actor is not None:
