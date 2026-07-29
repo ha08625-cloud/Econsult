@@ -134,6 +134,8 @@ Each mutating endpoint wraps the repository mutation and `audit_repo.log_event` 
 
 **Read endpoint:** `GET /admin/audit-log` accepts `cursor`, `from_date`, `to_date`, `actor`, `action` (prefix match), `limit` (default 50, max 200). Pagination uses an opaque base64 cursor.
 
+**`session_id` is never returned by the read endpoint.** The `admin_audit_log.session_id` column stores the raw session cookie value, and sessions stay valid while in use, so returning it would let any admin lift a colleague's live token from the JSON and impersonate them — destroying the attribution the audit log exists to provide. The column is retained for incident correlation via direct SQL. Enforced in three places: `list_events` omits the column from its SELECT, the router strips both a stray `session_id` key and a `session_id` inside `detail` before responding, and no writer puts a session id into `detail` (`auth.logout` records it in the column only). The admin UI never displayed the field.
+
 ---
 
 ### User Management (`admin_user_router.py`, `user_service.py`, `auth_repository.py`, `practice_repository.py`)

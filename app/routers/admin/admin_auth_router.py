@@ -531,8 +531,12 @@ def logout(
     called. This ordering is intentional — once the session is deleted the
     ID is no longer available from the database. actor_email is recorded as
     "unknown" — logout is unauthenticated by design so the caller's identity
-    cannot be verified. The session_id in detail is sufficient to correlate
+    cannot be verified. The session_id column is sufficient to correlate
     with the preceding auth.login.succeeded entry.
+
+    The session id goes in the session_id column only, never in detail:
+    detail is returned verbatim by GET /admin/audit-log, and the raw value
+    is the live session cookie.
     """
     session_id = request.cookies.get(SESSION_COOKIE_NAME)
 
@@ -549,7 +553,6 @@ def logout(
                     request.client.host if request.client else None,
                 ),
                 session_id=session_id,
-                detail={"session_id": session_id},
             )
         except Exception as err:
             logger.exception("Audit log write failed for action auth.logout")

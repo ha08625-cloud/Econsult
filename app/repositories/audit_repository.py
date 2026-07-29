@@ -28,7 +28,9 @@ Two methods:
 #   detail: { "email": str, "reason": str }
 #
 # auth.logout
-#   detail: { "session_id": str }
+#   detail: None
+#   (the session is recorded in the session_id column, never in detail —
+#    detail is returned verbatim by GET /admin/audit-log)
 #
 # practice.email.updated
 #   detail: { "before": str, "after": str }
@@ -261,7 +263,10 @@ class AuditRepository:
                            None if this is the last page.
 
         Each event dict keys: id, occurred_at, practice_id, actor_email,
-        action, resource, detail, ip_address, session_id.
+        action, resource, detail, ip_address.
+
+        session_id is intentionally excluded — it holds the raw session
+        cookie value and must never leave the database via an API read.
 
         Raises:
             ValueError if cursor is malformed or action_prefix is invalid.
@@ -316,9 +321,13 @@ class AuditRepository:
         fetch_limit = limit + 1
         params["fetch_limit"] = fetch_limit
 
+        # session_id is deliberately NOT selected. The column stores the raw
+        # session cookie value, so returning it would let any admin read a
+        # colleague's live token out of the audit log and impersonate them.
+        # It stays in the database for incident correlation via direct SQL.
         query = f"""
             SELECT id, occurred_at, practice_id, actor_email,
-                   action, resource, detail, ip_address, session_id
+                   action, resource, detail, ip_address
             FROM admin_audit_log
             WHERE {where_clause}
             ORDER BY occurred_at DESC, id DESC

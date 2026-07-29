@@ -657,10 +657,10 @@ class TestSetPassword(unittest.TestCase):
 
 
 class TestLogout(unittest.TestCase):
-    def _make_client(self, auth_repo=None):
+    def _make_client(self, auth_repo=None, audit_repo=None):
         from fastapi.testclient import TestClient
 
-        app = make_test_app(auth_repo=auth_repo)
+        app = make_test_app(auth_repo=auth_repo, audit_repo=audit_repo)
         return TestClient(app, raise_server_exceptions=False)
 
     def tearDown(self):
@@ -699,6 +699,21 @@ class TestLogout(unittest.TestCase):
         set_cookie = res.headers.get("set-cookie", "")
         self.assertIn("session_id", set_cookie)
         self.assertIn("Max-Age=0", set_cookie)
+
+    def test_logout_audit_keeps_session_id_out_of_detail(self):
+        """The session id belongs in the session_id column only. detail is
+        returned verbatim by GET /admin/audit-log, so a raw token there
+        would be readable by every other admin in the practice."""
+        audit_repo = StubAuditRepo()
+        client = self._make_client(auth_repo=SpyAuthRepo(), audit_repo=audit_repo)
+        client.cookies.set("session_id", "33333333-3333-3333-3333-333333333333")
+        client.post("/admin/auth/logout")
+
+        logout_events = [e for e in audit_repo.logged if e["action"] == "auth.logout"]
+        self.assertEqual(len(logout_events), 1)
+        event = logout_events[0]
+        self.assertEqual(event["session_id"], "33333333-3333-3333-3333-333333333333")
+        self.assertIsNone(event["detail"])
 
     def test_logout_cookie_is_always_secure(self):
         repo = SpyAuthRepo()
