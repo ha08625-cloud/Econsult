@@ -18,6 +18,12 @@ There are two diagrams here, deliberately at **different zoom levels**:
 | --- | --- | --- |
 | 1. Deployment view | *What separate things are running, and what do they talk to?* | Onboarding, deployment, "why is nothing being sent?" |
 | 2. Submission flow | *What actually happens when a patient submits a form?* | Debugging a stuck submission, planning changes to delivery |
+| 3. Layering | *Where does a given piece of code belong?* | Adding a feature, reviewing a PR, settling "should this go in the router?" |
+| 4. Admin portal | *How does an admin log in, and what can they reach?* | Auth changes, adding an admin screen, audit/compliance questions |
+
+Diagrams 1 and 2 are about **runtime** — what happens while the system is running.
+Diagrams 3 and 4 are about **code structure** — where things live. They're different
+kinds of map and it's worth not mixing them on one canvas.
 
 The single most common mistake with architecture diagrams is putting everything on
 one canvas. A diagram that shows all 60 modules is a picture of a hairball and tells
@@ -199,17 +205,246 @@ flowchart TD
 
 ---
 
+## Diagram 3 — Layering inside the web service
+
+*When I add a piece of code, where does it belong?*
+
+This is a **structure** map, not a runtime map. Nothing here happens in time order —
+it shows which module is allowed to call which. Only the web service is drawn; the
+workers have their own, much shorter chain.
+
+```mermaid
+graph TB
+    subgraph L1["1 · ROUTERS — validate, orchestrate, translate errors. No business logic."]
+        pub["<b>public_router</b><br/>/conditions · /availability<br/>/practice · /doctors"]
+        form["<b>form_router</b><br/>/form/init · /update · /finish"]
+        adm["<b>admin_router</b><br/>5 sub-routers · /admin/*"]
+        hook["<b>webhook_router</b><br/>/webhooks/mailgun"]
+    end
+
+    subgraph L2["2 · SERVICES — business logic"]
+        pres["presentation_service"]
+        avail["availability_service<br/>+ orchestration"]
+        authsvc["auth_service<br/><i>no DB access — repos<br/>passed in as arguments</i>"]
+        usersvc["user_service"]
+        pipe["<b>engine/pipeline.py</b><br/>pure · deterministic · no IO<br/>form_logic · ruleset · projection<br/>safety_engine · encoder_mapping<br/>serialisation · unit_conversion"]
+    end
+
+    subgraph L3["3 · REPOSITORIES — SQL only. One owner per table."]
+        repos["practice · availability · runtime_state · submission<br/>attachment · photo · pdf · delivery · auth · audit"]
+    end
+
+    db[("Postgres")]
+
+    pub --> pres
+    pub --> avail
+    form --> avail
+    form --> pipe
+    adm --> authsvc
+    adm --> usersvc
+    adm --> avail
+
+    pres --> repos
+    avail --> repos
+    usersvc --> repos
+    authsvc --> repos
+    form --> repos
+    adm --> repos
+    hook --> repos
+
+    repos --> db
+
+    classDef router fill:#e8f0fe,stroke:#4a6fa5,color:#111
+    classDef svc fill:#f3eafc,stroke:#8a5fbf,color:#111
+    classDef engine fill:#e9f7ef,stroke:#4a9a6f,color:#111
+    classDef repo fill:#fff4e5,stroke:#c98a2b,color:#111
+    class pub,form,adm,hook router
+    class pres,avail,authsvc,usersvc svc
+    class pipe engine
+    class repos,db repo
+```
+
+**Things this diagram is meant to make obvious:**
+
+- **The engine is the unusual layer.** It sits at service level but touches no
+  database and performs no IO — the same inputs always give the same outputs. That is
+  what makes the clinical logic testable without a database, and it is the reason
+  `file_structure.md` carries a list of banned imports protecting it.
+- **`auth_service` has no database access at all.** Repositories are passed to it as
+  arguments. Its arrow to the repository band is drawn for completeness, but the
+  dependency runs the other way round to everything else on the diagram.
+- **Several routers reach straight past the service layer to a repository.** That's
+  the crossing lines from `form_router` and `admin_router` down to band 3, and it is
+  accurate, not a drawing error. The service layer is only populated where there was
+  real logic to hold; simple reads and writes go direct. Worth being conscious of —
+  "we have three layers" is true in places and aspirational in others.
+- **Objects are not imported, they're injected.** `wiring.py` builds every repository
+  and service exactly once at startup and puts them on `app.state`; routers receive
+  them through `Depends(get_*)`. That's left off the canvas deliberately — it applies
+  to every arrow in band 1, so drawing it would add lines everywhere and shape
+  nowhere.
+
+---
+
+## Diagram 4 — Admin portal
+
+Two views again, for the same reason as diagram 2: one runtime, one structural.
+
+### 4a — Login (runtime)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Admin (browser)
+    participant R as admin_auth_router
+    participant S as auth_service
+    participant DB as Postgres
+    participant MG as Mailgun
+
+    Note over A,MG: Step 1 — password. Rate limited to 5/min.
+
+    A->>R: POST /admin/auth/login {email, password}
+    R->>S: verify_login_credentials()
+    S->>DB: read admin_users
+    Note right of S: timing-safe compare, with a dummy-hash path so a<br/>missing user costs the same as a wrong password
+
+    alt any failure — wrong password, no such user, locked, no password set
+        S-->>R: INVALID_CREDENTIALS
+        R->>DB: audit — auth.login.step1_failed
+        R-->>A: 422, generic message that hides which gate failed
+    else password correct
+        R->>DB: upsert admin_auth_codes (hashed OTP, 10 min TTL)
+        R->>MG: background task — email the 6-digit code
+        R->>DB: audit — auth.login.step1_succeeded
+        R-->>A: 200 {ok: true} — client switches to the OTP screen
+    end
+
+    Note over A,MG: Step 2 — one-time code
+
+    A->>R: POST /admin/auth/verify {email, code}
+    R->>S: verify_mfa_code()
+    S->>DB: check code, then INSERT admin_sessions + set last_login
+    R->>DB: audit — auth.login.succeeded
+    R-->>A: 200 + Set-Cookie session_id<br/>HttpOnly · Secure · SameSite=strict
+
+    Note over A,DB: Every later request
+
+    A->>R: any /admin/* request, cookie attached
+    R->>DB: require_admin — get_session_context(session_id)
+    Note right of R: 401 if absent, malformed or expired.<br/>On success the expiry is extended — idle timeout, not a hard cap.
+    R->>R: AdminContext {practice_id, user_id, actor_email}<br/>handed to the endpoint — this is what the audit log stamps
+    R-->>A: the endpoint's own response
+```
+
+**Things this diagram is meant to make obvious:**
+
+- **Two independent factors.** Password and one-time code are separate round trips.
+  Passing step 1 gets you no session — only step 2 issues the cookie.
+- **The failure branch is deliberately uninformative.** Every step-1 failure returns
+  the same 422 regardless of cause, so an attacker cannot use the response to discover
+  which email addresses are registered. The failure *is* recorded in the audit log —
+  just not disclosed to the caller.
+- **The OTP email is sent as a background task.** The response doesn't wait for
+  Mailgun. That's not only speed: making the caller wait would reintroduce a timing
+  difference between "user exists" and "user doesn't", undoing the point above.
+- **The session is an idle timeout, not a fixed lifetime.** Every authenticated
+  request extends it.
+
+### 4b — What an authenticated admin can reach (structure)
+
+```mermaid
+graph TB
+    subgraph UI["Admin UI · frontend/admin-ui — a second React bundle, served by the same web process"]
+        login["LoginView<br/>SetPasswordView"]
+        sign["SignpostingEditor"]
+        prac["PracticeSettingsTab"]
+        availui["AvailabilityEditor"]
+        users["UsersTab"]
+        auditui["AuditLogTab"]
+    end
+
+    guard{{"<b>require_admin</b> — the gate<br/>session cookie → AdminContext<br/>401 if absent, malformed or expired<br/>extends expiry on every hit"}}
+
+    subgraph RT["app/routers/admin/ — five sub-routers behind one thin admin_router"]
+        rauth["<b>admin_auth_router</b><br/><i>the only unauthenticated one</i><br/>login · verify · reset · logout"]
+        rprac["admin_practice_router<br/>signposting · settings · doctors"]
+        ravail["admin_availability_router<br/>weekly · overrides · exceptions"]
+        ruser["admin_user_router<br/>add · remove · resend invite"]
+        raudit["admin_audit_router<br/>read only"]
+    end
+
+    arepo[("auth_repo<br/>admin_users · sessions<br/>auth_codes · reset_tokens")]
+    prepo[("practice_repo<br/>practice · signposting<br/>doctors")]
+    vrepo[("availability_repo<br/>weekly · overrides<br/>exceptions")]
+    audrepo[("audit_repo<br/>admin_audit_log")]
+
+    login --> rauth
+    sign --> guard
+    prac --> guard
+    availui --> guard
+    users --> guard
+    auditui --> guard
+
+    guard --> rprac
+    guard --> ravail
+    guard --> ruser
+    guard --> raudit
+
+    rauth --> arepo
+    ruser --> arepo
+    rprac --> prepo
+    ruser --> prepo
+    ravail --> vrepo
+    raudit --> audrepo
+
+    rauth ==> audrepo
+    rprac ==> audrepo
+    ravail ==> audrepo
+    ruser ==> audrepo
+
+    classDef ui fill:#e8f0fe,stroke:#4a6fa5,color:#111
+    classDef rt fill:#f3eafc,stroke:#8a5fbf,color:#111
+    classDef repo fill:#fff4e5,stroke:#c98a2b,color:#111
+    classDef g fill:#fde8e8,stroke:#c0392b,color:#111
+    class login,sign,availui,prac,users,auditui ui
+    class rauth,rprac,ravail,ruser,raudit rt
+    class arepo,prepo,vrepo,audrepo repo
+    class guard g
+```
+
+Thick arrows are audit writes.
+
+**Things this diagram is meant to make obvious:**
+
+- **One gate, and exactly one router outside it.** `admin_auth_router` is
+  unauthenticated by necessity — you can't require a session to log in. Everything
+  else goes through `require_admin`. That makes the auth router the piece to look at
+  hardest in review.
+- **Every mutating router writes to the audit log.** The thick arrows all converge on
+  one table. Audit is a cross-cutting obligation, not a feature of one screen.
+- **The admin UI is a separate React bundle** from the patient app, but served by the
+  same web process — so it is not separately deployable, and shares the same origin.
+- **The admin surface only reaches four repositories.** No admin route touches
+  submissions, PDFs, photos or the delivery queues. Admins configure the practice;
+  they do not read patient data through this portal.
+
+---
+
 ## Open questions for the draft review
 
-1. **Zoom level.** Is diagram 1 at the right altitude, or would a version showing the
-   `router → service → repository` layering inside the web service be more useful for
-   the work you actually do?
-2. **Coverage.** These two skip the admin portal entirely (auth, MFA, availability
-   config, audit log). Worth a third diagram, or is that better as prose?
+1. **Which of these four earn their keep?** They cost more to maintain than they look.
+   My guess at the ranking by value-per-line-of-maintenance: 2 (submission flow) > 1
+   (deployment) > 4 (admin) > 3 (layering). Diagram 3 is the one most likely to drift,
+   because module structure changes far more often than process topology.
+2. **Diagram 3's honesty problem.** It shows routers reaching past the service layer.
+   That's accurate today. If that's a pattern you want to move away from, the diagram
+   is a useful record of the current state; if it's fine, the "3 layers" framing may be
+   overselling what's actually a 2-layer system with some services in it.
 3. **Maintenance.** A diagram nobody updates is worse than no diagram — it actively
-   misleads. Options: (a) keep it deliberately coarse so it changes rarely, (b) commit
-   to updating it whenever a process or queue is added, (c) treat it as a one-off
-   onboarding artefact and date-stamp it as such. I'd suggest (a).
+   misleads. Options: (a) keep them deliberately coarse so they change rarely, (b)
+   commit to updating whenever a process or queue is added, (c) treat them as one-off
+   onboarding artefacts and date-stamp them. I'd suggest (a) for 1 and 2, and either
+   dropping 3 or accepting it will need a refresh every few months.
 
 ## Known simplifications in this draft
 
@@ -221,3 +456,10 @@ flowchart TD
   that change where the PDF ends up.
 - Rate limiting, request-size limits and the Sentry wiring exist on the request path
   and are omitted from diagram 2 to keep the journey readable.
+- Diagram 3 collapses all ten repositories into one box. They are separate classes
+  with one table owner each — drawing them individually would triple the arrows
+  without changing the shape.
+- Diagram 3 covers the web service only. The workers have their own chain
+  (`worker loop → repositories → Postgres`) with no router or service layer at all.
+- Diagram 4a omits the password-reset and set-password flows, which share the
+  invitation-token path used when an admin is first added.
