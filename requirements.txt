@@ -13,7 +13,7 @@ Pillow==12.3.0
 bcrypt==4.2.1
 requests==2.33.0
 sentry-sdk[fastapi]
-slowapi==0.1.9
+slowapi==0.1.10
 limits==3.14.0
 zxcvbn==4.4.28
 pydantic-settings==2.14.1
