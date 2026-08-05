@@ -1,0 +1,120 @@
+{
+  "condition_id": "ent_epistaxis",
+
+  "presentation": {
+    "label": "Nosebleed",
+    "free_text_prompt": "Tell us about the nosebleed: when it started, which side, how much blood you've lost, and anything you've tried to stop it.",
+    "search_tags": ["nosebleed", "nose bleed", "epistaxis", "bleeding nose", "blood from nose", "nasal bleeding", "recurrent nosebleeds"]
+  },
+
+  "questions": [
+    {
+      "question_id": "ent_epistaxis_1",
+      "question": "Is the bleeding still continuing now, despite pinching the soft part of your nose firmly for 10-15 minutes?",
+      "answer_key": "active_bleeding_uncontrolled",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the nosebleed is still actively bleeding despite firm pressure for 10-15 minutes?",
+      "pdf_label": "Active uncontrolled bleeding"
+    },
+    {
+      "question_id": "ent_epistaxis_2",
+      "question": "Have you felt dizzy, lightheaded, or faint during this episode?",
+      "answer_key": "dizziness_faintness_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has felt dizzy, lightheaded, or faint during this nosebleed?",
+      "pdf_label": "Dizziness/faintness"
+    },
+    {
+      "question_id": "ent_epistaxis_3",
+      "question": "Did this nosebleed follow a blow or injury to the face or nose?",
+      "answer_key": "facial_trauma_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the nosebleed followed a facial or nasal injury?",
+      "pdf_label": "Facial trauma"
+    },
+    {
+      "question_id": "ent_epistaxis_4",
+      "question": "Are you taking any blood-thinning medication, such as warfarin, apixaban, rivaroxaban, clopidogrel, or aspirin?",
+      "answer_key": "anticoagulant_use",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient is taking blood-thinning medication such as warfarin, apixaban, rivaroxaban, clopidogrel, or aspirin?",
+      "pdf_label": "Anticoagulant use"
+    },
+    {
+      "question_id": "ent_epistaxis_5",
+      "question": "Do you have a known bleeding or clotting disorder, or have you noticed unusual bruising or bleeding from your gums elsewhere on your body?",
+      "answer_key": "bleeding_disorder_or_bruising_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate a known bleeding or clotting disorder, or unusual bruising or bleeding elsewhere on the body?",
+      "pdf_label": "Bleeding disorder/bruising"
+    },
+    {
+      "question_id": "ent_epistaxis_6",
+      "question": "How many separate nosebleeds have you had in the past month?",
+      "answer_key": "nosebleed_frequency_count",
+      "answer_type": "Number",
+      "send_to_encoder": false,
+      "encoder_prompt": null,
+      "decimal_places": 0,
+      "min": 0,
+      "max": 60,
+      "range_warning_text": "That's a lot of nosebleeds in a month - please double check this number."
+    },
+    {
+      "question_id": "ent_epistaxis_7",
+      "question": "Which side is the nosebleed on, and does blood ever run down the back of your throat?",
+      "answer_key": "nosebleed_description_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "ent_epistaxis_8",
+      "question": "Do you have high blood pressure that is not well controlled?",
+      "answer_key": "poorly_controlled_hypertension",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has high blood pressure that is not well controlled?"
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "ent_epistaxis_active_bleeding_urgent": {
+        "any": [
+          { "is_true": "active_bleeding_uncontrolled" }
+        ],
+        "message": "A nosebleed that will not stop after 10-15 minutes of firm pressure needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "ent_epistaxis_shock_urgent": {
+        "any": [
+          { "is_true": "dizziness_faintness_present" }
+        ],
+        "message": "Feeling dizzy, lightheaded, or faint with a nosebleed can be a sign of significant blood loss and needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "ent_epistaxis_trauma_urgent": {
+        "any": [
+          { "is_true": "facial_trauma_present" }
+        ],
+        "message": "A nosebleed following a facial or nasal injury needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "ent_epistaxis_anticoagulant_urgent": {
+        "any": [
+          { "is_true": "anticoagulant_use" }
+        ],
+        "message": "A nosebleed while taking blood-thinning medication needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      },
+      "ent_epistaxis_bleeding_disorder_urgent": {
+        "any": [
+          { "is_true": "bleeding_disorder_or_bruising_present" }
+        ],
+        "message": "A nosebleed with a known bleeding disorder, or alongside unusual bruising or bleeding elsewhere, needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      }
+    }
+  }
+}
