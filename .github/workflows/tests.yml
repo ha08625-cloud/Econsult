@@ -12,11 +12,13 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Detects whether anything other than markdown docs changed. Feeds unit/
-  # integration below so doc-only PRs skip the actual test run. This job
-  # always runs (no path filter on the workflow trigger itself), so unit/
-  # integration always report a status even when skipped -- safe for
-  # required status checks in branch protection.
+  # Splits changes into three paths: doc-only (skips everything), rulesets
+  # (data/** only -- runs ruleset-validation alone), and code (everything
+  # else -- runs unit/integration). A PR touching both code and data/ runs
+  # all three jobs. This job always runs (no path filter on the workflow
+  # trigger itself), so unit/integration/ruleset-validation always report a
+  # status even when skipped -- safe for required status checks in branch
+  # protection.
   # ---------------------------------------------------------------------------
   changes:
     name: Detect code changes
@@ -26,6 +28,7 @@ jobs:
       pull-requests: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      rulesets: ${{ steps.filter.outputs.rulesets }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -35,6 +38,32 @@ jobs:
             code:
               - '**'
               - '!**/*.md'
+              - '!data/**'
+            rulesets:
+              - 'data/**'
+
+  # ---------------------------------------------------------------------------
+  # Ruleset validation: builds the real data/ ruleset tree with no database.
+  # Mirrors what main.py does at import time via build_container().
+  # ---------------------------------------------------------------------------
+  ruleset-validation:
+    name: Ruleset validation
+    needs: changes
+    if: needs.changes.outputs.rulesets == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Validate committed rulesets
+        run: python -m pytest tests/test_data_rulesets.py -v
 
   # ---------------------------------------------------------------------------
   # Unit tests: Python (no database) + frontend Vitest
