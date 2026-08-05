@@ -1,0 +1,95 @@
+{
+  "condition_id": "mental_health_insomnia",
+
+  "presentation": {
+    "label": "Insomnia / trouble sleeping",
+    "free_text_prompt": "Tell us about your sleep problems: how long you've had them and how they're affecting you.",
+    "search_tags": ["insomnia", "trouble sleeping", "can't sleep", "sleepless", "sleep problems", "sleep aid", "melatonin", "poor sleep"]
+  },
+
+  "questions": [
+    {
+      "question_id": "mental_health_insomnia_1",
+      "question": "How long have you been having trouble sleeping?",
+      "answer_key": "insomnia_duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_insomnia_2",
+      "question": "Do you have difficulty falling asleep, staying asleep, or both?",
+      "answer_key": "insomnia_pattern_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_insomnia_3",
+      "question": "Is your lack of sleep affecting your ability to function during the day, such as at work or when driving?",
+      "answer_key": "daytime_impairment_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient's daytime functioning, work, or driving is impaired by lack of sleep?"
+    },
+    {
+      "question_id": "mental_health_insomnia_4",
+      "question": "Do you snore loudly, or has anyone noticed you stop breathing or gasp for air during sleep?",
+      "answer_key": "sleep_apnoea_symptoms_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate possible sleep apnoea symptoms such as loud snoring or witnessed breathing pauses?"
+    },
+    {
+      "question_id": "mental_health_insomnia_5",
+      "question": "Do you work night shifts or have an irregular sleep schedule?",
+      "answer_key": "shift_work_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_insomnia_6",
+      "question": "Do you regularly drink caffeine or alcohol, or use recreational drugs, especially in the evening?",
+      "answer_key": "stimulant_or_substance_use",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate regular evening caffeine, alcohol, or recreational drug use?"
+    },
+    {
+      "question_id": "mental_health_insomnia_7",
+      "question": "Are you currently taking any medication, or over-the-counter or herbal remedies, to help you sleep?",
+      "answer_key": "current_sleep_medication_use",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "mental_health_insomnia_8",
+      "question": "Have you been feeling low, anxious, or under significant stress recently?",
+      "answer_key": "low_mood_or_anxiety_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has been feeling low, anxious, or under significant stress?"
+    },
+    {
+      "question_id": "mental_health_insomnia_9",
+      "question": "Are you having any thoughts of harming yourself?",
+      "answer_key": "planned_self_harm",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is having thoughts of harming themselves or has plans to harm themselves?"
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "self_harm_risk": {
+        "any": [
+          { "is_true": "planned_self_harm" }
+        ],
+        "message": "This online consultation may take up to 24 hours to be reviewed. If you feel you are at risk of harming yourself, please do not wait. Call the surgery and ask to speak to the duty doctor, or contact the Samaritans at any time on 116 123."
+      }
+    }
+  }
+}
