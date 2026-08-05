@@ -52,8 +52,12 @@ The shape and constraints of the JSON ruleset files that define clinical behavio
   "safety": {
     "rules": {
       "<rule_id>": {
-        "any": [
-          { "is_true": "<answer_key>" }   // or "is_false"
+        "any": [                                  // top level is always "any", never "all"
+          { "is_true": "<answer_key>" },          // leaf: or "is_false"
+          { "all": [                              // group: nested "any" / "all", recursive
+              { "is_true": "<answer_key>" },
+              { "is_false": "<answer_key>" }
+          ] }
         ],
         "message": "<string>"
       }
@@ -88,11 +92,18 @@ Each quantity kind declares its own canonical system in the registry; `min`/`max
 
 **Authoring constraint: 4–6 labels per ruleset.** The block shows every labelled finding including negatives, because "asked and excluded" and "not mentioned" are clinically different facts. That only stays scannable if labels are reserved for red flags and the discriminators that change management. Labelling every question turns the block into a shorter copy of ANSWERS and defeats its purpose.
 
-**Safety rules use `"any"` (OR) semantics.** A rule fires if **any** clause in its `"any"` list is satisfied. This is the correct clinical behaviour: a single red flag answer should trigger the rule. The key must be `"any"`, not `"all"` — both the validator in `ruleset.py` and the engine in `safety_engine.py` read this key.
+**Safety rules use `"any"` (OR) semantics at the top level.** A rule fires if **any** clause in its `"any"` list is satisfied. This is the correct clinical behaviour: a single red flag answer should trigger the rule. A rule's own top-level key must be `"any"`, never `"all"` — both the validator in `ruleset.py` and the engine in `safety_engine.py` read that key, and a rule authored with `"all"` at the top aborts startup. Inside the list, `"all"` is legal as a nested group (see below); a whole-rule AND is therefore authored as `{"any": [{"all": [...]}]}`, which keeps every rule readable as a flat list of independent triggers.
 
-**Safety clauses have a strict, closed shape.** Each clause in a rule's `any` list must be an object containing exactly one of `is_true` or `is_false` — not both, not neither, and no other keys. Its value must be a string referencing a declared `answer_key`, and that `answer_key`'s `answer_type` must be `"Boolean"`. A clause pointing at a `text` or `Number` question is rejected at startup, because a True/False comparison against a non-Boolean answer can never match and the rule would silently never fire. Validated at startup by `ruleset.py`.
+**Safety clauses have a strict, closed, recursive shape.** A clause is an object containing **exactly one** of `is_true`, `is_false`, `any`, or `all` — not two, not none, and no other keys. This holds at every nesting depth, and it is what stops a clause like `{"is_true": "x", "all": [...]}` from letting key-dispatch order silently decide clinical meaning.
 
-**Safety rules reference only declared `answer_key`s.** Every key used in a safety rule's `any` clause must exist in the `questions` list. Validated at startup.
+- **Leaves** (`is_true` / `is_false`) take a string naming a declared `answer_key` whose `answer_type` is `"Boolean"`. A clause pointing at a `text` or `Number` question is rejected at startup, because a True/False comparison against a non-Boolean answer can never match and the rule would silently never fire.
+- **Groups** (`any` / `all`) take a **non-empty** list of further clauses, evaluated recursively.
+
+Empty groups are rejected, and this is the constraint most likely to look pedantic to an author. It is not. Python evaluates `all([])` to `True`, so a clause of `{"all": []}` is satisfied unconditionally: it would fire its rule for **every** patient and block every submission on that condition with a message no answer can clear. Its mirror, `{"any": []}`, is `False` and so silently never fires. One is unusable, the other is invisible; neither may reach a running deployment.
+
+Nesting is capped at `MAX_SAFETY_CLAUSE_DEPTH` (3 in `ruleset.py`), counting the rule's own `any` list as level 1. The cap is about legibility, not stack safety — a ruleset is finite authored JSON. Three levels expresses anything realistic (an `any` of `all`s of `any`s) while staying reviewable by a clinician in one pass; needing a fourth is a sign the rule should be split in two. All of the above is validated at startup by `ruleset.py`.
+
+**Safety rules reference only declared `answer_key`s.** Every key used in a safety rule leaf must exist in the `questions` list. This holds at every nesting depth — the declared-key and Boolean checks recurse into nested `any` / `all` groups, so a leaf buried three levels down is checked exactly as strictly as one written directly in the rule's `any` list. Validated at startup.
 
 **`answer_key`s must be unique within a ruleset.** Duplicate keys are rejected at startup.
 
