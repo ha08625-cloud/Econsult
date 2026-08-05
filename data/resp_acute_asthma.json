@@ -1,0 +1,144 @@
+{
+  "condition_id": "acute_asthma",
+
+  "presentation": {
+    "label": "Asthma (acute episode)",
+    "free_text_prompt": "Tell us about your asthma symptoms and when they started.",
+    "search_tags": ["asthma", "wheeze", "wheezy", "inhaler", "reliever", "puffer", "chest tight", "chest tightness", "breathless", "shortness of breath", "peak flow", "salbutamol", "ventolin", "flare up", "exacerbation"]
+  },
+
+  "questions": [
+    {
+      "question_id": "asthma_1",
+      "question": "Do you have a diagnosis of asthma?",
+      "answer_key": "known_asthma_diagnosis",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has a diagnosis of asthma?",
+      "pdf_label": "Known asthma"
+    },
+    {
+      "question_id": "asthma_2",
+      "question": "Are you feeling short of breath at rest, or unable to speak in full sentences?",
+      "answer_key": "severe_breathlessness_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient is short of breath at rest or unable to speak in full sentences?",
+      "pdf_label": "SOB at rest / cannot complete sentences"
+    },
+    {
+      "question_id": "asthma_3",
+      "question": "Are your lips or face turning blue?",
+      "answer_key": "cyanosis_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has cyanosis (blue lips or face)?",
+      "pdf_label": "Cyanosis"
+    },
+    {
+      "question_id": "asthma_4",
+      "question": "Have you used your reliever (blue) inhaler in the last few hours?",
+      "answer_key": "reliever_inhaler_used",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has used their reliever inhaler in the last few hours?"
+    },
+    {
+      "question_id": "asthma_5",
+      "question": "Is your reliever inhaler giving you less relief than usual, or wearing off more quickly?",
+      "answer_key": "reliever_response_reduced",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient's reliever inhaler is giving less relief than usual or wearing off more quickly?",
+      "pdf_label": "Reduced reliever response"
+    },
+    {
+      "question_id": "asthma_6",
+      "question": "How many puffs of your reliever inhaler have you needed today?",
+      "answer_key": "reliever_puffs_today",
+      "answer_type": "Number",
+      "send_to_encoder": false,
+      "encoder_prompt": null,
+      "pdf_label": "Reliever puffs today",
+      "decimal_places": 0,
+      "min": 0,
+      "max": 50,
+      "range_warning_text": "This is a higher number of puffs than expected. If you have needed significantly more reliever than usual, please seek urgent medical advice."
+    },
+    {
+      "question_id": "asthma_7",
+      "question": "Have you woken up at night because of your asthma symptoms?",
+      "answer_key": "nocturnal_symptoms_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has woken at night because of asthma symptoms?"
+    },
+    {
+      "question_id": "asthma_8",
+      "question": "Is your asthma limiting your ability to do your normal daily activities?",
+      "answer_key": "activity_limitation_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient's asthma is limiting their normal daily activities?"
+    },
+    {
+      "question_id": "asthma_9",
+      "question": "Have you had a cough, cold, or chest infection recently?",
+      "answer_key": "recent_infection_trigger",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had a recent cough, cold, or chest infection that may have triggered their asthma?"
+    },
+    {
+      "question_id": "asthma_10",
+      "question": "Have you had chest pain?",
+      "answer_key": "chest_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had chest pain?"
+    },
+    {
+      "question_id": "asthma_11",
+      "question": "Have you had a fever?",
+      "answer_key": "fever_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had a fever?"
+    },
+    {
+      "question_id": "asthma_12",
+      "question": "Have you ever been admitted to hospital or needed steroid tablets for your asthma?",
+      "answer_key": "previous_severe_exacerbation_history",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has previously been admitted to hospital or needed oral steroids for their asthma?",
+      "pdf_label": "Hx severe exacerbation"
+    },
+    {
+      "question_id": "asthma_13",
+      "question": "How long have you had these symptoms?",
+      "answer_key": "duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "severe_breathlessness_safety": {
+        "any": [
+          { "is_true": "severe_breathlessness_present" },
+          { "is_true": "cyanosis_present" }
+        ],
+        "message": "This form is for routine issues and it may take several days to receive a response. If you are struggling to breathe, unable to speak in full sentences, or your lips or face are turning blue, this is a medical emergency - call 999 or go to A&E immediately."
+      },
+      "reduced_reliever_response_safety": {
+        "any": [
+          { "is_true": "reliever_response_reduced" }
+        ],
+        "message": "This form is for routine issues and it may take several days to receive a response. If your reliever inhaler is not helping as much as usual, phone the duty doctor or NHS 111 instead of submitting this form."
+      }
+    }
+  }
+}
