@@ -1,0 +1,125 @@
+{
+  "condition_id": "chest_palpitations",
+
+  "presentation": {
+    "label": "Palpitations",
+    "free_text_prompt": "Tell us about your palpitations and when they started.",
+    "search_tags": ["palpitations", "heart racing", "pounding heart", "skipped beats", "fluttering", "irregular heartbeat", "fast heart rate", "heart flutter"]
+  },
+
+  "questions": [
+    {
+      "question_id": "chest_palpitations_1",
+      "question": "Do you have chest pain along with the palpitations?",
+      "answer_key": "palpitations_chest_pain",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has chest pain along with the palpitations?",
+      "pdf_label": "Chest pain"
+    },
+    {
+      "question_id": "chest_palpitations_2",
+      "question": "Have you felt faint, dizzy, or lost consciousness during an episode?",
+      "answer_key": "palpitations_syncope",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has felt faint, dizzy, or lost consciousness during an episode of palpitations?",
+      "pdf_label": "Faint/dizzy/LOC"
+    },
+    {
+      "question_id": "chest_palpitations_3",
+      "question": "Are you short of breath during the palpitations?",
+      "answer_key": "palpitations_breathless",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is short of breath during the palpitations?",
+      "pdf_label": "Breathless"
+    },
+    {
+      "question_id": "chest_palpitations_4",
+      "question": "Do the palpitations happen during exercise or physical exertion?",
+      "answer_key": "palpitations_on_exertion",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the palpitations occur during exercise or physical exertion?",
+      "pdf_label": "Exertional"
+    },
+    {
+      "question_id": "chest_palpitations_5",
+      "question": "Do you have any known heart condition, such as an irregular heart rhythm or heart failure?",
+      "answer_key": "known_heart_condition",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has a known heart condition, such as an irregular heart rhythm or heart failure?",
+      "pdf_label": "Known heart condition"
+    },
+    {
+      "question_id": "chest_palpitations_6",
+      "question": "Has anyone in your close family died suddenly or unexpectedly from a heart problem at a young age?",
+      "answer_key": "family_history_sudden_cardiac_death",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate a close family member died suddenly or unexpectedly from a heart problem at a young age?",
+      "pdf_label": "FHx sudden death"
+    },
+    {
+      "question_id": "chest_palpitations_7",
+      "question": "Does the palpitations feel like a fast, regular heartbeat, or an irregular, skipping heartbeat?",
+      "answer_key": "palpitations_rhythm_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "chest_palpitations_8",
+      "question": "How long do the episodes last, and how often do they happen?",
+      "answer_key": "palpitations_duration_frequency_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "chest_palpitations_9",
+      "question": "Have you noticed any triggers, such as caffeine, alcohol, stress, or anxiety?",
+      "answer_key": "palpitations_triggers_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "palpitations_chest_pain_urgent": {
+        "any": [
+          { "is_true": "palpitations_chest_pain" }
+        ],
+        "message": "Palpitations with chest pain can be a sign of a serious heart problem. Call 999 or go to A&E instead of sending an online form."
+      },
+      "palpitations_syncope_urgent": {
+        "any": [
+          { "is_true": "palpitations_syncope" }
+        ],
+        "message": "Palpitations with fainting, dizziness, or loss of consciousness can be a sign of a serious heart rhythm problem. Call 999 or go to A&E instead of sending an online form."
+      },
+      "palpitations_breathless_urgent": {
+        "any": [
+          { "is_true": "palpitations_breathless" }
+        ],
+        "message": "Palpitations with shortness of breath need urgent assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      },
+      "palpitations_exertional_urgent": {
+        "any": [
+          { "is_true": "palpitations_on_exertion" }
+        ],
+        "message": "Palpitations triggered by exercise or exertion can be a sign of a serious heart condition. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      },
+      "palpitations_family_history_urgent": {
+        "any": [
+          { "is_true": "family_history_sudden_cardiac_death" }
+        ],
+        "message": "A family history of sudden cardiac death raises the possibility of an inherited heart condition. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      }
+    }
+  }
+}
