@@ -1,0 +1,106 @@
+{
+  "condition_id": "dermatology_skin_lesion",
+
+  "presentation": {
+    "label": "Skin lesion",
+    "free_text_prompt": "Tell us about the lump or mark and when it started. It may be useful to say if it is painful or itchy, if it is bleeding or crusty, whether it is growing or changing, and also whether there is a personal or family history of skin cancer.",
+    "search_tags": ["mole", "skin lesion", "lump", "growth", "skin cancer", "melanoma", "new mole", "changing mole", "skin growth", "bump", "nodule"]
+  },
+
+  "questions": [
+    {
+      "question_id": "dermatology_skin_lesion_1",
+      "question": "How long have you had this lesion, and did it appear recently or has it been there for a long time?",
+      "answer_key": "lesion_duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_skin_lesion_2",
+      "question": "Roughly how big is the lesion, in millimetres, at its widest point?",
+      "answer_key": "lesion_size_mm",
+      "answer_type": "Number",
+      "decimal_places": 0,
+      "min": 1,
+      "max": 300,
+      "range_warning_text": "That size is outside the usual range. Please check you have entered it correctly.",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_skin_lesion_3",
+      "question": "Has the lesion changed in size, shape or colour recently?",
+      "answer_key": "lesion_change_size_shape_colour",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the lesion has recently changed in size, shape or colour?",
+      "pdf_label": "Change in size/shape/colour"
+    },
+    {
+      "question_id": "dermatology_skin_lesion_4",
+      "question": "Does the lesion have an irregular or asymmetrical shape, or an irregular border?",
+      "answer_key": "lesion_irregular_asymmetrical_shape",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the lesion has an irregular or asymmetrical shape, or an irregular border?",
+      "pdf_label": "Irregular/asymmetrical shape"
+    },
+    {
+      "question_id": "dermatology_skin_lesion_5",
+      "question": "Does the lesion contain more than one colour, or has it become darker or more varied in colour?",
+      "answer_key": "lesion_multiple_or_darkening_colours",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the lesion contains more than one colour, or has become darker or more varied in colour?",
+      "pdf_label": "Multiple/darkening colours"
+    },
+    {
+      "question_id": "dermatology_skin_lesion_6",
+      "question": "Is the lesion bleeding, crusting, or failing to heal?",
+      "answer_key": "lesion_bleeding_crusting_not_healing",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the lesion is bleeding, crusting, or failing to heal?",
+      "pdf_label": "Bleeding/crusting/not healing"
+    },
+    {
+      "question_id": "dermatology_skin_lesion_7",
+      "question": "Is the lesion itchy, painful, or has it changed in sensation, for example becoming tender or tingly?",
+      "answer_key": "lesion_itch_pain_sensation_change",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the lesion is itchy or painful, or has changed in sensation?"
+    },
+    {
+      "question_id": "dermatology_skin_lesion_8",
+      "question": "Have you or a close family member ever been diagnosed with skin cancer, including melanoma?",
+      "answer_key": "personal_or_family_skin_cancer_history",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate a personal or family history of skin cancer, including melanoma?"
+    },
+    {
+      "question_id": "dermatology_skin_lesion_9",
+      "question": "Do you have a condition or take any medication that weakens your immune system, for example after an organ transplant or while having chemotherapy?",
+      "answer_key": "immunosuppressed",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient is immunosuppressed, for example due to a transplant or chemotherapy?"
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "suspicious_lesion_features_safety": {
+        "any": [
+          { "is_true": "lesion_change_size_shape_colour" },
+          { "is_true": "lesion_irregular_asymmetrical_shape" },
+          { "is_true": "lesion_multiple_or_darkening_colours" },
+          { "is_true": "lesion_bleeding_crusting_not_healing" }
+        ],
+        "message": "One or more of your answers could indicate a lesion that needs urgent assessment for possible skin cancer. Please call the surgery and ask to speak to the duty doctor instead of sending an online form, so that you can be assessed and referred urgently if needed."
+      }
+    }
+  }
+}
