@@ -1,0 +1,107 @@
+{
+  "condition_id": "joint_pain",
+
+  "presentation": {
+    "label": "Joint pain",
+    "free_text_prompt": "Tell us which joint(s) are affected, when the pain started and how it has been affecting you.",
+    "search_tags": ["joint pain", "joint", "knee", "hip", "shoulder", "elbow", "wrist", "ankle", "finger", "swelling", "stiffness", "arthritis", "sprain"]
+  },
+
+  "questions": [
+    {
+      "question_id": "joint_pain_1",
+      "question": "Which joint or joints are affected?",
+      "answer_key": "affected_joint_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "joint_pain_2",
+      "question": "Was the pain caused by an injury or accident?",
+      "answer_key": "injury_related",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the joint pain was caused by an injury or accident?",
+      "pdf_label": "Injury related"
+    },
+    {
+      "question_id": "joint_pain_3",
+      "question": "Is the joint hot, red or swollen?",
+      "answer_key": "joint_hot_red_swollen",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the affected joint is hot, red or swollen?",
+      "pdf_label": "Hot/red/swollen joint"
+    },
+    {
+      "question_id": "joint_pain_4",
+      "question": "Do you have a fever or feel generally unwell?",
+      "answer_key": "fever_or_unwell",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has a fever or feels generally unwell?",
+      "pdf_label": "Fever/unwell"
+    },
+    {
+      "question_id": "joint_pain_5",
+      "question": "Are you unable to move the joint or put weight through it?",
+      "answer_key": "unable_to_use_joint",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient is unable to move the joint or bear weight through it?",
+      "pdf_label": "Unable to use joint"
+    },
+    {
+      "question_id": "joint_pain_6",
+      "question": "Does the joint look deformed or out of place?",
+      "answer_key": "joint_deformity",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the affected joint looks deformed or out of place?",
+      "pdf_label": "Deformity"
+    },
+    {
+      "question_id": "joint_pain_7",
+      "question": "Have you been diagnosed with cancer?",
+      "answer_key": "cancer_diagnosis",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has been diagnosed with cancer?",
+      "pdf_label": "Cancer history"
+    },
+    {
+      "question_id": "joint_pain_8",
+      "question": "How long have these symptoms been going on for?",
+      "answer_key": "duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "septic_arthritis_safety": {
+        "any": [
+          { "is_true": "joint_hot_red_swollen" },
+          { "is_true": "fever_or_unwell" }
+        ],
+        "message": "One or more of your answers could indicate an infection in the joint, which needs urgent assessment. Do not use this form which is for routine queries and may not be answered urgently enough."
+      },
+      "fracture_dislocation_safety": {
+        "any": [
+          { "is_true": "unable_to_use_joint" },
+          { "is_true": "joint_deformity" }
+        ],
+        "message": "One or more of your answers could indicate a fracture or dislocation, which needs urgent assessment. Do not use this form which is for routine queries and may not be answered urgently enough."
+      },
+      "cancer_history_safety": {
+        "any": [
+          { "is_true": "cancer_diagnosis" }
+        ],
+        "message": "One or more of your answers could indicate a more serious cause of your joint pain and you should speak to the duty doctor urgently. Do not use this form which is for routine queries and may not be answered urgently enough."
+      }
+    }
+  }
+}
