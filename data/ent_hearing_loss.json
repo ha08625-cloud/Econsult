@@ -1,0 +1,176 @@
+{
+  "condition_id": "ent_hearing_loss",
+
+  "presentation": {
+    "label": "Hearing loss",
+    "free_text_prompt": "Tell us about the hearing loss: when it started, which ear(s) are affected, how sudden it was, and whether you've had any other ear symptoms like pain, discharge, ringing, or dizziness.",
+    "search_tags": ["hearing loss", "deafness", "can't hear", "muffled hearing", "reduced hearing", "hard of hearing", "sudden hearing loss", "blocked ear", "hearing problems", "tinnitus", "ear blocked"]
+  },
+
+  "questions": [
+    {
+      "question_id": "ent_hearing_loss_1",
+      "question": "Did the hearing loss come on suddenly, over minutes to hours, or within the last 3 days?",
+      "answer_key": "sudden_onset_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the hearing loss came on suddenly, over minutes to hours, or within the last 3 days?",
+      "pdf_label": "Sudden onset (<=72 hours)"
+    },
+    {
+      "question_id": "ent_hearing_loss_2",
+      "question": "Is the hearing loss affecting one ear only, or both ears?",
+      "answer_key": "unilateral_hearing_loss",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the hearing loss is affecting only one ear (unilateral) rather than both ears?",
+      "pdf_label": "Unilateral"
+    },
+    {
+      "question_id": "ent_hearing_loss_3",
+      "question": "Did the hearing loss follow a head or ear injury, a very loud noise exposure, or a change in air pressure such as flying or diving?",
+      "answer_key": "trauma_or_barotrauma_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the hearing loss followed a head or ear injury, loud noise exposure, or a pressure change such as flying or diving?",
+      "pdf_label": "Trauma/barotrauma/noise exposure"
+    },
+    {
+      "question_id": "ent_hearing_loss_4",
+      "question": "Do you have any new weakness or numbness in your face, arm, or leg, slurred speech, double vision, or problems with balance alongside the hearing loss?",
+      "answer_key": "neuro_symptoms_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate new facial, arm, or leg weakness/numbness, slurred speech, double vision, or balance problems alongside the hearing loss?",
+      "pdf_label": "Neurological symptoms"
+    },
+    {
+      "question_id": "ent_hearing_loss_5",
+      "question": "Do you have severe spinning dizziness (vertigo), especially with vomiting, alongside the hearing loss?",
+      "answer_key": "severe_vertigo_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate severe spinning vertigo, especially with vomiting, alongside the hearing loss?",
+      "pdf_label": "Severe vertigo"
+    },
+    {
+      "question_id": "ent_hearing_loss_6",
+      "question": "Do you have ear pain, swelling, or discharge along with a fever or feeling generally unwell?",
+      "answer_key": "infective_symptoms_with_fever",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate ear pain, swelling, or discharge together with a fever or feeling generally unwell?",
+      "pdf_label": "Infective symptoms with fever"
+    },
+    {
+      "question_id": "ent_hearing_loss_7",
+      "question": "Have you noticed any weakness or drooping of one side of your face?",
+      "answer_key": "facial_weakness_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate weakness or drooping of one side of the face?",
+      "pdf_label": "Facial weakness"
+    },
+    {
+      "question_id": "ent_hearing_loss_8",
+      "question": "Has the hearing loss been coming on gradually over months or years, rather than suddenly?",
+      "answer_key": "gradual_onset_pattern",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate a gradual pattern of hearing loss developing over months or years rather than a sudden onset?"
+    },
+    {
+      "question_id": "ent_hearing_loss_9",
+      "question": "Do you have ringing, buzzing, or other noise in the ear (tinnitus)?",
+      "answer_key": "tinnitus_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate ringing, buzzing, or other noise in the ear (tinnitus)?"
+    },
+    {
+      "question_id": "ent_hearing_loss_10",
+      "question": "Does the ear feel blocked or full, as if it needs to pop, or have you had a cold or blocked nose recently?",
+      "answer_key": "blocked_sensation_or_recent_urti",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate a blocked or full sensation in the ear, or a recent cold or blocked nose?"
+    },
+    {
+      "question_id": "ent_hearing_loss_11",
+      "question": "How many days, weeks, or months have you had the hearing loss for?",
+      "answer_key": "hearing_loss_duration_weeks",
+      "answer_type": "Number",
+      "send_to_encoder": false,
+      "encoder_prompt": null,
+      "decimal_places": 0,
+      "min": 0,
+      "max": 520,
+      "range_warning_text": "That's a very long time to have had this symptom - please double check this number."
+    },
+    {
+      "question_id": "ent_hearing_loss_12",
+      "question": "Is there anything else about the hearing loss you'd like to describe, such as which ear is worse or what makes it better or worse?",
+      "answer_key": "hearing_loss_description_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "ent_hearing_loss_sudden_unilateral_urgent": {
+        "any": [
+          {
+            "all": [
+              { "is_true": "sudden_onset_present" },
+              { "is_true": "unilateral_hearing_loss" }
+            ]
+          }
+        ],
+        "message": "Sudden hearing loss in one ear can be sudden sensorineural hearing loss, which needs assessment and treatment within 24-48 hours to give the best chance of recovery. Call the surgery today, or go to A&E/an emergency ENT service if the surgery is closed, instead of sending an online form."
+      },
+      "ent_hearing_loss_sudden_bilateral_urgent": {
+        "any": [
+          {
+            "all": [
+              { "is_true": "sudden_onset_present" },
+              { "is_false": "unilateral_hearing_loss" }
+            ]
+          }
+        ],
+        "message": "Sudden hearing loss needs prompt assessment. Call the surgery and ask to speak to the duty doctor today instead of sending an online form."
+      },
+      "ent_hearing_loss_neuro_symptoms_urgent": {
+        "any": [
+          { "is_true": "neuro_symptoms_present" }
+        ],
+        "message": "Hearing loss with new weakness, numbness, slurred speech, double vision, or balance problems can be a sign of stroke and needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "ent_hearing_loss_facial_weakness_urgent": {
+        "any": [
+          { "is_true": "facial_weakness_present" }
+        ],
+        "message": "Hearing loss with weakness or drooping on one side of the face needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "ent_hearing_loss_severe_vertigo_urgent": {
+        "any": [
+          { "is_true": "severe_vertigo_present" }
+        ],
+        "message": "Hearing loss with severe spinning dizziness and vomiting needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      },
+      "ent_hearing_loss_trauma_urgent": {
+        "any": [
+          { "is_true": "trauma_or_barotrauma_present" }
+        ],
+        "message": "Hearing loss following a head or ear injury, loud noise exposure, or a pressure change needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      },
+      "ent_hearing_loss_infective_symptoms_urgent": {
+        "any": [
+          { "is_true": "infective_symptoms_with_fever" }
+        ],
+        "message": "Ear pain, swelling, or discharge with a fever or feeling generally unwell needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      }
+    }
+  }
+}
