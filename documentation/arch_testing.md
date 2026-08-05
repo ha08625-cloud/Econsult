@@ -71,9 +71,21 @@ Tests that exercise the full request pipeline or repository layer against a live
 pytestmark = pytest.mark.integration
 ```
 
-This line must appear in every integration test file, after the `TEST_DATABASE_URL` guardrail block. pytest discovers all integration tests automatically via `-m integration`. No changes to `Makefile` or `ci.yml` are needed when adding a new integration test file — only the marker is required.
+This line must appear in every integration test file, after the `TEST_DATABASE_URL` guardrail block. pytest discovers all integration tests automatically via `-m integration`. No changes to `Makefile` or `tests.yml` are needed when adding a new integration test file — only the marker is required. (This does not apply to the ruleset-validation job below, which dispatches on changed paths rather than pytest markers.)
 
 The marker is registered in `pytest.ini` at the project root.
+
+### CI job layout (`.github/workflows/tests.yml`)
+
+A `changes` job runs `dorny/paths-filter` unconditionally and produces two booleans that gate the three test jobs:
+
+| Job | Gated on | Runs |
+|---|---|---|
+| `ruleset-validation` | `data/**` changed | `pytest tests/test_data_rulesets.py` only — no database, no ruff, no frontend |
+| `unit` | any non-doc, non-`data/**` change | ruff, `pytest tests/ -m "not integration"`, `tsc --noEmit`, Vitest |
+| `integration` | same filter as `unit` | Postgres-backed `pytest tests/ -m integration` |
+
+The filters are independent booleans, not an if/else, so a PR touching both `data/**` and `.py` files runs all three jobs. A PR touching only `data/**` runs `ruleset-validation` alone; a doc-only PR runs none of them. GitHub treats a job skipped by an `if:` condition as a passing required status check, so this is safe to depend on in branch protection — see the comment at the top of `.github/workflows/tests.yml`. When adding a fourth job, follow this pattern: add or reuse a `paths-filter` output, gate the job on it via `needs: changes` + `if:`, and keep the job itself narrowly scoped to what that path actually needs.
 
 **Integration status is conferred by the marker, not by directory.** All Python integration test files live flat in `tests/` alongside the unit tests. There is no `tests/integration/` folder.
 
@@ -122,7 +134,8 @@ Runner: `pytest tests/ -m "not integration"`. None of these touch a database or 
 | `test_http_utils.py` | `app/utils/http_utils.py` | Table-driven coverage of `extract_ip`'s right-to-left, globally-routable-only `X-Forwarded-For` trust walk: spoofed/private leftmost entries ignored, `x-real-ip` and `client_host` fallbacks, malformed entries, no-headers and nothing-determinable cases. |
 | `test_form_logic.py` | `engine/form_logic` | Number answer validation and normalisation tiers; answer provenance (`apply_patient_answers` deriving `source`, idempotency, `normalise_encoder_provenance` promotion and selectivity). |
 | `test_projection.py` | `engine/projection` | Locks `EXPLICIT_SOURCES` membership and the `None`-projection of every excluded source (raw `encoder`, `unanswered`). |
-| `test_ruleset.py` | `engine/ruleset` | Fail-fast startup validation of Number-question and `answer_type` configuration (quantity/unit-system rules); `load_ruleset` per-path caching. Also `pdf_label` validation: non-empty string, rejected on text questions, unique within the ruleset. |
+| `test_ruleset.py` | `engine/ruleset` | Fail-fast startup validation of Number-question and `answer_type` configuration (quantity/unit-system rules); `load_ruleset` per-path caching. Also `pdf_label` validation: non-empty string, rejected on text questions, unique within the ruleset. All fixtures are synthetic, built in-test — it validates the *rules*, not the committed data. |
+| `test_data_rulesets.py` | The real `data/` tree | Loads every committed ruleset via `ConditionRegistry` and runs `validate_rulesets` on it — the same two calls `build_container` makes at `app/core/wiring.py:189`, before any repository exists, so it reproduces the startup contract with no database. Where `test_ruleset.py` validates the schema rules against synthetic fixtures, this file validates the real committed JSON against those rules. Also asserts the registry's discovered-condition count matches the on-disk `*.json` count, and that condition ids pinned by other tests by name (currently `numeric_capability_demo`, hardcoded in `tests/test_form_routes.py`) still exist. It carries no `integration` marker, so it runs in `make test` and in CI's `unit` job like any other unit test — but it is also the **sole** gate on a rulesets-only PR (see CI job layout below), since `test_form_routes.py` skips itself without `TEST_DATABASE_URL`. |
 | `test_serialisation.py` | `engine/serialisation` | Number-field passthrough in the client view (`decimal_places`/min/max/warning text), omission for other types, `current_value` as stored string; `change_count` surfaces only in `AuditOutput`. Quantity coverage: toggle fields on the client view, `current_value` as `{system, components}` with string components for both systems, null-but-present shape when unanswered, the `quantity_answers` sidecar on `ClinicalOutput`, and `from_dict` round-tripping the sidecar's four keys (`quantity_kind`, `raw_components`, `unit_system`, `decimal_places`). `pdf_labels` coverage: collected from authored labels only, empty when none authored, and round-tripped through `from_dict` (with the legacy-record case asserting an empty dict). |
 | `test_unit_conversion.py` | `engine/unit_conversion` | Exactness of `imperial_weight_to_kg` and the whole/non-negative component guards (raises `ValueError`; domain translation happens in `form_logic`). |
 | `test_request_validation.py` | `request_validation.validate_patient_details` | All validation paths: DOB numeric checks and calendar assembly, future-date rejection, postcode format, submitter conditionals, gender/`nhs_number`/`preferred_name`. |
@@ -159,7 +172,7 @@ Runner: `make test-integration`. Shape refers to the Guardrail variants above.
 | File | Shape | Subject under test | Scope |
 |---|---|---|---|
 | `test_db_integration.py` | 1 | `app/core/db.py` timeouts as the server applies them | `SHOW statement_timeout` / `SHOW idle_in_transaction_session_timeout` reflect the settings, an override is not sticky across connections, `pg_sleep` past the timeout raises `QueryCanceled` (not a masked `InterfaceError`), and `connect_timeout` bounds an unroutable host. Separate from `test_db.py` because the guardrail and marker are module-scoped and would otherwise skip the unit tests too. |
-| `test_form_routes.py` | 1 | Full form-session pipeline | End-to-end happy path via FastAPI TestClient, delivery failure behaviour, availability fail-open, photo upload validation. Defines `MockDeliveryService` (see Design Decisions). |
+| `test_form_routes.py` | 1 | Full form-session pipeline | End-to-end happy path via FastAPI TestClient, delivery failure behaviour, availability fail-open, photo upload validation. Defines `MockDeliveryService` (see Design Decisions). Hardcodes `NUMERIC_DEMO_CONDITION_ID = "numeric_capability_demo"` and depends on `data/numeric_capability_demo.json`'s `patient_weight_kg` answer key for its quantity boundary tests; that condition id's existence is now also asserted by `test_data_rulesets.py`, so a rulesets-only PR that deletes or renames it fails fast instead of merging green. |
 | `test_public_routes.py` | 1 | Public (unauthenticated) endpoints | Full HTTP-to-database path via TestClient. Imports `main.py` directly, triggering `alembic_upgrade()` at import; uses `DATABASE_URL` rather than `TEST_DATABASE_URL` because it exercises the full app startup path. |
 | `test_repositories.py` | 1 | `RuntimeStateRepository`, `PracticeRepository`, `SubmissionRepository`, `AttachmentRepository` | Repository-layer persistence; each test creates unique IDs and cleans up in a `finally` block. |
 | `test_pipeline_repositories.py` | 1 | `PDFRepository`, `DeliveryRepository`, `PhotoRepository` | Direct exercise of `pdf_jobs`, `delivery_jobs`, `submission_photos`; `claim_next_pending` eligibility via backdated `next_retry_after`. No HTTP layer. |
