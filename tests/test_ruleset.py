@@ -463,7 +463,7 @@ def test_rejects_duplicate_pdf_label():
 
 
 # ---------------------------------------------------------------------------
-# Safety clause shape (is_true / is_false)
+# Safety clause shape (is_true / is_false / any / all)
 # ---------------------------------------------------------------------------
 
 
@@ -522,6 +522,8 @@ def test_rejects_clause_with_both_keys():
 
 
 def test_rejects_clause_with_neither_key():
+    # A clause must carry exactly one of the four clause keys
+    # (is_true / is_false / any / all); an empty object carries none.
     with pytest.raises(ValueError, match="exactly one"):
         validate_ruleset(_with_safety_rule([{}]))
 
@@ -567,11 +569,117 @@ def test_rejects_rule_missing_any():
         validate_ruleset(rs)
 
 
-def test_rejects_rule_with_typo_key_instead_of_any():
+def test_rejects_all_at_rule_top_level():
+    # "all" is legal as a nested group but deliberately not at the top level of
+    # a rule: a rule is a list of independent triggers, and OR is the clinically
+    # correct default for a red-flag list. An author who wants a whole-rule AND
+    # writes {"any": [{"all": [...]}]}, which makes the intent explicit at the
+    # point of authoring and keeps every rule readable the same way. This is a
+    # deliberate restriction, not obsolete typo protection -- do not relax it.
     rs = _with_safety_rule([{"is_true": "diarrhoea"}])
     rs["safety"]["rules"]["r1"]["all"] = rs["safety"]["rules"]["r1"].pop("any")
     with pytest.raises(ValueError, match="'any'"):
         validate_ruleset(rs)
+
+
+# ---------------------------------------------------------------------------
+# Nested safety clause groups (any / all)
+# ---------------------------------------------------------------------------
+
+
+def test_accepts_all_group_nested_in_rule_any():
+    validate_ruleset(
+        _with_safety_rule([{"all": [{"is_true": "diarrhoea"}, {"is_false": "diarrhoea"}]}])
+    )
+
+
+def test_accepts_any_group_nested_in_all_group():
+    validate_ruleset(
+        _with_safety_rule(
+            [
+                {
+                    "all": [
+                        {"is_true": "diarrhoea"},
+                        {"any": [{"is_false": "diarrhoea"}, {"is_true": "diarrhoea"}]},
+                    ]
+                }
+            ]
+        )
+    )
+
+
+def test_accepts_three_group_levels():
+    # The rule's own "any" is level 1, the "all" is level 2, the inner "any" is
+    # level 3 -- exactly at MAX_SAFETY_CLAUSE_DEPTH.
+    validate_ruleset(_with_safety_rule([{"all": [{"any": [{"is_true": "diarrhoea"}]}]}]))
+
+
+def test_rejects_four_group_levels():
+    # A fourth level is past what a clinician can reasonably review in one
+    # rule; the rule should be split instead.
+    with pytest.raises(ValueError, match="group levels deep"):
+        validate_ruleset(
+            _with_safety_rule([{"all": [{"any": [{"all": [{"is_true": "diarrhoea"}]}]}]}])
+        )
+
+
+def test_rejects_empty_nested_all_group():
+    # The dangerous one: Python evaluates all([]) to True, so {"all": []} is
+    # satisfied unconditionally. It would fire its rule for every patient and
+    # block every submission on this condition with a message no answer can
+    # clear. It must never reach a running deployment.
+    with pytest.raises(ValueError, match="empty 'all' group"):
+        validate_ruleset(_with_safety_rule([{"all": []}]))
+
+
+def test_rejects_empty_nested_any_group():
+    # The mirror of the above, and the harmless direction: any([]) is False, so
+    # this clause silently never fires. Still an authoring mistake, still
+    # rejected -- a clause that can never match has no meaning.
+    with pytest.raises(ValueError, match="empty 'any' group"):
+        validate_ruleset(_with_safety_rule([{"any": []}]))
+
+
+def test_rejects_group_whose_value_is_not_a_list():
+    with pytest.raises(ValueError, match="not a list"):
+        validate_ruleset(_with_safety_rule([{"all": {"is_true": "diarrhoea"}}]))
+
+
+def test_rejects_clause_mixing_leaf_and_group():
+    # Without the "exactly one key" rule the engine's key-dispatch order would
+    # silently decide what this clause means clinically.
+    with pytest.raises(ValueError, match="exactly one"):
+        validate_ruleset(
+            _with_safety_rule([{"is_true": "diarrhoea", "all": [{"is_false": "diarrhoea"}]}])
+        )
+
+
+def test_rejects_clause_with_both_group_keys():
+    with pytest.raises(ValueError, match="exactly one"):
+        validate_ruleset(
+            _with_safety_rule(
+                [{"any": [{"is_true": "diarrhoea"}], "all": [{"is_false": "diarrhoea"}]}]
+            )
+        )
+
+
+def test_rejects_nested_clause_referencing_unknown_answer_key():
+    # Proves the declared-key check reaches into the recursion.
+    with pytest.raises(ValueError, match="unknown answer_key"):
+        validate_ruleset(
+            _with_safety_rule([{"all": [{"is_true": "diarrhoea"}, {"is_true": "nonexistent"}]}])
+        )
+
+
+def test_rejects_nested_clause_referencing_text_question():
+    # Proves the Boolean check reaches into the recursion.
+    with pytest.raises(ValueError, match="not 'Boolean'"):
+        validate_ruleset(_with_safety_rule([{"all": [{"is_true": "symptom_text"}]}]))
+
+
+def test_rejects_non_dict_nested_clause():
+    with pytest.raises(ValueError, match="not an object"):
+        validate_ruleset(_with_safety_rule([{"any": ["is_true"]}]))
 
 
 # ---------------------------------------------------------------------------
