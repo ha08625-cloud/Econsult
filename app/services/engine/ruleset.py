@@ -36,6 +36,20 @@ QUANTITY_KINDS: dict[str, dict[str, Any]] = {
 
 VALID_QUANTITY_KINDS = frozenset(QUANTITY_KINDS)
 
+# The keys a safety clause may carry. Exactly one of these must be present at
+# every depth: is_true/is_false are leaves, any/all are groups holding a list
+# of further clauses.
+SAFETY_LEAF_KEYS = ("is_true", "is_false")
+SAFETY_GROUP_KEYS = ("any", "all")
+SAFETY_CLAUSE_KEYS = SAFETY_LEAF_KEYS + SAFETY_GROUP_KEYS
+
+# Maximum number of nested group levels in a safety rule, where the rule's own
+# "any" list is level 1. This is not about stack safety -- a ruleset is finite
+# authored JSON. The cap exists so a clinician reviewing a rule can hold it in
+# their head: three levels expresses anything realistic (an "any" of "all"s of
+# "any"s), and needing more is a sign the rule should be split in two.
+MAX_SAFETY_CLAUSE_DEPTH = 3
+
 
 def canonical_system(kind: str) -> str:
     """The system whose single component is the value stored as-is (no conversion)."""
@@ -266,6 +280,107 @@ def _validate_shared_toggle_consistency(ruleset: dict[str, Any]) -> None:
         )
 
 
+def _validate_safety_clause(
+    clause: Any,
+    rule_id: str,
+    path: str,
+    seen_answer_keys: set[str],
+    answer_key_types: dict[str, str],
+    depth: int,
+) -> None:
+    """
+    Validate one safety clause, recursing into nested any/all groups.
+
+    A clause is either a leaf (is_true / is_false naming a declared Boolean
+    answer_key) or a group (any / all holding a non-empty list of further
+    clauses). Exactly one of the four keys must be present, and nothing else:
+    without that, a clause like {"is_true": "x", "all": [...]} would let the
+    engine's key-dispatch order silently decide clinical meaning.
+
+    `depth` is the group level containing this clause -- the rule's own "any"
+    list is level 1. `path` names the clause's position (e.g. "any[0].all[2]")
+    so an author can find it in a deep rule. `seen_answer_keys` and
+    `answer_key_types` are threaded through the recursion so a nested leaf gets
+    exactly the same declared-key and Boolean checks as a top-level one.
+    """
+    if not isinstance(clause, dict):
+        raise ValueError(
+            f"Safety rule '{rule_id}' has a clause at {path} that is not an object: {clause!r}"
+        )
+
+    present = [k for k in SAFETY_CLAUSE_KEYS if k in clause]
+    if len(present) != 1:
+        raise ValueError(
+            f"Safety rule '{rule_id}' has a clause at {path} that must contain exactly "
+            f"one of {list(SAFETY_CLAUSE_KEYS)}, got keys {list(clause.keys())}"
+        )
+
+    extra_keys = set(clause.keys()) - set(SAFETY_CLAUSE_KEYS)
+    if extra_keys:
+        raise ValueError(
+            f"Safety rule '{rule_id}' has a clause at {path} with unexpected keys: "
+            f"{sorted(extra_keys)}"
+        )
+
+    clause_kind = present[0]
+    value = clause[clause_kind]
+
+    if clause_kind in SAFETY_LEAF_KEYS:
+        # A leaf compares one Boolean answer to True/False. A clause pointing at
+        # a text or Number answer can never match, so it would validate cleanly
+        # and then silently never fire in safety_engine.py.
+        if not isinstance(value, str):
+            raise ValueError(
+                f"Safety rule '{rule_id}' clause at {path} '{clause_kind}' must be a "
+                f"string answer_key, got {value!r}"
+            )
+        if value not in seen_answer_keys:
+            raise ValueError(
+                f"Safety rule '{rule_id}' clause at {path} references unknown answer_key: {value}"
+            )
+        if answer_key_types[value] != "Boolean":
+            raise ValueError(
+                f"Safety rule '{rule_id}' clause at {path} '{clause_kind}' references "
+                f"answer_key '{value}' which is answer_type "
+                f"'{answer_key_types[value]}', not 'Boolean'; a safety clause can "
+                f"only compare Boolean answers to True/False"
+            )
+        return
+
+    if not isinstance(value, list):
+        raise ValueError(
+            f"Safety rule '{rule_id}' has a '{clause_kind}' group at {path} that is "
+            f"not a list: {value!r}"
+        )
+
+    # An empty group is the sharpest trap in the whole feature, because Python
+    # evaluates all([]) to True: a clause of {"all": []} is satisfied
+    # unconditionally, fires its rule for every patient, and blocks every
+    # submission on that condition with a message no answer can clear. The
+    # mirror, {"any": []}, is False and so silently never fires. Both are
+    # authoring mistakes; neither may reach a running deployment.
+    if not value:
+        raise ValueError(f"Safety rule '{rule_id}' has an empty '{clause_kind}' group at {path}")
+
+    child_depth = depth + 1
+    if child_depth > MAX_SAFETY_CLAUSE_DEPTH:
+        raise ValueError(
+            f"Safety rule '{rule_id}' nests safety clauses more than "
+            f"{MAX_SAFETY_CLAUSE_DEPTH} group levels deep at {path}; split the rule "
+            f"instead so it stays reviewable"
+        )
+
+    for index, child in enumerate(value):
+        _validate_safety_clause(
+            child,
+            rule_id,
+            f"{path}.{clause_kind}[{index}]",
+            seen_answer_keys,
+            answer_key_types,
+            child_depth,
+        )
+
+
 def validate_ruleset(ruleset: dict[str, Any]) -> None:
     if "condition_id" not in ruleset:
         raise ValueError("Ruleset missing required field: condition_id")
@@ -349,54 +464,23 @@ def validate_ruleset(ruleset: dict[str, Any]) -> None:
             if not isinstance(rule["message"], str) or not rule["message"].strip():
                 raise ValueError(f"Safety rule '{rule_id}' has an empty or non-string 'message'")
 
-            # Each clause must be a dict containing exactly one of
-            # is_true / is_false and nothing else. Previously
-            # clause.get("is_true") or clause.get("is_false") silently picked
-            # is_true when both were present (the is_false half of the clause
-            # was never checked, and never fired) and let through any clause
-            # with unrelated extra keys. A clause value must also reference a
-            # declared answer_key whose answer_type is "Boolean" -- a True/False
-            # comparison against a text or Number answer can never match, so a
-            # clause pointing at one would validate cleanly and then silently
-            # never fire in safety_engine.py.
-            for clause in rule["any"]:
-                if not isinstance(clause, dict):
-                    raise ValueError(
-                        f"Safety rule '{rule_id}' has a clause that is not an object: {clause!r}"
-                    )
-
-                present = [k for k in ("is_true", "is_false") if k in clause]
-                if len(present) != 1:
-                    raise ValueError(
-                        f"Safety rule '{rule_id}' has a clause that must contain exactly "
-                        f"one of 'is_true' or 'is_false', got keys {list(clause.keys())}"
-                    )
-
-                extra_keys = set(clause.keys()) - {"is_true", "is_false"}
-                if extra_keys:
-                    raise ValueError(
-                        f"Safety rule '{rule_id}' has a clause with unexpected keys: "
-                        f"{sorted(extra_keys)}"
-                    )
-
-                clause_kind = present[0]
-                key = clause[clause_kind]
-                if not isinstance(key, str):
-                    raise ValueError(
-                        f"Safety rule '{rule_id}' clause '{clause_kind}' must be a string "
-                        f"answer_key, got {key!r}"
-                    )
-                if key not in seen_answer_keys:
-                    raise ValueError(
-                        f"Safety rule '{rule_id}' references unknown answer_key: {key}"
-                    )
-                if answer_key_types[key] != "Boolean":
-                    raise ValueError(
-                        f"Safety rule '{rule_id}' clause '{clause_kind}' references "
-                        f"answer_key '{key}' which is answer_type "
-                        f"'{answer_key_types[key]}', not 'Boolean'; a safety clause can "
-                        f"only compare Boolean answers to True/False"
-                    )
+            # Every clause, at every depth, must be a dict containing exactly
+            # one of is_true / is_false / any / all and nothing else, with a
+            # leaf naming a declared Boolean answer_key and a group holding a
+            # non-empty list of further clauses. See _validate_safety_clause
+            # for why each of those checks exists; the short version is that a
+            # malformed clause validates cleanly and then silently never fires
+            # (or, for {"all": []}, always fires) in safety_engine.py.
+            # The rule's own "any" list is group level 1.
+            for index, clause in enumerate(rule["any"]):
+                _validate_safety_clause(
+                    clause,
+                    rule_id,
+                    f"any[{index}]",
+                    seen_answer_keys,
+                    answer_key_types,
+                    depth=1,
+                )
 
 
 def extract_encoder_definitions(ruleset: dict[str, Any]) -> list[dict[str, str]]:
