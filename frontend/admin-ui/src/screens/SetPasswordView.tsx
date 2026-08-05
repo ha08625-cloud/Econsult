@@ -25,13 +25,13 @@
  */
 
 import { useState, useEffect } from "react";
-import { zxcvbn, zxcvbnOptions } from "@zxcvbn-ts/core";
+import { ZxcvbnFactory } from "@zxcvbn-ts/core";
 import * as zxcvbnCommonPackage from "@zxcvbn-ts/language-common";
 import * as zxcvbnEnPackage from "@zxcvbn-ts/language-en";
 import { setPassword } from "../api";
 
 // Initialise zxcvbn with English language pack once at module load.
-zxcvbnOptions.setOptions({
+const zxcvbn = new ZxcvbnFactory({
   translations: zxcvbnEnPackage.translations,
   graphs: zxcvbnCommonPackage.adjacencyGraphs,
   dictionary: {
@@ -73,7 +73,7 @@ export default function SetPasswordView({ onComplete }: Props) {
   const [success, setSuccess] = useState(false);
 
   // Derived state — recalculated on every render, not stored in state.
-  const result = password ? zxcvbn(password) : null;
+  const result = password ? zxcvbn.check(password) : null;
   const score = result?.score ?? 0;
   const suggestions: string[] = result?.feedback?.suggestions ?? [];
   const warning: string = result?.feedback?.warning ?? "";
