@@ -1,0 +1,108 @@
+{
+  "condition_id": "mental_health_autism",
+
+  "presentation": {
+    "label": "Autism assessment",
+    "free_text_prompt": "Tell us why you think you may be autistic and how this affects you day to day.",
+    "search_tags": ["autism", "autistic", "ASD", "asperger's", "neurodivergent", "autism assessment", "autism diagnosis", "social communication", "sensory sensitivity", "meltdown", "stimming", "special interest"]
+  },
+
+  "questions": [
+    {
+      "question_id": "autism_1",
+      "question": "How long have you noticed these differences in social communication, behaviour or sensory experiences?",
+      "answer_key": "symptom_duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "autism_2",
+      "question": "Do you feel these traits have been present since early childhood, even if they weren't recognised as autism at the time?",
+      "answer_key": "lifelong_traits_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient's traits have been present since early childhood, even if not recognised as autism at the time?",
+      "pdf_label": "Lifelong traits"
+    },
+    {
+      "question_id": "autism_3",
+      "question": "Are these differences affecting your work, education, relationships or daily life?",
+      "answer_key": "functional_impairment_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient's traits are affecting their work, education, relationships or daily life?",
+      "pdf_label": "Functional impact"
+    },
+    {
+      "question_id": "autism_4",
+      "question": "Do you find it difficult to understand social cues, maintain conversations, or build and keep relationships?",
+      "answer_key": "social_communication_difficulty",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has difficulty understanding social cues, maintaining conversations, or building and keeping relationships?",
+      "pdf_label": "Social communication"
+    },
+    {
+      "question_id": "autism_5",
+      "question": "Do you have strong routines, repetitive behaviours, or intense special interests that are important to you?",
+      "answer_key": "restrictive_repetitive_behaviour",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has restricted or repetitive behaviours, strong routines, or intense special interests?"
+    },
+    {
+      "question_id": "autism_6",
+      "question": "Are you especially sensitive to sensory input such as light, sound, touch, textures or smells?",
+      "answer_key": "sensory_sensitivity_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is especially sensitive to sensory input such as light, sound, touch, textures or smells?",
+      "pdf_label": "Sensory sensitivity"
+    },
+    {
+      "question_id": "autism_7",
+      "question": "Have you previously been assessed or diagnosed with autism, ADHD, or any other neurodevelopmental or mental health condition?",
+      "answer_key": "previous_neurodevelopmental_assessment",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "autism_8",
+      "question": "Has anyone in your family been diagnosed with autism, ADHD, or another neurodevelopmental condition?",
+      "answer_key": "fh_autism_or_neurodevelopmental",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "autism_9",
+      "question": "Are you already on a waiting list for an autism assessment elsewhere, such as through the NHS or privately?",
+      "answer_key": "already_on_waitlist",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "autism_10",
+      "question": "Are you having any thoughts of harming yourself?",
+      "answer_key": "planned_self_harm",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is having thoughts of harming themselves or has plans to harm themselves?",
+      "pdf_label": "Self-harm risk"
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "self_harm_risk": {
+        "any": [
+          { "is_true": "planned_self_harm" }
+        ],
+        "message": "This online consultation may take up to 24 hours to be reviewed. If you feel you are at risk of harming yourself, please do not wait. Call the surgery and ask to speak to the duty doctor, or contact the Samaritans at any time on 116 123."
+      }
+    }
+  }
+}
