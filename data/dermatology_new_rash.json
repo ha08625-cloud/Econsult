@@ -1,0 +1,127 @@
+{
+  "condition_id": "dermatology_new_rash",
+
+  "presentation": {
+    "label": "Dermatology - New skin rashes",
+    "free_text_prompt": "Tell us more about your rash. You may want to include when it started, what it feels like, which body part is affected and whether you have tried any treatments so far.",
+    "search_tags": ["rash", "skin rash", "hives", "urticaria", "spots", "red skin", "itchy skin", "skin eruption", "blisters", "welts", "skin irritation"]
+  },
+
+  "questions": [
+    {
+      "question_id": "dermatology_rash_1",
+      "question": "How long have you had the rash?",
+      "answer_key": "rash_duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_rash_2",
+      "question": "Is the rash itchy?",
+      "answer_key": "rash_itchy",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the rash is itchy?"
+    },
+    {
+      "question_id": "dermatology_rash_3",
+      "question": "Is the rash painful?",
+      "answer_key": "rash_painful",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the rash is painful?"
+    },
+    {
+      "question_id": "dermatology_rash_4",
+      "question": "If you press on the rash, does it turn pale (blanch), or does it stay the same colour?",
+      "answer_key": "non_blanching_rash",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the rash does not turn pale (does not blanch) when pressed?",
+      "pdf_label": "Non-blanching rash"
+    },
+    {
+      "question_id": "dermatology_rash_5",
+      "question": "Has the rash spread quickly or changed significantly in the last 24 hours?",
+      "answer_key": "rash_spreading_or_changing",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the rash has spread quickly or changed significantly in the last 24 hours?",
+      "pdf_label": "Rapid spreading"
+    },
+    {
+      "question_id": "dermatology_rash_6",
+      "question": "Are there any blisters, or is the skin peeling or breaking down?",
+      "answer_key": "blistering_or_skin_peeling",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that there are blisters or that the skin is peeling or breaking down?",
+      "pdf_label": "Blistering/skin peeling"
+    },
+    {
+      "question_id": "dermatology_rash_7",
+      "question": "Do you have a fever or feel generally unwell?",
+      "answer_key": "fever_or_unwell",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has a fever or feels generally unwell?",
+      "pdf_label": "Fever/unwell"
+    },
+    {
+      "question_id": "dermatology_rash_8",
+      "question": "Is there any swelling of your face, lips, tongue or throat, or any difficulty breathing?",
+      "answer_key": "facial_swelling_or_breathing_difficulty",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate swelling of the face, lips, tongue or throat, or difficulty breathing?",
+      "pdf_label": "Facial swelling/breathing difficulty"
+    },
+    {
+      "question_id": "dermatology_rash_9",
+      "question": "Have you started any new medications in the last few weeks?",
+      "answer_key": "new_medication_started",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has started any new medications in the last few weeks?"
+    },
+    {
+      "question_id": "dermatology_rash_10",
+      "question": "Have you had a similar rash before?",
+      "answer_key": "previous_similar_rash",
+      "answer_type": "Boolean",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "non_blanching_rash_safety": {
+        "any": [
+          { "is_true": "non_blanching_rash" }
+        ],
+        "message": "A rash that does not fade when pressed can be a sign of a serious illness and needs urgent assessment. Do not use this form which is for routine queries and may not be answered urgently enough - phone 999 or go to A&E immediately."
+      },
+      "anaphylaxis_safety": {
+        "any": [
+          { "is_true": "facial_swelling_or_breathing_difficulty" }
+        ],
+        "message": "Swelling of the face, lips, tongue or throat, or difficulty breathing, can be a sign of a severe allergic reaction. This is a medical emergency - call 999 or go to A&E immediately. Do not use this form."
+      },
+      "severe_skin_reaction_safety": {
+        "any": [
+          { "is_true": "blistering_or_skin_peeling" }
+        ],
+        "message": "Blistering or peeling skin can be a sign of a severe skin reaction which needs urgent assessment. Do not use this form which is for routine queries and may not be answered urgently enough."
+      },
+      "systemic_infection_safety": {
+        "any": [
+          { "is_true": "fever_or_unwell" },
+          { "is_true": "rash_spreading_or_changing" }
+        ],
+        "message": "A rash that is spreading quickly, or is accompanied by fever or feeling generally unwell, can indicate a skin infection or other serious illness that needs urgent assessment. Do not use this form which is for routine queries and may not be answered urgently enough."
+      }
+    }
+  }
+}
