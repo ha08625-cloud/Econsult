@@ -26,7 +26,7 @@ Five tasks, each independently committable with a green test suite.
 
 **Out of scope**
 
-- Authoring `pdf_label` across the remaining 14 rulesets in `data/` and the 16 in `data/questions/`. Label selection is a clinical judgement per condition and belongs in its own pass once the block has been seen in a real PDF. Only `uti1.json` is authored here.
+- Authoring `pdf_label` across the remaining rulesets in `data/` and the drafts in `question_drafts/` (not yet promoted to full rulesets). Label selection is a clinical judgement per condition and belongs in its own pass once the block has been seen in a real PDF. Only `uti1.json` is authored here.
 - Any frontend change. `serialize_client_state` does not carry `pdf_label`; the patient never sees it.
 - Any database column. `pdf_labels` rides inside the existing `clinical_output_json` JSONB via `asdict()`.
 - Filtering the summary to positive findings only. See design decision 5 — the rule is a one-line change if the decision reverses after seeing real output.

@@ -54,13 +54,17 @@ class ConditionRegistry:
         if not os.path.isdir(data_dir):
             raise RegistryValidationError(f"Data directory does not exist: {data_dir}")
 
-        json_files = sorted(f for f in os.listdir(data_dir) if f.endswith(".json"))
+        json_paths = sorted(
+            os.path.join(root, filename)
+            for root, _dirs, filenames in os.walk(data_dir)
+            for filename in filenames
+            if filename.endswith(".json")
+        )
 
-        if not json_files:
+        if not json_paths:
             raise RegistryValidationError(f"No JSON files found in {data_dir}")
 
-        for filename in json_files:
-            path = os.path.join(data_dir, filename)
+        for path in json_paths:
             self._load_one(path)
 
     def _load_one(self, path: str) -> None:

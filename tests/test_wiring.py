@@ -214,6 +214,23 @@ def test_build_container_passes_ruleset_validation_for_valid_rulesets(tmp_path):
     assert "Ruleset validation failed" not in str(excinfo.value)
 
 
+def test_build_container_discovers_rulesets_in_subfolders(tmp_path):
+    # ConditionRegistry walks data_dir recursively so rulesets can be
+    # organised into subfolders (e.g. by clinical area) instead of one flat
+    # directory. A ruleset nested two levels deep must still be found and
+    # pass validation.
+    data_dir = tmp_path / "data"
+    nested_dir = data_dir / "gynae" / "amenorrhoea"
+    nested_dir.mkdir(parents=True)
+    _write_ruleset(nested_dir, _VALID_RULESET)
+
+    with pytest.raises(Exception) as excinfo:
+        build_container(_settings_for(data_dir))
+
+    assert "No JSON files found" not in str(excinfo.value)
+    assert "Ruleset validation failed" not in str(excinfo.value)
+
+
 # ---------------------------------------------------------------------------
 # quantity_kind registry parity
 #
