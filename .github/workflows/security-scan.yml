@@ -34,7 +34,7 @@ jobs:
     outputs:
       image-relevant: ${{ steps.filter.outputs.image-relevant }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
         id: filter
         with:
@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Econsult uses a multi-stage Docker build, so we build it locally first
       - name: Build Econsult Image
