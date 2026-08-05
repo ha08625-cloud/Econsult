@@ -1,0 +1,88 @@
+{
+  "condition_id": "gastro_constipation",
+
+  "presentation": {
+    "label": "Constipation",
+    "free_text_prompt": "Tell us more about the constipation: when it started, what you've tried already, and any other symptoms.",
+    "search_tags": ["constipation", "bowel", "stomach", "bloating", "hard stools", "straining", "laxatives", "gastro"]
+  },
+
+  "questions": [
+    {
+      "question_id": "gastro_constipation_1",
+      "question": "Have you been opening your bowels less often than usual?",
+      "answer_key": "reduced_bowel_frequency",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has been opening their bowels less often than usual?"
+    },
+    {
+      "question_id": "gastro_constipation_2",
+      "question": "Have your stools been hard or difficult to pass?",
+      "answer_key": "hard_stools_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient's stools have been hard or difficult to pass?"
+    },
+    {
+      "question_id": "gastro_constipation_3",
+      "question": "Have you had any abdominal discomfort or bloating?",
+      "answer_key": "abdominal_discomfort_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had abdominal discomfort or bloating?"
+    },
+    {
+      "question_id": "gastro_constipation_4",
+      "question": "Have you noticed any blood in your stools?",
+      "answer_key": "rectal_bleeding_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has noticed blood in their stools?"
+    },
+    {
+      "question_id": "gastro_constipation_5",
+      "question": "Have you had any nausea or vomiting?",
+      "answer_key": "nausea_vomiting_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had nausea or vomiting?"
+    },
+    {
+      "question_id": "gastro_constipation_6",
+      "question": "Have you had any unintentional weight loss recently?",
+      "answer_key": "unintentional_weight_loss_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has had unintentional weight loss recently?"
+    },
+    {
+      "question_id": "gastro_constipation_7",
+      "question": "Have you tried any laxatives or other treatments for this already?",
+      "answer_key": "laxatives_tried",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has already tried laxatives or other treatments?"
+    },
+    {
+      "question_id": "gastro_constipation_8",
+      "question": "How long have you had this problem?",
+      "answer_key": "duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "constipation_red_flags_safety": {
+        "any": [
+          { "is_true": "rectal_bleeding_present" },
+          { "is_true": "unintentional_weight_loss_present" }
+        ],
+        "message": "Blood in your stools or unintentional weight loss alongside constipation needs prompt medical assessment. Please call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      }
+    }
+  }
+}
