@@ -1,0 +1,116 @@
+{
+  "condition_id": "mental_health_anxiety",
+
+  "presentation": {
+    "label": "Anxiety",
+    "free_text_prompt": "Tell us about your anxiety symptoms and how they are affecting you.",
+    "search_tags": ["anxiety", "generalized anxiety disorder", "GAD", "panic attacks", "panic disorder", "worry", "nervous", "on edge", "stress", "social anxiety"]
+  },
+
+  "questions": [
+    {
+      "question_id": "mental_health_anxiety_1",
+      "question": "Have you been feeling anxious, nervous, or on edge most days?",
+      "answer_key": "anxiety_persistent",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has been feeling anxious, nervous, or on edge most days?",
+      "pdf_label": "Persistent anxiety"
+    },
+    {
+      "question_id": "mental_health_anxiety_2",
+      "question": "Is the anxiety interfering with your daily activities or responsibilities?",
+      "answer_key": "anxiety_impairs_function",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the anxiety is interfering with the patient's daily activities or responsibilities?",
+      "pdf_label": "Functional impairment"
+    },
+    {
+      "question_id": "mental_health_anxiety_3",
+      "question": "Do you get sudden episodes of intense fear or dread, along with physical symptoms like a racing heart or difficulty breathing?",
+      "answer_key": "panic_attacks_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient experiences sudden episodes of intense fear or dread with physical symptoms, suggesting panic attacks?",
+      "pdf_label": "Panic attacks"
+    },
+    {
+      "question_id": "mental_health_anxiety_4",
+      "question": "Have you been experiencing physical symptoms such as palpitations, sweating, or trembling?",
+      "answer_key": "anxiety_physical_symptoms",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has physical symptoms such as palpitations, sweating, or trembling?"
+    },
+    {
+      "question_id": "mental_health_anxiety_5",
+      "question": "Have you been having difficulty sleeping because of worry or anxiety?",
+      "answer_key": "insomnia_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is having difficulty sleeping because of worry or anxiety?"
+    },
+    {
+      "question_id": "mental_health_anxiety_6",
+      "question": "Have you been avoiding places, situations, or activities because of your anxiety?",
+      "answer_key": "avoidance_behaviour",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has been avoiding places, situations, or activities because of their anxiety?"
+    },
+    {
+      "question_id": "mental_health_anxiety_7",
+      "question": "Do you regularly drink alcohol or use recreational drugs?",
+      "answer_key": "alcohol_or_drug_use",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient regularly drinks alcohol or uses recreational drugs?"
+    },
+    {
+      "question_id": "mental_health_anxiety_8",
+      "question": "Are you currently seeing a therapist or on a waiting list for therapy?",
+      "answer_key": "currently_in_therapy_or_waitlist",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is currently seeing a therapist or is on a waiting list for therapy?"
+    },
+    {
+      "question_id": "mental_health_anxiety_9",
+      "question": "Have you harmed yourself recently?",
+      "answer_key": "recent_self_harm",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has harmed themselves recently?",
+      "pdf_label": "Recent self-harm"
+    },
+    {
+      "question_id": "mental_health_anxiety_10",
+      "question": "Are you having any thoughts of harming yourself?",
+      "answer_key": "planned_self_harm",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is having thoughts of harming themselves or has plans to harm themselves?",
+      "pdf_label": "Self-harm risk"
+    },
+    {
+      "question_id": "mental_health_anxiety_11",
+      "question": "How long have you been feeling this way?",
+      "answer_key": "anxiety_duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "self_harm_risk": {
+        "any": [
+          { "is_true": "planned_self_harm" }
+        ],
+        "message": "This online consultation may take up to 24 hours to be reviewed. If you feel you are at risk of harming yourself, please do not wait. Call the surgery and ask to speak to the duty doctor, or contact the Samaritans at any time on 116 123."
+      }
+    }
+  }
+}
