@@ -1,0 +1,163 @@
+{
+  "condition_id": "ent_dysphagia",
+
+  "presentation": {
+    "label": "Difficulty swallowing",
+    "free_text_prompt": "Tell us about the swallowing difficulty: when it started, whether it affects solids, liquids, or both, and how it has changed over time.",
+    "search_tags": ["dysphagia", "difficulty swallowing", "trouble swallowing", "swallowing problems", "food getting stuck", "choking on food", "can't swallow", "painful swallowing", "odynophagia"]
+  },
+
+  "questions": [
+    {
+      "question_id": "ent_dysphagia_1",
+      "question": "Are you currently unable to swallow your own saliva, or are you drooling because you can't manage it?",
+      "answer_key": "complete_obstruction_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient is currently unable to swallow their own saliva or is drooling because they cannot manage it?",
+      "pdf_label": "Complete obstruction"
+    },
+    {
+      "question_id": "ent_dysphagia_2",
+      "question": "Are you having any difficulty breathing, or making a high-pitched noise when you breathe in, alongside the swallowing problem?",
+      "answer_key": "breathing_difficulty_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has breathing difficulty or stridor (a high-pitched noise on breathing in) alongside the swallowing problem?",
+      "pdf_label": "Breathing difficulty/stridor"
+    },
+    {
+      "question_id": "ent_dysphagia_3",
+      "question": "Do you feel like something, such as a piece of food or a bone, is stuck in your throat right now?",
+      "answer_key": "suspected_foreign_body_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient feels something such as food or a bone is currently stuck in their throat?",
+      "pdf_label": "Suspected foreign body"
+    },
+    {
+      "question_id": "ent_dysphagia_4",
+      "question": "Have you had any sudden weakness or numbness in your face, arm, or leg, or slurred speech, along with the swallowing difficulty?",
+      "answer_key": "stroke_symptoms_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate sudden facial, arm, or leg weakness/numbness, or slurred speech, alongside the swallowing difficulty?",
+      "pdf_label": "Stroke symptoms"
+    },
+    {
+      "question_id": "ent_dysphagia_5",
+      "question": "Has the swallowing difficulty been gradually getting worse over weeks or months, or started with solid food and now also affects liquids?",
+      "answer_key": "progressive_dysphagia_pattern",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate a progressive pattern of dysphagia worsening over weeks or months, or progressing from solids to also affecting liquids?",
+      "pdf_label": "Progressive pattern"
+    },
+    {
+      "question_id": "ent_dysphagia_6",
+      "question": "Have you lost weight without trying to?",
+      "answer_key": "unintentional_weight_loss_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate unintentional weight loss alongside the swallowing difficulty?",
+      "pdf_label": "Unintentional weight loss"
+    },
+    {
+      "question_id": "ent_dysphagia_7",
+      "question": "Have you been coughing, choking, or spluttering when eating or drinking?",
+      "answer_key": "coughing_choking_on_intake_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate coughing, choking, or spluttering when eating or drinking?"
+    },
+    {
+      "question_id": "ent_dysphagia_8",
+      "question": "Have you had a hoarse or croaky voice for more than 3 weeks?",
+      "answer_key": "persistent_hoarseness_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate a hoarse or croaky voice lasting more than 3 weeks?"
+    },
+    {
+      "question_id": "ent_dysphagia_9",
+      "question": "Is swallowing painful, and do you also have a fever or find it hard to open your mouth fully?",
+      "answer_key": "painful_swallowing_with_fever_or_trismus",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate painful swallowing together with fever or difficulty opening the mouth fully (trismus)?"
+    },
+    {
+      "question_id": "ent_dysphagia_10",
+      "question": "How many weeks or months have you had the swallowing difficulty for?",
+      "answer_key": "dysphagia_duration_weeks",
+      "answer_type": "Number",
+      "send_to_encoder": false,
+      "encoder_prompt": null,
+      "decimal_places": 0,
+      "min": 0,
+      "max": 260,
+      "range_warning_text": "That's a very long time to have had this symptom - please double check this number."
+    },
+    {
+      "question_id": "ent_dysphagia_11",
+      "question": "Is there anything else about the swallowing difficulty you'd like to describe, such as which foods are hardest to swallow?",
+      "answer_key": "dysphagia_description_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "ent_dysphagia_complete_obstruction_urgent": {
+        "any": [
+          { "is_true": "complete_obstruction_present" }
+        ],
+        "message": "Being unable to swallow your own saliva needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "ent_dysphagia_breathing_difficulty_urgent": {
+        "any": [
+          { "is_true": "breathing_difficulty_present" }
+        ],
+        "message": "Difficulty breathing or a high-pitched breathing noise alongside a swallowing problem needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "ent_dysphagia_foreign_body_urgent": {
+        "any": [
+          { "is_true": "suspected_foreign_body_present" }
+        ],
+        "message": "Something stuck in your throat needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "ent_dysphagia_stroke_symptoms_urgent": {
+        "any": [
+          { "is_true": "stroke_symptoms_present" }
+        ],
+        "message": "Sudden weakness, numbness, or slurred speech alongside a swallowing problem can be a sign of stroke and needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "ent_dysphagia_progressive_pattern_urgent": {
+        "any": [
+          { "is_true": "progressive_dysphagia_pattern" }
+        ],
+        "message": "Swallowing difficulty that is getting steadily worse, or that has spread from solids to liquids, needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      },
+      "ent_dysphagia_weight_loss_urgent": {
+        "any": [
+          { "is_true": "unintentional_weight_loss_present" }
+        ],
+        "message": "Swallowing difficulty with unintentional weight loss needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      },
+      "ent_dysphagia_aspiration_urgent": {
+        "any": [
+          { "is_true": "coughing_choking_on_intake_present" }
+        ],
+        "message": "Coughing, choking, or spluttering when eating or drinking can mean food or drink is going into the airway and needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      },
+      "ent_dysphagia_painful_swallowing_urgent": {
+        "any": [
+          { "is_true": "painful_swallowing_with_fever_or_trismus" }
+        ],
+        "message": "Painful swallowing with fever or difficulty opening your mouth needs urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      }
+    }
+  }
+}
