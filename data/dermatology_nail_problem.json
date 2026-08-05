@@ -1,0 +1,117 @@
+{
+  "condition_id": "dermatology_nail_problem",
+
+  "presentation": {
+    "label": "Nail problem",
+    "free_text_prompt": "Tell us about your nail problem and when it started. You may want to say which nail(s) are affected, whether the nail has changed colour, shape or thickness, whether it is painful, and whether you have noticed any pus, discharge or spreading redness.",
+    "search_tags": ["nail problem", "nail infection", "ingrown nail", "ingrown toenail", "fungal nail", "nail fungus", "paronychia", "nail discolouration", "nail changes", "toenail", "fingernail"]
+  },
+
+  "questions": [
+    {
+      "question_id": "dermatology_nail_problem_1",
+      "question": "How long have you had this nail problem?",
+      "answer_key": "nail_problem_duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "dermatology_nail_problem_2",
+      "question": "Are more than one of your nails affected?",
+      "answer_key": "multiple_nails_affected",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that more than one nail is affected?"
+    },
+    {
+      "question_id": "dermatology_nail_problem_3",
+      "question": "Is the nail thickened, discoloured (for example yellow or white) or crumbly?",
+      "answer_key": "nail_thickened_discoloured_crumbly",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the nail is thickened, discoloured or crumbly?",
+      "pdf_label": "Thickened/discoloured nail"
+    },
+    {
+      "question_id": "dermatology_nail_problem_4",
+      "question": "Is the nail lifting away from the skin underneath it?",
+      "answer_key": "nail_lifting_from_bed",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the nail is lifting away from the nail bed underneath it?",
+      "pdf_label": "Nail lifting from bed"
+    },
+    {
+      "question_id": "dermatology_nail_problem_5",
+      "question": "Is the edge of the nail digging into the skin at the side, causing pain?",
+      "answer_key": "ingrown_nail_edge_pain",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the edge of the nail is digging into the surrounding skin and causing pain?",
+      "pdf_label": "Ingrown nail edge"
+    },
+    {
+      "question_id": "dermatology_nail_problem_6",
+      "question": "Is the skin around the nail red or swollen?",
+      "answer_key": "redness_swelling_around_nail",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate redness or swelling of the skin around the nail?",
+      "pdf_label": "Redness/swelling around nail"
+    },
+    {
+      "question_id": "dermatology_nail_problem_7",
+      "question": "Is there any pus or discharge coming from around the nail?",
+      "answer_key": "pus_or_discharge_around_nail",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate pus or discharge coming from around the nail?",
+      "pdf_label": "Pus/discharge"
+    },
+    {
+      "question_id": "dermatology_nail_problem_8",
+      "question": "Do you have a fever, or has the redness started spreading up the finger or toe?",
+      "answer_key": "fever_or_spreading_redness",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate a fever, or redness spreading up the affected finger or toe?",
+      "pdf_label": "Fever/spreading redness"
+    },
+    {
+      "question_id": "dermatology_nail_problem_9",
+      "question": "Is there a new dark line or patch of pigment in or under the nail that was not caused by an injury?",
+      "answer_key": "dark_pigmented_streak_or_patch",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate a new dark line or patch of pigment in or under the nail that was not caused by an injury?",
+      "pdf_label": "Pigmented nail streak"
+    },
+    {
+      "question_id": "dermatology_nail_problem_10",
+      "question": "Do you have diabetes or any circulation problems affecting your feet?",
+      "answer_key": "diabetes_or_poor_circulation",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has diabetes or circulation problems affecting their feet?",
+      "pdf_label": "Diabetes/poor circulation"
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "subungual_melanoma_safety": {
+        "any": [
+          { "is_true": "dark_pigmented_streak_or_patch" }
+        ],
+        "message": "A new dark line or patch of pigment in or under a nail that was not caused by an injury can occasionally be a sign of a serious skin condition and needs prompt assessment. Please call the surgery and ask to speak to the duty doctor instead of sending an online form, so that you can be assessed and referred urgently if needed."
+      },
+      "severe_nail_infection_safety": {
+        "any": [
+          { "is_true": "fever_or_spreading_redness" }
+        ],
+        "message": "A fever or spreading redness from a nail infection can be a sign of a more serious infection that needs urgent assessment. Do not use this form which is for routine queries and may not be answered urgently enough - please call the surgery and ask to speak to the duty doctor, or seek urgent care if you feel very unwell."
+      }
+    }
+  }
+}
