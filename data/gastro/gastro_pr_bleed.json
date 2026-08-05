@@ -1,0 +1,106 @@
+{
+  "condition_id": "gastro_pr_bleed",
+
+  "presentation": {
+    "label": "Blood in stools / rectal bleeding",
+    "free_text_prompt": "Tell us about the bleeding: when it started, how much blood, and any other symptoms.",
+    "search_tags": ["blood in stool", "rectal bleeding", "PR bleed", "bleeding from bottom", "blood when wiping", "haemorrhoids", "piles", "black stools", "melaena", "bowel", "gastro"]
+  },
+
+  "questions": [
+    {
+      "question_id": "gastro_pr_bleed_1",
+      "question": "How much blood have you noticed, and is it mixed in with your stool, on the surface of your stool, or only on the toilet paper?",
+      "answer_key": "bleeding_description_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    },
+    {
+      "question_id": "gastro_pr_bleed_2",
+      "question": "Have your stools been black or very dark and tarry in colour?",
+      "answer_key": "melaena_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient's stools have been black or tarry (melaena)?",
+      "pdf_label": "Melaena (black stools)"
+    },
+    {
+      "question_id": "gastro_pr_bleed_3",
+      "question": "Have you felt dizzy, lightheaded, or faint during this episode?",
+      "answer_key": "dizziness_faintness_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has felt dizzy, lightheaded, or faint during this episode?",
+      "pdf_label": "Dizziness/faintness"
+    },
+    {
+      "question_id": "gastro_pr_bleed_4",
+      "question": "Do you have any abdominal pain?",
+      "answer_key": "abdominal_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has abdominal pain?"
+    },
+    {
+      "question_id": "gastro_pr_bleed_5",
+      "question": "Have you noticed a change in your usual bowel habit, such as looser stools or going more or less often than usual?",
+      "answer_key": "bowel_habit_change_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has noticed a change in their usual bowel habit?",
+      "pdf_label": "Bowel habit change"
+    },
+    {
+      "question_id": "gastro_pr_bleed_6",
+      "question": "Have you lost weight without trying to?",
+      "answer_key": "unexplained_weight_loss_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient has lost weight without trying to?",
+      "pdf_label": "Weight loss"
+    },
+    {
+      "question_id": "gastro_pr_bleed_7",
+      "question": "Are you taking any blood-thinning medication, such as warfarin, apixaban, rivaroxaban, or aspirin?",
+      "answer_key": "anticoagulant_use",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate that the patient is taking blood-thinning medication such as warfarin, apixaban, rivaroxaban, or aspirin?",
+      "pdf_label": "Anticoagulant use"
+    },
+    {
+      "question_id": "gastro_pr_bleed_8",
+      "question": "How long have you had this bleeding?",
+      "answer_key": "duration_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "gastro_pr_bleed_shock_urgent": {
+        "any": [
+          { "is_true": "melaena_present" },
+          { "is_true": "dizziness_faintness_present" }
+        ],
+        "message": "Black or tarry stools, or feeling dizzy or faint with rectal bleeding, can be signs of significant blood loss and need urgent assessment. Call 999 or go to A&E instead of sending an online form."
+      },
+      "gastro_pr_bleed_anticoagulant_urgent": {
+        "any": [
+          { "is_true": "anticoagulant_use" }
+        ],
+        "message": "Rectal bleeding while taking blood-thinning medication needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      },
+      "gastro_pr_bleed_red_flag_urgent": {
+        "any": [
+          { "is_true": "bowel_habit_change_present" },
+          { "is_true": "unexplained_weight_loss_present" }
+        ],
+        "message": "Rectal bleeding along with a change in bowel habit or unexplained weight loss needs prompt assessment. Call the surgery and ask to speak to the duty doctor instead of sending an online form."
+      }
+    }
+  }
+}
