@@ -1,0 +1,133 @@
+{
+  "condition_id": "gynae_amenorrhoea",
+
+  "presentation": {
+    "label": "Absent or missed periods",
+    "free_text_prompt": "Tell us more about your periods, including when they last occurred and any other symptoms you have noticed.",
+    "search_tags": ["amenorrhoea", "missed period", "missed periods", "no period", "period stopped", "periods stopped", "absent periods", "late period", "irregular periods"]
+  },
+
+  "questions": [
+    {
+      "question_id": "gynae_amenorrhoea_1",
+      "question": "Have you missed one or more expected periods?",
+      "answer_key": "missed_periods_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has missed one or more expected periods?"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_2",
+      "question": "Have your periods stopped for more than three months?",
+      "answer_key": "prolonged_absence_of_periods",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate periods have been absent for more than three months?",
+      "pdf_label": "Periods absent >3 months"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_3",
+      "question": "Is there a possibility that you could be pregnant?",
+      "answer_key": "possible_pregnancy",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate there is a possibility the patient could be pregnant?",
+      "pdf_label": "Possible pregnancy"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_4",
+      "question": "Have you had a positive pregnancy test?",
+      "answer_key": "positive_pregnancy_test",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had a positive pregnancy test?",
+      "pdf_label": "Pregnancy test positive"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_5",
+      "question": "Do you have any abdominal or pelvic pain?",
+      "answer_key": "abdominal_pelvic_pain_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has abdominal or pelvic pain?",
+      "pdf_label": "Pelvic/abdo pain"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_6",
+      "question": "Before this, were your periods usually regular?",
+      "answer_key": "previously_regular_periods",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient's periods were usually regular before they stopped?"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_7",
+      "question": "Have you started, stopped or changed any hormonal contraception in the last 6 months?",
+      "answer_key": "recent_contraception_change",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has started, stopped or changed any hormonal contraception in the last 6 months?"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_8",
+      "question": "Have you had any significant weight loss or weight gain recently?",
+      "answer_key": "significant_weight_change",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had significant recent weight loss or weight gain?"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_9",
+      "question": "Have you been under significant stress, or increased how much exercise you do, recently?",
+      "answer_key": "stress_or_excessive_exercise",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has experienced significant stress or a significant increase in exercise recently?"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_10",
+      "question": "Have you had hot flushes or night sweats?",
+      "answer_key": "hot_flushes_night_sweats",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had hot flushes or night sweats?"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_11",
+      "question": "Have you noticed any discharge from your nipples that isn't related to breastfeeding?",
+      "answer_key": "nipple_discharge_present",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has noticed nipple discharge unrelated to breastfeeding?"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_12",
+      "question": "Have you had any new visual disturbance or severe headaches?",
+      "answer_key": "visual_disturbance_or_severe_headache",
+      "answer_type": "Boolean",
+      "send_to_encoder": true,
+      "encoder_prompt": "Does the response indicate the patient has had new visual disturbance or severe headaches?",
+      "pdf_label": "Visual disturbance/headache"
+    },
+    {
+      "question_id": "gynae_amenorrhoea_13",
+      "question": "When did your last period start, and have you missed just one period or several in a row?",
+      "answer_key": "amenorrhoea_history_text",
+      "answer_type": "text",
+      "send_to_encoder": false,
+      "encoder_prompt": null
+    }
+  ],
+
+  "safety": {
+    "rules": {
+      "amenorrhoea_red_flags_urgent": {
+        "any": [
+          { "is_true": "abdominal_pelvic_pain_present" },
+          { "is_true": "visual_disturbance_or_severe_headache" }
+        ],
+        "message": "Abdominal or pelvic pain alongside missed periods can occasionally indicate a pregnancy complication such as an ectopic pregnancy, and new visual disturbance or severe headaches can occasionally indicate a pituitary gland problem. Both need prompt assessment. Please call the surgery and ask to speak to the duty doctor instead of sending an online form. If you have severe pain or sudden vision loss, call 111 or attend A&E."
+      }
+    }
+  }
+}
