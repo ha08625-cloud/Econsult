@@ -65,6 +65,14 @@ jobs:
       - name: Validate committed rulesets
         run: python -m pytest tests/test_data_rulesets.py -v
 
+      # The filler-purity guard exists to catch a data/-only edit that
+      # reintroduces fever language into a filler library. Such a PR skips the
+      # unit job entirely, so without this step the guard would never run on
+      # the change it was written for. Stdlib-only, so requirements.txt is
+      # already enough.
+      - name: Validate synthetic fragment libraries
+        run: python -m pytest tests/test_synthetic_recombination.py -v
+
   # ---------------------------------------------------------------------------
   # Unit tests: Python (no database) + frontend Vitest
   # Mirrors: make test

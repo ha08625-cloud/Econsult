@@ -17,6 +17,11 @@ than taking the platform default: a dataset that differs by line ending
 between a developer's machine and CI is not reproducible in any useful sense.
 
 Every run also writes ``<out>.stats.json``.
+
+``--lint`` is a second, generation-free mode: it loads the same libraries and
+prints the hedge-marker, near-duplicate and filler-purity reports. It reads
+nothing but the manifest, so ``--ruleset``, ``--split``, ``--count`` and
+``--out`` are neither required nor used.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ import json
 import sys
 from pathlib import Path
 
+from .lint import render_report
 from .manifest import ManifestError, load_fragments
 from .recombine import (
     DEFAULT_NULL_AMBIGUOUS_RATIO,
@@ -60,8 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--ruleset", type=Path, default=DEFAULT_RULESET)
     parser.add_argument("--signal", default="fever_present")
-    parser.add_argument("--split", required=True, choices=["train", "val", "test"])
-    parser.add_argument("--count", required=True, type=_non_negative_int)
+    # Required for generation but meaningless for --lint, so requiredness is
+    # enforced in main() rather than by argparse.
+    parser.add_argument("--split", choices=["train", "val", "test"])
+    parser.add_argument("--count", type=_non_negative_int)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--dist",
@@ -74,8 +82,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_NULL_AMBIGUOUS_RATIO,
         help="share of null examples carrying a fever-adjacent fragment rather than none",
     )
-    parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--out", type=Path)
+    parser.add_argument(
+        "--lint",
+        action="store_true",
+        help="report library health instead of generating: hedge markers, "
+        "cross-split near-duplicates and fever language in filler",
+    )
     return parser
+
+
+#: Flags that generation cannot run without.
+_GENERATION_REQUIRED = ("split", "count", "out")
 
 
 def write_outputs(out_path: Path, examples, stats: dict) -> Path:
@@ -90,6 +108,15 @@ def write_outputs(out_path: Path, examples, stats: dict) -> Path:
         json.dump(stats, handle, ensure_ascii=False, indent=2, sort_keys=False)
         handle.write("\n")
     return stats_path
+
+
+def run_lint(args: argparse.Namespace) -> int:
+    """Print the library health reports. Never modifies a library."""
+    # check_cells=False: the empty-cell guard is generation's, and a lint that
+    # aborts on unbalanced libraries cannot report on unbalanced libraries.
+    for line in render_report(load_fragments(args.manifest, check_cells=False)):
+        print(line)
+    return 0
 
 
 def run(args: argparse.Namespace) -> int:
@@ -135,9 +162,14 @@ def run(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not args.lint:
+        missing = [f"--{name}" for name in _GENERATION_REQUIRED if getattr(args, name) is None]
+        if missing:
+            parser.error(f"the following arguments are required: {', '.join(missing)}")
     try:
-        return run(args)
+        return run_lint(args) if args.lint else run(args)
     except (
         DistributionError,
         ManifestError,
