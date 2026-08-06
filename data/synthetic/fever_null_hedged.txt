@@ -1,0 +1,24 @@
+[c01] I'm not sure if I have a temperature or not
+[c01] I'm not entirely certain whether or not I've got a high temperature
+[c02] Sometimes I feel hot but I don't know if it's just me
+[c02] Now and again today I've been feeling hot but I don't know if it's just me
+[c03] I might be running warm, hard to tell
+[c03] Hard to say, but I might be running warm
+[c04] My forehead feels a bit off but I haven't checked
+[c04] I haven't used a thermometer but my forehead feels a bit warm
+[c05] I've been wondering if I'm warm or if it's just the room
+[c05] I've been thinking about whether it's just hot in the building or if it's me with a fever
+I've been feeling a bit off lately, hard to say what it is really
+[c06] Sometimes I feel warm but then it passes and I'm not sure it's anything
+[c06] On and off I've been feeling warm but then it passes and I'm not sure it's anything
+[c07] I woke up a bit clammy the other night but it could have been the duvet
+[c07] The other night I woke up super sweaty but we have just changed to a thicker duvet
+[c08] Not sure if I've been running hot or if it's just the weather we've been having
+[c08] I don't know if it's the weather we've been having but I have been feeling hot
+My face felt flushed for a bit yesterday but I'd been rushing around so who knows
+I keep thinking I might be coming down with something but then I feel fine again
+Had a moment where I felt quite hot but I'd just had a cup of tea so it's probably nothing
+[c09] I've felt a bit shivery on and off but the house has been cold so it might just be that
+[c09] I've felt a bit shivery on and off but the house has been cold so it might just be that
+[c10] My partner said I felt warm when they touched my forehead but I felt normal to me
+[c10] My wife said I felt warm when she touched my forehead but I felt normal to me

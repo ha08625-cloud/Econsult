@@ -4,3 +4,6 @@ dev_output/
 .venv/
 __pycache__/
 *.pyc
+
+# Generated synthetic training datasets (regenerable, large)
+data/synthetic/generated/

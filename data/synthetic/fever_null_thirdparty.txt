@@ -1,0 +1,20 @@
+[c01] My son has had a fever on and off for the past few days and I wanted to check if I should be concerned
+[c01] My daughter's been off school with a temperature up and down for the past few days and I wanted to check if I should be concerned
+[c02] My partner woke up with a fever this morning so I'm wondering if I might have caught something
+[c02] I'm wondering if I might have got something contagious, because my husband has had a fever just last week
+[c03] A colleague at work went home with a fever on Monday and we share a small office
+[c03] One of my work colleagues went home with a fever on Tuesday and we share a small office
+[c04] My mum's been running a fever since the weekend and I've been looking after her at home
+[c04] Ive been looking after my step dad since he came back from hospital and he's had a fever
+[c05] The baby at nursery who my daughter plays with apparently had a fever last week
+[c05] Im told the child my son plays with at nursery has quite a nasty case of scarlet fever
+[c06] My flatmate has a really bad fever right now and I'm not sure if I need to do anything
+[c06] I'm not sure if I need to do anything, but my housemate has had a really bad fever last couple of days
+[c07] My husband's had a fever for about three days now and it doesn't seem to be going away
+[c07] My boyfriend's had a fever for about three days now and given me his cold, so I'm worried
+[c08] A few kids in my son's class have been sent home with fevers this week
+[c08] There's a lot of fevers in my son's class right now
+[c09] My elderly dad has come down with a fever and I've been staying at his house to help out
+[c09] I've been staying at my mother-in law's house to help out recently because she's had a horrendous fever
+[c10] My girlfriend mentioned she had a fever yesterday after we spent the whole weekend together
+[c10] After we spent the whole night together, my boyfriend told me he's had a fever
