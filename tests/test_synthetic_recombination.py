@@ -4,10 +4,13 @@ These are pure unit tests with no database, so there is no ``pytestmark``.
 """
 
 import json
+import math
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
+from scripts.synthetic_data.__main__ import main as cli_main
 from scripts.synthetic_data.manifest import (
     Fragment,
     LibrarySpec,
@@ -21,6 +24,17 @@ from scripts.synthetic_data.manifest import (
     read_library,
 )
 from scripts.synthetic_data.normalise import normalise
+from scripts.synthetic_data.recombine import (
+    DistributionError,
+    PoolError,
+    PoolExhaustedError,
+    assemble_text,
+    build_pools,
+    build_stats,
+    generate,
+    labels_for_mode,
+    parse_distribution,
+)
 from scripts.synthetic_data.ruleset import RulesetError, validate_signal
 
 # --------------------------------------------------------------------------
@@ -397,3 +411,470 @@ def test_read_library_preserves_text_verbatim(tmp_path):
     # Surrounding whitespace goes; casing, the curly apostrophe and the
     # punctuation stay, because the encoder sees raw user input at runtime.
     assert fragment.text == "I’ve had a Fever, honestly!!"
+
+
+# --------------------------------------------------------------------------
+# Recombination fixtures
+#
+# Tests below run against a small synthetic manifest, never against
+# data/synthetic/. Tests that depend on the real libraries break every time
+# the user edits a fragment, which is a bad trade for a dataset meant to grow.
+# --------------------------------------------------------------------------
+
+SIGNAL = "fever_present"
+
+_RECOMBINE_LIBRARIES = [
+    _entry("pos", signal_key=SIGNAL, fragment_type="positive"),
+    _entry("neg", signal_key=SIGNAL, fragment_type="negative"),
+    _entry("amb", signal_key=SIGNAL, fragment_type="ambiguous", subclass="hedged"),
+    _entry("conf", signal_key=SIGNAL, fragment_type="confounder", subclass="third_party"),
+    _entry("fill_a"),
+    _entry("fill_b"),
+    _entry("fill_c"),
+]
+
+
+@pytest.fixture
+def libraries(tmp_path) -> Path:
+    """A manifest whose every library fills all three splits."""
+    return _write_manifest(
+        tmp_path,
+        _RECOMBINE_LIBRARIES,
+        {f"{e['name']}.txt": _spread_lines(e["name"], 60) for e in _RECOMBINE_LIBRARIES},
+    )
+
+
+def _pools(manifest_path: Path, split: str = "train"):
+    return build_pools(load_fragments(manifest_path), SIGNAL, split)
+
+
+def _generate(manifest_path: Path, split: str = "train", count: int = 200, **kwargs):
+    examples, _ = generate(_pools(manifest_path, split), count=count, seed=42, **kwargs)
+    return examples
+
+
+def _types_by_id(manifest_path: Path) -> dict[str, str]:
+    return {f.fragment_id: f.fragment_type for f in load_fragments(manifest_path)}
+
+
+def _argv(**flags) -> list[str]:
+    """Flatten ``split="train"`` into ``["--split", "train"]``."""
+    argv: list[str] = []
+    for name, value in flags.items():
+        argv += [f"--{name.replace('_', '-')}", str(value)]
+    return argv
+
+
+def _write_ruleset(base: Path) -> Path:
+    path = base / "ruleset.json"
+    path.write_text(
+        json.dumps(
+            {
+                "questions": [
+                    {
+                        "question_id": "urinary_symptoms_4",
+                        "answer_key": SIGNAL,
+                        "answer_type": "Boolean",
+                        "send_to_encoder": True,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+# --------------------------------------------------------------------------
+# 9. Distribution parsing (C4)
+# --------------------------------------------------------------------------
+
+
+def test_distribution_parses_and_round_trips():
+    assert parse_distribution("null=0.60,false=0.25,true=0.15") == {
+        "null": 0.60,
+        "false": 0.25,
+        "true": 0.15,
+    }
+
+
+def test_distribution_that_does_not_sum_to_one_raises():
+    with pytest.raises(DistributionError, match="sum to"):
+        parse_distribution("null=0.60,false=0.25,true=0.05")
+
+
+def test_distribution_with_an_unknown_label_raises():
+    with pytest.raises(DistributionError, match="unknown label"):
+        parse_distribution("null=0.60,false=0.25,maybe=0.15")
+
+
+def test_distribution_missing_a_label_raises():
+    with pytest.raises(DistributionError, match="missing weights"):
+        parse_distribution("null=0.75,false=0.25")
+
+
+def test_malformed_distribution_term_raises():
+    with pytest.raises(DistributionError, match="malformed"):
+        parse_distribution("null,false=0.25,true=0.15")
+
+
+# --------------------------------------------------------------------------
+# 10. Determinism (C7.9, C7.10)
+# --------------------------------------------------------------------------
+
+
+def test_same_seed_and_flags_produce_byte_identical_output(tmp_path, libraries):
+    ruleset = _write_ruleset(tmp_path)
+    outputs = []
+    for name in ("first", "second"):
+        out = tmp_path / f"{name}.jsonl"
+        argv = _argv(
+            manifest=libraries,
+            ruleset=ruleset,
+            signal=SIGNAL,
+            split="train",
+            count=300,
+            seed=42,
+            out=out,
+        )
+        assert cli_main(argv) == 0
+        outputs.append(out.read_bytes())
+    assert outputs[0] == outputs[1]
+    assert outputs[0].count(b"\n") == 300
+
+
+def test_first_examples_do_not_move_when_count_grows(libraries):
+    small = _generate(libraries, count=100)
+    large = _generate(libraries, count=1000)
+    assert [e.text for e in small] == [e.text for e in large[:100]]
+    assert [e.labels for e in small] == [e.labels for e in large[:100]]
+
+
+def test_changing_the_seed_changes_the_dataset(libraries):
+    a, _ = generate(_pools(libraries), count=100, seed=42)
+    b, _ = generate(_pools(libraries), count=100, seed=43)
+    assert [e.text for e in a] != [e.text for e in b]
+
+
+# --------------------------------------------------------------------------
+# 11. Label/fragment invariants (C3, C7.11-14)
+# --------------------------------------------------------------------------
+
+
+def test_no_positive_fragment_reaches_a_non_true_example(libraries):
+    types = _types_by_id(libraries)
+    for example in _generate(libraries, count=500):
+        used = {types[fid] for fid in example.meta["fragment_ids"]}
+        if example.labels[SIGNAL] is not True:
+            assert "positive" not in used, example
+
+
+def test_no_negative_fragment_reaches_a_non_false_example(libraries):
+    types = _types_by_id(libraries)
+    for example in _generate(libraries, count=500):
+        used = {types[fid] for fid in example.meta["fragment_ids"]}
+        if example.labels[SIGNAL] is not False:
+            assert "negative" not in used, example
+
+
+def test_no_example_mixes_a_decisive_and_an_ambiguous_fragment(libraries):
+    types = _types_by_id(libraries)
+    for example in _generate(libraries, count=500):
+        used = {types[fid] for fid in example.meta["fragment_ids"]}
+        assert not ({"positive", "negative"} & used and {"ambiguous", "confounder"} & used)
+        assert not ("positive" in used and "negative" in used)
+
+
+def test_every_example_holds_exactly_two_fragments(libraries):
+    for example in _generate(libraries, count=500):
+        assert len(example.meta["fragment_ids"]) == 2
+        assert len(example.meta["fragment_subclasses"]) == 2
+
+
+def test_structural_nulls_draw_two_fillers_from_different_libraries(libraries):
+    types = _types_by_id(libraries)
+    libraries_by_id = {f.fragment_id: f.library for f in load_fragments(libraries)}
+    structural = [
+        e for e in _generate(libraries, count=500) if e.meta["label_mode"] == "null_structural"
+    ]
+    assert structural
+    for example in structural:
+        used = [types[fid] for fid in example.meta["fragment_ids"]]
+        assert used == ["filler", "filler"]
+        assert len({libraries_by_id[fid] for fid in example.meta["fragment_ids"]}) == 2
+
+
+def test_ambiguous_nulls_carry_exactly_one_signal_fragment(libraries):
+    types = _types_by_id(libraries)
+    ambiguous = [
+        e for e in _generate(libraries, count=500) if e.meta["label_mode"] == "null_ambiguous"
+    ]
+    assert ambiguous
+    for example in ambiguous:
+        used = sorted(types[fid] for fid in example.meta["fragment_ids"])
+        assert used in (["ambiguous", "filler"], ["confounder", "filler"])
+
+
+def test_decisive_fragments_appear_in_both_positions(libraries):
+    # A model that only ever sees the fever claim first can learn position as a
+    # shortcut, so the shuffle in select_fragments has to actually shuffle.
+    types = _types_by_id(libraries)
+    positions = {
+        next(i for i, fid in enumerate(e.meta["fragment_ids"]) if types[fid] == "positive")
+        for e in _generate(libraries, count=500)
+        if e.labels[SIGNAL] is True
+    }
+    assert positions == {0, 1}
+
+
+@pytest.mark.parametrize("split", ["train", "val", "test"])
+def test_fragment_pools_are_split_restricted(libraries, split):
+    # Filler leakage across splits is exactly as damaging as signal leakage.
+    splits_by_id = {f.fragment_id: f.split for f in load_fragments(libraries)}
+    for example in _generate(libraries, split=split, count=200):
+        assert example.split == split
+        for fragment_id in example.meta["fragment_ids"]:
+            assert splits_by_id[fragment_id] == split, fragment_id
+
+
+# --------------------------------------------------------------------------
+# 12. Labels and text assembly (DD1, DD7)
+# --------------------------------------------------------------------------
+
+
+def test_labels_are_a_dict_keyed_by_answer_key_with_a_real_none():
+    assert labels_for_mode(SIGNAL, "true") == {SIGNAL: True}
+    assert labels_for_mode(SIGNAL, "false") == {SIGNAL: False}
+    for mode in ("null_structural", "null_ambiguous"):
+        labels = labels_for_mode(SIGNAL, mode)
+        # None, never a "null" sentinel string: an absent key means "mask this
+        # head's loss", a None value means "the label is None".
+        assert labels == {SIGNAL: None}
+        assert labels[SIGNAL] is None
+
+
+def test_assembled_text_preserves_fragments_verbatim():
+    fragments = [
+        _fragment("  I’ve had a Fever since Monday  "),
+        _fragment("i'm SO worried about it!"),
+    ]
+    assert assemble_text(fragments) == "I’ve had a Fever since Monday. i'm SO worried about it!"
+
+
+def test_assembly_does_not_double_terminal_punctuation():
+    fragments = [_fragment("Is it a fever?"), _fragment("I think so...")]
+    assert assemble_text(fragments) == "Is it a fever? I think so..."
+
+
+def test_emitted_text_is_never_normalised(libraries):
+    for example in _generate(libraries, count=50):
+        assert example.text == example.text.strip()
+        assert "  " not in example.text
+
+
+# --------------------------------------------------------------------------
+# 13. Realised distribution (C7.15)
+# --------------------------------------------------------------------------
+
+
+def test_realised_label_counts_are_exactly_these_for_seed_42(libraries):
+    # Golden numbers, not a statistical tolerance: the pipeline is
+    # deterministic by construction, so a tolerance would be both weaker and
+    # flakier. A change here is a real behaviour change.
+    examples = _generate(libraries, count=1000)
+    counts = Counter(e.meta["label_mode"] for e in examples)
+    assert counts == {
+        "null_ambiguous": 317,
+        "null_structural": 268,
+        "false": 259,
+        "true": 156,
+    }
+
+
+def test_null_ambiguous_ratio_moves_the_sub_mode_split(libraries):
+    examples = _generate(libraries, count=1000, null_ambiguous_ratio=0.0)
+    modes = Counter(e.meta["label_mode"] for e in examples)
+    assert modes["null_ambiguous"] == 0
+    assert modes["null_structural"] > 0
+
+
+def test_distribution_override_is_honoured(libraries):
+    examples = _generate(
+        libraries, count=400, distribution={"true": 1.0, "false": 0.0, "null": 0.0}
+    )
+    assert all(e.labels[SIGNAL] is True for e in examples)
+
+
+# --------------------------------------------------------------------------
+# 14. Pool exhaustion (C7.16)
+# --------------------------------------------------------------------------
+
+
+def _tiny_pools():
+    fragments = [
+        _fragment("i had a fever", library="pos", signal_key=SIGNAL, fragment_type="positive"),
+        _fragment("no fever here", library="neg", signal_key=SIGNAL, fragment_type="negative"),
+        _fragment("might be warm", library="amb", signal_key=SIGNAL, fragment_type="ambiguous"),
+        _fragment("the bus was late", library="fill_a"),
+        _fragment("my cat is unwell", library="fill_b"),
+    ]
+    return build_pools(fragments, SIGNAL, "train")
+
+
+def test_requesting_more_examples_than_the_pool_holds_raises():
+    # One positive x two fillers x two orderings = four unique true examples.
+    with pytest.raises(PoolExhaustedError, match="train"):
+        generate(
+            _tiny_pools(),
+            count=10,
+            seed=42,
+            distribution={"true": 1.0, "false": 0.0, "null": 0.0},
+        )
+
+
+def test_a_satisfiable_request_against_the_same_tiny_pool_succeeds():
+    examples, telemetry = generate(
+        _tiny_pools(), count=4, seed=42, distribution={"true": 1.0, "false": 0.0, "null": 0.0}
+    )
+    assert len({e.text for e in examples}) == 4
+    assert telemetry["duplicate_rejections"] > 0
+
+
+def test_pool_error_names_the_missing_fragment_type():
+    fragments = [
+        _fragment("i had a fever", library="pos", signal_key=SIGNAL, fragment_type="positive"),
+        _fragment("the bus was late", library="fill_a"),
+        _fragment("my cat is unwell", library="fill_b"),
+    ]
+    with pytest.raises(PoolError, match="negative"):
+        build_pools(fragments, SIGNAL, "train")
+
+
+def test_a_single_filler_library_cannot_serve_structural_nulls():
+    fragments = [
+        _fragment("i had a fever", library="pos", signal_key=SIGNAL, fragment_type="positive"),
+        _fragment("no fever here", library="neg", signal_key=SIGNAL, fragment_type="negative"),
+        _fragment("might be warm", library="amb", signal_key=SIGNAL, fragment_type="ambiguous"),
+        _fragment("the bus was late", library="fill_a"),
+    ]
+    with pytest.raises(PoolError, match="two distinct"):
+        build_pools(fragments, SIGNAL, "train")
+
+
+# --------------------------------------------------------------------------
+# 15. Output schema and stats sidecar (C5, C6)
+# --------------------------------------------------------------------------
+
+
+def test_jsonl_records_carry_the_training_schema(tmp_path, libraries):
+    out = tmp_path / "out.jsonl"
+    argv = _argv(
+        manifest=libraries,
+        ruleset=_write_ruleset(tmp_path),
+        split="val",
+        count=50,
+        out=out,
+    )
+    assert cli_main(argv) == 0
+    records = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 50
+    for record in records:
+        assert set(record) == {"example_id", "split", "text", "labels", "meta"}
+        assert record["split"] == "val"
+        assert set(record["labels"]) == {SIGNAL}
+        assert record["labels"][SIGNAL] in (True, False, None)
+        assert set(record["meta"]) == {
+            "label_mode",
+            "fragment_ids",
+            "fragment_subclasses",
+            "seed",
+            "generator_version",
+        }
+    assert records[0]["example_id"] == "val-000000"
+
+
+def test_stats_sidecar_records_what_was_asked_for_and_what_came_out(tmp_path, libraries):
+    out = tmp_path / "out.jsonl"
+    cli_main(
+        _argv(
+            manifest=libraries,
+            ruleset=_write_ruleset(tmp_path),
+            split="train",
+            count=500,
+            out=out,
+        )
+    )
+    stats = json.loads((tmp_path / "out.jsonl.stats.json").read_text(encoding="utf-8"))
+
+    assert stats["requested"]["count"] == 500
+    assert stats["requested"]["distribution"] == {"true": 0.15, "false": 0.25, "null": 0.60}
+    assert stats["realised"]["count"] == 500
+    assert sum(stats["realised"]["labels"].values()) == 500
+    assert sum(stats["realised"]["label_modes"].values()) == 500
+    assert stats["fragment_pool_sizes"]["pos"]["train"] > 0
+    assert "duplicate_rejections" in stats
+    # DD6: the length confound is reported here or it is invisible.
+    for label in ("true", "false", "null"):
+        assert stats["token_counts"]["by_label"][label]["median_tokens"] > 0
+        assert stats["token_counts"]["by_label"][label]["p90_tokens"] > 0
+
+
+def test_stats_length_summary_matches_the_examples(libraries):
+    pools = _pools(libraries)
+    examples, telemetry = generate(pools, count=200, seed=42)
+    stats = build_stats(
+        examples,
+        telemetry=telemetry,
+        fragments=load_fragments(libraries),
+        pools=pools,
+        count=200,
+        seed=42,
+        distribution={"true": 0.15, "false": 0.25, "null": 0.60},
+        null_ambiguous_ratio=0.5,
+        manifest_path=str(libraries),
+        ruleset_path="ruleset.json",
+    )
+    true_lengths = sorted(len(e.text.split()) for e in examples if e.labels[SIGNAL] is True)
+    assert stats["token_counts"]["by_label"]["true"]["count"] == len(true_lengths)
+    assert stats["token_counts"]["by_label"]["true"]["p90_tokens"] == float(
+        true_lengths[max(0, math.ceil(0.9 * len(true_lengths)) - 1)]
+    )
+
+
+# --------------------------------------------------------------------------
+# 16. CLI failure modes
+# --------------------------------------------------------------------------
+
+
+def test_cli_rejects_a_signal_absent_from_the_ruleset(tmp_path, libraries, capsys):
+    out = tmp_path / "out.jsonl"
+    code = cli_main(
+        _argv(
+            manifest=libraries,
+            ruleset=_write_ruleset(tmp_path),
+            signal="dysuria_present",
+            split="train",
+            count=10,
+            out=out,
+        )
+    )
+    assert code == 2
+    assert "dysuria_present" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_cli_rejects_a_bad_distribution_before_writing_anything(tmp_path, libraries, capsys):
+    out = tmp_path / "out.jsonl"
+    code = cli_main(
+        _argv(
+            manifest=libraries,
+            ruleset=_write_ruleset(tmp_path),
+            split="train",
+            count=10,
+            dist="null=0.6,false=0.2,true=0.1",
+            out=out,
+        )
+    )
+    assert code == 2
+    assert "sum to" in capsys.readouterr().err
+    assert not out.exists()
