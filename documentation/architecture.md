@@ -97,6 +97,11 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Domain Doc:** `docs/arch_mesh.md`
 * **Key Files:** `client.py`, `mesh_enqueuer.py`, `mesh_payload.py`, `mesh_repository.py`, `mesh_constants.py`, `mesh_worker.py`, `mesh_worker_main.py`
 
+### 3.15 Encoder Training Data (Synthetic Generation)
+* **Scope:** Building the encoder's training dataset by recombining hand-written sentence fragments. Offline tooling only — nothing here runs in the live application and `app/` never imports it. Covers the fragment libraries, label-first generation, train/val/test splitting, and the library lint. The training strategy itself and the full design rationale stay in `documentation/encoder/`.
+* **Domain Doc:** `docs/arch_training.md`
+* **Key Files:** `scripts/synthetic_data/*.py`, `data/synthetic/manifest.json`, `data/synthetic/*.txt`
+
 ## 4. Other reference files
 
 ### 4.1 nhs_integration_reference.md
