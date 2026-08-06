@@ -6,11 +6,19 @@ These are pure unit tests with no database, so there is no ``pytestmark``.
 import json
 import math
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from scripts.synthetic_data.__main__ import main as cli_main
+from scripts.synthetic_data.lint import (
+    FEVER_LEXICON,
+    cross_split_near_duplicates,
+    filler_lexicon_hits,
+    hedge_marker_hits,
+    render_report,
+)
 from scripts.synthetic_data.manifest import (
     Fragment,
     LibrarySpec,
@@ -878,3 +886,194 @@ def test_cli_rejects_a_bad_distribution_before_writing_anything(tmp_path, librar
     assert code == 2
     assert "sum to" in capsys.readouterr().err
     assert not out.exists()
+
+
+# --------------------------------------------------------------------------
+# 17. Lint reports (C1, C2, C3)
+#
+# Everything except the filler-purity test below runs against synthetic
+# fragments. The filler-purity test deliberately reads the real
+# data/synthetic/ tree: its entire purpose is to fail when someone edits a
+# filler library and reintroduces fever language, which no fixture can catch.
+# --------------------------------------------------------------------------
+
+REAL_MANIFEST = Path(__file__).resolve().parents[1] / "data" / "synthetic" / "manifest.json"
+
+#: Filler fragments permitted to match the fever lexicon. Empty, because the
+#: current filler libraries are clean under word-boundary matching. The three
+#: known incidental hits ("lithotripsy", "photos", "months" all containing the
+#: substring "hot") are excluded by \b, not by an allowlist -- see
+#: test_the_known_substring_traps_are_not_flagged.
+FILLER_PURITY_BASELINE: set[str] = set()
+
+
+def _real_fragments():
+    # check_cells=False: the real fever_null sub-classes are small enough that
+    # some (library, split) cells are empty, which aborts generation by design.
+    # This test is about filler text, not about split balance.
+    return load_fragments(REAL_MANIFEST, check_cells=False)
+
+
+def test_no_filler_fragment_contains_fever_language():
+    hits = filler_lexicon_hits(_real_fragments())
+    assert {hit.fragment_id for hit in hits} == FILLER_PURITY_BASELINE, (
+        "a filler library has acquired fever language, so examples labelled null "
+        "on the strength of their structure would contain fever text: "
+        + "; ".join(f"{hit.fragment_id} {hit.terms} {hit.text}" for hit in hits)
+    )
+
+
+def test_the_fever_lexicon_actually_matches_fever_text():
+    # Without this, the empty baseline above would pass just as happily against
+    # a lexicon that had been broken into matching nothing at all.
+    fragments = [
+        _fragment("I've had a fever since Monday", fragment_type="filler"),
+        _fragment("my temperature was 38.5 this morning", fragment_type="filler"),
+        _fragment("I keep getting chills and sweats", fragment_type="filler"),
+    ]
+    assert len(filler_lexicon_hits(fragments)) == 3
+
+
+def test_the_known_substring_traps_are_not_flagged():
+    # These are the three real filler lines that naive substring matching
+    # flags, all on "hot" inside lithotripsy / photos / shot. Word boundaries
+    # are the only thing standing between them and a check that fails on day
+    # one against clean data.
+    traps = [
+        "could I be referred for lithotripsy to break it up",
+        "My sister texted saying she's worried about me from the photos I sent",
+        "I've been unemployed for 8 months and this is my best shot at getting back to work",
+    ]
+    assert "hot" in FEVER_LEXICON
+    assert all("hot" in trap.lower() for trap in traps)
+    assert filler_lexicon_hits([_fragment(t, fragment_type="filler") for t in traps]) == []
+
+
+def test_fever_language_in_a_signal_library_is_not_a_filler_leak():
+    fragment = _fragment("I've had a fever", fragment_type="positive", signal_key=SIGNAL)
+    assert filler_lexicon_hits([fragment]) == []
+
+
+def test_hedge_markers_are_reported_for_decisive_libraries_only():
+    fragments = [
+        _fragment("I think I might have a fever", fragment_type="positive", signal_key="s"),
+        _fragment("probably no fever", fragment_type="negative", signal_key="s"),
+        _fragment("maybe warm, hard to tell", fragment_type="ambiguous", signal_key="s"),
+        _fragment("my neighbour might be unwell", fragment_type="confounder", signal_key="s"),
+        _fragment("the bus was probably late"),
+    ]
+    # Ambiguous and confounder fragments are supposed to hedge, and filler is
+    # not this report's business, so only the decisive two are reported.
+    assert {hit.text for hit in hedge_marker_hits(fragments)} == {
+        "I think I might have a fever",
+        "probably no fever",
+    }
+
+
+def test_hedge_report_lists_every_marker_it_matched():
+    fragment = _fragment("I'm not sure, could be a fever", fragment_type="positive", signal_key="s")
+    (hit,) = hedge_marker_hits([fragment])
+    assert hit.terms == ("could be", "not sure")
+
+
+def test_hedge_markers_match_on_word_boundaries():
+    fragment = _fragment("the mighty river", fragment_type="positive", signal_key="s")
+    assert hedge_marker_hits([fragment]) == []
+
+
+def test_hedge_report_does_not_change_any_fragment():
+    fragments = [_fragment("I think I have a fever", fragment_type="positive", signal_key="s")]
+    before = list(fragments)
+    hedge_marker_hits(fragments)
+    assert fragments == before
+
+
+def _near_duplicate_pair(split_a: str, split_b: str) -> list[Fragment]:
+    return [
+        _fragment(
+            "My colleague went home with a fever on Monday and we share an office",
+            fragment_id="lib:aaaaaaaa",
+            split=split_a,
+        ),
+        _fragment(
+            "My colleague went home with a fever on Tuesday and we share an office",
+            fragment_id="lib:bbbbbbbb",
+            split=split_b,
+        ),
+    ]
+
+
+def test_near_duplicates_in_different_splits_are_reported():
+    (pair,) = cross_split_near_duplicates(_near_duplicate_pair("train", "val"))
+    assert pair.ratio >= 0.6
+    assert {pair.left.split, pair.right.split} == {"train", "val"}
+
+
+def test_near_duplicates_within_one_split_are_not_reported():
+    # Same-split twins cost a little diversity; they do not let a validation
+    # example borrow lexical content from a training example.
+    assert cross_split_near_duplicates(_near_duplicate_pair("train", "train")) == []
+
+
+def test_near_duplicates_are_not_compared_across_libraries():
+    left, right = _near_duplicate_pair("train", "val")
+    assert cross_split_near_duplicates([left, replace(right, library="other")]) == []
+
+
+def test_unrelated_fragments_are_not_near_duplicates():
+    fragments = [
+        _fragment("I had a fever on Monday", fragment_id="lib:a", split="train"),
+        _fragment("the parking at the surgery is impossible", fragment_id="lib:b", split="val"),
+    ]
+    assert cross_split_near_duplicates(fragments) == []
+
+
+def test_cluster_markers_keep_twins_out_of_the_near_duplicate_report(tmp_path):
+    # The report is the feedback loop on Task 1's manual clustering pass: a
+    # tagged twin pair cannot straddle a split, so it cannot be reported.
+    twins = ["[c01] my husband has had a fever for three days now"]
+    twins += ["[c01] my boyfriend has had a fever for about three days now"]
+    manifest_path = _write_manifest(
+        tmp_path,
+        [_entry("nulls", signal_key=SIGNAL, fragment_type="confounder")],
+        {"nulls.txt": twins + _spread_lines("nulls", 40)},
+    )
+    fragments = load_fragments(manifest_path, check_cells=False)
+    tagged = {f.fragment_id for f in fragments if f.cluster_id == "nulls:c01"}
+    assert len(tagged) == 2
+    assert len({f.split for f in fragments if f.fragment_id in tagged}) == 1
+    reported = {
+        fragment_id
+        for pair in cross_split_near_duplicates(fragments)
+        for fragment_id in (pair.left.fragment_id, pair.right.fragment_id)
+    }
+    assert not (tagged & reported)
+
+
+def test_lint_reports_empty_split_cells_instead_of_aborting(tmp_path):
+    # Generation aborts on an empty cell (DD9). The lint must not: it is the
+    # tool you reach for when the generator refuses.
+    manifest_path = _write_manifest(
+        tmp_path,
+        [_entry("tiny")],
+        {"tiny.txt": ["only one line here"]},
+    )
+    with pytest.raises(ManifestError):
+        load_fragments(manifest_path)
+    report = "\n".join(render_report(load_fragments(manifest_path, check_cells=False)))
+    assert "empty cell" in report
+    assert "empty cells: 2" in report
+
+
+def test_cli_lint_needs_no_split_count_or_out(capsys):
+    assert cli_main(["--lint", "--manifest", str(REAL_MANIFEST)]) == 0
+    out = capsys.readouterr().out
+    assert "Hedge markers in decisive libraries:" in out
+    assert "Cross-split near-duplicates" in out
+    assert "Fever language in filler libraries:" in out
+
+
+def test_cli_still_requires_the_generation_flags_without_lint(tmp_path, libraries):
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(_argv(manifest=libraries, ruleset=_write_ruleset(tmp_path)))
+    assert excinfo.value.code == 2

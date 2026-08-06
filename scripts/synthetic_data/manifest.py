@@ -232,6 +232,20 @@ def deduplicate(fragments: list[Fragment]) -> list[Fragment]:
     return result
 
 
+def empty_cells(fragments: list[Fragment], specs: list[LibrarySpec]) -> list[str]:
+    """Return the ``library/split`` cells holding no fragments, in library order."""
+    populated: dict[str, set[str]] = defaultdict(set)
+    for fragment in fragments:
+        populated[fragment.library].add(fragment.split)
+
+    return [
+        f"{spec.name}/{split}"
+        for spec in specs
+        for split in SPLITS
+        if split not in populated[spec.name]
+    ]
+
+
 def check_no_empty_cells(fragments: list[Fragment], specs: list[LibrarySpec]) -> None:
     """Assert every (library, split) cell holds at least one fragment.
 
@@ -239,16 +253,7 @@ def check_no_empty_cells(fragments: list[Fragment], specs: list[LibrarySpec]) ->
     sub-class can plausibly land zero fragments in a split. A silent empty cell
     makes a whole sub-class invisible to evaluation; this makes it loud.
     """
-    populated: dict[str, set[str]] = defaultdict(set)
-    for fragment in fragments:
-        populated[fragment.library].add(fragment.split)
-
-    empty = [
-        f"{spec.name}/{split}"
-        for spec in specs
-        for split in SPLITS
-        if split not in populated[spec.name]
-    ]
+    empty = empty_cells(fragments, specs)
     if empty:
         raise ManifestError(
             "these (library, split) cells are empty, so a sub-class would be invisible to "
@@ -256,8 +261,14 @@ def check_no_empty_cells(fragments: list[Fragment], specs: list[LibrarySpec]) ->
         )
 
 
-def load_fragments(manifest_path: Path) -> list[Fragment]:
-    """Load, validate, deduplicate and split every declared library."""
+def load_fragments(manifest_path: Path, *, check_cells: bool = True) -> list[Fragment]:
+    """Load, validate, deduplicate and split every declared library.
+
+    ``check_cells=False`` skips the empty-cell guard. That is for the reporting
+    tools only: a lint that refuses to run because the libraries are unbalanced
+    is useless exactly when it is most needed, since diagnosing that imbalance
+    is part of its job. Generation always keeps the guard on.
+    """
     manifest_path = Path(manifest_path)
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     specs = parse_manifest(payload)
@@ -268,5 +279,6 @@ def load_fragments(manifest_path: Path) -> list[Fragment]:
         fragments.extend(read_library(spec, base_dir))
 
     fragments = deduplicate(fragments)
-    check_no_empty_cells(fragments, specs)
+    if check_cells:
+        check_no_empty_cells(fragments, specs)
     return fragments
