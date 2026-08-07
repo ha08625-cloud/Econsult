@@ -68,6 +68,32 @@
       "subclass": "third_party"
     },
     {
+      "name": "flank_pain_true",
+      "file": "symptoms/flank_pain/flank_pain_true.txt",
+      "signal_key": "flank_pain_present",
+      "fragment_type": "positive"
+    },
+    {
+      "name": "flank_pain_false",
+      "file": "symptoms/flank_pain/flank_pain_false.txt",
+      "signal_key": "flank_pain_present",
+      "fragment_type": "negative"
+    },
+    {
+      "name": "flank_pain_null_hedged",
+      "file": "symptoms/flank_pain/flank_pain_null_hedged.txt",
+      "signal_key": "flank_pain_present",
+      "fragment_type": "ambiguous",
+      "subclass": "hedged"
+    },
+    {
+      "name": "flank_pain_null_thirdparty",
+      "file": "symptoms/flank_pain/flank_pain_null_thirdparty.txt",
+      "signal_key": "flank_pain_present",
+      "fragment_type": "confounder",
+      "subclass": "third_party"
+    },
+    {
       "name": "tangents",
       "file": "filler/tangents.txt",
       "signal_key": null,

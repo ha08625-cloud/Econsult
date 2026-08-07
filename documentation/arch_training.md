@@ -103,20 +103,28 @@ reading eleven manifest entries.
 | `symptoms/dysuria/dysuria_false.txt` | 18 | Says it does not ("weeing itself is fine, no stinging") |
 | `symptoms/dysuria/dysuria_null_hedged.txt` | 16 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
 | `symptoms/dysuria/dysuria_null_thirdparty.txt` | 14 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
+| `symptoms/flank_pain/flank_pain_true.txt` | 10 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
+| `symptoms/flank_pain/flank_pain_false.txt` | 10 | Says there is not ("no pain in my back or sides at all") |
+| `symptoms/flank_pain/flank_pain_null_hedged.txt` | 5 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
+| `symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 5 | *Someone else* has flank pain ("my son says his back hurts under his ribs") |
 | `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
 | `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
 | `filler/emotional.txt` | 60 | Filler: worry and feelings |
 | `filler/expectations.txt` | 60 | Filler: what they want to happen |
 | `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
 
-**The dysuria libraries are a seed, not a working set.** They exist so the
-multi-signal recombination described in section 12.2 has something real to be
-built against. The generator does not read them yet: `build_pools` keeps only
-fragments whose `signal_key` matches the signal being generated, plus filler, so
-a dysuria fragment is dropped from a `fever_present` run rather than treated as
-filler. That is the correct behaviour until the machinery in 12.5 exists —
-treating them as filler would silently assert they say nothing about fever, and
-that guarantee is not yet written down anywhere the code can check.
+**The dysuria and flank_pain libraries are a seed, not a working set.** They
+exist so the multi-signal recombination described in section 12.2 has
+something real to be built against. The flank_pain set is smaller still
+(5-10 fragments per file, a proof-of-concept batch for iterating on the
+pipeline, not a working set) and its split coverage has empty cells — see
+section 10. The generator does not read either symptom's libraries yet:
+`build_pools` keeps only fragments whose `signal_key` matches the signal
+being generated, plus filler, so a dysuria or flank_pain fragment is dropped
+from a `fever_present` run rather than treated as filler. That is the
+correct behaviour until the machinery in 12.5 exists — treating them as
+filler would silently assert they say nothing about fever, and that
+guarantee is not yet written down anywhere the code can check.
 
 They were written to be silent about fever (verified: zero hits against the
 lint's fever lexicon) and about the other urinary signals, but "verified by
@@ -396,6 +404,13 @@ The dysuria libraries fill all twelve of their cells, but they are small enough
 (14–24 fragments) that this is fragile: one reworded fragment can empty a cell
 again. They need the same 40–50 target as everything else before any number
 derived from them means anything.
+
+The flank_pain libraries (5–10 fragments each, added as a proof-of-concept
+batch) do not fill all their cells: `flank_pain_false` has an empty test cell
+and `flank_pain_null_thirdparty` an empty validation cell. A run targeting
+`flank_pain_present` would currently be blocked by the same guard described
+above. This is expected at this size, not a bug — the fix is more fragments,
+same as `fever_null_metaphor`.
 
 ---
 
