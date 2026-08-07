@@ -39,7 +39,14 @@ def test_every_committed_ruleset_loads_and_validates(registry: ConditionRegistry
 
 
 def test_registry_discovers_every_json_file_on_disk(registry: ConditionRegistry) -> None:
-    json_file_count = sum(1 for _ in DATA_DIR.rglob("*.json"))
+    # data/synthetic/ holds offline encoder training data (fragment
+    # libraries, manifest.json), not clinical rulesets, and is excluded by
+    # the registry -- see app/core/condition_registry.py::_load_all.
+    json_file_count = sum(
+        1
+        for path in DATA_DIR.rglob("*.json")
+        if "synthetic" not in path.relative_to(DATA_DIR).parts[:-1]
+    )
     assert json_file_count == len(registry.list_conditions())
 
 

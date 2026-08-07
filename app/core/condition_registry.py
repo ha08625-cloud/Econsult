@@ -54,12 +54,18 @@ class ConditionRegistry:
         if not os.path.isdir(data_dir):
             raise RegistryValidationError(f"Data directory does not exist: {data_dir}")
 
-        json_paths = sorted(
-            os.path.join(root, filename)
-            for root, _dirs, filenames in os.walk(data_dir)
-            for filename in filenames
-            if filename.endswith(".json")
-        )
+        json_paths = []
+        for root, dirs, filenames in os.walk(data_dir):
+            # data/synthetic/ holds offline encoder training data (fragment
+            # libraries, manifest.json), not clinical rulesets. It is never
+            # imported by the app; exclude it so its manifest.json isn't
+            # mistaken for a ruleset. See documentation/architecture.md 3.15.
+            if root == data_dir:
+                dirs[:] = [d for d in dirs if d != "synthetic"]
+            json_paths.extend(
+                os.path.join(root, filename) for filename in filenames if filename.endswith(".json")
+            )
+        json_paths.sort()
 
         if not json_paths:
             raise RegistryValidationError(f"No JSON files found in {data_dir}")
