@@ -3,75 +3,101 @@
   "libraries": [
     {
       "name": "fever_true",
-      "file": "fever_true.txt",
+      "file": "symptoms/fever/fever_true.txt",
       "signal_key": "fever_present",
       "fragment_type": "positive"
     },
     {
       "name": "fever_false",
-      "file": "fever_false.txt",
+      "file": "symptoms/fever/fever_false.txt",
       "signal_key": "fever_present",
       "fragment_type": "negative"
     },
     {
       "name": "fever_null_hedged",
-      "file": "fever_null_hedged.txt",
+      "file": "symptoms/fever/fever_null_hedged.txt",
       "signal_key": "fever_present",
       "fragment_type": "ambiguous",
       "subclass": "hedged"
     },
     {
       "name": "fever_null_metaphor",
-      "file": "fever_null_metaphor.txt",
+      "file": "symptoms/fever/fever_null_metaphor.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
       "subclass": "metaphor"
     },
     {
       "name": "fever_null_thirdparty",
-      "file": "fever_null_thirdparty.txt",
+      "file": "symptoms/fever/fever_null_thirdparty.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
       "subclass": "third_party"
     },
     {
       "name": "fever_null_historical",
-      "file": "fever_null_historical.txt",
+      "file": "symptoms/fever/fever_null_historical.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
       "subclass": "historical"
     },
     {
+      "name": "dysuria_true",
+      "file": "symptoms/dysuria/dysuria_true.txt",
+      "signal_key": "dysuria_present",
+      "fragment_type": "positive"
+    },
+    {
+      "name": "dysuria_false",
+      "file": "symptoms/dysuria/dysuria_false.txt",
+      "signal_key": "dysuria_present",
+      "fragment_type": "negative"
+    },
+    {
+      "name": "dysuria_null_hedged",
+      "file": "symptoms/dysuria/dysuria_null_hedged.txt",
+      "signal_key": "dysuria_present",
+      "fragment_type": "ambiguous",
+      "subclass": "hedged"
+    },
+    {
+      "name": "dysuria_null_thirdparty",
+      "file": "symptoms/dysuria/dysuria_null_thirdparty.txt",
+      "signal_key": "dysuria_present",
+      "fragment_type": "confounder",
+      "subclass": "third_party"
+    },
+    {
       "name": "tangents",
-      "file": "tangents.txt",
+      "file": "filler/tangents.txt",
       "signal_key": null,
       "fragment_type": "filler",
       "category": "irrelevant"
     },
     {
       "name": "justifiers",
-      "file": "justifiers.txt",
+      "file": "filler/justifiers.txt",
       "signal_key": null,
       "fragment_type": "filler",
       "category": "justification"
     },
     {
       "name": "emotional",
-      "file": "emotional.txt",
+      "file": "filler/emotional.txt",
       "signal_key": null,
       "fragment_type": "filler",
       "category": "emotional"
     },
     {
       "name": "expectations",
-      "file": "expectations.txt",
+      "file": "filler/expectations.txt",
       "signal_key": null,
       "fragment_type": "filler",
       "category": "expectation"
     },
     {
       "name": "uti_speculation",
-      "file": "uti_speculation.txt",
+      "file": "filler/uti_speculation.txt",
       "signal_key": null,
       "fragment_type": "filler",
       "category": "self_diagnosis"
