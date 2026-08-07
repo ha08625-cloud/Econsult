@@ -9,6 +9,7 @@
         --seed     42 \\
         --dist     null=0.60,false=0.25,true=0.15 \\
         --null-ambiguous-ratio 0.5 \\
+        --fragment-counts 2=0.5,3=0.5 \\
         --out      data/synthetic/generated/fever_present.train.jsonl
 
 Same seed + same libraries + same flags produces byte-identical output. That
@@ -42,6 +43,7 @@ from .recombine import (
     build_stats,
     generate,
     parse_distribution,
+    parse_fragment_counts,
     to_record,
 )
 from .ruleset import RulesetError, load_and_validate
@@ -49,6 +51,7 @@ from .ruleset import RulesetError, load_and_validate
 DEFAULT_MANIFEST = Path("data/synthetic/manifest.json")
 DEFAULT_RULESET = Path("data/uti1.json")
 DEFAULT_DIST = "null=0.60,false=0.25,true=0.15"
+DEFAULT_FRAGMENT_COUNTS_ARG = "2=0.5,3=0.5"
 
 
 def _non_negative_int(raw: str) -> int:
@@ -81,6 +84,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_NULL_AMBIGUOUS_RATIO,
         help="share of null examples carrying a fever-adjacent fragment rather than none",
+    )
+    parser.add_argument(
+        "--fragment-counts",
+        default=DEFAULT_FRAGMENT_COUNTS_ARG,
+        help="how many fragments an example holds, as a weighted mix, e.g. '2=0.5,3=0.5'; "
+        "must sum to 1.0, every count at least 2, and the largest count may not exceed "
+        "the number of filler libraries. The mix is applied identically to every label "
+        "mode by design -- a count that varied by label would make text length a proxy "
+        "for the label",
     )
     parser.add_argument("--out", type=Path)
     parser.add_argument(
@@ -125,6 +137,7 @@ def run(args: argparse.Namespace) -> int:
     # run, and the project treats config drift as an error rather than
     # something to tolerate.
     distribution = parse_distribution(args.dist)
+    fragment_counts = parse_fragment_counts(args.fragment_counts)
     load_and_validate(args.ruleset, args.signal)
 
     fragments = load_fragments(args.manifest)
@@ -136,6 +149,7 @@ def run(args: argparse.Namespace) -> int:
         seed=args.seed,
         distribution=distribution,
         null_ambiguous_ratio=args.null_ambiguous_ratio,
+        fragment_counts=fragment_counts,
     )
     stats = build_stats(
         examples,
@@ -146,6 +160,7 @@ def run(args: argparse.Namespace) -> int:
         seed=args.seed,
         distribution=distribution,
         null_ambiguous_ratio=args.null_ambiguous_ratio,
+        fragment_counts=fragment_counts,
         manifest_path=str(args.manifest),
         ruleset_path=str(args.ruleset),
     )

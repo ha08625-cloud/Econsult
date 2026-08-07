@@ -33,6 +33,7 @@ from scripts.synthetic_data.manifest import (
 )
 from scripts.synthetic_data.normalise import normalise
 from scripts.synthetic_data.recombine import (
+    DEFAULT_FRAGMENT_COUNTS,
     DistributionError,
     PoolError,
     PoolExhaustedError,
@@ -42,6 +43,7 @@ from scripts.synthetic_data.recombine import (
     generate,
     labels_for_mode,
     parse_distribution,
+    parse_fragment_counts,
 )
 from scripts.synthetic_data.ruleset import RulesetError, validate_signal
 
@@ -442,6 +444,12 @@ _RECOMBINE_LIBRARIES = [
 ]
 
 
+#: Four filler libraries, so a structural null can be built at count four. Kept
+#: separate from the fixture above rather than widening it, so the three-filler
+#: pool stays available for the pool-error cases.
+_WIDE_LIBRARIES = [*_RECOMBINE_LIBRARIES, _entry("fill_d")]
+
+
 @pytest.fixture
 def libraries(tmp_path) -> Path:
     """A manifest whose every library fills all three splits."""
@@ -449,6 +457,16 @@ def libraries(tmp_path) -> Path:
         tmp_path,
         _RECOMBINE_LIBRARIES,
         {f"{e['name']}.txt": _spread_lines(e["name"], 60) for e in _RECOMBINE_LIBRARIES},
+    )
+
+
+@pytest.fixture
+def wide_libraries(tmp_path) -> Path:
+    """As ``libraries``, plus a fourth filler library."""
+    return _write_manifest(
+        tmp_path,
+        _WIDE_LIBRARIES,
+        {f"{e['name']}.txt": _spread_lines(e["name"], 60) for e in _WIDE_LIBRARIES},
     )
 
 
@@ -527,6 +545,54 @@ def test_malformed_distribution_term_raises():
 
 
 # --------------------------------------------------------------------------
+# 9b. Fragment-count parsing
+# --------------------------------------------------------------------------
+
+
+def test_fragment_counts_parse_to_integer_keys():
+    assert parse_fragment_counts("2=0.5,3=0.5") == {2: 0.5, 3: 0.5}
+    assert parse_fragment_counts("2=0.4,3=0.4,4=0.2") == {2: 0.4, 3: 0.4, 4: 0.2}
+
+
+def test_fragment_count_below_two_raises():
+    # A lone filler is a trivially easy null and a lone decisive fragment
+    # removes the noise floor, so two is the floor.
+    with pytest.raises(DistributionError, match="below the minimum of 2"):
+        parse_fragment_counts("1=0.5,2=0.5")
+
+
+def test_non_integer_fragment_count_raises():
+    with pytest.raises(DistributionError, match="not an integer"):
+        parse_fragment_counts("two=1.0")
+
+
+def test_fragment_counts_that_do_not_sum_to_one_raise():
+    with pytest.raises(DistributionError, match="sum to"):
+        parse_fragment_counts("2=0.5,3=0.4")
+
+
+def test_duplicate_fragment_count_raises():
+    with pytest.raises(DistributionError, match="appears twice"):
+        parse_fragment_counts("2=0.5,2=0.5")
+
+
+def test_empty_fragment_counts_raise():
+    with pytest.raises(DistributionError, match="empty"):
+        parse_fragment_counts("")
+
+
+@pytest.mark.parametrize(
+    "text", ["1=1.0", "two=1.0", "2=0.5,3=0.4", "2=0.5,2=0.5", "", "2", "2=nope", "2=-1.0,3=2.0"]
+)
+def test_fragment_count_errors_name_their_own_flag(text):
+    # Sharing the parser with --dist must not make a bad --fragment-counts
+    # report itself as a --dist problem.
+    with pytest.raises(DistributionError) as excinfo:
+        parse_fragment_counts(text)
+    assert "--dist" not in str(excinfo.value)
+
+
+# --------------------------------------------------------------------------
 # 10. Determinism (C7.9, C7.10)
 # --------------------------------------------------------------------------
 
@@ -593,13 +659,19 @@ def test_no_example_mixes_a_decisive_and_an_ambiguous_fragment(libraries):
         assert not ("positive" in used and "negative" in used)
 
 
-def test_every_example_holds_exactly_two_fragments(libraries):
-    for example in _generate(libraries, count=500):
-        assert len(example.meta["fragment_ids"]) == 2
-        assert len(example.meta["fragment_subclasses"]) == 2
+def test_every_example_holds_one_of_the_requested_fragment_counts(libraries):
+    examples = _generate(libraries, count=500)
+    seen = set()
+    for example in examples:
+        size = len(example.meta["fragment_ids"])
+        assert size in DEFAULT_FRAGMENT_COUNTS
+        assert len(example.meta["fragment_subclasses"]) == size
+        seen.add(size)
+    # Both requested counts actually occur, or the assertion above is vacuous.
+    assert seen == set(DEFAULT_FRAGMENT_COUNTS)
 
 
-def test_structural_nulls_draw_two_fillers_from_different_libraries(libraries):
+def test_structural_nulls_are_all_filler_from_distinct_libraries(libraries):
     types = _types_by_id(libraries)
     libraries_by_id = {f.fragment_id: f.library for f in load_fragments(libraries)}
     structural = [
@@ -607,9 +679,11 @@ def test_structural_nulls_draw_two_fillers_from_different_libraries(libraries):
     ]
     assert structural
     for example in structural:
-        used = [types[fid] for fid in example.meta["fragment_ids"]]
-        assert used == ["filler", "filler"]
-        assert len({libraries_by_id[fid] for fid in example.meta["fragment_ids"]}) == 2
+        ids = example.meta["fragment_ids"]
+        assert [types[fid] for fid in ids] == ["filler"] * len(ids)
+        # Distinct libraries at every count, not just at two: three fillers
+        # from one library read as three tangents in the same voice.
+        assert len({libraries_by_id[fid] for fid in ids}) == len(ids)
 
 
 def test_ambiguous_nulls_carry_exactly_one_signal_fragment(libraries):
@@ -619,11 +693,13 @@ def test_ambiguous_nulls_carry_exactly_one_signal_fragment(libraries):
     ]
     assert ambiguous
     for example in ambiguous:
-        used = sorted(types[fid] for fid in example.meta["fragment_ids"])
-        assert used in (["ambiguous", "filler"], ["confounder", "filler"])
+        used = Counter(types[fid] for fid in example.meta["fragment_ids"])
+        signal = used["ambiguous"] + used["confounder"]
+        assert signal == 1
+        assert used["filler"] == len(example.meta["fragment_ids"]) - 1
 
 
-def test_decisive_fragments_appear_in_both_positions(libraries):
+def test_decisive_fragments_appear_in_every_position(libraries):
     # A model that only ever sees the fever claim first can learn position as a
     # shortcut, so the shuffle in select_fragments has to actually shuffle.
     types = _types_by_id(libraries)
@@ -632,7 +708,7 @@ def test_decisive_fragments_appear_in_both_positions(libraries):
         for e in _generate(libraries, count=500)
         if e.labels[SIGNAL] is True
     }
-    assert positions == {0, 1}
+    assert positions == set(range(max(DEFAULT_FRAGMENT_COUNTS)))
 
 
 @pytest.mark.parametrize("split", ["train", "val", "test"])
@@ -689,6 +765,12 @@ def test_realised_label_counts_are_exactly_these_for_seed_42(libraries):
     # Golden numbers, not a statistical tolerance: the pipeline is
     # deterministic by construction, so a tolerance would be both weaker and
     # flakier. A change here is a real behaviour change.
+    #
+    # Load-bearing for the variable fragment count: the count is drawn *after*
+    # the label mode precisely so that sample_label_mode still consumes exactly
+    # the draws it consumed before that feature existed. If these numbers move,
+    # the count draw has been placed ahead of the mode draw and the label
+    # distribution has silently changed with it.
     examples = _generate(libraries, count=1000)
     counts = Counter(e.meta["label_mode"] for e in examples)
     assert counts == {
@@ -714,6 +796,77 @@ def test_distribution_override_is_honoured(libraries):
 
 
 # --------------------------------------------------------------------------
+# 13b. Variable fragment count
+# --------------------------------------------------------------------------
+
+
+def test_the_fragment_count_mix_does_not_vary_by_label_mode(libraries):
+    # THE test for this feature. Fragment count is allowed to vary; what is not
+    # allowed is for it to vary *with the label*, because then text length
+    # becomes a usable proxy for the label -- a model would score well on this
+    # data having learned nothing about fever, and nothing downstream would
+    # show it. If a future change reintroduces that leak, this is what catches
+    # it. Do not relax the tolerance to make it pass.
+    counts = {2: 0.5, 3: 0.5}
+    examples = _generate(libraries, count=4000, fragment_counts=counts)
+
+    by_mode: dict[str, Counter] = {}
+    for example in examples:
+        tally = by_mode.setdefault(example.meta["label_mode"], Counter())
+        tally[len(example.meta["fragment_ids"])] += 1
+
+    assert set(by_mode) == {"true", "false", "null_structural", "null_ambiguous"}
+    for mode, tally in by_mode.items():
+        total = sum(tally.values())
+        assert total >= 200, f"{mode} too small to be evidence of anything"
+        for size, weight in counts.items():
+            share = tally[size] / total
+            assert abs(share - weight) < 0.06, (
+                f"{mode} drew {size} fragments {share:.3f} of the time"
+            )
+
+
+def test_a_single_count_mix_produces_only_that_count(libraries):
+    for example in _generate(libraries, count=200, fragment_counts={3: 1.0}):
+        assert len(example.meta["fragment_ids"]) == 3
+
+
+def test_the_engine_is_general_over_the_count(wide_libraries):
+    # Nothing about the engine is special-cased to two or three: four fillers
+    # in the manifest, four fragments per example, still exactly one decisive
+    # fragment each.
+    types = _types_by_id(wide_libraries)
+    libraries_by_id = {f.fragment_id: f.library for f in load_fragments(wide_libraries)}
+    examples = _generate(wide_libraries, count=500, fragment_counts={4: 1.0})
+
+    modes = Counter()
+    for example in examples:
+        ids = example.meta["fragment_ids"]
+        used = Counter(types[fid] for fid in ids)
+        assert len(ids) == 4
+        decisive = used["positive"] + used["negative"] + used["ambiguous"] + used["confounder"]
+        assert decisive == (0 if example.meta["label_mode"] == "null_structural" else 1)
+        assert used["filler"] == 4 - decisive
+        fillers = [fid for fid in ids if types[fid] == "filler"]
+        assert len({libraries_by_id[fid] for fid in fillers}) == len(fillers)
+        modes[example.meta["label_mode"]] += 1
+
+    # Every mode is exercised, including the structural null that needs all
+    # four filler libraries at once.
+    assert set(modes) == {"true", "false", "null_structural", "null_ambiguous"}
+
+
+def test_first_examples_do_not_move_when_count_grows_under_a_mixed_count_mix(libraries):
+    # The per-example seeding property, re-verified now that a count draw sits
+    # between the label draw and fragment selection.
+    counts = {2: 0.3, 3: 0.7}
+    small = _generate(libraries, count=100, fragment_counts=counts)
+    large = _generate(libraries, count=1000, fragment_counts=counts)
+    assert [e.text for e in small] == [e.text for e in large[:100]]
+    assert [e.meta["fragment_ids"] for e in small] == [e.meta["fragment_ids"] for e in large[:100]]
+
+
+# --------------------------------------------------------------------------
 # 14. Pool exhaustion (C7.16)
 # --------------------------------------------------------------------------
 
@@ -731,21 +884,48 @@ def _tiny_pools():
 
 def test_requesting_more_examples_than_the_pool_holds_raises():
     # One positive x two fillers x two orderings = four unique true examples.
+    # Pinned to two-fragment examples: the tiny pool has only two filler
+    # libraries, so a three-fragment example could not be built at all.
     with pytest.raises(PoolExhaustedError, match="train"):
         generate(
             _tiny_pools(),
             count=10,
             seed=42,
             distribution={"true": 1.0, "false": 0.0, "null": 0.0},
+            fragment_counts={2: 1.0},
         )
 
 
 def test_a_satisfiable_request_against_the_same_tiny_pool_succeeds():
     examples, telemetry = generate(
-        _tiny_pools(), count=4, seed=42, distribution={"true": 1.0, "false": 0.0, "null": 0.0}
+        _tiny_pools(),
+        count=4,
+        seed=42,
+        distribution={"true": 1.0, "false": 0.0, "null": 0.0},
+        fragment_counts={2: 1.0},
     )
     assert len({e.text for e in examples}) == 4
     assert telemetry["duplicate_rejections"] > 0
+
+
+def test_a_count_larger_than_the_filler_library_count_raises_before_generating():
+    # The ceiling is structural: an N-fragment structural null needs N distinct
+    # filler libraries. _tiny_pools has two.
+    with pytest.raises(PoolError) as excinfo:
+        generate(_tiny_pools(), count=10, seed=42, fragment_counts={2: 0.5, 3: 0.5})
+    message = str(excinfo.value)
+    assert "up to 3" in message
+    assert "has 2" in message
+    assert "fill_a, fill_b" in message
+
+
+def test_the_filler_library_floor_in_build_pools_is_unchanged_by_the_count_check():
+    # build_pools cannot know the requested mix, so its own floor stays at the
+    # two libraries a structural null has always needed.
+    pools = _tiny_pools()
+    assert len(pools.filler) == 2
+    examples, _ = generate(pools, count=2, seed=42, fragment_counts={2: 1.0})
+    assert len(examples) == 2
 
 
 def test_pool_error_names_the_missing_fragment_type():
@@ -791,6 +971,9 @@ def test_jsonl_records_carry_the_training_schema(tmp_path, libraries):
         assert record["split"] == "val"
         assert set(record["labels"]) == {SIGNAL}
         assert record["labels"][SIGNAL] in (True, False, None)
+        # DD8: no fragment_count key. The count is already unambiguously
+        # present as len(fragment_ids), and a second copy is one more thing
+        # that can disagree with itself.
         assert set(record["meta"]) == {
             "label_mode",
             "fragment_ids",
@@ -798,6 +981,8 @@ def test_jsonl_records_carry_the_training_schema(tmp_path, libraries):
             "seed",
             "generator_version",
         }
+        assert len(record["meta"]["fragment_ids"]) in DEFAULT_FRAGMENT_COUNTS
+        assert len(record["meta"]["fragment_subclasses"]) == len(record["meta"]["fragment_ids"])
     assert records[0]["example_id"] == "val-000000"
 
 
@@ -816,6 +1001,7 @@ def test_stats_sidecar_records_what_was_asked_for_and_what_came_out(tmp_path, li
 
     assert stats["requested"]["count"] == 500
     assert stats["requested"]["distribution"] == {"true": 0.15, "false": 0.25, "null": 0.60}
+    assert stats["requested"]["fragment_counts"] == {"2": 0.5, "3": 0.5}
     assert stats["realised"]["count"] == 500
     assert sum(stats["realised"]["labels"].values()) == 500
     assert sum(stats["realised"]["label_modes"].values()) == 500
@@ -825,6 +1011,53 @@ def test_stats_sidecar_records_what_was_asked_for_and_what_came_out(tmp_path, li
     for label in ("true", "false", "null"):
         assert stats["token_counts"]["by_label"][label]["median_tokens"] > 0
         assert stats["token_counts"]["by_label"][label]["p90_tokens"] > 0
+    # DD7: without this block a skewed count distribution would be invisible.
+    for label in ("true", "false", "null"):
+        tally = stats["fragment_counts"]["by_label"][label]
+        assert set(tally) == {"2", "3"}
+        assert sum(tally.values()) == stats["realised"]["labels"][label]
+    for mode in ("true", "false", "null_structural", "null_ambiguous"):
+        tally = stats["fragment_counts"]["by_label_mode"][mode]
+        assert sum(tally.values()) == stats["realised"]["label_modes"][mode]
+    assert set(stats["token_counts"]["by_fragment_count"]) == {"2", "3"}
+    assert (
+        sum(entry["count"] for entry in stats["token_counts"]["by_fragment_count"].values()) == 500
+    )
+
+
+def test_stats_fragment_count_keys_survive_the_json_round_trip(tmp_path, libraries):
+    # json.dump coerces int keys to strings silently, so the in-memory dict is
+    # built string-keyed to match what anyone reading the sidecar back will
+    # find. This checks the two agree rather than assuming it.
+    out = tmp_path / "out.jsonl"
+    cli_main(
+        _argv(
+            manifest=libraries,
+            ruleset=_write_ruleset(tmp_path),
+            split="train",
+            count=100,
+            fragment_counts="2=0.5,3=0.5",
+            out=out,
+        )
+    )
+    written = json.loads((tmp_path / "out.jsonl.stats.json").read_text(encoding="utf-8"))
+    pools = _pools(libraries)
+    examples, telemetry = generate(pools, count=100, seed=42)
+    in_memory = build_stats(
+        examples,
+        telemetry=telemetry,
+        fragments=load_fragments(libraries),
+        pools=pools,
+        count=100,
+        seed=42,
+        distribution={"true": 0.15, "false": 0.25, "null": 0.60},
+        null_ambiguous_ratio=0.5,
+        fragment_counts={2: 0.5, 3: 0.5},
+        manifest_path=str(libraries),
+        ruleset_path=str(tmp_path / "ruleset.json"),
+    )
+    assert in_memory["fragment_counts"] == written["fragment_counts"]
+    assert in_memory["requested"]["fragment_counts"] == written["requested"]["fragment_counts"]
 
 
 def test_stats_length_summary_matches_the_examples(libraries):
@@ -839,6 +1072,7 @@ def test_stats_length_summary_matches_the_examples(libraries):
         seed=42,
         distribution={"true": 0.15, "false": 0.25, "null": 0.60},
         null_ambiguous_ratio=0.5,
+        fragment_counts={2: 0.5, 3: 0.5},
         manifest_path=str(libraries),
         ruleset_path="ruleset.json",
     )
@@ -886,6 +1120,65 @@ def test_cli_rejects_a_bad_distribution_before_writing_anything(tmp_path, librar
     assert code == 2
     assert "sum to" in capsys.readouterr().err
     assert not out.exists()
+
+
+def test_cli_rejects_bad_fragment_counts_before_reading_any_library(tmp_path, capsys):
+    # The manifest path is deliberately nonexistent: a malformed flag must fail
+    # before a single file is opened, so this can only pass if the parse
+    # happens first.
+    out = tmp_path / "out.jsonl"
+    code = cli_main(
+        _argv(
+            manifest=tmp_path / "no-such-manifest.json",
+            ruleset=_write_ruleset(tmp_path),
+            split="train",
+            count=10,
+            fragment_counts="1=1.0",
+            out=out,
+        )
+    )
+    assert code == 2
+    error = capsys.readouterr().err
+    assert "--fragment-counts" in error
+    assert "--dist" not in error
+    assert not out.exists()
+
+
+def test_cli_rejects_a_count_the_filler_libraries_cannot_serve(tmp_path, libraries, capsys):
+    # Three filler libraries in the fixture, four requested.
+    out = tmp_path / "out.jsonl"
+    code = cli_main(
+        _argv(
+            manifest=libraries,
+            ruleset=_write_ruleset(tmp_path),
+            split="train",
+            count=10,
+            fragment_counts="4=1.0",
+            out=out,
+        )
+    )
+    assert code == 2
+    assert "up to 4" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_cli_honours_a_fragment_count_override(tmp_path, libraries):
+    out = tmp_path / "out.jsonl"
+    assert (
+        cli_main(
+            _argv(
+                manifest=libraries,
+                ruleset=_write_ruleset(tmp_path),
+                split="train",
+                count=50,
+                fragment_counts="3=1.0",
+                out=out,
+            )
+        )
+        == 0
+    )
+    records = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert {len(r["meta"]["fragment_ids"]) for r in records} == {3}
 
 
 # --------------------------------------------------------------------------
