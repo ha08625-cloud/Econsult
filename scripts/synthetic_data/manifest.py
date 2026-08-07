@@ -1,10 +1,12 @@
 """Fragment library loading, deduplication and cluster-aware splitting.
 
 Library discovery is an explicit manifest, never a glob: ``data/synthetic/``
-also contains scratch notes (``fever_synonyms.jsonl``) and a generator spec
-(``fever_true.yaml``), and a filename-convention glob would inject both
-straight into training text. Files on disk but absent from the manifest are
-ignored; files in the manifest but absent from disk are a hard error.
+also holds ``scratch/``, which contains working notes (``fever_synonyms.jsonl``)
+and an unfinished generator spec (``fever_true.yaml``) that a filename-convention
+glob would inject straight into training text. Files on disk but absent from the
+manifest are ignored; files in the manifest but absent from disk are a hard
+error. Library files live under ``symptoms/<signal>/`` and ``filler/``, so a
+manifest ``file`` is a relative path rather than a bare filename.
 
 Splitting hashes the *cluster* key rather than the text. ``fever_null`` is two
 generation batches over the same concept list, reworded, so text-level
@@ -168,11 +170,20 @@ def parse_manifest(payload: dict) -> list[LibrarySpec]:
 def read_library(spec: LibrarySpec, base_dir: Path) -> list[Fragment]:
     """Read one library file into fragments, split already assigned.
 
+    ``spec.file`` is a path relative to the manifest, and must stay inside the
+    manifest's own directory: the libraries are the training corpus, so a
+    ``file`` that escapes upwards would silently widen what counts as one.
+
     Blank lines are skipped. A leading cluster marker is stripped into
     ``cluster_id``, namespaced as ``{library}:{tag}``; the remainder is the
     verbatim text.
     """
     path = base_dir / spec.file
+    if not path.resolve().is_relative_to(base_dir.resolve()):
+        raise ManifestError(
+            f"library {spec.name!r} declares file {spec.file!r}, which resolves outside "
+            f"the manifest directory {base_dir}"
+        )
     if not path.is_file():
         raise ManifestError(f"library {spec.name!r} declares missing file: {path}")
 

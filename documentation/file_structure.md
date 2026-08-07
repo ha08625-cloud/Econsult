@@ -23,6 +23,9 @@
 - `frontend/` — Patient-facing React app and Admin UI.
 - `data/` — Condition ruleset JSON files.
   - `synthetic/` — Fragment libraries for the offline encoder-training dataset, one fragment per line, plus `manifest.json` declaring which files are libraries and what each one means. Not loaded by the application at any point.
+    - `symptoms/<signal>/` — Libraries that speak to one clinical signal (`fever/`, `dysuria/`): positives, negatives and the `*_null` confounder sub-classes.
+    - `filler/` — Libraries carrying no signal at all (`tangents`, `justifiers`, `emotional`, `expectations`, `uti_speculation`).
+    - `scratch/` — Working notes and an unfinished template spec. Not libraries, not in the manifest, never read by the generator.
 - `scripts/` — Offline tooling: one-time management commands, plus the synthetic dataset generator. Nothing here is imported by `app/`.
   - `create_admin_user.py` — Inserts an admin user before first boot. Generates a one-time password setup token and prints the setup URL. Accepts `--create-practice` flag for CI use.
   - `synthetic_data/` — Recombines `data/synthetic/` fragment libraries into a label-first JSONL training set for one encoder head. Stdlib only. `python -m scripts.synthetic_data --help` for flags; `--lint` reports library health instead of generating. Tested by `tests/test_synthetic_recombination.py`.

@@ -62,9 +62,15 @@ def _entry(name: str, **overrides) -> dict:
 
 
 def _write_manifest(base: Path, entries: list[dict], libraries: dict[str, list[str]]) -> Path:
-    """Write a manifest plus its library files, returning the manifest path."""
+    """Write a manifest plus its library files, returning the manifest path.
+
+    ``filename`` may be a nested path (``symptoms/fever/fever_true.txt``), which
+    is how the real tree is laid out.
+    """
     for filename, lines in libraries.items():
-        (base / filename).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        path = base / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     manifest_path = base / "manifest.json"
     manifest_path.write_text(json.dumps({"version": 1, "libraries": entries}), encoding="utf-8")
     return manifest_path
@@ -261,6 +267,29 @@ def test_signal_library_without_a_signal_key_raises():
 def test_empty_library_file_raises(tmp_path):
     manifest_path = _write_manifest(tmp_path, [_entry("alpha")], {"alpha.txt": ["", "   ", ""]})
     with pytest.raises(ManifestError, match="zero non-blank lines"):
+        load_fragments(manifest_path)
+
+
+def test_library_file_may_sit_in_a_subfolder(tmp_path):
+    # The real tree groups libraries under symptoms/<signal>/ and filler/, so
+    # a manifest 'file' is a relative path rather than a bare filename.
+    manifest_path = _write_manifest(
+        tmp_path,
+        [_entry("alpha", file="symptoms/fever/alpha.txt")],
+        {"symptoms/fever/alpha.txt": _spread_lines("alpha", 60)},
+    )
+    fragments = load_fragments(manifest_path)
+    assert {f.library for f in fragments} == {"alpha"}
+
+
+def test_library_file_outside_the_manifest_directory_raises(tmp_path):
+    # The libraries are the training corpus; a 'file' that escapes upwards
+    # would silently widen what counts as one.
+    root = tmp_path / "synthetic"
+    root.mkdir()
+    (tmp_path / "outside.txt").write_text("smuggled in\n", encoding="utf-8")
+    manifest_path = _write_manifest(root, [_entry("alpha", file="../outside.txt")], {})
+    with pytest.raises(ManifestError, match="outside the manifest directory"):
         load_fragments(manifest_path)
 
 

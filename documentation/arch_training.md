@@ -67,35 +67,69 @@ there is no point in the process where the text could influence the label.
 ## 3. The fragment libraries
 
 `data/synthetic/` holds plain text files, one fragment per line. A fragment is a
-single clause or sentence a patient might write.
+single clause or sentence a patient might write. The tree is organised by what
+a library is *about*, not by filename convention:
+
+```
+data/synthetic/
+  manifest.json
+  symptoms/fever/      the six fever libraries
+  symptoms/dysuria/    the four dysuria libraries
+  filler/              the five signal-free libraries
+  scratch/             working notes, not training data
+```
+
+`symptoms/<signal>/` is one folder per clinical signal. `filler/` holds
+fragments that speak to no signal at all. `scratch/` holds
+`fever_synonyms.jsonl` and `fever_true.yaml`, which are notes and an unfinished
+spec — they are not libraries and the manifest does not list them.
 
 | Library | Fragments | What it contains |
 |---|---|---|
-| `fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
-| `fever_false.txt` | 60 | Says the patient does not ("no temperature, I checked") |
-| `fever_null_hedged.txt` | 24 | Genuinely uncertain ("I feel a bit off, hard to say") |
-| `fever_null_metaphor.txt` | 18 | Fever words used non-clinically ("burning up with embarrassment") |
-| `fever_null_thirdparty.txt` | 20 | *Someone else* has a fever ("my son has a temperature") |
-| `fever_null_historical.txt` | 20 | A fever, but in the past ("I had one last month") |
-| `tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
-| `justifiers.txt` | 100 | Filler: why they need an appointment |
-| `emotional.txt` | 60 | Filler: worry and feelings |
-| `expectations.txt` | 60 | Filler: what they want to happen |
-| `uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
+| `symptoms/fever/fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
+| `symptoms/fever/fever_false.txt` | 60 | Says the patient does not ("no temperature, I checked") |
+| `symptoms/fever/fever_null_hedged.txt` | 42 | Genuinely uncertain ("I feel a bit off, hard to say") |
+| `symptoms/fever/fever_null_metaphor.txt` | 33 | Fever words used non-clinically ("burning up with embarrassment") |
+| `symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
+| `symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
+| `symptoms/dysuria/dysuria_true.txt` | 14 | Says it hurts to pass urine ("it really stings when I pee") |
+| `symptoms/dysuria/dysuria_false.txt` | 12 | Says it does not ("no pain when I pee at all") |
+| `symptoms/dysuria/dysuria_null_hedged.txt` | 8 | Genuinely uncertain ("couldn't tell you if it's painful exactly") |
+| `symptoms/dysuria/dysuria_null_thirdparty.txt` | 8 | *Someone else* has it ("my daughter says it stings when she wees") |
+| `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
+| `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
+| `filler/emotional.txt` | 60 | Filler: worry and feelings |
+| `filler/expectations.txt` | 60 | Filler: what they want to happen |
+| `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
+
+**The dysuria libraries are a shape probe, not a dataset.** They exist so the
+multi-signal work in section 12 has something concrete to be designed against —
+40-odd fragments against the ~200-per-signal the training plan asks for. They
+are deliberately free of fever language (checked by the lint's filler-purity
+lexicon), so that a fever fragment and a dysuria fragment could eventually sit
+in the same example. Nothing generates from them today: `--signal` takes exactly
+one signal, so a run for `fever_present` drops every dysuria fragment on the
+floor and vice versa.
 
 Two things are worth understanding about this table.
 
-**The four `fever_null` libraries are the hard cases.** They all contain fever
-language but none of them means "this patient has a fever right now". A model
-that has only seen clear positives and clear negatives will confidently mark
-"my son has a fever" as a positive. These four libraries exist to stop that.
-They are split into separate files rather than one big one so that we can later
-ask "how did the model do specifically on third-party mentions?"
+**The `*_null` libraries are the hard cases.** Each one is full of its signal's
+vocabulary while meaning "not this patient, not now". A model that has only seen
+clear positives and clear negatives will confidently mark "my son has a fever"
+as a positive. These libraries exist to stop that. They are split by sub-class
+rather than lumped into one file so that we can later ask "how did the model do
+specifically on third-party mentions?"
 
 **The filler libraries must contain no fever language whatsoever.** A filler
 fragment can be paired with anything, including examples labelled "no fever
 mentioned". If a filler fragment mentioned a fever, that example's label would
 be a lie. There is an automated check for this — see section 8.
+
+The same will have to be true of dysuria language, and it currently is **not**:
+`filler/expectations.txt` asks for urine tests and cystoscopies, and every line
+of `filler/uti_speculation.txt` names cystitis or a bladder infection. That is
+harmless while only `fever_present` is generated, and it is the first thing
+multi-signal generation trips over — see section 12.
 
 ### Cluster markers
 
@@ -111,7 +145,9 @@ generator strips the marker before using the text — it never appears in any
 training example. Section 6 explains what the markers are for.
 
 Only the `fever_null` libraries carry markers, because only they were written in
-a way that produced systematic near-duplicates.
+a way that produced systematic near-duplicates. The dysuria libraries were
+written line by line without a second reworded pass, so they have no twins to
+tag.
 
 ---
 
@@ -121,10 +157,14 @@ a way that produced systematic near-duplicates.
 and records what each one means (which signal, positive or negative or filler,
 which sub-class).
 
-The generator reads this list and **only** this list. It never scans the folder
-for `.txt` files. This matters because `data/synthetic/` also contains
-`fever_synonyms.jsonl` (scratch notes) and `fever_true.yaml` (an unfinished
+The generator reads this list and **only** this list. It never scans the tree
+for `.txt` files. This matters because `data/synthetic/scratch/` contains
+`fever_synonyms.jsonl` (working notes) and `fever_true.yaml` (an unfinished
 template spec). A folder scan would feed both straight into the training text.
+The subfolder layout is a convenience for people, not a rule the loader
+enforces: each entry's `file` is just a path relative to the manifest, and the
+only constraint is that it must resolve to somewhere inside the manifest's own
+directory.
 
 Files on disk but missing from the manifest are ignored. Files in the manifest
 but missing from disk stop the run with an error.
@@ -333,24 +373,29 @@ The generator, its tests and the lint are complete and merged. **The proof-of-
 concept run has not been produced yet**, because of one data problem.
 
 The generator refuses to run if any library has zero fragments in any split, and
-four cells are currently empty:
+three cells are currently empty:
 
 ```
-fever_null_hedged      train 21   val  2   test 0
-fever_null_historical  train 16   val  4   test 0
-fever_null_metaphor    train 16   val  0   test 1
-fever_null_thirdparty  train 16   val  4   test 0
+fever_null_metaphor      train 29   val  0   test  4
+dysuria_null_hedged      train  6   val  2   test  0
+dysuria_null_thirdparty  train  5   val  0   test  3
 ```
 
-This is the guard doing its job rather than a bug. These libraries are only
-18–24 fragments each, and after clustering they are 10–14 independent groups, so
-a 15% share can round to nothing. An empty cell would mean an entire hard-case
-sub-class was invisible during evaluation — the model could be systematically
-wrong about third-party fever mentions and nothing would show it.
+This is the guard doing its job rather than a bug. These libraries are small —
+33 fragments for `fever_null_metaphor`, 8 each for the two dysuria ones — and
+after clustering they are fewer independent groups still, so a 15% share can
+round to nothing. An empty cell would mean an entire hard-case sub-class was
+invisible during evaluation: the model could be systematically wrong about
+third-party mentions and nothing would show it.
 
-**The fix is to write more fragments** for those four libraries, ideally to
-40–50 each, which is library work rather than a code change. Until then the lint
-runs (it deliberately skips the guard) but generation does not.
+Note the guard is global, not per signal. The two dysuria cells block a
+`fever_present` run even though no dysuria fragment can reach a fever example —
+`build_pools` filters them out by `signal_key`. That is a real wrinkle the
+multi-signal work has to resolve; see section 12.
+
+**The fix is to write more fragments** for those libraries, ideally to 40–50
+each, which is library work rather than a code change. Until then the lint runs
+(it deliberately skips the guard) but generation does not.
 
 ---
 
@@ -383,3 +428,69 @@ no reason to commit them.
 
 The tool uses the Python standard library only, and adds nothing to
 `requirements.txt`.
+
+---
+
+## 12. Combining signals (not built)
+
+The dysuria libraries exist so this section can be written against something
+real. **No code supports multi-signal generation yet.** This is the open design
+question, recorded here so the next planning pass does not have to rediscover
+it.
+
+The goal: one example whose text carries a fever claim *and* a dysuria claim,
+labelled `{"fever_present": true, "dysuria_present": true}`. That is what the
+encoder actually meets in production — a patient writes one blurb covering
+several symptoms — and it is the point of the `labels` dictionary in section 7.
+
+### The blocker is data, not code
+
+Section 2's guarantee is that the label cannot be wrong about the text, because
+the text was chosen to fit the label. Extending that to two signals extends what
+must be guaranteed about *every* fragment in the example, not just the decisive
+one. To emit `{"fever_present": true, "dysuria_present": null}`, the fever
+fragment and its partner must both be silent on dysuria. Right now that is not
+true of the filler libraries: `expectations` asks for urine tests and bladder
+cameras, and all 40 lines of `uti_speculation` name cystitis or a bladder
+infection. Pair one with a fever positive, call it "no dysuria mentioned", and
+the label is a lie of exactly the kind section 2 exists to make impossible.
+
+So the honest ordering is: clean the libraries first, change the engine second.
+Anything else produces a dataset that looks fine and teaches the wrong thing.
+
+### What changes in the engine
+
+Roughly in dependency order:
+
+1. **Silence becomes a declaration.** A library says which signals it is known
+   to be silent on. The generator emits `null` for a signal only when every
+   fragment in the example declares silence on it, and omits the key otherwise
+   — which is the "absent key means mask this head" contract from section 7,
+   finally load-bearing rather than aspirational.
+2. **The lint's lexicon becomes per-signal.** `FEVER_LEXICON` is one hardcoded
+   tuple today. It becomes a lexicon per signal, and filler purity is checked
+   against all of them. The CI test currently asserts an empty baseline; the
+   dysuria baseline will not be empty on day one, so it needs either a
+   populated baseline or the library clean-up above done first.
+3. **The empty-cell guard becomes per-run.** It is global today, which is why
+   two small dysuria libraries currently block a `fever_present` run that cannot
+   reach a dysuria fragment (section 10). It should check only the libraries
+   feeding the signals being generated.
+4. **Fragment count needs re-deciding, now rather than later.** It is pinned at
+   two so that count cannot proxy the label (section 5). Two signals still fit —
+   two decisive fragments and no filler — but three do not, and changing the
+   constant later invalidates every dataset generated before it. Pinning it at
+   `signals + 1` or a flat four, padding unused slots with filler, keeps the
+   invariant and stops the question recurring per signal.
+5. **The label distribution becomes joint.** `--dist` covers one signal's
+   three-way split. Two signals is nine cells. Sampling each signal
+   independently is the simple option, but at current settings it makes
+   `true/true` about 2% of examples — and fever-with-dysuria is precisely the
+   clinically interesting combination. Deliberately over-sampling it is
+   defensible, but it distorts the prior and would have to be written down.
+6. **`--signal` becomes `--signals`,** the ruleset check runs over each, and
+   `GENERATOR_VERSION` is bumped.
+
+Splitting needs no change: splits are assigned per fragment and `build_pools`
+filters by split before anything else, so a train fever fragment can never be
+combined with a validation dysuria fragment.
