@@ -112,9 +112,17 @@ expected results, and the plan runs both:
   14,000 examples, cache the pooled embeddings to disk (~43MB as float32), train
   a 2,307-parameter head on them. Seconds per training run, so experimentation
   is effectively free.
-* **Arm B — fine-tune.** Unfreeze the encoder (all layers, or the top N as a
-  variant) and train end-to-end. ~940 steps at batch 32 for 3 epochs — a couple
-  of minutes on the local GPU.
+* **Arm B — fine-tune.** Unfreeze the encoder and train end-to-end. ~940 steps
+  at batch 32 for 3 epochs, which on the target hardware (RTX 5070, 12GB) is
+  roughly two minutes.
+
+**The hardware is not a constraint here, and that is worth saying explicitly
+because it removes a whole category of decisions.** BERT-base fine-tuning at
+batch 32 / seq 256 needs about 1.8GB for parameters, gradients and AdamW state,
+plus a couple of GB of activations — call it 5GB against 12GB available. No
+gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation.
+Batch 64 also fits comfortably if we want it. Anything in this plan that reads
+like a compute compromise should be treated as a mistake.
 
 Arm A is built first because it exercises every piece of plumbing — loader,
 label masking, metrics, threshold selection, artefact writing — at a cost where
@@ -177,6 +185,23 @@ would be a straightforward mistake.
 This mirrors the containment `scripts/synthetic_data` already has — stdlib only,
 never imported by `app/` — and it should get the same guard: a test asserting
 that nothing under `app/` imports `scripts.encoder_training`.
+
+**The RTX 5070 is Blackwell (compute capability `sm_120`), and this is the single
+most likely thing in the ticket to eat an afternoon.** Blackwell needs a PyTorch
+build against CUDA 12.8 or later; an older wheel will install and import
+perfectly happily and then fail at the first kernel launch with `no kernel image
+is available for execution on the device`. So `requirements-ml.txt` must pin the
+torch version *and* record which CUDA index it came from
+(`--index-url https://download.pytorch.org/whl/cu128` or later), because a bare
+`pip install torch` may resolve to a wheel that cannot run on this GPU.
+
+The first task of Arm B is therefore a smoke test in the spirit of
+`download_clinicalBERT.md`, with one addition: **`torch.cuda.is_available()`
+returning `True` does not prove anything.** It can report `True` on an
+unsupported architecture, right up until a kernel actually launches. The check
+has to run a real matmul on the device and print
+`torch.version.cuda` alongside `torch.cuda.get_device_capability(0)` — expected
+`(12, 0)`.
 
 ### 4.2 Artefacts
 
@@ -283,7 +308,17 @@ the numbers it was chosen from.
 ### 6.6 Determinism
 
 Fixed seeds for Python, numpy and torch; `torch.use_deterministic_algorithms`
-where it does not break an op we need.
+where it does not break an op we need. On CUDA that also requires
+`CUBLAS_WORKSPACE_CONFIG=:4096:8` in the environment, or the deterministic flag
+raises rather than silently doing nothing — the CLI should set it itself rather
+than rely on a shell export someone forgets.
+
+**Train in fp32, not bf16.** Blackwell has strong bf16 and it would roughly halve
+the step time, but a two-minute training run has no speed problem to solve, and
+reduced precision buys that speedup with numerical noise in exactly the metrics
+we are trying to read carefully. At this scale, spend the hardware on
+reproducibility instead. If some later run genuinely needs the throughput, bf16
+becomes a recorded config flag rather than a silent default.
 
 Honest limit: bitwise reproducibility across machines and across CPU/GPU is not
 achievable and should not be claimed. The target is run-to-run reproducibility
@@ -384,25 +419,31 @@ described as a smoke test.
 
 ## 10. Open questions for review
 
-1. **Fine-tuned weight storage.** Arm B produces ~440MB that cannot go in git.
-   GitHub release asset, object storage, or "regenerate from seed on demand"?
-   The third is cheapest and consistent with how the dataset is handled, but only
-   works while training stays fast and the environment stays pinned.
-2. **Arm B unfreeze depth.** All layers, or top-N only? Top-N is more stable on
-   10k examples and much faster; all-layers is the stronger arm if it holds. A
-   variant rather than a decision — but worth agreeing before someone runs eight
-   configurations against a 15-fragment validation set.
+1. ~~**Fine-tuned weight storage.**~~ **Deferred to a separate follow-up
+   ticket.** Arm B's ~440MB of weights stay on the local disk for the duration of
+   this ticket, and durable storage — release asset, object storage, or
+   regenerate-on-demand — is decided later. This is a comfortable deferral rather
+   than a punt: training takes about two minutes from a pinned seed, so
+   regenerate-on-demand is already a working answer, and the ticket's deliverable
+   is the evaluation report rather than the weights. Nothing in this ticket
+   depends on the outcome.
+2. **Arm B unfreeze depth.** Partly resolved by the hardware: 12GB affords
+   all-layers fine-tuning with room to spare, so **all-layers is the default**
+   and top-N exists only as a comparison if all-layers proves unstable on 10k
+   examples. Still worth agreeing before someone runs eight configurations
+   against a 15-fragment validation set — see section 8.
 3. **`models/` directory naming**, and whether it belongs at repo root alongside
    `data/` and `scripts/`.
 4. **Does the report get committed?** A markdown eval report per run in git makes
    the history of what we learned durable; it also churns. Suggest committing the
    JSON sidecar always, the markdown report only for runs we want to keep.
 
-**Drive-by observation, not in scope:** `encoder_stub.py` emits
-`frequency_present`, but the ruleset's key is `urinary_frequency_present`. The
-stub is only reached with definitions derived from the ruleset, so the branch is
-dead rather than harmful — but it is the kind of thing that becomes a real bug
-the moment someone copies the stub as a starting point for the real encoder.
+**Drive-by observation, not in scope — separate follow-up ticket:**
+`encoder_stub.py` emits `frequency_present`, but the ruleset's key is
+`urinary_frequency_present`. The stub is only reached with definitions derived
+from the ruleset, so the branch is dead rather than harmful — but it is the kind
+of thing that becomes a real bug the moment someone copies the stub as a starting
+point for the real encoder.
 
 ---
 
@@ -418,7 +459,9 @@ one starts.
    of section 1's question.
 3. **Arm A: frozen embedding cache + linear probe.** Exercises the full pipeline
    including artefact writing and threshold selection, at near-zero cost per run.
-4. **Arm B: fine-tune.** The arm that actually decides section 1.
+4. **Arm B: fine-tune.** Opens with the CUDA/Blackwell smoke test of section 4.1
+   — prove a kernel launches on this GPU before writing a training loop that
+   assumes one can. Then the arm that actually decides section 1.
 5. **Compare, write the report, update `arch_encoder.md` and `file_structure.md`.**
    A new `arch_encoder_training.md` spoke plus an `architecture.md` capability
    index entry is probably warranted once there is a real component to document.
