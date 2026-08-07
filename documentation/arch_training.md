@@ -96,7 +96,7 @@ reading eleven manifest entries.
 | `symptoms/fever/fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
 | `symptoms/fever/fever_false.txt` | 60 | Says the patient does not ("no temperature, I checked") |
 | `symptoms/fever/fever_null_hedged.txt` | 42 | Genuinely uncertain ("I feel a bit off, hard to say") |
-| `symptoms/fever/fever_null_metaphor.txt` | 33 | Fever words used non-clinically ("burning up with embarrassment") |
+| `symptoms/fever/fever_null_metaphor.txt` | 55 | Fever words used non-clinically ("burning up with embarrassment") |
 | `symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
 | `symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
 | `symptoms/dysuria/dysuria_true.txt` | 24 | Says it hurts to pass urine ("it burns when I pee") |
@@ -360,11 +360,11 @@ Matching is on whole words only. Without that, "hot" matches inside
 clean data on day one.
 
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
-different splits, i.e. the leakage described in section 6. Currently 43, of
+different splits, i.e. the leakage described in section 6. Currently 52, of
 which **zero** are in the `fever_null` libraries, which tells us the manual
 clustering pass worked. Most are in the filler libraries (`justifiers` 14,
 `expectations` 10, `tangents` 8), which leak in exactly the same way and were
-not clustered.
+not clustered; the rest are the unclustered `flank_pain` seed batch (9).
 
 **Hedge markers** — lines in the positive and negative libraries that sound
 uncertain, as a prompt to re-read them by hand (currently 8). Its precision is poor by design
@@ -391,10 +391,11 @@ have roughly half that for `true` and a third for `false`.
 **Length may still leak.** Fragment *count* varies but its distribution does
 not vary by label (section 5); fragment *length* is not controlled at all.
 `fever_true` fragments run from 3 words to 98, while the `fever_null` libraries
-all sit inside a narrow 9–27 word band. The medians are close (16 against
-17–19), so this is a tail problem rather than a systematic offset — but a
-98-word positive has no counterpart anywhere in the null libraries, and the
-model can notice that. The stats sidecar reports median and 90th-percentile
+sit inside a narrow band — 9–27 words, widened to 9–40 in `fever_null_metaphor`
+by the section 10 expansion, which is a dent in the problem rather than a fix.
+The medians are close (16 against 15–19), so this is a tail problem rather than
+a systematic offset — but a 98-word positive has no counterpart anywhere in the
+null libraries, and the model can notice that. The stats sidecar reports median and 90th-percentile
 length per label class on every run; if the medians ever drift apart by more
 than about 1.5×, length has become a usable proxy for the label. Read that
 against `fragment_counts.by_label` in the same sidecar, which says whether the
@@ -424,36 +425,64 @@ dysuria mentioned" would be inventing a label.
 
 ---
 
-## 10. Current state and the open blocker
+## 10. Current state
 
-The generator, its tests and the lint are complete and merged. **The proof-of-
-concept run has not been produced yet**, because of one data problem.
+The generator, its tests and the lint are complete and merged. **The empty-cell
+blocker is cleared and the proof-of-concept run produces output.** Every library
+now fills all three of its cells; the lint reports `empty cells: 0`.
 
 The generator refuses to run if any library has zero fragments in any split.
-Four cells were empty when this was first written; the `fever_null` libraries
-have since been expanded and **one cell remains empty**:
+Four cells were empty when this was first written, and after the first
+`fever_null` expansion one remained:
 
 ```
 fever_null_metaphor    train 29   val  0   test 4
 ```
 
-This is the guard doing its job rather than a bug. Metaphor fragments are
-clustered into a small number of independent groups, so a 15% share can still
-round to nothing. An empty cell would mean an entire hard-case sub-class was
-invisible during evaluation — the model could be systematically wrong about
-metaphorical fever language and nothing would show it.
+That was the guard doing its job rather than a bug. Metaphor fragments are
+clustered into a small number of independent groups — 26 of them at that point,
+none of which happened to hash into the 15% validation band. An empty cell would
+have meant an entire hard-case sub-class was invisible during evaluation: the
+model could be systematically wrong about metaphorical fever language and
+nothing would show it.
 
-**The fix is to write more `fever_null_metaphor` fragments**, which is library
-work rather than a code change. Until then the lint runs (it deliberately skips
-the guard) but generation does not.
+**It was fixed by writing 21 more `fever_null_metaphor` fragments** (33 → 55,
+26 → 47 clusters), which is library work rather than a code change. The
+resulting coverage is `train 43 / val 7 / test 5`.
+
+The fragments were written as genuinely new *ideas* rather than rewordings, for
+the reason section 12.1 gives: filling a cell with paraphrase-twins of the
+training fragments removes the warning light instead of the fault. The lint
+confirms it — `fever_null_metaphor` still contributes zero cross-split
+near-duplicates.
+
+They also broaden the library's coverage, which was the more interesting
+problem. Every one of the 26 original clusters was the same family: *the patient
+is worked up — angry, worried or frantic — described with heat words*. A model
+trained on that alone learns "heat word next to an emotion word means null",
+which is not the rule we want. The new fragments add four families the library
+did not have:
+
+* **Ambient temperature** — the flat, the waiting room, the broken heating, the
+  weather. Something is hot or cold, and it is not the patient.
+* **Dead-metaphor idioms** — "in hot water", "passed around like a hot potato",
+  "a load of hot air", "blowing hot and cold", "no sweat", "burning the candle
+  at both ends". The heat word carries no temperature meaning at all.
+* **`fever` as a mass noun** — world cup fever, cabin fever, a forum working
+  itself into a fever.
+* **Hay fever** — a real named condition containing the word "fever" that is not
+  a fever. Probably the single hardest confounder in the library.
+
+A side benefit: the metaphor library's length band was 9–27 words, against
+`fever_true`'s 3–98 (section 9). It is now 9–40, which narrows that gap slightly
+rather than closing it.
 
 **The guard checks every library in the manifest, not just the ones for the
 signal being generated.** `load_fragments` runs `check_no_empty_cells` over the
-whole manifest before `build_pools` ever filters by `signal_key`, so the
-`fever_null_metaphor` empty cell currently blocks generation for *every*
-signal, not only `fever_present`. This is worth knowing before assuming a run
-against a different signal would work once that signal's own libraries are
-balanced.
+whole manifest before `build_pools` ever filters by `signal_key`, so any one
+empty cell blocks generation for *every* signal, not only the one whose library
+is unbalanced. This is worth knowing before assuming a run against a different
+signal would work once that signal's own libraries are balanced.
 
 The dysuria libraries fill all twelve of their cells, but they are small enough
 (14–24 fragments) that this is fragile: one reworded fragment can empty a cell
@@ -463,6 +492,27 @@ derived from them means anything.
 The flank_pain libraries (12–24 fragments each, a proof-of-concept batch) fill
 all twelve of their cells too, for the same reason and with the same caveat as
 dysuria above.
+
+### The proof-of-concept run
+
+10,000 train / 2,000 val / 2,000 test, at default settings, all three splits
+generated without error. The two properties the stats sidecar exists to police
+(section 7) both hold on train:
+
+* **Fragment count is not a proxy for the label.** The 2-vs-3 fragment mix is
+  within a couple of percent of 50/50 in every label class and every label mode
+  — `true` 751/742, `false` 1186/1285, `null_structural` 1527/1537,
+  `null_ambiguous` 1501/1471.
+* **Length is not a proxy for the label.** Median tokens run 36 (`true`), 39
+  (`false`), 34 (`null`) — a spread of about 1.15×, well inside the ~1.5×
+  threshold section 9 sets. The 90th percentiles agree (53 / 54 / 47).
+
+The metaphor sub-class is now genuinely visible to evaluation: 187 of the 2,000
+validation examples contain a metaphor fragment.
+
+Section 9 still applies in full to what these numbers are worth. Nothing here
+makes the validation score evidence rather than a smoke test — the datasets are
+larger, not the fragment pool behind them.
 
 ---
 
@@ -569,11 +619,12 @@ key, so all siblings of a template land in the same split automatically. No
 change to the splitter or to `recombine.py` is needed. The hand-tagged `[c01]`
 markers and machine-emitted template IDs are the same mechanism.
 
-**This must not be used to clear the section 10 blocker.** Filling the four
-empty test cells with template-siblings of the training fragments would make the
-guard pass without fixing what the guard is for: it would remove the warning
-light rather than the fault, and the resulting evaluation number would be
-meaningless. Those four libraries need genuinely new ideas first.
+**This must never be used to fill an empty split cell.** Filling one with
+template-siblings of the training fragments would make the guard pass without
+fixing what the guard is for: it would remove the warning light rather than the
+fault, and the resulting evaluation number would be meaningless. The section 10
+cells were cleared with genuinely new ideas for exactly this reason, and any
+future empty cell has to be cleared the same way.
 
 **Start with the filler libraries.** `tangents`, `justifiers`, `emotional`,
 `expectations` and `uti_speculation` carry no label weight — their only
@@ -721,9 +772,9 @@ is a source of permanently wrong labels and nothing else would catch it.
 Rough order, on the grounds that each step should leave the pipeline in a state
 where the numbers it produces can be trusted:
 
-1. Write real fragments for the four blocked `fever_null` libraries and produce
-   the proof-of-concept run. This clears section 10 honestly and gives us a
-   baseline to compare everything else against.
+1. ~~Write real fragments for the blocked `fever_null` libraries and produce the
+   proof-of-concept run.~~ **Done** — see section 10. This cleared the empty-cell
+   guard honestly and gives us a baseline to compare everything else against.
 2. Add label vectors and declared silence (12.5) with the lint check, while
    there is still only one signal and it is cheap to get right.
 3. Template the filler libraries (12.1), lowest-risk use of procedural
