@@ -7,6 +7,10 @@ overview. The full detail lives in `documentation/encoder/` — read
 `synthetic_recombination_implementation_plan.md` for the design decisions behind
 the generator. Read `scripts/synthetic_data/*.py` for implementation specifics.
 
+Sections 1 to 11 describe the system as it is. **Section 12 is a provisional
+plan for work not yet started or agreed** — do not treat it as a description of
+current behaviour.
+
 ---
 
 ## Scope
@@ -383,3 +387,225 @@ no reason to commit them.
 
 The tool uses the Python standard library only, and adds nothing to
 `requirements.txt`.
+
+---
+
+## 12. Provisional: scaling beyond the proof of concept
+
+**Status: none of this is built, and none of it is agreed.** This section is a
+provisional plan, written down so it can be reviewed and turned into an
+implementation plan later. Everything above section 12 describes the system as
+it actually is; everything below describes what we are thinking about. Do not
+read this section as a description of current behaviour.
+
+There are three ideas here and they are additive — each one multiplies a
+different axis of the dataset, and they compose. Section 12.5 describes the
+single mechanism that makes 12.2 to 12.4 safe, and it is the part that most
+needs getting right.
+
+### 12.1 Procedural fragment generation
+
+`data/synthetic/fever_true.yaml` is an unfinished sketch of this idea:
+hand-written sentence templates with slots (`I {verb} {adjective} {synonym}`),
+plus lists of values for each slot, expanded into fragments automatically. The
+`fever_synonyms.jsonl` scratch notes are working towards the same thing. Neither
+file is read by anything — see section 4.
+
+**The idea is sound, but only if the unit of work and the unit of splitting both
+become the template rather than the fragment.**
+
+The trap is that templating multiplies *surface forms*, not *ideas*, and the
+train/val/test split is keyed on ideas. Section 6 exists precisely because
+near-duplicate fragments landing on opposite sides of the split inflate the
+validation score, and cross-multiplying a template's slots is a machine for
+producing near-duplicates. If "I have a high fever" lands in train and "I've got
+a really high fever" lands in validation, validation is measuring memorisation.
+
+The arithmetic in the draft YAML makes the point. Its eight templates expand to
+about 87 distinct strings, against a declared `target_count` of 800 — so most
+strings would be emitted nine or ten times over. Worse, 87 strings is still only
+eight ideas. Splitting those eight at 70/15/15 puts roughly **one template in
+validation**. Section 9 already describes the current validation set as a smoke
+test rather than evidence; done naively, this would shrink the real sample size
+while making the fragment count look ten times healthier.
+
+So the rules for adopting it are:
+
+**Templates are the diversity unit, and there need to be a lot of them.** Aim
+for 40 or more per library, not 8. This does not reduce how much thinking the
+libraries cost — writing 40 good templates is about as much work as writing 40
+good fragments. What it buys is 15 to 20 surface forms per unit of thought
+instead of one, and it teaches the model that the same claim in different
+clothes carries the same label. That is a real gain, but it is a gain in surface
+robustness, not in coverage of ideas.
+
+**Emit the template ID as a cluster marker.** If the generator writes ordinary
+library lines prefixed `[t04] ...`, the existing loader in
+`scripts/synthetic_data/manifest.py` strips the marker and hashes on the cluster
+key, so all siblings of a template land in the same split automatically. No
+change to the splitter or to `recombine.py` is needed. The hand-tagged `[c01]`
+markers and machine-emitted template IDs are the same mechanism.
+
+**This must not be used to clear the section 10 blocker.** Filling the four
+empty test cells with template-siblings of the training fragments would make the
+guard pass without fixing what the guard is for: it would remove the warning
+light rather than the fault, and the resulting evaluation number would be
+meaningless. Those four libraries need genuinely new ideas first.
+
+**Start with the filler libraries.** `tangents`, `justifiers`, `emotional`,
+`expectations` and `uti_speculation` carry no label weight — their only
+requirements are that they contain no signal language and that they are varied
+enough not to become a shortcut. Templating them is low risk and immediately
+useful, and it would take the lint's cross-split near-duplicate count (currently
+43, of which 32 are filler) to zero by construction.
+
+**The draft YAML needs restructuring before it is implementable.** Slot values
+are declared per synonym but consumed by templates with different grammatical
+requirements, so they collide: `adjective` holds `"a high"`, which works in
+`I {verb} {adjective} {synonym}` and produces "I've been feeling a high, like I
+have a fever" in the `experiential` template. Slots need per-template scoping or
+role-carrying names. Contraction joining (`I` + `'ve had`) needs handling too.
+
+A note on the planned spelling-mistake pass: it has the same character as
+templating. It makes the text harder and more realistic, which is worth doing,
+but it adds no diversity of ideas. Neither templating nor typos should be
+allowed to make a dataset *look* richer than its template count says it is. The
+lint should report templates per library and clusters per split alongside the
+raw fragment counts, so the two numbers are always visible together.
+
+### 12.2 Multi-signal libraries
+
+Add fragment libraries for the other urinary signals — dysuria, urinary
+frequency, and so on — each with its own true, false and ambiguous variants, on
+the same pattern as the fever libraries. Twenty or so fragments per variant to
+begin with. Then recombine them with the fever fragments.
+
+**The payoff is not more examples, it is more label per example.** Today a
+`true` example is one positive fever fragment plus one filler, and the filler
+contributes nothing — it is there to stop the model keying on length and to
+supply realistic noise. If the second fragment is instead a dysuria fragment
+with a known label, the same example now carries two supervised signals:
+
+```json
+"labels": {"fever_present": true, "dysuria_present": false}
+```
+
+The output format already anticipates this (section 7): `labels` is a dictionary
+specifically so that separately-built datasets can merge. Doing it inside a
+single run is the same idea one step earlier.
+
+This is additive with 12.1 in the strong sense. Templating multiplies surface
+forms within an idea; new signal libraries add genuinely independent ideas, so
+cluster diversity actually rises. Sixty new labelled fragments across three
+signals is a modest addition to the raw pool but roughly triples the training
+signal each example carries.
+
+It also lets the encoder be trained multi-head from one dataset rather than one
+dataset per head, which is where we want to end up anyway.
+
+**The constraint this introduces** is that we may only emit a label for a signal
+when *every* fragment in the example has a known status for it. That is what
+section 12.5 is about, and it is not optional — section 9 records that we
+currently refuse to emit `null` for uncovered signals precisely because
+`uti_speculation` mentions cystitis and kidney infection, and inventing a "no
+dysuria mentioned" label there would be a lie.
+
+### 12.3 Multi-symptom fragments
+
+Fragments that assert more than one signal in a single clause: "I had a fever
+and it's been burning when I urinate."
+
+These are closer to how patients actually write than anything currently in the
+libraries. Every clinical fragment we have makes exactly one claim, and a model
+trained only on that may learn an unstated "one symptom per clause" prior that
+real submissions will break immediately.
+
+The caveat is the important part: **these cannot be recombined freely.** Pairing
+"I had a fever and burning when I urinate" with a pure `fever_false` fragment
+produces an example whose two halves contradict each other, and no single label
+is correct. The compatibility check in 12.5 is what makes this safe.
+
+Practically, a multi-symptom fragment cannot have its label implied by which
+file it lives in, which is how single-signal libraries work today. It needs a
+label vector per line. The likely shape is a JSONL library format alongside the
+existing plain-text one, with the manifest declaring which format each library
+uses — the manifest already declares `fragment_type` and `subclass` per library,
+so `format` fits naturally.
+
+### 12.4 Out-of-scope symptom mentions
+
+Fragments that mention a symptom outside the ruleset entirely: "I had a fever
+and a cough." Patients do this often enough that its complete absence is itself
+unrealistic.
+
+These are cheap because they are label-neutral — a cough affects no signal the
+encoder has a head for, so such a fragment behaves like filler that happens to
+sit next to a clinical claim. The one rule is that an out-of-scope mention must
+be genuinely silent on every signal in the ruleset. "A cough" is safe; something
+like "a burning feeling in my chest" is not, if it could be read against a
+burning-related signal. Same check as everything else in 12.5.
+
+A secondary benefit: these put clinical language in more places, which mildly
+counteracts the urgency-language leak described in section 9.
+
+### 12.5 What makes 12.2 to 12.4 safe: label vectors and declared silence
+
+All three of the above need one mechanism, and it is a direct generalisation of
+the principle in section 2 rather than a departure from it.
+
+**Every library declares what it is silent about.** A `fever_true` fragment
+asserts `fever_present: true` and is guaranteed to say nothing about dysuria,
+frequency, or any other signal. That guarantee is currently implicit and
+unwritten; it needs to become an explicit field in the manifest, because once
+other signals exist we are relying on it to decide which labels we are entitled
+to emit. Section 7's distinction between a missing key and a `null` value is
+exactly what a silence declaration controls: silence on a signal earns a `null`,
+absence of a declaration earns no key at all.
+
+**Every fragment therefore has a label vector**, most of whose entries are
+"silent". Single-signal text libraries get theirs from the manifest for free; the
+multi-symptom libraries of 12.3 carry theirs per line.
+
+**Combination is validated on the vector, not the primary signal.** Two
+fragments may be combined only if, for every signal, they do not assert
+different things. Silent-plus-asserted is fine and yields the assertion.
+Silent-plus-silent yields `null`. Asserted-plus-asserted is fine if they agree
+and forbidden if they do not.
+
+**The label-first invariant survives, and this is the point.** We still choose
+the target label vector first, then filter each pool down to the fragments
+compatible with it, then draw. We never generate text and inspect it. Filtering
+the pool before drawing, rather than drawing and rejecting, also keeps
+generation deterministic and avoids quietly skewing the mix — a
+draw-and-reject loop would silently over-sample whichever fragments happen to be
+compatible with the most vectors.
+
+**The lint gains a corresponding check.** Today it verifies that filler contains
+no fever language (section 8). Generalised, it verifies that every library is
+actually silent about everything it claims to be silent about, across all signals
+in the ruleset. That check should run in CI against the real libraries in the
+same way the current one does, because a library that quietly stops being silent
+is a source of permanently wrong labels and nothing else would catch it.
+
+### 12.6 Sequencing
+
+Rough order, on the grounds that each step should leave the pipeline in a state
+where the numbers it produces can be trusted:
+
+1. Write real fragments for the four blocked `fever_null` libraries and produce
+   the proof-of-concept run. This clears section 10 honestly and gives us a
+   baseline to compare everything else against.
+2. Add label vectors and declared silence (12.5) with the lint check, while
+   there is still only one signal and it is cheap to get right.
+3. Template the filler libraries (12.1), lowest-risk use of procedural
+   generation, and add the templates-per-library and clusters-per-split lint
+   reports.
+4. Add dysuria and frequency libraries (12.2), which is where the multi-head
+   training data actually starts.
+5. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
+   library format.
+6. Template the clinical libraries, once there are enough distinct templates per
+   library for the split arithmetic to work.
+
+The spelling-mistake pass can slot in anywhere after step 1, since it is a
+post-processing step over finished text and independent of everything else.
