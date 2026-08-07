@@ -73,19 +73,55 @@ there is no point in the process where the text could influence the label.
 `data/synthetic/` holds plain text files, one fragment per line. A fragment is a
 single clause or sentence a patient might write.
 
+The folder is laid out by what a library says rather than by filename
+convention:
+
+```
+data/synthetic/
+  manifest.json
+  symptoms/fever/      six libraries, all about fever_present
+  symptoms/dysuria/    four libraries, all about dysuria_present
+  filler/              five libraries, silent on every signal
+  drafts/              scratch files, deliberately not libraries (section 4)
+  generated/           output, git-ignored
+```
+
+Nothing in the code keys off the directory — the manifest gives every library's
+path explicitly, so the layout is for humans. It matters as more signals arrive:
+"which files carry a dysuria label" should be answerable by looking, not by
+reading eleven manifest entries.
+
 | Library | Fragments | What it contains |
 |---|---|---|
-| `fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
-| `fever_false.txt` | 60 | Says the patient does not ("no temperature, I checked") |
-| `fever_null_hedged.txt` | 24 | Genuinely uncertain ("I feel a bit off, hard to say") |
-| `fever_null_metaphor.txt` | 18 | Fever words used non-clinically ("burning up with embarrassment") |
-| `fever_null_thirdparty.txt` | 20 | *Someone else* has a fever ("my son has a temperature") |
-| `fever_null_historical.txt` | 20 | A fever, but in the past ("I had one last month") |
-| `tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
-| `justifiers.txt` | 100 | Filler: why they need an appointment |
-| `emotional.txt` | 60 | Filler: worry and feelings |
-| `expectations.txt` | 60 | Filler: what they want to happen |
-| `uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
+| `symptoms/fever/fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
+| `symptoms/fever/fever_false.txt` | 60 | Says the patient does not ("no temperature, I checked") |
+| `symptoms/fever/fever_null_hedged.txt` | 42 | Genuinely uncertain ("I feel a bit off, hard to say") |
+| `symptoms/fever/fever_null_metaphor.txt` | 33 | Fever words used non-clinically ("burning up with embarrassment") |
+| `symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
+| `symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
+| `symptoms/dysuria/dysuria_true.txt` | 24 | Says it hurts to pass urine ("it burns when I pee") |
+| `symptoms/dysuria/dysuria_false.txt` | 18 | Says it does not ("weeing itself is fine, no stinging") |
+| `symptoms/dysuria/dysuria_null_hedged.txt` | 16 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
+| `symptoms/dysuria/dysuria_null_thirdparty.txt` | 14 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
+| `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
+| `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
+| `filler/emotional.txt` | 60 | Filler: worry and feelings |
+| `filler/expectations.txt` | 60 | Filler: what they want to happen |
+| `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
+
+**The dysuria libraries are a seed, not a working set.** They exist so the
+multi-signal recombination described in section 12.2 has something real to be
+built against. The generator does not read them yet: `build_pools` keeps only
+fragments whose `signal_key` matches the signal being generated, plus filler, so
+a dysuria fragment is dropped from a `fever_present` run rather than treated as
+filler. That is the correct behaviour until the machinery in 12.5 exists —
+treating them as filler would silently assert they say nothing about fever, and
+that guarantee is not yet written down anywhere the code can check.
+
+They were written to be silent about fever (verified: zero hits against the
+lint's fever lexicon) and about the other urinary signals, but "verified by
+reading them" is exactly the informal guarantee section 12.5 says has to become
+an explicit, checkable declaration before it can be relied on.
 
 Two things are worth understanding about this table.
 
@@ -114,8 +150,8 @@ Those two lines are the same idea written twice. The `[c01]` marker says so. The
 generator strips the marker before using the text — it never appears in any
 training example. Section 6 explains what the markers are for.
 
-Only the `fever_null` libraries carry markers, because only they were written in
-a way that produced systematic near-duplicates.
+Only the `fever_null` and `dysuria_null` libraries carry markers, because only
+they were written in a way that produced systematic near-duplicates.
 
 ---
 
@@ -126,9 +162,11 @@ and records what each one means (which signal, positive or negative or filler,
 which sub-class).
 
 The generator reads this list and **only** this list. It never scans the folder
-for `.txt` files. This matters because `data/synthetic/` also contains
+for `.txt` files. This matters because `data/synthetic/drafts/` contains
 `fever_synonyms.jsonl` (scratch notes) and `fever_true.yaml` (an unfinished
 template spec). A folder scan would feed both straight into the training text.
+They sit in their own directory to make the distinction obvious, but the
+manifest, not the directory, is what keeps them out.
 
 Files on disk but missing from the manifest are ignored. Files in the manifest
 but missing from disk stop the run with an error.
@@ -336,25 +374,28 @@ dysuria mentioned" would be inventing a label.
 The generator, its tests and the lint are complete and merged. **The proof-of-
 concept run has not been produced yet**, because of one data problem.
 
-The generator refuses to run if any library has zero fragments in any split, and
-four cells are currently empty:
+The generator refuses to run if any library has zero fragments in any split.
+Four cells were empty when this was first written; the `fever_null` libraries
+have since been expanded and **one cell remains empty**:
 
 ```
-fever_null_hedged      train 21   val  2   test 0
-fever_null_historical  train 16   val  4   test 0
-fever_null_metaphor    train 16   val  0   test 1
-fever_null_thirdparty  train 16   val  4   test 0
+fever_null_metaphor    train 29   val  0   test 4
 ```
 
-This is the guard doing its job rather than a bug. These libraries are only
-18–24 fragments each, and after clustering they are 10–14 independent groups, so
-a 15% share can round to nothing. An empty cell would mean an entire hard-case
-sub-class was invisible during evaluation — the model could be systematically
-wrong about third-party fever mentions and nothing would show it.
+This is the guard doing its job rather than a bug. Metaphor fragments are
+clustered into a small number of independent groups, so a 15% share can still
+round to nothing. An empty cell would mean an entire hard-case sub-class was
+invisible during evaluation — the model could be systematically wrong about
+metaphorical fever language and nothing would show it.
 
-**The fix is to write more fragments** for those four libraries, ideally to
-40–50 each, which is library work rather than a code change. Until then the lint
-runs (it deliberately skips the guard) but generation does not.
+**The fix is to write more `fever_null_metaphor` fragments**, which is library
+work rather than a code change. Until then the lint runs (it deliberately skips
+the guard) but generation does not.
+
+The dysuria libraries fill all twelve of their cells, but they are small enough
+(14–24 fragments) that this is fragile: one reworded fragment can empty a cell
+again. They need the same 40–50 target as everything else before any number
+derived from them means anything.
 
 ---
 
@@ -405,7 +446,7 @@ needs getting right.
 
 ### 12.1 Procedural fragment generation
 
-`data/synthetic/fever_true.yaml` is an unfinished sketch of this idea:
+`data/synthetic/drafts/fever_true.yaml` is an unfinished sketch of this idea:
 hand-written sentence templates with slots (`I {verb} {adjective} {synonym}`),
 plus lists of values for each slot, expanded into fragments automatically. The
 `fever_synonyms.jsonl` scratch notes are working towards the same thing. Neither
@@ -474,6 +515,10 @@ lint should report templates per library and clusters per split alongside the
 raw fragment counts, so the two numbers are always visible together.
 
 ### 12.2 Multi-signal libraries
+
+**Partial status: the dysuria libraries exist (section 3), the engine work does
+not.** The fragments are written and declared in the manifest; nothing reads
+them yet. Everything below is still the plan.
 
 Add fragment libraries for the other urinary signals — dysuria, urinary
 frequency, and so on — each with its own true, false and ambiguous variants, on
@@ -601,7 +646,9 @@ where the numbers it produces can be trusted:
    generation, and add the templates-per-library and clusters-per-split lint
    reports.
 4. Add dysuria and frequency libraries (12.2), which is where the multi-head
-   training data actually starts.
+   training data actually starts. The dysuria libraries are written; the
+   engine changes that would let anything read them are step 2's job, and
+   deliberately are not being attempted before it.
 5. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
    library format.
 6. Template the clinical libraries, once there are enough distinct templates per
