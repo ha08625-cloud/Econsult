@@ -182,27 +182,51 @@ but missing from disk stop the run with an error.
 
 ## 5. How one example is built
 
-Every example is exactly **two fragments** joined with a space. Always two, in
-every label class.
+Every example is a handful of fragments joined with a space. How many is drawn
+per example from a weighted mix — by default 50% two-fragment examples and 50%
+three-fragment ones, adjustable with `--fragment-counts`.
 
-That is deliberate. If `true` examples had three fragments and `null` examples
-had one, the model could learn "long text means fever" and score well on our
-data while having learned nothing about fever. Holding the count constant
-removes that shortcut. (Fragment *length* is a different matter and is not
-solved — see section 9.)
+**The mix is identical for every label class, and that is the whole safety
+argument.** If `true` examples had three fragments and `null` examples had one,
+the model could learn "long text means fever" and score well on our data while
+having learned nothing about fever. The count is therefore drawn from one
+distribution that never sees the label, and the stats sidecar reports the
+realised counts *per label* so the property is checked on every run rather than
+assumed. (Fragment *length* is a different matter and is not solved — see
+section 9.)
 
-There are four kinds of example:
+There are four kinds of example. Each holds **exactly one decisive fragment**
+(none, for a structural null); every additional fragment is filler:
 
 | Kind | What it is made of | Label |
 |---|---|---|
-| `true` | 1 positive fragment + 1 filler | `true` |
-| `false` | 1 negative fragment + 1 filler | `false` |
-| `null_ambiguous` | 1 hard-case fragment + 1 filler | `null` |
-| `null_structural` | 2 fillers, from two different libraries | `null` |
+| `true` | 1 positive fragment + N−1 filler | `true` |
+| `false` | 1 negative fragment + N−1 filler | `false` |
+| `null_ambiguous` | 1 hard-case fragment + N−1 filler | `null` |
+| `null_structural` | N fillers, all from different libraries | `null` |
 
 By default the mix is 15% `true`, 25% `false`, 60% `null`, and the `null` half
 splits 50/50 between the two kinds above. All of these are adjustable from the
 command line.
+
+**Only one decisive fragment, however long the example.** Two positives in one
+example would double the evidence for the same claim and teach nothing new.
+The consequence is that the decisive fragment's share of the text shrinks as
+the count rises — half the words at two fragments, a fifth at five. That is the
+point: harder, more realistic examples. It is also why "more is better" is
+false here. Past some count each example still carries exactly one supervised
+claim, just buried in more noise, so the supervision per token falls while the
+cost of training on it rises.
+
+**Fillers within one example always come from different libraries.** Three
+fragments from `tangents` read as three consecutive tangents in the same voice.
+This puts a hard ceiling on the count: a structural null at N needs N distinct
+filler libraries, and there are five. Four is the practical limit against
+today's libraries — at five, every structural null would contain exactly one
+fragment from each library and would stop being random in composition. Going
+higher wants more filler libraries, not a code change. The generator checks
+this up front and refuses to start if the requested maximum exceeds the filler
+libraries available.
 
 **Why the two kinds of `null` matter.** A `null_structural` example contains no
 fever words at all, so it is trivially easy — "no fever words, therefore null".
@@ -212,7 +236,7 @@ then fall apart the first time a real patient mentions their child's
 temperature. The 50/50 default is the single most consequential setting in the
 generator.
 
-**The decisive fragment can appear first or second.** The two fragments are
+**The decisive fragment can appear in any position.** The fragments are
 shuffled, so the model cannot learn "the fever claim is always the opening
 clause".
 
@@ -291,9 +315,26 @@ to answer "not mentioned" to every question it was not specifically trained on.
 This is written down here because it is the kind of mistake that is invisible
 until the model is mysteriously bad.
 
+**How many fragments an example holds is not stored.** It is
+`len(meta.fragment_ids)` and nothing else. A second copy of the same number is
+one more thing that can disagree with itself.
+
 **Every run also writes a `.stats.json` sidecar** next to the dataset: what was
 asked for, what actually came out, the pool sizes, and the text length breakdown
 per label. It is the first thing to look at when a training run seems wrong.
+
+Two blocks in it exist specifically to police section 5's safety argument:
+
+* `fragment_counts.by_label` and `.by_label_mode` — the realised count mix
+  broken down by label. These rows should agree with each other and with the
+  requested mix. If one label ever skews long, fragment count has become a
+  proxy for the label, which is exactly the shortcut the mix is meant to rule
+  out. Nothing downstream would surface that on its own; it would present as a
+  validation score that looks fine and a model that does not transfer.
+* `token_counts.by_fragment_count` — text length grouped by count, alongside
+  the existing per-label breakdown. Read them together: a length gap between
+  labels that the count mix explains is a different problem from one it does
+  not.
 
 ### Reproducibility
 
@@ -347,15 +388,18 @@ recombination of those 15 sentences. One unlucky fragment moves the score
 several points. The training plan asks for around 200 fragments per signal; we
 have roughly half that for `true` and a third for `false`.
 
-**Length may still leak.** Fragment *count* is fixed at two, but fragment
-*length* is not. `fever_true` fragments run from 3 words to 98, while the
-`fever_null` libraries all sit inside a narrow 9–27 word band. The medians are
-close (16 against 17–19), so this is a tail problem rather than a systematic
-offset — but a 98-word positive has no counterpart anywhere in the null
-libraries, and the model can notice that. The stats sidecar reports median and
-90th-percentile length per label class on every run; if the medians ever drift
-apart by more than about 1.5×, length has become a usable proxy for the label.
-Fixing it means rebalancing the libraries, not changing the generator.
+**Length may still leak.** Fragment *count* varies but its distribution does
+not vary by label (section 5); fragment *length* is not controlled at all.
+`fever_true` fragments run from 3 words to 98, while the `fever_null` libraries
+all sit inside a narrow 9–27 word band. The medians are close (16 against
+17–19), so this is a tail problem rather than a systematic offset — but a
+98-word positive has no counterpart anywhere in the null libraries, and the
+model can notice that. The stats sidecar reports median and 90th-percentile
+length per label class on every run; if the medians ever drift apart by more
+than about 1.5×, length has become a usable proxy for the label. Read that
+against `fragment_counts.by_label` in the same sidecar, which says whether the
+count mix could account for the gap. Fixing it means rebalancing the libraries,
+not changing the generator.
 
 **Urgency language leaks too.** About 17% of `fever_true` fragments bundle the
 fever claim with a justification — "I've got three important meetings I can't
@@ -364,9 +408,13 @@ exactly the "sounds urgent, must be positive" shortcut we are trying to prevent.
 Pairing with filler washes some of it out. Properly fixing it means splitting
 those fragments up, which is library work.
 
-**The examples are about two sentences long.** Real submissions are longer and
-messier. A model trained only on this will meet a different distribution in
-production. Expanding to variable-length, multi-clause blurbs is a later phase.
+**The examples are still short.** Two or three sentences by default, against
+real submissions that are longer and messier still. The variable fragment count
+narrows that gap rather than closing it, and it cannot close it on its own: the
+count ceiling is the number of filler libraries (section 5), and past a few
+fragments each example is still one supervised claim in more noise. Closing it
+properly needs more filler libraries and richer fragments, which is library
+work.
 
 **Only `fever_present` is covered.** Nothing here produces labels for dysuria,
 flank pain or the other urinary signals, and we deliberately do not emit `null`
@@ -427,6 +475,21 @@ python -m scripts.synthetic_data \
     --split train --count 10000 \
     --out data/synthetic/generated/fever_present.train.jsonl
 ```
+
+Change how long the examples are:
+
+```
+python -m scripts.synthetic_data \
+    --split train --count 10000 \
+    --fragment-counts 2=0.4,3=0.4,4=0.2 \
+    --out data/synthetic/generated/fever_present.train.jsonl
+```
+
+The weights must sum to 1.0, every count must be at least 2, and the largest
+count may not exceed the number of filler libraries — the generator refuses to
+start otherwise, rather than failing partway through a 10,000-example run. The
+mix applies identically to every label class and there is deliberately no way
+to set it per class; see section 5 for why.
 
 Report on library health:
 
@@ -545,10 +608,12 @@ the same pattern as the fever libraries. Twenty or so fragments per variant to
 begin with. Then recombine them with the fever fragments.
 
 **The payoff is not more examples, it is more label per example.** Today a
-`true` example is one positive fever fragment plus one filler, and the filler
-contributes nothing — it is there to stop the model keying on length and to
-supply realistic noise. If the second fragment is instead a dysuria fragment
-with a known label, the same example now carries two supervised signals:
+`true` example is one positive fever fragment plus one or more fillers, and the
+fillers contribute nothing — they are there to supply realistic noise. That is
+also the ceiling on the variable fragment count in section 5: longer examples
+currently mean more unlabelled filler, not more supervision. If those extra
+fragments were instead dysuria fragments with known labels, the same example
+would carry two supervised signals:
 
 ```json
 "labels": {"fever_present": true, "dysuria_present": false}
@@ -663,7 +728,9 @@ where the numbers it produces can be trusted:
    there is still only one signal and it is cheap to get right.
 3. Template the filler libraries (12.1), lowest-risk use of procedural
    generation, and add the templates-per-library and clusters-per-split lint
-   reports.
+   reports. This is also what raises the fragment-count ceiling: the ceiling is
+   the *number* of filler libraries, not their size (section 5), so templating
+   existing ones does not help — new ones do.
 4. Add dysuria and frequency libraries (12.2), which is where the multi-head
    training data actually starts. The dysuria libraries are written; the
    engine changes that would let anything read them are step 2's job, and
