@@ -750,6 +750,65 @@ no reason to commit them.
 The tool uses the Python standard library only, and adds nothing to
 `requirements.txt`.
 
+### The training tooling
+
+`scripts/encoder_training/` consumes what the generator produces. Four
+subcommands:
+
+```
+python -m scripts.encoder_training generate-folds --folds 5   # the 15 runs above, scripted
+python -m scripts.encoder_training baselines --folds 5        # majority / length / TF-IDF
+python -m scripts.encoder_training smoke                      # does this machine work at all
+python -m scripts.encoder_training probe --folds 5            # Arm A, the frozen probe
+```
+
+**There are two dependency tiers and the boundary is load-bearing.** Everything
+that decides what a number *means* — the loader, the metrics, the cluster
+bootstrap, the decision rule, the report writer, the embedding cache key, the
+metadata sidecar — is standard library, so CI's unit job covers it on a runner
+with no GPU. `torch`, `transformers` and `scikit-learn` live in
+`requirements-ml.txt`, which CI never installs and the Dockerfile never sees;
+their tests skip themselves. `model.py` is the only module that imports torch at
+module scope, and everything else imports it lazily so the CLI stays importable
+without it.
+
+**Run `smoke` first on any new machine.** `torch.cuda.is_available()` returns
+`True` on a wheel that cannot launch a single kernel — the failure mode a
+Blackwell GPU produces with a pre-CUDA-12.8 build — so the subcommand runs a real
+matmul and prints the compute capability beside torch's CUDA version.
+
+Arm A embeds each split once and caches the vectors (~215MB for a five-fold
+sweep, under the git-ignored `data/synthetic/generated/`). The cache key is the
+*filename*, and it encodes the model revision SHA, pooling mode, `max_seq_len`,
+generator version, dataset seed, signal, fold, split, and a digest of the
+example texts. That is deliberate rather than fussy: a stale cache hit produces a
+report full of plausible numbers that mean nothing, with no warning anywhere, so
+every input that changes what an embedding *is* has to change the name of the
+file holding it.
+
+Trained heads go to `models/encoder/<signal>/` as **JSON**, not pickles — a
+2,307-parameter probe needs no binary format, and a JSON artefact is diffable in
+review and loadable without torch. Each fold writes `foldN.head.json` and
+`foldN.decision.json` (the margin travels separately because it is retuned far
+more often than the weights), alongside one `metadata.json` recording the base
+model and resolved revision, the tokeniser's *measured* casing behaviour, pooling
+mode, every seed, the dataset provenance, the ruleset hash, and the validation
+numbers each margin was chosen from.
+
+Two constraints worth knowing before planning around this:
+
+* **A single head cannot satisfy `EncoderOutput`.**
+  `EncoderOutput.validate_against` requires output keys to match the ruleset's
+  `send_to_encoder` signals exactly, and `data/uti1.json` declares seven. Swapping
+  in a real encoder stays blocked until either all seven heads exist or that
+  contract permits partial output. The metadata sidecar records this too.
+* **Arm A is expected to fail on the hard sub-classes.** Third-party attribution,
+  tense and metaphor are compositional scope problems, and a single pooled vector
+  blurs the structure that carries them. That prediction is recorded in the
+  report's expectations before any run, and it is why Arm B is not optional: a
+  weak probe cannot separate "the libraries are the bottleneck" from "the method
+  is too weak".
+
 ---
 
 ## 12. Provisional: scaling beyond the proof of concept

@@ -28,24 +28,42 @@
 # execution on the device". This is the single most likely thing here to eat an
 # afternoon, and the failure looks nothing like a wheel problem.
 #
-# Install torch from the cu128 index, not from PyPI's default:
+# The good news, checked rather than assumed: the torch 2.13.0 wheel on PyPI's
+# *default* index is a CUDA 13.0 build (`torch.version.cuda == '13.0'`), which
+# covers sm_120. So a plain `pip install -r requirements-ml.txt` is expected to
+# work on the 5070 and no special index is needed for this pin.
+#
+# If a version has to be downgraded for any reason, take it from the cu128 index
+# rather than PyPI's default, because older default wheels are cu12.4 or earlier
+# and will not run on this GPU:
 #
 #   pip install torch --index-url https://download.pytorch.org/whl/cu128
 #
 # Verify before training, not after:
 #
-#   python -c "import torch; print(torch.cuda.get_device_capability())"
-#   python -c "import torch; print(torch.zeros(1, device='cuda') + 1)"
+#   python -m scripts.encoder_training smoke
 #
-# The second line is the one that matters: the first can succeed on a wheel
-# that cannot run a single kernel.
+# That subcommand prints torch's CUDA version and the device's compute
+# capability (expect (12, 0) on the 5070) and then runs a real matmul. The matmul
+# is the part that matters: `torch.cuda.is_available()` returns True on a wheel
+# that cannot launch a single kernel, so an import-only check proves nothing.
+#
+# ---------------------------------------------------------------------------
+# What CI does and does not see
+# ---------------------------------------------------------------------------
+# Nothing here is installed by CI, so the torch-dependent tests in
+# tests/test_encoder_training_arm_a.py skip themselves there. The tests that
+# cover the *silent* failure modes -- above all the embedding cache key, where a
+# stale hit produces plausible numbers and no warning -- are stdlib-only and run
+# on every commit. Installing this file locally is what turns the rest on.
 
 # --- Task 3: baselines -----------------------------------------------------
 scikit-learn==1.7.2
 
-# --- Task 5: the two arms --------------------------------------------------
-# Added when Arm A lands, pinned to whatever the cu128 index actually serves at
-# that point. Left commented rather than absent so the cu128 note above stays
-# attached to the line it warns about.
-# torch            # install from https://download.pytorch.org/whl/cu128
-# transformers
+# --- Task 4: Arm A, the frozen probe ---------------------------------------
+# Pinned to the versions Arm A was written and tested against. transformers 5.x
+# is a deliberate choice rather than an accident of resolution: it is what the
+# tokeniser-casing probe and the local-model path in
+# tests/test_encoder_training_arm_a.py were verified on.
+torch==2.13.0            # PyPI default wheel is a cu130 build; see the note above
+transformers==5.14.1

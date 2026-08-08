@@ -526,6 +526,22 @@ EXPECTATIONS = (
     "transformer once that exists.",
     "Both negative controls must fail. Shuffled train labels must score at chance on the "
     "unpermuted test split, and no fragment or cluster may appear on both sides of a split.",
+    "Arm A -- the frozen probe -- should handle clear positives, clear negatives and "
+    "`null_structural`, and should do **badly** on the four hard `null` sub-classes. "
+    "Third-party attribution, tense and metaphor are compositional scope problems, and a single "
+    "mean-pooled vector blurs the structure that carries them: a linear probe over it has no "
+    'mechanism for "the fever belongs to the daughter". A bad Arm A result on those slices is '
+    "the predicted outcome, not a bug.",
+    "Arm A beating TF-IDF on `null_ambiguous` would be a genuine finding about the encoder; "
+    "losing to it there would say the pooled representation discards what the ambiguous "
+    "libraries are made of. Either way the comparison is McNemar's, not two point estimates "
+    "side by side -- and neither answers the ticket's question on its own, because Arm A cannot "
+    'separate "the libraries are the bottleneck" from "the method is too weak". That is Arm '
+    "B's job.",
+    "`max_seq_len` is not the interesting constraint. The proof-of-concept run's median example "
+    "is 36 tokens and its 90th percentile 54, against a limit of 256. Training on 36-token "
+    "recombinations and eventually serving 300-token real submissions is a distribution shift no "
+    "sequence length fixes.",
 )
 
 
