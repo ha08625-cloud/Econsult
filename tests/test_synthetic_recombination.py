@@ -3,6 +3,7 @@
 These are pure unit tests with no database, so there is no ``pytestmark``.
 """
 
+import hashlib
 import json
 import math
 from collections import Counter
@@ -11,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
 from scripts.synthetic_data.__main__ import main as cli_main
 from scripts.synthetic_data.lint import (
     FEVER_LEXICON,
@@ -24,8 +26,12 @@ from scripts.synthetic_data.manifest import (
     LibrarySpec,
     ManifestError,
     assign_split,
+    bucket_coverage,
     check_no_empty_cells,
+    cluster_key,
     deduplicate,
+    find_fold_salts,
+    fold_bucket,
     load_fragments,
     parse_line,
     parse_manifest,
@@ -1370,3 +1376,414 @@ def test_cli_still_requires_the_generation_flags_without_lint(tmp_path, librarie
     with pytest.raises(SystemExit) as excinfo:
         cli_main(_argv(manifest=libraries, ruleset=_write_ruleset(tmp_path)))
     assert excinfo.value.code == 2
+
+
+# --------------------------------------------------------------------------
+# 18. Fold mode (DD4) and sidecar fragment provenance (DD16)
+#
+# Fold mode is opt-in, so the first test here is the one that matters most:
+# nothing about the default path may move. Every dataset generated so far and
+# every split-coverage number in arch_training.md section 10 depends on it.
+# --------------------------------------------------------------------------
+
+#: sha256 of the JSONL produced by the default invocation against the
+#: ``libraries`` fixture at seed 42, count 300. Pinned so that any change to
+#: banding, hashing, sampling order or the record shape has to be deliberate.
+#: There is no historical reference for this digest -- it was recorded from the
+#: pre-fold-mode code while adding fold mode, and byte-identity against that
+#: code was verified separately at the time.
+GOLDEN_DEFAULT_SPLIT_SHA256 = "5844bc1399fdd7af5526935a9c0301cc6f1d577390708a580c43637427ca686a"
+
+FOLDS = 5
+
+
+def test_default_invocation_still_produces_the_golden_dataset(tmp_path, libraries):
+    out = tmp_path / "out.jsonl"
+    assert (
+        cli_main(
+            _argv(
+                manifest=libraries,
+                ruleset=_write_ruleset(tmp_path),
+                split="train",
+                count=300,
+                seed=42,
+                out=out,
+            )
+        )
+        == 0
+    )
+    assert hashlib.sha256(out.read_bytes()).hexdigest() == GOLDEN_DEFAULT_SPLIT_SHA256
+
+
+def test_an_empty_salt_reproduces_the_unsalted_digest():
+    # The salt is threaded through the same hash the default path uses, so an
+    # empty salt has to be a no-op rather than merely "close enough".
+    assert assign_split("fever_null_hedged:c01", salt="") == "train"
+    assert assign_split("i had a fever", salt="") == "train"
+
+
+def test_a_salt_changes_the_split_assignment():
+    keys = [f"key-{i}" for i in range(200)]
+    unsalted = [assign_split(key) for key in keys]
+    salted = [assign_split(key, salt="32") for key in keys]
+    assert unsalted != salted
+
+
+def _fold_splits(key: str, folds: int = FOLDS, salt: str = "") -> list[str]:
+    return [assign_split(key, folds=folds, fold_index=i, salt=salt) for i in range(folds)]
+
+
+def test_every_cluster_is_a_test_cluster_in_exactly_one_fold():
+    for i in range(200):
+        splits = _fold_splits(f"key-{i}")
+        assert splits.count("test") == 1
+        assert splits.count("val") == 1
+        assert splits.count("train") == FOLDS - 2
+
+
+def test_fold_bands_are_60_20_20_at_five_folds():
+    counts = Counter(assign_split(f"key-{i}", folds=FOLDS, fold_index=0) for i in range(5000))
+    assert counts["test"] == pytest.approx(1000, abs=120)
+    assert counts["val"] == pytest.approx(1000, abs=120)
+    assert counts["train"] == pytest.approx(3000, abs=180)
+
+
+def test_fold_index_outside_the_fold_range_raises():
+    with pytest.raises(ManifestError, match="outside"):
+        assign_split("some key", folds=FOLDS, fold_index=FOLDS)
+
+
+def test_fold_bucket_below_two_folds_raises():
+    with pytest.raises(ManifestError, match="at least 2"):
+        fold_bucket("some key", folds=1)
+
+
+def test_cluster_key_is_the_cluster_when_tagged_and_the_text_otherwise():
+    assert cluster_key("alpha:c01", "My son has a fever") == "alpha:c01"
+    assert cluster_key(None, "  My son has a FEVER.  ") == normalise("My son has a fever")
+
+
+@pytest.fixture
+def fold_libraries(tmp_path) -> Path:
+    """As ``libraries``, but every library large enough to populate five buckets."""
+    return _write_manifest(
+        tmp_path,
+        _RECOMBINE_LIBRARIES,
+        {f"{e['name']}.txt": _spread_lines(e["name"], 60) for e in _RECOMBINE_LIBRARIES},
+    )
+
+
+def test_every_fragments_cluster_is_a_test_cluster_in_exactly_one_fold(fold_libraries):
+    tested: Counter[str] = Counter()
+    every_cluster: set[str] = set()
+    for fold in range(FOLDS):
+        fragments = load_fragments(fold_libraries, folds=FOLDS, fold_index=fold)
+        for fragment in fragments:
+            key = cluster_key(fragment.cluster_id, fragment.text)
+            every_cluster.add(key)
+            if fragment.split == "test":
+                tested[key] += 1
+    assert every_cluster
+    assert {tested[key] for key in every_cluster} == {1}
+
+
+def test_the_three_splits_are_disjoint_within_every_fold(fold_libraries):
+    for fold in range(FOLDS):
+        fragments = load_fragments(fold_libraries, folds=FOLDS, fold_index=fold)
+        by_split: dict[str, set[str]] = {"train": set(), "val": set(), "test": set()}
+        for fragment in fragments:
+            by_split[fragment.split].add(fragment.fragment_id)
+        assert by_split["train"] & by_split["val"] == set()
+        assert by_split["train"] & by_split["test"] == set()
+        assert by_split["val"] & by_split["test"] == set()
+        assert all(by_split.values()), f"fold {fold} has an empty split"
+
+
+def test_fold_mode_does_not_move_fragments_between_folds_when_a_library_grows(tmp_path):
+    # The same stability guarantee the default bands have. Without it, adding a
+    # fragment would silently reshuffle every fold's test set.
+    before_dir = tmp_path / "before"
+    after_dir = tmp_path / "after"
+    before_dir.mkdir()
+    after_dir.mkdir()
+
+    lines = _spread_lines("alpha", 60)
+    before = _write_manifest(before_dir, [_entry("alpha")], {"alpha.txt": lines})
+    after = _write_manifest(
+        after_dir, [_entry("alpha")], {"alpha.txt": ["a brand new line about nothing", *lines]}
+    )
+
+    kwargs = {"check_cells": False, "folds": FOLDS, "fold_index": 2, "salt": "32"}
+    before_splits = {f.fragment_id: f.split for f in load_fragments(before, **kwargs)}
+    after_splits = {f.fragment_id: f.split for f in load_fragments(after, **kwargs)}
+    assert len(after_splits) == len(before_splits) + 1
+    for fragment_id, split in before_splits.items():
+        assert after_splits[fragment_id] == split
+
+
+# --------------------------------------------------------------------------
+# The empty-cell guard under fold mode, and the salt search that serves it.
+#
+# ``fill_d`` holds seven fragments, too few to reliably cover five buckets, so
+# it stands in for the real binding constraint: dysuria_null_thirdparty's seven
+# clusters. The guard covers the whole manifest, so this blocks a fever run.
+# --------------------------------------------------------------------------
+
+_UNBALANCED_LIBRARIES = [*_RECOMBINE_LIBRARIES, _entry("fill_d")]
+
+
+@pytest.fixture
+def unbalanced_fold_libraries(tmp_path) -> Path:
+    return _write_manifest(
+        tmp_path,
+        _UNBALANCED_LIBRARIES,
+        {
+            f"{e['name']}.txt": _spread_lines(e["name"], 7 if e["name"] == "fill_d" else 60)
+            for e in _UNBALANCED_LIBRARIES
+        },
+    )
+
+
+def test_a_salt_that_empties_a_cell_still_raises(unbalanced_fold_libraries):
+    # Salt "0" leaves fill_d with nothing in bucket 0, so fold 0 has no test
+    # fragments for it. Fold mode must not weaken the guard: an empty cell makes
+    # a sub-class invisible to evaluation whichever mode produced it.
+    with pytest.raises(ManifestError, match="fill_d/test"):
+        load_fragments(unbalanced_fold_libraries, folds=FOLDS, fold_index=0, salt="0")
+
+
+def test_the_fold_empty_cell_error_points_at_the_salt_search(unbalanced_fold_libraries):
+    with pytest.raises(ManifestError) as excinfo:
+        load_fragments(unbalanced_fold_libraries, folds=FOLDS, fold_index=0, salt="0")
+    assert "--find-fold-salt" in str(excinfo.value)
+    assert "salt '0'" in str(excinfo.value)
+
+
+def test_find_fold_salts_returns_only_salts_that_populate_every_bucket(
+    unbalanced_fold_libraries,
+):
+    fragments = load_fragments(unbalanced_fold_libraries, check_cells=False)
+    salts = find_fold_salts(fragments, folds=FOLDS, limit=50)
+    assert salts and "0" not in salts
+    for salt in salts:
+        coverage = bucket_coverage(fragments, folds=FOLDS, salt=salt)
+        assert all(len(buckets) == FOLDS for buckets in coverage.values())
+
+
+def test_every_salt_find_fold_salts_returns_generates_every_fold(unbalanced_fold_libraries):
+    # The search's whole claim: a salt it returns clears the empty-cell guard
+    # for all five folds, not just the one someone happened to try.
+    fragments = load_fragments(unbalanced_fold_libraries, check_cells=False)
+    salt = find_fold_salts(fragments, folds=FOLDS, limit=50)[0]
+    for fold in range(FOLDS):
+        load_fragments(unbalanced_fold_libraries, folds=FOLDS, fold_index=fold, salt=salt)
+
+
+def test_the_agreed_salt_still_clears_the_real_libraries():
+    # DD4 pins salt "32" and every downstream fold uses it. If a library grows
+    # past the point where 32 works, this fails here rather than halfway
+    # through a five-fold training run.
+    for fold in range(FOLDS):
+        load_fragments(REAL_MANIFEST, folds=FOLDS, fold_index=fold, salt=DEFAULT_FOLD_SALT)
+
+
+# --------------------------------------------------------------------------
+# Fold flags on the CLI
+# --------------------------------------------------------------------------
+
+
+def test_cli_rejects_fold_without_folds(tmp_path, libraries):
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(
+            _argv(
+                manifest=libraries,
+                ruleset=_write_ruleset(tmp_path),
+                fold=2,
+                split="train",
+                count=10,
+                out=tmp_path / "out.jsonl",
+            )
+        )
+    assert excinfo.value.code == 2
+    assert not (tmp_path / "out.jsonl").exists()
+
+
+def test_cli_rejects_a_split_salt_without_folds(tmp_path, libraries):
+    # Salting the default bands would silently move the split of every dataset
+    # generated so far, so it is refused rather than quietly honoured.
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(
+            _argv(
+                manifest=libraries,
+                ruleset=_write_ruleset(tmp_path),
+                split_salt="32",
+                split="train",
+                count=10,
+                out=tmp_path / "out.jsonl",
+            )
+        )
+    assert excinfo.value.code == 2
+
+
+def test_cli_rejects_a_fold_outside_the_fold_range(tmp_path, fold_libraries):
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(
+            _argv(
+                manifest=fold_libraries,
+                ruleset=_write_ruleset(tmp_path),
+                folds=FOLDS,
+                fold=FOLDS,
+                split="train",
+                count=10,
+                out=tmp_path / "out.jsonl",
+            )
+        )
+    assert excinfo.value.code == 2
+
+
+def test_cli_rejects_fewer_than_three_folds(tmp_path, fold_libraries):
+    # At K=2 the test and validation buckets consume everything, leaving no
+    # training data at all.
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(
+            _argv(
+                manifest=fold_libraries,
+                ruleset=_write_ruleset(tmp_path),
+                folds=2,
+                split="train",
+                count=10,
+                out=tmp_path / "out.jsonl",
+            )
+        )
+    assert excinfo.value.code == 2
+
+
+def test_cli_find_fold_salt_needs_no_split_count_or_out(capsys):
+    argv = ["--folds", str(FOLDS), "--find-fold-salt", "--manifest", str(REAL_MANIFEST)]
+    assert cli_main(argv) == 0
+    printed = capsys.readouterr().out.splitlines()
+    assert printed[0].startswith(f"salts below {1000} populating all {FOLDS} buckets")
+    assert DEFAULT_FOLD_SALT in printed[1:]
+
+
+def test_cli_find_fold_salt_requires_folds():
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(["--find-fold-salt", "--manifest", str(REAL_MANIFEST)])
+    assert excinfo.value.code == 2
+
+
+def _generate_fold(tmp_path: Path, manifest: Path, split: str, fold: int, **extra) -> dict:
+    """Run one fold's generation and return its parsed sidecar."""
+    out = tmp_path / f"{split}-{fold}.jsonl"
+    assert (
+        cli_main(
+            _argv(
+                manifest=manifest,
+                ruleset=_write_ruleset(tmp_path),
+                folds=FOLDS,
+                fold=fold,
+                split=split,
+                count=200,
+                out=out,
+                **extra,
+            )
+        )
+        == 0
+    )
+    sidecar = json.loads((tmp_path / f"{out.name}.stats.json").read_text(encoding="utf-8"))
+    lines = out.read_text(encoding="utf-8").splitlines()
+    sidecar["_records"] = [json.loads(line) for line in lines]
+    return sidecar
+
+
+def test_sidecar_records_the_fold_configuration(tmp_path, fold_libraries):
+    sidecar = _generate_fold(tmp_path, fold_libraries, "test", 3)
+    assert sidecar["folds"] == FOLDS
+    assert sidecar["fold_index"] == 3
+    assert sidecar["split_salt"] == DEFAULT_FOLD_SALT
+
+
+def test_sidecar_records_an_explicit_split_salt(tmp_path, fold_libraries):
+    sidecar = _generate_fold(tmp_path, fold_libraries, "test", 0, split_salt="7")
+    assert sidecar["split_salt"] == "7"
+
+
+def test_default_mode_sidecar_records_no_fold_configuration(tmp_path, libraries):
+    out = tmp_path / "out.jsonl"
+    cli_main(
+        _argv(
+            manifest=libraries,
+            ruleset=_write_ruleset(tmp_path),
+            split="train",
+            count=100,
+            out=out,
+        )
+    )
+    sidecar = json.loads((tmp_path / "out.jsonl.stats.json").read_text(encoding="utf-8"))
+    assert sidecar["folds"] is None
+    assert sidecar["fold_index"] is None
+    assert sidecar["split_salt"] == ""
+
+
+def test_every_fragment_id_in_the_jsonl_has_sidecar_provenance(tmp_path, fold_libraries):
+    # Without this the training code cannot compute effective sample size at
+    # all: nothing else in a generated dataset says which fragments are the
+    # same idea, or which libraries are filler.
+    sidecar = _generate_fold(tmp_path, fold_libraries, "test", 1)
+    used = {
+        fragment_id
+        for record in sidecar["_records"]
+        for fragment_id in record["meta"]["fragment_ids"]
+    }
+    assert used
+    assert used <= set(sidecar["fragments"])
+
+
+def test_sidecar_cluster_keys_agree_with_the_manifest_loader(tmp_path, fold_libraries):
+    sidecar = _generate_fold(tmp_path, fold_libraries, "test", 1)
+    expected = {
+        f.fragment_id: cluster_key(f.cluster_id, f.text)
+        for f in load_fragments(fold_libraries, folds=FOLDS, fold_index=1, salt=DEFAULT_FOLD_SALT)
+    }
+    assert sidecar["fragments"]
+    for fragment_id, entry in sidecar["fragments"].items():
+        assert entry["cluster_key"] == expected[fragment_id]
+
+
+def test_sidecar_provenance_carries_every_field_slicing_needs(tmp_path, fold_libraries):
+    # DD6: meta.fragment_subclasses is not enough to slice on, because the
+    # manifest only sets subclass for the ambiguous and confounder libraries.
+    # The library and fragment_type are what make filler distinguishable.
+    sidecar = _generate_fold(tmp_path, fold_libraries, "test", 0)
+    entries = sidecar["fragments"]
+    assert all(entry["split"] == "test" for entry in entries.values())
+    assert {entry["library"] for entry in entries.values()} == {
+        "pos",
+        "neg",
+        "amb",
+        "conf",
+        "fill_a",
+        "fill_b",
+        "fill_c",
+    }
+
+    confounder = entries[next(key for key in sorted(entries) if key.startswith("conf:"))]
+    assert confounder["library"] == "conf"
+    assert confounder["fragment_type"] == "confounder"
+    assert confounder["signal_key"] == SIGNAL
+    assert confounder["subclass"] == "third_party"
+    assert confounder["cluster_key"]
+
+    filler = entries[next(key for key in sorted(entries) if key.startswith("fill_a:"))]
+    assert filler["fragment_type"] == "filler"
+    assert filler["signal_key"] is None
+    assert filler["subclass"] is None
+
+
+def test_sidecar_provenance_holds_only_the_generated_split(tmp_path, fold_libraries):
+    # One sidecar describes one split; merging a fold's three sidecars gives the
+    # whole library, which is why every entry keeps its own split.
+    test_sidecar = _generate_fold(tmp_path, fold_libraries, "test", 2)
+    train_sidecar = _generate_fold(tmp_path, fold_libraries, "train", 2)
+    assert set(test_sidecar["fragments"]) & set(train_sidecar["fragments"]) == set()
+    assert all(entry["split"] == "train" for entry in train_sidecar["fragments"].values())

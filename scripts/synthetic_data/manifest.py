@@ -17,6 +17,14 @@ deduplication catches only the two exact duplicates and hash-splitting would
 scatter paraphrase twins across the train/val boundary. That is precisely the
 lexical leakage fragment-level splitting exists to prevent, and it would bias
 validation upward rather than merely adding noise.
+
+The splitter has two modes. The default is the 70/15/15 band over ``hash % 100``
+described above. Fold mode (``folds=K``) instead maps each cluster to one of K
+buckets and rotates which bucket is test, so every cluster is a test cluster in
+exactly one fold and pooling the folds makes the whole library the effective
+test set. Fold mode is opt-in and the default path is byte-identical to what it
+was before fold mode existed -- every dataset generated so far, and every number
+in ``arch_training.md`` section 10, depends on that digest not moving.
 """
 
 from __future__ import annotations
@@ -25,6 +33,7 @@ import hashlib
 import json
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -97,19 +106,69 @@ def make_fragment_id(library: str, text: str) -> str:
     return f"{library}:{digest[:8]}"
 
 
-def assign_split(cluster_key: str) -> str:
+def cluster_key(cluster_id: str | None, text: str) -> str:
+    """Return the key the splitter hashes: the cluster when tagged, else the text.
+
+    The single definition of "same idea". :func:`read_library` splits on it and
+    the stats sidecar records it, so a consumer grouping examples by idea uses
+    the generator's own grouping rather than reconstructing one that can drift.
+    """
+    return cluster_id or normalise(text)
+
+
+def _split_digest(key: str, salt: str) -> int:
+    """Hash a (salted) cluster key to an integer.
+
+    An empty salt hashes the bare cluster key, reproducing the pre-fold-mode
+    digest exactly. Salting is not a security measure -- it is how a second,
+    independent split assignment is obtained from the same libraries.
+    """
+    salted = f"{salt}:{key}" if salt else key
+    return int(hashlib.sha256(salted.encode("utf-8")).hexdigest()[:8], 16)
+
+
+def fold_bucket(key: str, folds: int, salt: str = "") -> int:
+    """Return which of ``folds`` buckets a cluster key falls in."""
+    if folds < 2:
+        raise ManifestError(f"folds must be at least 2: {folds}")
+    return _split_digest(key, salt) % folds
+
+
+def assign_split(key: str, *, folds: int | None = None, fold_index: int = 0, salt: str = "") -> str:
     """Map a cluster key to ``train``/``val``/``test`` via a stable hash.
 
     Deterministic across processes and unaffected by ``PYTHONHASHSEED``, so no
     split-assignment file needs storing and the assignment stays stable as
     libraries grow. Python's built-in ``hash()`` is salted per process and is
     deliberately not used.
+
+    With ``folds=None`` this is the 70/15/15 band over ``hash % 100``. With
+    ``folds=K`` the key falls in one of K buckets: bucket ``fold_index`` is
+    test, bucket ``fold_index + 1`` is validation, and the rest are train --
+    60/20/20 at K=5, with every cluster a test cluster in exactly one fold.
+
+    Note that fold *i*'s validation bucket is fold *i+1*'s test bucket. Within a
+    fold that is not leakage (each fold trains its own model and never sees its
+    own test bucket), but a result pooled across folds carries a little optimism
+    from it, because each fold's decision margin was chosen on a sibling fold's
+    test clusters. The evaluation report says so rather than leaving a reader to
+    discover it.
     """
-    bucket = int(hashlib.sha256(cluster_key.encode("utf-8")).hexdigest()[:8], 16) % 100
-    for upper, split in _SPLIT_BANDS:
-        if bucket < upper:
-            return split
-    raise AssertionError(f"unreachable: bucket {bucket} outside 0-99")
+    if folds is None:
+        bucket = _split_digest(key, salt) % 100
+        for upper, split in _SPLIT_BANDS:
+            if bucket < upper:
+                return split
+        raise AssertionError(f"unreachable: bucket {bucket} outside 0-99")
+
+    if not 0 <= fold_index < folds:
+        raise ManifestError(f"fold index {fold_index} is outside [0, {folds})")
+    bucket = fold_bucket(key, folds, salt)
+    if bucket == fold_index:
+        return "test"
+    if bucket == (fold_index + 1) % folds:
+        return "val"
+    return "train"
 
 
 def parse_manifest(payload: dict) -> list[LibrarySpec]:
@@ -170,12 +229,22 @@ def parse_manifest(payload: dict) -> list[LibrarySpec]:
     return specs
 
 
-def read_library(spec: LibrarySpec, base_dir: Path) -> list[Fragment]:
+def read_library(
+    spec: LibrarySpec,
+    base_dir: Path,
+    *,
+    folds: int | None = None,
+    fold_index: int = 0,
+    salt: str = "",
+) -> list[Fragment]:
     """Read one library file into fragments, split already assigned.
 
     Blank lines are skipped. A leading cluster marker is stripped into
     ``cluster_id``, namespaced as ``{library}:{tag}``; the remainder is the
     verbatim text.
+
+    ``folds``, ``fold_index`` and ``salt`` are passed straight to
+    :func:`assign_split`; see there for what they mean.
     """
     path = base_dir / spec.file
     if not path.is_file():
@@ -189,7 +258,7 @@ def read_library(spec: LibrarySpec, base_dir: Path) -> list[Fragment]:
         if not normalise(text):
             continue
         cluster_id = f"{spec.name}:{tag}" if tag else None
-        cluster_key = cluster_id or normalise(text)
+        key = cluster_key(cluster_id, text)
         fragments.append(
             Fragment(
                 fragment_id=make_fragment_id(spec.name, text),
@@ -200,7 +269,7 @@ def read_library(spec: LibrarySpec, base_dir: Path) -> list[Fragment]:
                 subclass=spec.subclass,
                 category=spec.category,
                 cluster_id=cluster_id,
-                split=assign_split(cluster_key),
+                split=assign_split(key, folds=folds, fold_index=fold_index, salt=salt),
             )
         )
 
@@ -251,28 +320,45 @@ def empty_cells(fragments: list[Fragment], specs: list[LibrarySpec]) -> list[str
     ]
 
 
-def check_no_empty_cells(fragments: list[Fragment], specs: list[LibrarySpec]) -> None:
+def check_no_empty_cells(
+    fragments: list[Fragment], specs: list[LibrarySpec], *, hint: str = ""
+) -> None:
     """Assert every (library, split) cell holds at least one fragment.
 
     Hash-based splitting only approximates 70/15/15 on small libraries, so a
     sub-class can plausibly land zero fragments in a split. A silent empty cell
     makes a whole sub-class invisible to evaluation; this makes it loud.
+
+    The guard runs over the *whole* manifest, before anything filters by signal,
+    so a library for an unrelated signal can block a run. That is deliberate;
+    ``hint`` exists so fold mode can say what to do about it rather than
+    weakening it.
     """
     empty = empty_cells(fragments, specs)
     if empty:
         raise ManifestError(
             "these (library, split) cells are empty, so a sub-class would be invisible to "
-            f"evaluation: {', '.join(empty)}"
+            f"evaluation: {', '.join(empty)}{hint}"
         )
 
 
-def load_fragments(manifest_path: Path, *, check_cells: bool = True) -> list[Fragment]:
+def load_fragments(
+    manifest_path: Path,
+    *,
+    check_cells: bool = True,
+    folds: int | None = None,
+    fold_index: int = 0,
+    salt: str = "",
+) -> list[Fragment]:
     """Load, validate, deduplicate and split every declared library.
 
     ``check_cells=False`` skips the empty-cell guard. That is for the reporting
     tools only: a lint that refuses to run because the libraries are unbalanced
     is useless exactly when it is most needed, since diagnosing that imbalance
     is part of its job. Generation always keeps the guard on.
+
+    ``folds``, ``fold_index`` and ``salt`` select fold mode; see
+    :func:`assign_split`.
     """
     manifest_path = Path(manifest_path)
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -281,9 +367,63 @@ def load_fragments(manifest_path: Path, *, check_cells: bool = True) -> list[Fra
     base_dir = manifest_path.parent
     fragments: list[Fragment] = []
     for spec in specs:
-        fragments.extend(read_library(spec, base_dir))
+        fragments.extend(
+            read_library(spec, base_dir, folds=folds, fold_index=fold_index, salt=salt)
+        )
 
     fragments = deduplicate(fragments)
     if check_cells:
-        check_no_empty_cells(fragments, specs)
+        hint = (
+            ""
+            if folds is None
+            else (
+                f"; this is fold {fold_index} of {folds} under salt {salt!r} -- run "
+                "--find-fold-salt to list the salts that populate every bucket of "
+                "every library"
+            )
+        )
+        check_no_empty_cells(fragments, specs, hint=hint)
     return fragments
+
+
+def library_clusters(fragments: Iterable[Fragment]) -> list[tuple[str, str]]:
+    """Return the distinct ``(library, cluster_key)`` pairs, in a stable order.
+
+    The unit of splitting, and therefore the unit every coverage question is
+    asked in. Clustered siblings collapse to one pair, which is the point:
+    ``fever_null_hedged``'s three validation fragments are two ideas.
+    """
+    return sorted({(f.library, cluster_key(f.cluster_id, f.text)) for f in fragments})
+
+
+def bucket_coverage(fragments: Iterable[Fragment], *, folds: int, salt: str) -> dict[str, set[int]]:
+    """Return, per library, which of ``folds`` buckets its clusters populate."""
+    coverage: dict[str, set[int]] = defaultdict(set)
+    for library, key in library_clusters(fragments):
+        coverage[library].add(fold_bucket(key, folds, salt))
+    return dict(coverage)
+
+
+def find_fold_salts(fragments: Iterable[Fragment], *, folds: int, limit: int) -> list[str]:
+    """Return the integer salts below ``limit`` that leave no library short of a bucket.
+
+    A library that misses a bucket empties a cell in at least one fold, which
+    :func:`check_no_empty_cells` refuses -- and because that guard covers the
+    whole manifest, an unrelated library's unlucky assignment blocks every
+    signal. Searching for a salt is the honest fix; weakening the guard is not.
+
+    Passing is a floor, not a health signal. ``dysuria_null_thirdparty`` has
+    seven clusters, so surjecting onto five buckets leaves some fold's test cell
+    holding exactly one idea. The salt makes the run start; it does not make the
+    cell worth reading.
+    """
+    clusters = library_clusters(fragments)
+    found: list[str] = []
+    for candidate in range(limit):
+        salt = str(candidate)
+        coverage: dict[str, set[int]] = defaultdict(set)
+        for library, key in clusters:
+            coverage[library].add(fold_bucket(key, folds, salt))
+        if all(len(buckets) == folds for buckets in coverage.values()):
+            found.append(salt)
+    return found
