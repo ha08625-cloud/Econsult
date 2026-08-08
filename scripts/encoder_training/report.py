@@ -538,6 +538,23 @@ EXPECTATIONS = (
     "side by side -- and neither answers the ticket's question on its own, because Arm A cannot "
     'separate "the libraries are the bottleneck" from "the method is too weak". That is Arm '
     "B's job.",
+    "Arm B -- the fine-tune -- is the arm that answers the ticket, and **either outcome is a "
+    "finding**. If unfreezing 110M parameters lifts the four hard `null` sub-classes clear of "
+    "Arm A, the frozen pooled representation was the bottleneck and the fix is model work. If it "
+    "does not -- if a fully fine-tuned encoder still cannot tell whose fever it is or when it "
+    "happened -- then the limit is in the ideas the libraries contain, and the fix is library "
+    "work on the fragments the per-fragment table names. Nothing here predicts which; the point "
+    "of building both arms is that the question stops being answerable by argument.",
+    "Arm B's negative control passes by doing **two** things at once: driving training loss "
+    "towards zero, because 110M parameters can memorise a permutation, while scoring at chance "
+    "on the unpermuted test split. Near-zero training loss on its own is not a failure and "
+    "chance test performance on its own is not a pass; the sidecar records the per-fold loss "
+    "curve so both halves can be read.",
+    "Arm B is expected to be *unstable* across folds in a way Arm A is not. Fine-tuning a "
+    "110M-parameter model on 10,000 recombinations of a few dozen fragments has far more freedom "
+    "to fit fold-specific detail, so the across-fold standard deviation should be the wider of "
+    "the two. That is a property of the arm, not evidence against it -- but it is why the pooled "
+    "cluster bootstrap, not the fold spread, remains the headline interval.",
     "`max_seq_len` is not the interesting constraint. The proof-of-concept run's median example "
     "is 36 tokens and its 90th percentile 54, against a limit of 256. Training on 36-token "
     "recombinations and eventually serving 300-token real submissions is a distribution shift no "

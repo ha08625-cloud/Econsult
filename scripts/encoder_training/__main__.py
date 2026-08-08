@@ -1,6 +1,6 @@
 """Command-line entry point for encoder training and evaluation.
 
-Four subcommands.
+Six subcommands.
 
     python -m scripts.encoder_training generate-folds --folds 5
 
@@ -16,13 +16,21 @@ Fits the three baselines and the shuffled-label controls across every fold and
 writes the evaluation report. This needs scikit-learn (``requirements-ml.txt``);
 generation does not.
 
+    python -m scripts.encoder_training smoke-cuda
+
+Torch and the GPU only: no model, no network, no download. Runs a real matmul on
+the device and prints ``torch.version.cuda`` beside the compute capability.
+**This is the first command to run on a new machine**, because
+``torch.cuda.is_available()`` returning ``True`` proves nothing on an
+architecture the installed wheel was not built for -- the import succeeds and the
+first kernel launch fails. Ten seconds here saves an afternoon. Also available
+standalone as ``python -m scripts.encoder_training.smoke_cuda``.
+
     python -m scripts.encoder_training smoke
 
-Loads the encoder, prints what the device and tokeniser actually are, and runs a
-real kernel. **Run this before anything else on a new machine.** It exists
-because ``torch.cuda.is_available()`` returning ``True`` proves nothing on an
-architecture the installed wheel was not built for: the import succeeds and the
-first kernel launch fails. Ten seconds here saves an afternoon.
+Everything ``smoke-cuda`` does, plus loading the encoder and printing what the
+tokeniser actually does to casing. Run it second: when the kernel check fails,
+the 440MB download is wasted.
 
     python -m scripts.encoder_training probe --folds 5
 
@@ -33,6 +41,19 @@ writes the head artefacts and metadata sidecar, and writes the evaluation report
 ClinicalBERT beat bag-of-words on ``null_ambiguous``" is a paired question and
 McNemar can only answer it when both models are in one report.
 
+    python -m scripts.encoder_training finetune --folds 5
+
+Arm B, the arm that decides the ticket's question: every layer unfrozen, three
+epochs per fold, roughly two minutes each on a 12GB card. Same procedure and same
+report as Arm A, and by default the same report *also* carries Arm A and the
+baselines -- for the same reason, since "does fine-tuning beat the frozen probe
+on ``null_ambiguous``" is the paired comparison the whole ticket turns on and
+Arm A costs seconds once its embedding cache exists.
+
+Each arm writes its artefacts under ``models/encoder/<signal>/<arm>/``. Arm B's
+~440MB of fine-tuned encoder per fold goes there too and is **not** committed;
+``models/.gitignore`` covers it and the metadata sidecar records where it went.
+
 No command touches ``app/``, and nothing in ``app/`` imports this. The dependency
 runs one way, and ``tests/test_wiring.py`` asserts it.
 """
@@ -41,6 +62,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
@@ -51,6 +73,7 @@ from .dataset import SPLITS, DatasetError, fold_dataset_path, load_folds
 from .embed import POOLING_MODES, EmbedError
 from .report import BootstrapConfig, build_report, write_report
 from .ruleset_hash import hash_ruleset_file
+from .smoke_cuda import CudaSmokeError, check_device, format_report
 
 # `train` imports torch inside its functions, exactly as `baselines` does with
 # scikit-learn, so importing it here costs nothing on a machine with no ML
@@ -58,13 +81,16 @@ from .ruleset_hash import hash_ruleset_file
 # that cannot avoid a module-level torch import, so it stays lazy below.
 from .train import (
     ARM_A_NAME,
+    ARM_B_NAME,
     DEFAULT_BASE_MODEL,
+    DETERMINISM_MODES,
+    VALIDATION_GUIDED_DECISIONS,
+    FineTuneConfig,
     ProbeConfig,
     TrainError,
     build_metadata,
-    device_report,
-    ensure_deterministic_env,
     resolve_device,
+    run_finetune,
     run_probe,
     write_artefacts,
 )
@@ -205,15 +231,23 @@ def _checks(folds) -> dict:
     }
 
 
-def run_baselines(args: argparse.Namespace) -> int:
-    folds = load_folds(args.data_dir, args.signal, folds=args.folds)
-    runs = run_all(folds, signal=args.signal, shuffle_seed=args.shuffle_seed)
+def _emit_report(
+    runs: Sequence,
+    args: argparse.Namespace,
+    folds,
+    *,
+    stem: str,
+    extra: dict | None = None,
+) -> int:
+    """Build and write the evaluation report every command ends with."""
     boot = BootstrapConfig(resamples=args.resamples, seed=args.bootstrap_seed, alpha=args.alpha)
-    report = build_report(runs, header=_header(args, folds), boot=boot, checks=_checks(folds))
+    report = build_report(
+        list(runs), header=_header(args, folds, extra), boot=boot, checks=_checks(folds)
+    )
     json_path, markdown_path = write_report(
         report,
         args.report_dir,
-        stem=f"{args.signal}.baselines",
+        stem=stem,
         markdown=not args.no_markdown,
         fragment_rows=args.fragment_rows,
     )
@@ -221,6 +255,12 @@ def run_baselines(args: argparse.Namespace) -> int:
     if markdown_path is not None:
         print(f"wrote {markdown_path}")
     return 0
+
+
+def run_baselines(args: argparse.Namespace) -> int:
+    folds = load_folds(args.data_dir, args.signal, folds=args.folds)
+    runs = run_all(folds, signal=args.signal, shuffle_seed=args.shuffle_seed)
+    return _emit_report(runs, args, folds, stem=f"{args.signal}.baselines")
 
 
 def _probe_config(args: argparse.Namespace) -> ProbeConfig:
@@ -240,15 +280,105 @@ def _probe_config(args: argparse.Namespace) -> ProbeConfig:
     )
 
 
-def run_smoke(args: argparse.Namespace) -> int:
-    """Prove the machine can do this before asking it to do it for twenty minutes."""
+def _finetune_config(args: argparse.Namespace) -> FineTuneConfig:
+    """Build Arm B's config from the parsed arguments."""
+    return FineTuneConfig(
+        base_model=args.base_model,
+        revision=args.revision,
+        pooling=args.pooling,
+        max_seq_len=args.max_seq_len,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        warmup_ratio=args.warmup_ratio,
+        max_grad_norm=args.max_grad_norm,
+        seed=args.train_seed,
+        device=args.device,
+        eval_batch_size=args.eval_batch_size,
+        determinism=args.determinism,
+    )
+
+
+def _probe_config_for_arm_b(args: argparse.Namespace) -> ProbeConfig:
+    """Arm A's config when it rides along in an Arm B run.
+
+    Deliberately built from :class:`ProbeConfig`'s own defaults rather than from
+    Arm B's flags: 3 epochs at learning rate 2e-5 is the fine-tuning recipe and
+    would leave the probe barely fitted, which would then be reported as Arm A's
+    result. Only the encoder, the device and the seed are shared.
+    """
+    return ProbeConfig(
+        base_model=args.base_model,
+        revision=args.revision,
+        pooling=args.pooling,
+        max_seq_len=args.max_seq_len,
+        seed=args.train_seed,
+        device=args.device,
+        embed_batch_size=args.embed_batch_size,
+    )
+
+
+def _artefact_dir(args: argparse.Namespace, arm: str) -> Path:
+    """Where one arm's artefacts live: ``models/encoder/<signal>/<arm>/``.
+
+    Per arm rather than per signal because both arms write ``metadata.json`` and
+    ``foldN.head.json``, and a shared directory would have Arm B silently
+    overwrite Arm A's -- the two results the whole ticket exists to compare.
+    """
+    return Path(args.models_dir) / args.signal / arm
+
+
+def _encoder_factory(args: argparse.Namespace, device: str):
+    """A callable that loads a **fresh** encoder on ``device``.
+
+    Arm B needs one per fold: reusing a single object would start each fold from
+    the previous fold's fine-tuned weights, and the previous fold's training
+    clusters are this fold's validation and test clusters. Nothing downstream
+    would notice.
+    """
     from .model import PooledEncoder
 
-    ensure_deterministic_env()
+    def build():
+        return PooledEncoder(
+            args.base_model,
+            revision=args.revision,
+            pooling=args.pooling,
+            max_seq_len=args.max_seq_len,
+            device=device,
+        ).load()
+
+    return build
+
+
+def _warn_if_unpinned(encoder) -> None:
+    if not encoder.revision_pinned:
+        print(
+            f"warning: --revision was not given; recording the resolved commit "
+            f"{encoder.revision}. Pass it explicitly to make this run repeatable.",
+            file=sys.stderr,
+        )
+
+
+def run_smoke_cuda(args: argparse.Namespace) -> int:
+    """The kernel-launch check on its own: no model, no network, no download."""
+    report = check_device(args.device, cuda_required=args.require_cuda)
+    for line in format_report(report):
+        print(line)
+    return 0
+
+
+def run_smoke(args: argparse.Namespace) -> int:
+    """Prove the machine can do this before asking it to do it for twenty minutes.
+
+    Everything ``smoke-cuda`` does, and then the encoder: the 440MB download, the
+    hub cache, and what the tokeniser actually does to casing.
+    """
+    for line in format_report(check_device(args.device)):
+        print(line)
     device = resolve_device(args.device)
-    report = device_report(device)
-    for key, value in report.items():
-        print(f"{key}: {value}")
+
+    from .model import PooledEncoder
 
     encoder = PooledEncoder(
         args.base_model,
@@ -279,33 +409,20 @@ def run_smoke(args: argparse.Namespace) -> int:
 def run_arm_a(args: argparse.Namespace) -> int:
     """Arm A end to end: embed, fit, select, score, write artefacts, write the report.
 
-    ``ensure_deterministic_env`` runs before ``model`` is imported, and that
-    ordering is the point of it being a separate call: torch reads
-    ``CUBLAS_WORKSPACE_CONFIG`` when it initialises CUDA, so setting it after the
-    import is a silent no-op (DD11).
+    ``check_device`` comes before the encoder is loaded, and that ordering is the
+    point of it being a separate call: it sets ``CUBLAS_WORKSPACE_CONFIG``, which
+    torch reads when it initialises CUDA, so setting it later is a silent no-op
+    (DD11) -- and it launches a real kernel, which is cheaper to fail on than a
+    440MB download is.
     """
-    ensure_deterministic_env()
-
-    from .model import PooledEncoder
-
     folds = load_folds(args.data_dir, args.signal, folds=args.folds)
-    device = resolve_device(args.device)
-    device_facts = device_report(device)
-    print(f"device: {device_facts}")
+    device_facts = check_device(args.device)
+    device = device_facts["device"]
+    for line in format_report(device_facts):
+        print(line)
 
-    encoder = PooledEncoder(
-        args.base_model,
-        revision=args.revision,
-        pooling=args.pooling,
-        max_seq_len=args.max_seq_len,
-        device=device,
-    ).load()
-    if not encoder.revision_pinned:
-        print(
-            f"warning: --revision was not given; recording the resolved commit "
-            f"{encoder.revision}. Pass it explicitly to make this run repeatable.",
-            file=sys.stderr,
-        )
+    encoder = _encoder_factory(args, device)()
+    _warn_if_unpinned(encoder)
 
     config = _probe_config(args)
     run, results = run_probe(
@@ -363,7 +480,7 @@ def run_arm_a(args: argparse.Namespace) -> int:
         results=results,
         control=control_meta,
     )
-    artefact_dir = Path(args.models_dir) / args.signal
+    artefact_dir = _artefact_dir(args, ARM_A_NAME)
     for path in write_artefacts(
         artefact_dir, signal=args.signal, arm=ARM_A_NAME, metadata=metadata, results=results
     ):
@@ -376,10 +493,11 @@ def run_arm_a(args: argparse.Namespace) -> int:
     if not args.no_baselines:
         runs[1:1] = run_all(folds, signal=args.signal, shuffle_seed=args.shuffle_seed)
 
-    boot = BootstrapConfig(resamples=args.resamples, seed=args.bootstrap_seed, alpha=args.alpha)
-    header = _header(
+    return _emit_report(
+        runs,
         args,
         folds,
+        stem=f"{args.signal}.{ARM_A_NAME}",
         extra={
             "arm": ARM_A_NAME,
             "base_model": args.base_model,
@@ -394,18 +512,162 @@ def run_arm_a(args: argparse.Namespace) -> int:
             "artefacts": str(artefact_dir),
         },
     )
-    report = build_report(runs, header=header, boot=boot, checks=_checks(folds))
-    json_path, markdown_path = write_report(
-        report,
-        args.report_dir,
-        stem=f"{args.signal}.{ARM_A_NAME}",
-        markdown=not args.no_markdown,
-        fragment_rows=args.fragment_rows,
+
+
+def run_arm_b(args: argparse.Namespace) -> int:
+    """Arm B end to end: fine-tune every fold, score test once, write everything.
+
+    The order of the first three statements is the point of them being separate.
+    ``check_device`` sets ``CUBLAS_WORKSPACE_CONFIG`` and then runs a real matmul
+    *before* 440MB of weights are downloaded and before the first fold starts:
+    torch reads that variable when it initialises CUDA, so setting it later is a
+    silent no-op (DD11), and a wheel that cannot launch a kernel should cost ten
+    seconds rather than twenty minutes.
+
+    By default the report also carries Arm A and the baselines. That is not
+    padding: the ticket's question is whether the encoder or the libraries are
+    the bottleneck, which is a *paired* comparison between the arms on the
+    ``null_ambiguous`` slice, and McNemar can only make it when both models are
+    in one report. Arm A costs seconds once its embedding cache exists.
+    """
+    folds = load_folds(args.data_dir, args.signal, folds=args.folds)
+    # A CPU fine-tune is hours rather than the two minutes per fold the plan
+    # budgets, so falling back to it silently would be a worse outcome than
+    # stopping. Asking for it explicitly still works, either way round.
+    cuda_required = not args.allow_cpu and args.device != "cpu"
+    device_facts = check_device(args.device, cuda_required=cuda_required)
+    device = device_facts["device"]
+    for line in format_report(device_facts):
+        print(line)
+
+    factory = _encoder_factory(args, device)
+    config = _finetune_config(args)
+    weights_dir = None if args.no_weights else _artefact_dir(args, ARM_B_NAME) / "weights"
+
+    runs: list = []
+
+    # Arm A first, while an untouched encoder is loaded: it is the reference the
+    # fine-tune is compared against, and it is also where the encoder's identity
+    # for the sidecar comes from. Dropped immediately afterwards -- five 440MB
+    # models plus optimiser state is what the memory budget is being spent on.
+    reference = factory()
+    _warn_if_unpinned(reference)
+    encoder_facts = reference.to_dict()
+    probe_header = {
+        "model_revision": reference.revision,
+        "revision_pinned": reference.revision_pinned,
+        "tokeniser_lowercases": reference.facts.lowercases_input,
+    }
+    if not args.no_probe:
+        probe_run, _ = run_probe(
+            folds,
+            reference,
+            signal=args.signal,
+            config=_probe_config_for_arm_b(args),
+            cache_dir=args.cache_dir,
+            device=device,
+            progress=args.progress,
+        )
+        runs.append(probe_run)
+    del reference
+
+    run, results = run_finetune(
+        folds,
+        factory,
+        signal=args.signal,
+        config=config,
+        weights_dir=weights_dir,
+        progress=args.progress,
     )
-    print(f"wrote {json_path}")
-    if markdown_path is not None:
-        print(f"wrote {markdown_path}")
-    return 0
+    runs.append(run)
+
+    control_meta = None
+    if not args.no_control:
+        control_run, _ = run_finetune(
+            folds,
+            factory,
+            signal=args.signal,
+            config=config,
+            # The control's weights are never used for anything, so they are not
+            # written: 2.2GB to record a model whose labels were nonsense.
+            weights_dir=None,
+            shuffle_seed=args.shuffle_seed,
+            progress=args.progress,
+        )
+        runs.append(control_run)
+        control_meta = {
+            "shuffle_seed": args.shuffle_seed,
+            "permuted": "training labels only; validation and test left unpermuted",
+            "run_name": control_run.name,
+            "passing_looks_like": (
+                "near-zero training loss (the model memorises the permutation) together with "
+                "chance performance on the unpermuted test split. Either one alone is not the "
+                "control passing; the per-fold train_loss_by_epoch in this sidecar is where the "
+                "first half is read"
+            ),
+        }
+
+    metadata = build_metadata(
+        signal=args.signal,
+        arm=ARM_B_NAME,
+        encoder_facts=encoder_facts,
+        config=config,
+        device=device_facts,
+        dataset={
+            "dir": str(args.data_dir),
+            "folds": args.folds,
+            "generator_version": folds[0].train.generator_version,
+            "generator_base_seed": args.seed,
+            "split_salt": folds[0].train.split_salt,
+            "dataset_seeds": [fold.train.stats.get("seed") for fold in folds],
+            "examples_per_fold": {
+                "train": len(folds[0].train),
+                "val": len(folds[0].val),
+                "test": len(folds[0].test),
+            },
+        },
+        ruleset=str(args.ruleset),
+        ruleset_hash=hash_ruleset_file(args.ruleset),
+        results=results,
+        control=control_meta,
+    )
+    artefact_dir = _artefact_dir(args, ARM_B_NAME)
+    for path in write_artefacts(
+        artefact_dir, signal=args.signal, arm=ARM_B_NAME, metadata=metadata, results=results
+    ):
+        print(f"wrote {path}")
+
+    if not args.no_baselines:
+        runs[0:0] = run_all(folds, signal=args.signal, shuffle_seed=args.shuffle_seed)
+
+    return _emit_report(
+        runs,
+        args,
+        folds,
+        stem=f"{args.signal}.{ARM_B_NAME}",
+        extra={
+            "arm": ARM_B_NAME,
+            "base_model": args.base_model,
+            "pooling": args.pooling,
+            "max_seq_len": args.max_seq_len,
+            "device": device,
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "lr": args.lr,
+            "warmup_ratio": args.warmup_ratio,
+            "determinism": args.determinism,
+            "train_seed": args.train_seed,
+            "trainable": "all layers unfrozen",
+            "validation_guided_decisions": list(VALIDATION_GUIDED_DECISIONS),
+            "artefacts": str(artefact_dir),
+            "weights": (
+                "not written (--no-weights)"
+                if weights_dir is None
+                else f"{weights_dir} -- ~440MB per fold, not committed"
+            ),
+            **probe_header,
+        },
+    )
 
 
 def _add_report_args(parser: argparse.ArgumentParser) -> None:
@@ -474,8 +736,20 @@ def build_parser() -> argparse.ArgumentParser:
     _add_report_args(baselines)
     baselines.set_defaults(handler=run_baselines)
 
+    smoke_cuda = subparsers.add_parser(
+        "smoke-cuda",
+        help="run a real kernel on the training device; no model, no network. Run this first",
+    )
+    smoke_cuda.add_argument("--device", default="auto")
+    smoke_cuda.add_argument(
+        "--require-cuda",
+        action="store_true",
+        help="exit non-zero if the run would fall back to the CPU",
+    )
+    smoke_cuda.set_defaults(handler=run_smoke_cuda)
+
     smoke = subparsers.add_parser(
-        "smoke", help="load the encoder and run a real kernel; run this first on a new machine"
+        "smoke", help="everything smoke-cuda does, plus loading the encoder and its tokeniser"
     )
     _add_encoder_args(smoke)
     smoke.add_argument("--device", default="auto")
@@ -517,6 +791,78 @@ def build_parser() -> argparse.ArgumentParser:
     probe.add_argument("--progress", action="store_true", help="print embedding progress per batch")
     probe.set_defaults(handler=run_arm_a)
 
+    finetune = subparsers.add_parser(
+        "finetune", help="Arm B: unfreeze every layer and fine-tune, across every fold"
+    )
+    _add_report_args(finetune)
+    _add_encoder_args(finetune)
+    finetune.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    finetune.add_argument("--models-dir", type=Path, default=DEFAULT_MODELS_DIR)
+    finetune.add_argument("--device", default="auto")
+    finetune.add_argument("--epochs", type=int, default=FineTuneConfig.epochs)
+    finetune.add_argument("--batch-size", type=int, default=FineTuneConfig.batch_size)
+    finetune.add_argument("--lr", type=float, default=FineTuneConfig.lr)
+    finetune.add_argument("--weight-decay", type=float, default=FineTuneConfig.weight_decay)
+    finetune.add_argument("--warmup-ratio", type=float, default=FineTuneConfig.warmup_ratio)
+    finetune.add_argument("--max-grad-norm", type=float, default=FineTuneConfig.max_grad_norm)
+    finetune.add_argument("--eval-batch-size", type=int, default=FineTuneConfig.eval_batch_size)
+    finetune.add_argument(
+        "--embed-batch-size",
+        type=int,
+        default=ProbeConfig.embed_batch_size,
+        help="batch size for Arm A's embedding pass, when Arm A rides along in this report",
+    )
+    finetune.add_argument(
+        "--determinism",
+        choices=DETERMINISM_MODES,
+        default=FineTuneConfig.determinism,
+        help="how hard to insist on deterministic kernels. 'strict' raises when an op has no "
+        "deterministic implementation, 'warn' prints and continues, 'off' disables the check. "
+        "Whichever ran is recorded in the metadata sidecar",
+    )
+    finetune.add_argument(
+        "--train-seed",
+        type=int,
+        default=FineTuneConfig.seed,
+        help="seed for the head's initialisation and the batch order; distinct from --seed, "
+        "which is the generator's",
+    )
+    finetune.add_argument(
+        "--allow-cpu",
+        action="store_true",
+        help="permit a CPU fine-tune. Off by default because a silent fallback to the CPU turns "
+        "a ten-minute sweep into an overnight one; --device cpu says the same thing explicitly",
+    )
+    finetune.add_argument(
+        "--no-weights",
+        action="store_true",
+        help="do not write the fine-tuned encoders. Each is ~440MB and none is committed; they "
+        "are regenerable in about two minutes per fold from the pinned seeds",
+    )
+    finetune.add_argument(
+        "--no-probe",
+        action="store_true",
+        help="omit Arm A from the report. It is included by default because 'does fine-tuning "
+        "beat the frozen probe on null_ambiguous' is the paired comparison the ticket turns on, "
+        "and it costs seconds once the embedding cache exists",
+    )
+    finetune.add_argument(
+        "--no-baselines",
+        action="store_true",
+        help="omit the baselines from the report. Needs scikit-learn; the artefacts are written "
+        "before this step so a missing wheel costs only the comparison",
+    )
+    finetune.add_argument(
+        "--no-control",
+        action="store_true",
+        help="skip the shuffled-label negative control. It doubles the run time and is the only "
+        "thing that says the rest of the numbers mean anything, so skip it only when iterating",
+    )
+    finetune.add_argument(
+        "--progress", action="store_true", help="print per-epoch training loss and validation score"
+    )
+    finetune.set_defaults(handler=run_arm_b)
+
     return parser
 
 
@@ -524,7 +870,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.handler(args)
-    except (DatasetError, EmbedError, TrainError) as error:
+    except (CudaSmokeError, DatasetError, EmbedError, TrainError) as error:
         # The three failures a caller can actually fix: an untrustworthy dataset,
         # an encoder that cannot be identified well enough to key a cache, and a
         # misconfigured run. A one-line message beats a traceback for all three.

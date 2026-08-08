@@ -752,14 +752,16 @@ The tool uses the Python standard library only, and adds nothing to
 
 ### The training tooling
 
-`scripts/encoder_training/` consumes what the generator produces. Four
+`scripts/encoder_training/` consumes what the generator produces. Six
 subcommands:
 
 ```
 python -m scripts.encoder_training generate-folds --folds 5   # the 15 runs above, scripted
 python -m scripts.encoder_training baselines --folds 5        # majority / length / TF-IDF
-python -m scripts.encoder_training smoke                      # does this machine work at all
+python -m scripts.encoder_training smoke-cuda                 # can this GPU launch a kernel
+python -m scripts.encoder_training smoke                      # ... and can it load the encoder
 python -m scripts.encoder_training probe --folds 5            # Arm A, the frozen probe
+python -m scripts.encoder_training finetune --folds 5         # Arm B, every layer unfrozen
 ```
 
 **There are two dependency tiers and the boundary is load-bearing.** Everything
@@ -772,10 +774,13 @@ their tests skip themselves. `model.py` is the only module that imports torch at
 module scope, and everything else imports it lazily so the CLI stays importable
 without it.
 
-**Run `smoke` first on any new machine.** `torch.cuda.is_available()` returns
-`True` on a wheel that cannot launch a single kernel — the failure mode a
+**Run `smoke-cuda` first on any new machine.** `torch.cuda.is_available()`
+returns `True` on a wheel that cannot launch a single kernel — the failure mode a
 Blackwell GPU produces with a pre-CUDA-12.8 build — so the subcommand runs a real
-matmul and prints the compute capability beside torch's CUDA version.
+matmul and prints the compute capability beside torch's CUDA version. It is
+separate from `smoke`, and network-free, because when it fails the 440MB encoder
+download `smoke` performs is wasted; when it fails the fix is a different torch
+wheel, never a code change.
 
 Arm A embeds each split once and caches the vectors (~215MB for a five-fold
 sweep, under the git-ignored `data/synthetic/generated/`). The cache key is the
@@ -786,14 +791,55 @@ report full of plausible numbers that mean nothing, with no warning anywhere, so
 every input that changes what an embedding *is* has to change the name of the
 file holding it.
 
-Trained heads go to `models/encoder/<signal>/` as **JSON**, not pickles — a
+**Arm B unfreezes everything, and that is the arm the ticket exists for.** Three
+epochs at batch 32, learning rate 2e-5, 10% linear warmup, AdamW, fp32 — the
+published BERT-base recipe, fixed before any run. No gradient checkpointing, no
+8-bit optimiser, no LoRA, no gradient accumulation: the model fits in 12GB with
+room to spare, so anything in there that reads like a compute compromise would be
+a mistake rather than a saving. Roughly two minutes per fold.
+
+Three design points about Arm B are worth knowing before reading its code:
+
+* **Each fold loads the encoder afresh.** `run_finetune` takes an encoder
+  *factory*, not an encoder. Reusing one object would start fold *i+1* from
+  weights already fine-tuned on fold *i*'s training clusters — which are fold
+  *i+1*'s validation and test clusters. The dataset files would be blameless and
+  every disjointness check would still pass, so nothing but this would catch it.
+* **Exactly four things are allowed to be chosen against validation**: pooling
+  mode, learning rate, epoch count and the decision margin. The list is a
+  constant in `train.py`, it is written into the metadata sidecar and into the
+  report header, and it is there because how much the pooled result flatters
+  itself (DD4) depends on how many quantities were tuned that way — which is not
+  recoverable from a list of hyperparameters.
+* **Determinism is a mode, not a Boolean.** `strict` (the default) raises when an
+  op has no deterministic implementation, `warn` continues, `off` disables the
+  check. Which one ran is recorded, because "enable it where it does not break a
+  needed op" is a judgement that can only be made against a real torch version.
+
+By default the `finetune` report also carries Arm A and the baselines, because
+"does fine-tuning beat the frozen probe on `null_ambiguous`" is a *paired*
+question and McNemar needs both models in one report to answer it.
+
+Trained heads go to `models/encoder/<signal>/<arm>/` as **JSON**, not pickles — a
 2,307-parameter probe needs no binary format, and a JSON artefact is diffable in
-review and loadable without torch. Each fold writes `foldN.head.json` and
+review and loadable without torch. One directory per arm because both write the
+same filenames and a shared directory would have Arm B silently overwrite the
+Arm A result it is being compared against. Each fold writes `foldN.head.json` and
 `foldN.decision.json` (the margin travels separately because it is retuned far
 more often than the weights), alongside one `metadata.json` recording the base
 model and resolved revision, the tokeniser's *measured* casing behaviour, pooling
 mode, every seed, the dataset provenance, the ruleset hash, and the validation
-numbers each margin was chosen from.
+numbers each margin was chosen from — plus, for Arm B, the per-fold training-loss
+curve and the determinism mode that actually ran.
+
+**For Arm B the JSON head is not the model.** The 110M fine-tuned parameters
+underneath it are, and they live in `arm_b_finetune/weights/foldN.encoder.pt`,
+~440MB each, git-ignored by `models/.gitignore`. `foldN.head.json` records the
+path to its `.pt` because a three-by-768 matrix on top of a different encoder is
+meaningless. Not committing them is a deferral rather than a punt: a fold
+regenerates in about two minutes from the pinned dataset seed and base-model
+revision in the sidecar, and where 2.2GB of weights should live durably is a
+question this ticket does not answer.
 
 Two constraints worth knowing before planning around this:
 
@@ -808,6 +854,16 @@ Two constraints worth knowing before planning around this:
   report's expectations before any run, and it is why Arm B is not optional: a
   weak probe cannot separate "the libraries are the bottleneck" from "the method
   is too weak".
+* **Either Arm B outcome is a finding.** If unfreezing lifts the hard sub-classes
+  clear of Arm A, the frozen pooled representation was the bottleneck and the fix
+  is model work. If it does not, the limit is in the ideas the libraries contain
+  and the fix is library work on the fragments the per-fragment table names.
+  Nothing predicts which; the point of building both arms is that the question
+  stops being settled by argument.
+* **Arm B's negative control passes by doing two things at once**: driving
+  training loss towards zero, because 110M parameters can memorise a permutation,
+  *and* scoring at chance on the unpermuted test split. Either half alone means
+  nothing, which is why the sidecar keeps the loss curve.
 
 ---
 
