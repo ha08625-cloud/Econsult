@@ -90,6 +90,13 @@ LABEL_MODES = ("true", "false", "null_structural", "null_ambiguous")
 #: Split names, in band order.
 SPLITS = ("train", "val", "test")
 
+#: Filename convention for a generated fold, shared by the generator wrapper
+#: that writes them and everything that reads them back. A convention rather
+#: than a manifest so that a directory of datasets is self-describing: the fold
+#: index is the one piece of provenance a reader needs *before* opening the
+#: sidecar, because it is what says which of K files to open at all.
+FOLD_FILENAME = "{signal}.fold{fold_index}.{split}.jsonl"
+
 
 class DatasetError(ValueError):
     """Raised when a dataset, or its sidecar, cannot be trusted as read."""
@@ -597,3 +604,77 @@ def load_fold(
     _check_fold_agreement(splits)
     _check_disjoint(splits)
     return Fold(train=loaded["train"], val=loaded["val"], test=loaded["test"])
+
+
+def fold_dataset_path(directory: Path | str, signal: str, fold_index: int, split: str) -> Path:
+    """Where one fold's split lives, by the :data:`FOLD_FILENAME` convention."""
+    if split not in SPLITS:
+        raise DatasetError(f"{split!r} is not one of {SPLITS}")
+    return Path(directory) / FOLD_FILENAME.format(signal=signal, fold_index=fold_index, split=split)
+
+
+def _check_test_partition(folds: Sequence[Fold]) -> None:
+    """Assert no cluster is a test cluster in two folds.
+
+    This is the property that makes pooling predictions across folds mean
+    anything: every cluster is held out exactly once, so the pooled test set is
+    the whole library counted once rather than some clusters counted twice and
+    others not at all. It follows from the splitter's arithmetic, which is
+    exactly why it is worth asserting -- a change to the bucketing that broke it
+    would leave every file loading cleanly and every number quietly weighted.
+    """
+    seen: dict[str, int] = {}
+    for fold in folds:
+        index = fold.fold_index
+        for info in fold.test.fragments.values():
+            previous = seen.setdefault(info.cluster_key, index)
+            if previous != index:
+                raise DatasetError(
+                    f"cluster {info.cluster_key!r} is a test cluster in both fold {previous} and "
+                    f"fold {index}; pooling the folds would count it twice and miss another"
+                )
+
+
+def load_folds(
+    directory: Path | str,
+    signal: str,
+    *,
+    folds: int,
+    signals: Sequence[str] | None = None,
+) -> tuple[Fold, ...]:
+    """Load all K folds of one signal from a directory of generated datasets.
+
+    Every check :func:`load_fold` makes within a fold, plus three across them:
+    each file must record the fold index its filename claims, all K must agree
+    on the fold configuration, and no cluster may be held out twice. The first
+    is the one most likely to fire in practice -- regenerating a single fold
+    with the wrong ``--fold`` leaves a directory that looks complete.
+    """
+    if folds < 1:
+        raise DatasetError(f"folds must be at least 1: {folds}")
+
+    loaded = []
+    for fold_index in range(folds):
+        paths = {split: fold_dataset_path(directory, signal, fold_index, split) for split in SPLITS}
+        fold = load_fold(paths["train"], paths["val"], paths["test"], signals=signals)
+        if fold.folds != folds:
+            raise DatasetError(
+                f"{paths['test']} was generated with folds={fold.folds!r}, but is being read as "
+                f"one of {folds}"
+            )
+        if fold.fold_index != fold_index:
+            raise DatasetError(
+                f"{paths['test']} is named fold {fold_index} but its sidecar records fold "
+                f"{fold.fold_index!r}; regenerating one fold with the wrong --fold leaves a "
+                "directory that looks complete and evaluates nonsense"
+            )
+        loaded.append(fold)
+
+    salts = {json.dumps(fold.train.split_salt) for fold in loaded}
+    if len(salts) > 1:
+        raise DatasetError(
+            f"the folds disagree on split_salt ({', '.join(sorted(salts))}), so they are not K "
+            "views of one partition and pooling them is meaningless"
+        )
+    _check_test_partition(loaded)
+    return tuple(loaded)

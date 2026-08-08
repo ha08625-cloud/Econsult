@@ -1,0 +1,51 @@
+# Offline encoder-training dependencies. NEVER installed in production.
+#
+# The Dockerfile installs requirements.txt only, and nothing under app/ imports
+# scripts/encoder_training or scripts/synthetic_data (tests/test_wiring.py
+# asserts it). Keeping these out of requirements.txt is what stops a ~2.5GB
+# torch wheel and its CUDA runtime from entering an image that serves forms.
+#
+# CI's unit job does not install this file either. That is deliberate: the
+# stdlib-only modules (dataset.py, metrics.py, decision.py, report.py) carry the
+# logic that decides what an evaluation number *means*, and they are covered on
+# an ordinary runner with no GPU. Tests that need scikit-learn skip themselves.
+#
+#   pip install -r requirements-ml.txt
+#
+# ---------------------------------------------------------------------------
+# Python 3.12
+# ---------------------------------------------------------------------------
+# Pin the interpreter to 3.12, matching CI's unit job. The repo already floors
+# at 3.12 (scripts/synthetic_data/recombine.py uses PEP 695 generics), and torch
+# cu128 wheels are reliable on 3.12 and patchier on 3.13/3.14.
+#
+# ---------------------------------------------------------------------------
+# Blackwell (RTX 5070) warning -- read before installing torch
+# ---------------------------------------------------------------------------
+# The RTX 5070 is compute capability sm_120 and needs a wheel built against
+# CUDA 12.8 or later. An older wheel installs cleanly, imports cleanly, and then
+# fails at the first kernel launch with "no kernel image is available for
+# execution on the device". This is the single most likely thing here to eat an
+# afternoon, and the failure looks nothing like a wheel problem.
+#
+# Install torch from the cu128 index, not from PyPI's default:
+#
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+#
+# Verify before training, not after:
+#
+#   python -c "import torch; print(torch.cuda.get_device_capability())"
+#   python -c "import torch; print(torch.zeros(1, device='cuda') + 1)"
+#
+# The second line is the one that matters: the first can succeed on a wheel
+# that cannot run a single kernel.
+
+# --- Task 3: baselines -----------------------------------------------------
+scikit-learn==1.7.2
+
+# --- Task 5: the two arms --------------------------------------------------
+# Added when Arm A lands, pinned to whatever the cu128 index actually serves at
+# that point. Left commented rather than absent so the cu128 note above stays
+# attached to the line it warns about.
+# torch            # install from https://download.pytorch.org/whl/cu128
+# transformers

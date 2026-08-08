@@ -420,6 +420,78 @@ def bootstrap_ci(
     )
 
 
+def bootstrap_confusion_ci(
+    predictions: Sequence[Prediction],
+    statistic: Callable[[Sequence[Sequence[int]]], float | None],
+    *,
+    resamples: int = DEFAULT_RESAMPLES,
+    seed: int = 0,
+    alpha: float = DEFAULT_ALPHA,
+) -> Interval:
+    """:func:`bootstrap_ci` for statistics that read only the confusion matrix.
+
+    Identical resampling -- same units, same order, same random draws, so for a
+    confusion-derived statistic this returns exactly what :func:`bootstrap_ci`
+    returns, and ``test_confusion_bootstrap_matches_the_general_one`` pins that.
+    The difference is cost: each resample sums one 3x3 matrix per drawn cluster
+    instead of rescoring every example belonging to it. A pooled slice here is
+    ten thousand examples over a couple of hundred clusters, so the general
+    form is roughly fifty times the work for the same number, and the report
+    asks for it well over a hundred times.
+
+    Use :func:`bootstrap_ci` for anything the matrix does not determine.
+    """
+    if not 0.0 < alpha < 1.0:
+        raise MetricsError(f"alpha must be in (0, 1): {alpha}")
+    if resamples < 1:
+        raise MetricsError(f"resamples must be at least 1: {resamples}")
+
+    by_unit = slice_by(predictions, lambda prediction: prediction.unit)
+    units = list(by_unit)
+    point = statistic(confusion_matrix(predictions))
+    if not units:
+        return Interval(point=point, low=None, high=None, effective_n=0, resamples_used=0)
+
+    # One flat 9-cell matrix per unit, in the same order slice_by yields them.
+    flat = [[cell for row in confusion_matrix(by_unit[unit]) for cell in row] for unit in units]
+
+    rng = random.Random(seed)
+    values: list[float] = []
+    size = len(units)
+    for _ in range(resamples):
+        totals = [0] * 9
+        for _ in range(size):
+            drawn = flat[rng.randrange(size)]
+            for cell in range(9):
+                totals[cell] += drawn[cell]
+        value = statistic(tuple(tuple(totals[row * 3 : row * 3 + 3]) for row in CLASSES))
+        if value is not None:
+            values.append(value)
+
+    if not values:
+        return Interval(point=point, low=None, high=None, effective_n=size, resamples_used=0)
+
+    values.sort()
+    low_index = max(0, min(len(values) - 1, math.floor(alpha / 2 * len(values))))
+    high_index = max(0, min(len(values) - 1, math.ceil((1 - alpha / 2) * len(values)) - 1))
+    return Interval(
+        point=point,
+        low=values[low_index],
+        high=values[high_index],
+        effective_n=size,
+        resamples_used=len(values),
+    )
+
+
+def class_recall(class_index: int) -> Callable[[Sequence[Sequence[int]]], float | None]:
+    """Recall for one class, as a :func:`bootstrap_confusion_ci` statistic."""
+
+    def statistic(confusion: Sequence[Sequence[int]]) -> float | None:
+        return per_class_metrics(confusion)[CLASS_NAMES[class_index]].recall
+
+    return statistic
+
+
 def _two_sided_exact_binomial(successes: int, trials: int) -> float:
     """Two-sided exact binomial p-value at p = 0.5, from :func:`math.comb`.
 
