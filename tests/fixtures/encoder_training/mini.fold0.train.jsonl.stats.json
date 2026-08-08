@@ -1,0 +1,74 @@
+{
+  "generator_version": 2,
+  "seed": 42,
+  "signal": "fever_present",
+  "split": "train",
+  "folds": 5,
+  "fold_index": 0,
+  "split_salt": "32",
+  "manifest": "data/synthetic/manifest.json",
+  "ruleset": "data/uti1.json",
+  "realised": {
+    "count": 6,
+    "labels": {"true": 1, "false": 1, "null": 4},
+    "label_modes": {"true": 1, "false": 1, "null_structural": 1, "null_ambiguous": 3}
+  },
+  "fragments": {
+    "fever_false:22222222": {
+      "library": "fever_false",
+      "cluster_key": "no temperature, i checked twice",
+      "fragment_type": "negative",
+      "signal_key": "fever_present",
+      "subclass": null,
+      "split": "train"
+    },
+    "fever_null_hedged:33333333": {
+      "library": "fever_null_hedged",
+      "cluster_key": "fever_null_hedged:c01",
+      "fragment_type": "ambiguous",
+      "signal_key": "fever_present",
+      "subclass": "hedged",
+      "split": "train"
+    },
+    "fever_null_hedged:44444444": {
+      "library": "fever_null_hedged",
+      "cluster_key": "fever_null_hedged:c01",
+      "fragment_type": "ambiguous",
+      "signal_key": "fever_present",
+      "subclass": "hedged",
+      "split": "train"
+    },
+    "fever_null_metaphor:55555555": {
+      "library": "fever_null_metaphor",
+      "cluster_key": "fever_null_metaphor:c02",
+      "fragment_type": "ambiguous",
+      "signal_key": "fever_present",
+      "subclass": "metaphor",
+      "split": "train"
+    },
+    "fever_true:11111111": {
+      "library": "fever_true",
+      "cluster_key": "i had a high temperature all weekend",
+      "fragment_type": "positive",
+      "signal_key": "fever_present",
+      "subclass": null,
+      "split": "train"
+    },
+    "justifiers:77777777": {
+      "library": "justifiers",
+      "cluster_key": "i need this sorted before friday",
+      "fragment_type": "filler",
+      "signal_key": null,
+      "subclass": null,
+      "split": "train"
+    },
+    "tangents:66666666": {
+      "library": "tangents",
+      "cluster_key": "the parking here is impossible",
+      "fragment_type": "filler",
+      "signal_key": null,
+      "subclass": null,
+      "split": "train"
+    }
+  }
+}

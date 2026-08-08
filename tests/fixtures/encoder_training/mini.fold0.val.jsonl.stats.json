@@ -1,0 +1,66 @@
+{
+  "generator_version": 2,
+  "seed": 42,
+  "signal": "fever_present",
+  "split": "val",
+  "folds": 5,
+  "fold_index": 0,
+  "split_salt": "32",
+  "manifest": "data/synthetic/manifest.json",
+  "ruleset": "data/uti1.json",
+  "realised": {
+    "count": 5,
+    "labels": {"true": 1, "false": 1, "null": 3},
+    "label_modes": {"true": 1, "false": 1, "null_structural": 1, "null_ambiguous": 2}
+  },
+  "fragments": {
+    "fever_false:99999999": {
+      "library": "fever_false",
+      "cluster_key": "i took my temp and it was normal",
+      "fragment_type": "negative",
+      "signal_key": "fever_present",
+      "subclass": null,
+      "split": "val"
+    },
+    "fever_null_hedged:aaaaaaaa": {
+      "library": "fever_null_hedged",
+      "cluster_key": "fever_null_hedged:c03",
+      "fragment_type": "ambiguous",
+      "signal_key": "fever_present",
+      "subclass": "hedged",
+      "split": "val"
+    },
+    "fever_null_metaphor:bbbbbbbb": {
+      "library": "fever_null_metaphor",
+      "cluster_key": "fever_null_metaphor:c04",
+      "fragment_type": "ambiguous",
+      "signal_key": "fever_present",
+      "subclass": "metaphor",
+      "split": "val"
+    },
+    "fever_true:88888888": {
+      "library": "fever_true",
+      "cluster_key": "my temperature was 38.5 last night",
+      "fragment_type": "positive",
+      "signal_key": "fever_present",
+      "subclass": null,
+      "split": "val"
+    },
+    "justifiers:dddddddd": {
+      "library": "justifiers",
+      "cluster_key": "i work shifts so it's hard to get an appointment",
+      "fragment_type": "filler",
+      "signal_key": null,
+      "subclass": null,
+      "split": "val"
+    },
+    "tangents:cccccccc": {
+      "library": "tangents",
+      "cluster_key": "the bus was late again this morning",
+      "fragment_type": "filler",
+      "signal_key": null,
+      "subclass": null,
+      "split": "val"
+    }
+  }
+}

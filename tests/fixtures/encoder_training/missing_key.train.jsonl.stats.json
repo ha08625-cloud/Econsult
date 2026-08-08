@@ -1,0 +1,50 @@
+{
+  "generator_version": 2,
+  "seed": 42,
+  "signal": "fever_present",
+  "split": "train",
+  "folds": null,
+  "fold_index": null,
+  "split_salt": "",
+  "manifest": "data/synthetic/manifest.json",
+  "ruleset": "data/uti1.json",
+  "realised": {
+    "count": 3,
+    "labels": {"true": 1, "false": 1, "null": 1},
+    "label_modes": {"true": 1, "false": 1, "null_structural": 1, "null_ambiguous": 0}
+  },
+  "fragments": {
+    "dysuria_false:bb000002": {
+      "library": "dysuria_false",
+      "cluster_key": "weeing itself is fine, no stinging",
+      "fragment_type": "negative",
+      "signal_key": "dysuria_present",
+      "subclass": null,
+      "split": "train"
+    },
+    "fever_true:aa000001": {
+      "library": "fever_true",
+      "cluster_key": "i had a high temperature all weekend",
+      "fragment_type": "positive",
+      "signal_key": "fever_present",
+      "subclass": null,
+      "split": "train"
+    },
+    "justifiers:cc000002": {
+      "library": "justifiers",
+      "cluster_key": "i need this sorted before friday",
+      "fragment_type": "filler",
+      "signal_key": null,
+      "subclass": null,
+      "split": "train"
+    },
+    "tangents:cc000001": {
+      "library": "tangents",
+      "cluster_key": "the parking here is impossible",
+      "fragment_type": "filler",
+      "signal_key": null,
+      "subclass": null,
+      "split": "train"
+    }
+  }
+}
