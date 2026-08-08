@@ -1,0 +1,74 @@
+{
+  "generator_version": 2,
+  "seed": 42,
+  "signal": "fever_present",
+  "split": "test",
+  "folds": 5,
+  "fold_index": 0,
+  "split_salt": "32",
+  "manifest": "data/synthetic/manifest.json",
+  "ruleset": "data/uti1.json",
+  "realised": {
+    "count": 6,
+    "labels": {"true": 1, "false": 1, "null": 4},
+    "label_modes": {"true": 1, "false": 1, "null_structural": 1, "null_ambiguous": 3}
+  },
+  "fragments": {
+    "fever_false:ffffffff": {
+      "library": "fever_false",
+      "cluster_key": "definitely no fever, i've been checking",
+      "fragment_type": "negative",
+      "signal_key": "fever_present",
+      "subclass": null,
+      "split": "test"
+    },
+    "fever_null_hedged:10101010": {
+      "library": "fever_null_hedged",
+      "cluster_key": "fever_null_hedged:c05",
+      "fragment_type": "ambiguous",
+      "signal_key": "fever_present",
+      "subclass": "hedged",
+      "split": "test"
+    },
+    "fever_null_metaphor:20202020": {
+      "library": "fever_null_metaphor",
+      "cluster_key": "fever_null_metaphor:c06",
+      "fragment_type": "ambiguous",
+      "signal_key": "fever_present",
+      "subclass": "metaphor",
+      "split": "test"
+    },
+    "fever_null_thirdparty:30303030": {
+      "library": "fever_null_thirdparty",
+      "cluster_key": "fever_null_thirdparty:c07",
+      "fragment_type": "ambiguous",
+      "signal_key": "fever_present",
+      "subclass": "third_party",
+      "split": "test"
+    },
+    "fever_true:eeeeeeee": {
+      "library": "fever_true",
+      "cluster_key": "i've had a fever since tuesday",
+      "fragment_type": "positive",
+      "signal_key": "fever_present",
+      "subclass": null,
+      "split": "test"
+    },
+    "justifiers:50505050": {
+      "library": "justifiers",
+      "cluster_key": "i'm away for work next week",
+      "fragment_type": "filler",
+      "signal_key": null,
+      "subclass": null,
+      "split": "test"
+    },
+    "tangents:40404040": {
+      "library": "tangents",
+      "cluster_key": "the app kept logging me out",
+      "fragment_type": "filler",
+      "signal_key": null,
+      "subclass": null,
+      "split": "test"
+    }
+  }
+}
