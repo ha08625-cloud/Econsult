@@ -13,6 +13,7 @@
 - `deletion_job.py` — Nightly cron one-shot script.
 - `.env` — Local environment variables, not committed.
 - `Dockerfile` — Container build definition (Vite + Python).
+- `.dockerignore` — Keeps offline encoder-training output out of the build context. The Dockerfile copies explicitly rather than `COPY . .`, but `COPY data/ ./data/` takes the whole directory, and `data/synthetic/generated/` holds ~40MB of training JSONL plus ~215MB of cached embeddings after a five-fold sweep. Also excludes `models/`, `reports/` and the usual build noise.
 - `build.sh` — Build script used by the container.
 - `railway.toml` — Railway deployment config.
 - `requirements.txt` — Python dependencies.
@@ -29,7 +30,8 @@
   - `encoder_training/` — Trains and evaluates encoder heads against those datasets. `generate-folds` writes all K folds' three splits; `baselines` fits the baselines and negative controls; `smoke-cuda` runs a real kernel on the training device (no model, no network — run it first on a new machine); `smoke` adds the encoder download; `probe` is Arm A, the frozen probe; `finetune` is Arm B, every layer unfrozen. Everything except the model-fitting bodies is stdlib only, so CI covers it with no ML wheels; the arms and `baselines` need `requirements-ml.txt`. Tested by `tests/test_encoder_training_{dataset,metrics,baselines,arm_a,arm_b}.py`.
 - `requirements-ml.txt` — Offline encoder-training dependencies (scikit-learn, torch, transformers). Never installed in production or in CI, and carries the Blackwell/cu128 warning for the target GPU.
 - `models/encoder/<signal>/<arm>/` — Trained head artefacts, one directory per arm: `metadata.json` plus `foldN.head.json` and `foldN.decision.json`. Arm B's fine-tuned encoders (~440MB per fold) go in `arm_b_finetune/weights/` and are git-ignored; the sidecar records where they went. Never enters the production image — the Dockerfile copies `app/` and `data/` explicitly.
-- `reports/encoder_training/` — Committed evaluation reports: a JSON sidecar and a markdown report per run.
+- `models/.gitignore` — Excludes Arm B's fine-tuned encoder weights (`*.pt`, `*.safetensors`, `*.bin`) while keeping the JSON heads, decision rules and metadata sidecars that identify them.
+- `reports/encoder_training/` — Committed evaluation reports: `<signal>.<stem>.json` (always written; the machine-readable record) and `<signal>.<stem>.md` (rendered *from* that JSON, so the two cannot disagree; committed for runs worth keeping). `<stem>` is the arm or `baselines`. Read with `documentation/arch_encoder_training.md` section 8.
 - `docs/` — Architecture documents and operational guides.
   - `deployment_checklist.md` — Step-by-step checklist for deploying to a new environment.
 - `sandbox/` — Local-dev MESH sandbox. Never deployed, never run in CI. See `sandbox/README.md`.

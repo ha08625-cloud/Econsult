@@ -98,10 +98,16 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Key Files:** `client.py`, `mesh_enqueuer.py`, `mesh_payload.py`, `mesh_repository.py`, `mesh_constants.py`, `mesh_worker.py`, `mesh_worker_main.py`
 
 ### 3.15 Encoder Training Data (Synthetic Generation)
-* **Scope:** Building the encoder's training dataset by recombining hand-written sentence fragments, and the offline tooling that trains and evaluates heads against it. Offline only — nothing here runs in the live application and `app/` never imports it (`tests/test_wiring.py` and `tests/test_encoder_training_dataset.py` both enforce that). Covers the fragment libraries, label-first generation, train/val/test splitting and five-fold cross-validation over fragment clusters, the library lint, baselines, the decision rule, the two training arms (Arm A, a frozen probe; Arm B, a full fine-tune) and the evaluation report. The training strategy itself and the full design rationale stay in `documentation/encoder/`.
+* **Scope:** Building the encoder's training dataset by recombining hand-written sentence fragments. Offline only — nothing here runs in the live application and `app/` never imports it (`tests/test_wiring.py` enforces that). Covers the fragment libraries, label-first generation, train/val/test splitting and five-fold cross-validation over fragment clusters, the library lint, and the `.stats.json` provenance sidecar. The training strategy itself and the full design rationale stay in `documentation/encoder/`.
 * **Domain Doc:** `docs/arch_training.md`
-* **Key Files:** `scripts/synthetic_data/*.py`, `scripts/encoder_training/*.py`, `data/synthetic/manifest.json`, `data/synthetic/*.txt`, `requirements-ml.txt`, `models/encoder/<signal>/<arm>/` (head artefacts and metadata sidecars; Arm B's ~440MB weights are git-ignored)
-* **Note on sample size:** every evaluation number is bounded by the number of distinct fragment *clusters* behind a slice, not the number of examples. See `arch_training.md` section 10 before reading any figure this tooling produces.
+* **Key Files:** `scripts/synthetic_data/*.py`, `data/synthetic/manifest.json`, `data/synthetic/*.txt`
+* **Note on sample size:** every evaluation number is bounded by the number of distinct fragment *clusters* behind a slice, not the number of examples. See `arch_training.md` section 10 before reading any figure this pipeline produces.
+
+### 3.16 Encoder Training & Evaluation (Offline Tooling)
+* **Scope:** Training and evaluating one encoder head against those datasets, and saying honestly what the resulting numbers are worth. Offline only; `tests/test_encoder_training_dataset.py` enforces that `app/` never imports it. Covers the two training arms (Arm A, a frozen probe; Arm B, a full fine-tune), the baselines and negative controls, the decision rule, the cluster bootstrap and paired McNemar tests, the head artefacts and metadata sidecars, and the evaluation report. ML dependencies live in `requirements-ml.txt` and never reach production or CI.
+* **Domain Doc:** `docs/arch_encoder_training.md`
+* **Key Files:** `scripts/encoder_training/*.py`, `requirements-ml.txt`, `.dockerignore`, `models/encoder/<signal>/<arm>/` (head artefacts and metadata sidecars; Arm B's ~440MB weights are git-ignored), `reports/encoder_training/`
+* **Note before swapping in a real encoder:** a single head cannot satisfy `EncoderOutput.validate_against`, which requires output keys to match the ruleset's `send_to_encoder` signals exactly — `data/uti1.json` declares seven. See 3.3 and `arch_encoder_training.md` section 9.
 
 ## 4. Other reference files
 

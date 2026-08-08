@@ -30,6 +30,7 @@ The load-bearing tests, if you only read a few:
 
 import json
 import random
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -72,15 +73,20 @@ from scripts.encoder_training.metrics import (
     macro_f1,
 )
 from scripts.encoder_training.report import (
+    DECIDING_SLICE,
+    FEVER_LIBRARY_CLUSTERS,
     NULL_SUBCLASSES,
+    SCHEMA_VERSION,
     BootstrapConfig,
     FoldRun,
     ModelRun,
+    _error_concentration,
     build_report,
     compare_models,
     render_markdown,
     write_report,
 )
+from scripts.synthetic_data.manifest import library_clusters, load_fragments
 
 FIXTURES = Path(__file__).parent / "fixtures" / "encoder_training"
 TRAIN = FIXTURES / "mini.fold0.train.jsonl"
@@ -496,12 +502,118 @@ def test_markdown_caps_the_fragment_table_and_says_so():
 def test_write_report_writes_json_always_and_markdown_on_request(tmp_path):
     report = _report()
     json_path, markdown_path = write_report(report, tmp_path, stem="run")
-    assert json.loads(json_path.read_text(encoding="utf-8"))["schema_version"] == 1
+    assert json.loads(json_path.read_text(encoding="utf-8"))["schema_version"] == SCHEMA_VERSION
     assert markdown_path.read_text(encoding="utf-8").startswith("# Encoder training")
 
     json_only, none_path = write_report(report, tmp_path, stem="quiet", markdown=False)
     assert json_only.is_file()
     assert none_path is None
+
+
+# --------------------------------------------------------------------------
+# The comparison the ticket is decided on (task 6)
+# --------------------------------------------------------------------------
+
+
+def _rows(*pairs):
+    """Per-fragment table rows, as ``(n_examples, n_correct)`` pairs."""
+    return [
+        {"fragment_id": f"lib:{index:02d}", "n_examples": total, "n_correct": correct}
+        for index, (total, correct) in enumerate(pairs)
+    ]
+
+
+def test_error_concentration_finds_the_fragments_carrying_half_the_errors():
+    """The DD7 reading, as a number: 20 errors, and one fragment holds 12."""
+    stats = _error_concentration(_rows((20, 8), (10, 9), (10, 9), (10, 9), (10, 9), (10, 10)))
+    assert stats["total_errors"] == 12 + 4
+    assert stats["decisive_fragments"] == 6
+    assert stats["fragments_with_errors"] == 5
+    assert stats["fragments_carrying_half"] == 1
+    assert stats["share_in_worst_ten"] == 1.0
+
+
+def test_error_concentration_reference_point_is_an_even_spread():
+    """Half the errors on half the erring fragments is the "spread thinly" case.
+
+    Without the reference point the headline count is unreadable: "half the
+    errors fall on four fragments" means opposite things depending on whether
+    eight fragments erred or eighty.
+    """
+    stats = _error_concentration(_rows(*[(10, 9)] * 8))
+    assert stats["fragments_with_errors"] == 8
+    assert stats["fragments_carrying_half"] == 4
+    assert stats["even_spread_would_be"] == 4.0
+
+
+def test_error_concentration_handles_a_model_that_got_everything_right():
+    stats = _error_concentration(_rows((10, 10), (4, 4)))
+    assert stats["total_errors"] == 0
+    assert stats["fragments_carrying_half"] == 0
+    assert stats["share_in_worst_ten"] is None
+
+
+def test_report_carries_the_error_concentration_beside_the_fragment_table():
+    model = _report()["models"][0]
+    stats = model["error_concentration"]
+    errors = sum(row["n_examples"] - row["n_correct"] for row in model["fragments"])
+    assert stats["total_errors"] == errors
+    assert stats["decisive_fragments"] == len(model["fragments"])
+
+
+def test_markdown_lays_out_the_tickets_question_without_answering_it():
+    """The three numbers the decision turns on, and no automatic verdict.
+
+    A renderer that concluded would be concluding from whichever comparison
+    happened to clear a threshold someone picked while writing it.
+    """
+    markdown = render_markdown(_report())
+    assert "## The ticket's question: model or libraries?" in markdown
+    assert DECIDING_SLICE in markdown
+    assert "Where the errors fall" in markdown
+    assert "a sentence a person writes" in markdown
+
+
+def test_markdown_demands_the_recorded_prediction_be_scored():
+    markdown = render_markdown(_report())
+    assert "owes each bullet a" in markdown
+
+
+def test_markdown_reproduces_the_data_limits_in_full_rather_than_citing_them():
+    """The one deliberate duplication: this report is read standalone."""
+    markdown = render_markdown(_report())
+    assert "## What this data is and is not worth" in markdown
+    for phrase in (
+        "smoke test, not evidence",
+        "Length may still leak",
+        "Urgency language leaks",
+        "The examples are short",
+        "Only `fever_present` is covered",
+        "Effective sample size",
+    ):
+        assert phrase in markdown
+
+
+def test_markdown_names_the_next_ticket():
+    markdown = render_markdown(_report())
+    assert "## The next ticket" in markdown
+    assert "60-100 realistic full submissions" in markdown
+
+
+def test_library_cluster_table_matches_the_libraries_on_disk():
+    """Guards the one table in the report that is written down rather than derived.
+
+    The report must not re-read the fragment libraries -- they may have moved
+    since the dataset was generated, and a table that quietly re-read them would
+    describe different libraries than the numbers above it came from. So the
+    counts are a constant, and this test is what stops the constant drifting.
+    """
+    fragments = load_fragments(Path("data/synthetic/manifest.json"), check_cells=False)
+    counted = Counter(fragment.library for fragment in fragments)
+    clustered = Counter(library for library, _ in library_clusters(fragments))
+    for library, fragment_count, cluster_count in FEVER_LIBRARY_CLUSTERS:
+        assert counted[library] == fragment_count, library
+        assert clustered[library] == cluster_count, library
 
 
 # --------------------------------------------------------------------------

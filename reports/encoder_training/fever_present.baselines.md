@@ -1,6 +1,6 @@
 # Encoder training: evaluation report
 
-*Generated 2026-08-08T12:30:42+00:00.*
+*Generated 2026-08-08T20:36:22+00:00.*
 
 |  |  |
 |---|---|
@@ -81,12 +81,84 @@ high too.
 | `length_only__shuffled` | 100.0% [100.0%, 100.0%] (eff n 32) | 100.0% [100.0%, 100.0%] (eff n 36) | 100.0% [100.0%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 35) |
 | `tfidf_logreg__shuffled` | 100.0% [100.0%, 100.0%] (eff n 32) | 100.0% [100.0%, 100.0%] (eff n 36) | 100.0% [100.0%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 35) |
 
+## The ticket's question: model or libraries?
+
+This ticket exists to answer one question -- **is the bottleneck the model or the
+fragment libraries?** -- and three numbers decide it. All three are on this page.
+
+### 1. Accuracy on `null_ambiguous`
+
+The only slice where a transformer can earn its keep. Clear positives, clear negatives
+and `null_structural` are the easy three-quarters of the data; bag-of-words handles them,
+so an overall accuracy is close to uninformative here.
+
+**This table cannot be read on its own, and the first row is why.** Every example in this
+slice is truly `null`, so a model that answers `null` unconditionally scores 100% across
+it -- which is exactly what `majority_class` does, and it has learned nothing. A number
+here is a finding only when the `true` and `false` recalls in the same model's per-class
+table are high at the same time. The same caveat applies to every McNemar row below it.
+
+| model | kind | n | eff n | accuracy [95% CI] |
+|---|---|---|---|---|
+| `majority_class` | baseline | 3062 | **150** | 100.0% [100.0%, 100.0%] |
+| `length_only` | baseline | 3062 | **150** | 98.8% [97.8%, 99.5%] |
+| `tfidf_logreg` | baseline | 3062 | **150** | 93.6% [90.5%, 95.9%] |
+
+### 2. The same comparison, paired
+
+Two overlapping intervals do not settle whether one model beats another on the same
+examples. McNemar does, over the examples the two disagree about -- read it alongside the
+intervals above, never instead of them.
+
+| pair | n | a only | b only | p |
+|---|---|---|---|---|
+| `majority_class` vs `length_only` | 3062 | 37 | 0 | 1.46e-11 |
+| `majority_class` vs `tfidf_logreg` | 3062 | 198 | 0 | 4.98e-60 |
+| `length_only` vs `tfidf_logreg` | 3062 | 197 | 36 | 4.6e-28 |
+
+### 3. Where the errors fall
+
+The per-fragment table below, as one number per model. Errors spread thinly across many
+fragments say the method is too weak. Errors piled onto a handful say those specific ideas
+are not learnable from the data we have -- and the table names them, which is what makes
+this the most decision-useful thing in the report.
+
+* `majority_class`: 3960 errors across 156 of 344 decisive fragments. Half of them fall on **43** fragments (an even spread would be 78.0); the worst ten carry 13.7% of all errors.
+* `length_only`: 3883 errors across 175 of 344 decisive fragments. Half of them fall on **44** fragments (an even spread would be 87.5); the worst ten carry 13.8% of all errors.
+* `tfidf_logreg`: 2047 errors across 176 of 344 decisive fragments. Half of them fall on **28** fragments (an even spread would be 88.0); the worst ten carry 23.2% of all errors.
+
+### Reading the three together
+
+* Fine-tune clear of the frozen probe **and** clear of TF-IDF on the slice above: the
+  frozen pooled representation was the bottleneck, and the next month is model work.
+* Fine-tune no better than the frozen probe, with errors concentrated on a handful of
+  named fragments: those ideas are not learnable from the data we have, and the next
+  month is library work on the fragments the table names.
+* Both arms poor with errors spread evenly across most fragments: neither reading is
+  supported yet, and the honest answer is that the slice cannot separate them -- check
+  `eff n` before concluding anything at all.
+
+**The conclusion is a sentence a person writes after reading those three, in the ticket's
+own terms.** This report does not write it. The numbers constrain the conclusion; they do
+not determine it.
+
 ## What we expected before looking
+
+Recorded before any run, in this module, so the result can be scored against a prediction
+rather than rationalised after the fact. **Whoever writes this run up owes each bullet a
+verdict -- held, or did not hold, and by how much.** A plan that records a prediction and
+never scores it has wasted the prediction.
 
 * Majority-class should land near 60%, which is the generator's `null` share and not a property of the data worth anything.
 * The length-only model is the direct measurable test of the length leak `arch_training.md` section 9 argues for but has never measured. Materially above majority means text length is a usable proxy for the label, which is a library problem rather than a model one.
 * TF-IDF should do well on clear positives, clear negatives and `null_structural`, and badly on the ambiguous sub-classes. Its overall accuracy is therefore close to uninformative. **The number that matters is the `null_ambiguous` slice**, tested with McNemar against the transformer once that exists.
 * Both negative controls must fail. Shuffled train labels must score at chance on the unpermuted test split, and no fragment or cluster may appear on both sides of a split.
+* Arm A -- the frozen probe -- should handle clear positives, clear negatives and `null_structural`, and should do **badly** on the four hard `null` sub-classes. Third-party attribution, tense and metaphor are compositional scope problems, and a single mean-pooled vector blurs the structure that carries them: a linear probe over it has no mechanism for "the fever belongs to the daughter". A bad Arm A result on those slices is the predicted outcome, not a bug.
+* Arm A beating TF-IDF on `null_ambiguous` would be a genuine finding about the encoder; losing to it there would say the pooled representation discards what the ambiguous libraries are made of. Either way the comparison is McNemar's, not two point estimates side by side -- and neither answers the ticket's question on its own, because Arm A cannot separate "the libraries are the bottleneck" from "the method is too weak". That is Arm B's job.
+* Arm B -- the fine-tune -- is the arm that answers the ticket, and **either outcome is a finding**. If unfreezing 110M parameters lifts the four hard `null` sub-classes clear of Arm A, the frozen pooled representation was the bottleneck and the fix is model work. If it does not -- if a fully fine-tuned encoder still cannot tell whose fever it is or when it happened -- then the limit is in the ideas the libraries contain, and the fix is library work on the fragments the per-fragment table names. Nothing here predicts which; the point of building both arms is that the question stops being answerable by argument.
+* Arm B's negative control passes by doing **two** things at once: driving training loss towards zero, because 110M parameters can memorise a permutation, while scoring at chance on the unpermuted test split. Near-zero training loss on its own is not a failure and chance test performance on its own is not a pass; the sidecar records the per-fold loss curve so both halves can be read.
+* Arm B is expected to be *unstable* across folds in a way Arm A is not. Fine-tuning a 110M-parameter model on 10,000 recombinations of a few dozen fragments has far more freedom to fit fold-specific detail, so the across-fold standard deviation should be the wider of the two. That is a property of the arm, not evidence against it -- but it is why the pooled cluster bootstrap, not the fold spread, remains the headline interval.
+* `max_seq_len` is not the interesting constraint. The proof-of-concept run's median example is 36 tokens and its 90th percentile 54, against a limit of 256. Training on 36-token recombinations and eventually serving 300-token real submissions is a distribution shift no sequence length fixes.
 
 ## Negative controls and checks
 
@@ -192,6 +264,8 @@ the data we have" (library work, and these are the fragments to write more of). 
 a fragment is one cluster, so an interval over its own examples measures nothing.
 
 156 of 344 decisive fragments were got wrong at least once.
+
+`majority_class`: 3960 errors across 156 of 344 decisive fragments. Half of them fall on **43** fragments (an even spread would be 78.0); the worst ten carry 13.7% of all errors.
 
 | fragment | library | sub-class | truth | correct | accuracy | predicted as |
 |---|---|---|---|---|---|---|
@@ -314,6 +388,8 @@ a fragment is one cluster, so an interval over its own examples measures nothing
 
 175 of 344 decisive fragments were got wrong at least once.
 
+`length_only`: 3883 errors across 175 of 344 decisive fragments. Half of them fall on **44** fragments (an even spread would be 87.5); the worst ten carry 13.8% of all errors.
+
 | fragment | library | sub-class | truth | correct | accuracy | predicted as |
 |---|---|---|---|---|---|---|
 | `fever_false:357d0419` | `fever_false` | -- | false | 0/59 | 0.0% | null 59 |
@@ -433,6 +509,8 @@ the data we have" (library work, and these are the fragments to write more of). 
 a fragment is one cluster, so an interval over its own examples measures nothing.
 
 176 of 344 decisive fragments were got wrong at least once.
+
+`tfidf_logreg`: 2047 errors across 176 of 344 decisive fragments. Half of them fall on **28** fragments (an even spread would be 88.0); the worst ten carry 23.2% of all errors.
 
 | fragment | library | sub-class | truth | correct | accuracy | predicted as |
 |---|---|---|---|---|---|---|
@@ -555,6 +633,8 @@ a fragment is one cluster, so an interval over its own examples measures nothing
 
 156 of 344 decisive fragments were got wrong at least once.
 
+`length_only__shuffled`: 3960 errors across 156 of 344 decisive fragments. Half of them fall on **43** fragments (an even spread would be 78.0); the worst ten carry 13.7% of all errors.
+
 | fragment | library | sub-class | truth | correct | accuracy | predicted as |
 |---|---|---|---|---|---|---|
 | `fever_false:357d0419` | `fever_false` | -- | false | 0/59 | 0.0% | null 59 |
@@ -676,6 +756,8 @@ a fragment is one cluster, so an interval over its own examples measures nothing
 
 156 of 344 decisive fragments were got wrong at least once.
 
+`tfidf_logreg__shuffled`: 3960 errors across 156 of 344 decisive fragments. Half of them fall on **43** fragments (an even spread would be 78.0); the worst ten carry 13.7% of all errors.
+
 | fragment | library | sub-class | truth | correct | accuracy | predicted as |
 |---|---|---|---|---|---|---|
 | `fever_false:357d0419` | `fever_false` | -- | false | 0/59 | 0.0% | null 59 |
@@ -787,3 +869,47 @@ is the whole reason the headline is pooled.
 * **A slice containing only one class cannot be read on its own.** The four `null` sub-class slices hold nothing but truly-`null` examples, so a model that answers `null` unconditionally scores 100% on all of them. Sub-class recall is a finding only when the `true` and `false` recalls are high at the same time, which is why the per-class table sits beside it.
 * **The overall interval is dominated by one resampling unit.** All structural nulls share one unit, by design -- thousands of recombinations of a handful of filler sentences are not thousands of observations. The cost is that the pooled overall accuracy swings widely under resampling for reasons that have nothing to do with the model. The `decisive` slice, which drops them, is the one to read.
 * **Fragment libraries, not sample size, are the ceiling.** Forty-seven metaphor clusters is forty-seven ideas however many examples are drawn from them. Everything section 9 of `arch_training.md` says about what this data is and is not worth continues to apply in full.
+
+## What this data is and is not worth
+
+*Reproduced in full from `arch_training.md` sections 9 and 10 rather than cross-
+referenced, because this report is read on its own and every number in it is bounded by
+what follows.*
+
+* **The validation score is a smoke test, not evidence.** Under the default bands validation holds 15 distinct positive fragments, and every `true` validation example is a recombination of those 15 sentences; one unlucky fragment moves the score several points. The training plan asks for around 200 fragments per signal. We have roughly half that for `true` and a third for `false`.
+* **Length may still leak.** Fragment *count* is drawn from one distribution that never sees the label, so it cannot be a proxy for it. Fragment *length* is not controlled at all: `fever_true` fragments run from 3 words to 98, while the `fever_null` libraries sit in a 9-40 word band. The medians are close (16 against 15-19), so this is a tail problem rather than a systematic offset -- but a 98-word positive has no counterpart anywhere in the null libraries, and a model can notice that. The `length_only` baseline in this report is the direct measurement of how much is there to notice.
+* **Urgency language leaks too.** About 17% of `fever_true` fragments bundle the fever claim with a justification -- "three important meetings I can't miss" -- against 8% of `fever_false` and almost none of `fever_null`. That is exactly the "sounds urgent, must be positive" shortcut the libraries are meant to prevent. Pairing with filler washes some of it out; fixing it properly is library work.
+* **The examples are short.** Two or three sentences by default, against real submissions that are longer and messier. The variable fragment count narrows that gap rather than closing it: the count ceiling is the number of filler libraries, and past a few fragments each example still carries exactly one supervised claim, just buried in more noise. The proof-of-concept run's median example is 36 tokens against a `max_seq_len` of 256, so sequence length is not the constraint and raising it would fix nothing.
+* **Only `fever_present` is covered.** Nothing here produces labels for dysuria, flank pain or the other urinary signals, and `null` is deliberately not emitted for them: the filler libraries are verified silent about *fever* and nothing else -- `uti_speculation` mentions cystitis and kidney infection -- so claiming "no dysuria mentioned" would be inventing a label.
+
+### Effective sample size: count clusters, not examples
+
+The single easiest way to over-read anything this pipeline produces is to quote an example count. **The effective sample size of any evaluation slice is the number of distinct clusters behind it, not the number of examples.** Ten thousand examples built from 66 training fragments is 66 ideas seen many times.
+
+Clusters rather than fragments, because `[c01]`-tagged siblings are one idea written twice. They always land in the same split, so they are one observation and not two -- which means the manual clustering *reduces* effective n where it applies, correctly, because it stopped counting the same idea twice.
+
+Under a single 70/15/15 split a per-sub-class score is computed over **2 to 5 independent ideas**, and all four hard sub-classes together are **12**. A third-party recall figure could then take only the values 0, 0.5 or 1.0, carrying an uncertainty of roughly +/-30 percentage points -- wider than any effect this ticket could plausibly detect. That is a library-size problem, not a splitter problem, and the fix for it is more fragments.
+
+Pooling all five folds is the mitigation and is what this report does: every cluster is a test cluster in exactly one fold, so a sub-class's aggregate test set is its whole library.
+
+| library | fragments | clusters (the effective n) |
+|---|---|---|
+| `fever_true` | 96 | **96** |
+| `fever_false` | 60 | **60** |
+| `fever_null_hedged` | 42 | **32** |
+| `fever_null_historical` | 45 | **36** |
+| `fever_null_metaphor` | 55 | **47** |
+| `fever_null_thirdparty` | 46 | **35** |
+
+Note what that is worth and no more. Effective n rises 12- to 17-fold for the hard
+sub-classes, but the error bar does **not** shrink 12- to 17-fold: uncertainty on a
+proportion goes as 1/sqrt(n), so roughly +/-30 points becomes roughly +/-8. That is the
+difference between a number that can carry a conclusion and one that cannot -- a metaphor
+recall of 0.6 +/-0.08 is a finding, 0.5 +/-0.30 is noise. Folds create no new ideas, so 47
+metaphor clusters is still 47 and everything above applies unchanged.
+
+## The next ticket
+
+* **Write 60-100 realistic full submissions by hand, deliberately unlike the recombinations, label them by hand, and hold them out permanently.** Never touched by a training decision, never used to select a margin, never used to choose a pooling mode.
+* Everything scored in this report is a recombination of the same few hundred fragments the models were trained on. Held-out *clusters* remove memorisation, and that is all they remove: the test examples are still short, still one supervised claim plus filler, still assembled by the same generator from the same libraries in the same register. No number here measures what happens when a real patient writes three paragraphs in their own voice.
+* This is cheap in code -- it is a JSONL file and a scoring run against the existing report writer -- and expensive in careful thought, which is why it is its own ticket rather than a task at the end of this one. Until it exists, nothing here resembles evidence about real patient text, however wide or narrow the intervals above are.
