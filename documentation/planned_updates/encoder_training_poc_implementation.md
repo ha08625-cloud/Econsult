@@ -10,6 +10,64 @@ boundary a trained model eventually sits behind).
 
 ---
 
+# Orientation for someone new to this
+
+Read this first if you have not worked on the encoder before. It is background,
+not instructions; the build starts at "Plan".
+
+**What the encoder is for.** A patient types free text into an e-consult form.
+The encoder reads that text and answers a fixed list of yes/no clinical
+questions about it — "does this text say the patient has a fever?" — as `true`,
+`false`, or `null` (meaning the text does not say). It only ever produces
+signals. It never decides anything, and an encoder-filled answer must never
+overwrite an answer the patient gave directly. Today it is a placeholder
+(`encoder_stub.py`) doing crude keyword matching; this ticket builds the first
+real one.
+
+**Why the training data is synthetic.** Training a model to answer that question
+needs thousands of text-and-answer pairs. We do not have thousands of real
+submissions, and using real patient text would need governance work we have not
+done. So a few hundred sentence fragments were written by hand, sorted into
+libraries by what they mean, and recombined into thousands of examples. Because
+the label is chosen *first* and the fragments are then drawn only from a pool
+that matches it, the label cannot be wrong about the text. `arch_training.md`
+explains this in full and is worth reading before this document.
+
+**The one question this ticket answers.** We can already generate as much
+training data as we like. What we do not know is whether that data is good
+enough to train a usable model. So: *if the model performs badly, is that
+because the method is too weak, or because the fragment libraries are too thin?*
+Those two answers point at completely different next months of work — model
+engineering, or sentence-writing — and everything in this plan is arranged to
+tell them apart.
+
+**How it answers it.** By training several different things on the same data and
+comparing them. If a bag-of-words model does as well as a 110-million-parameter
+transformer, the data is the limit. If the transformer pulls ahead specifically
+on the genuinely hard cases, it is earning its keep. **The comparison is the
+deliverable — the report, not the model weights.**
+
+**Vocabulary you will hit immediately.**
+
+| Term | What it means here |
+|---|---|
+| **Signal** | One yes/no clinical question, e.g. `fever_present`. `data/uti1.json` declares seven; this ticket trains one. |
+| **Head** | The small trainable layer that answers one signal. Ours emits three numbers — `true`, `false`, `null`. |
+| **Fragment** | One hand-written clause, e.g. "I had a high temperature". The unit the libraries are made of. |
+| **Cluster** | A group of fragments that are the same idea written more than once, hand-tagged `[c01]`. **The unit that actually counts** — see DD5. |
+| **Filler** | Fragments carrying no clinical meaning ("the parking here is impossible"), used as realistic noise. |
+| **Split** | The division of data into train (learn from), validation (tune against), test (scored once, at the end). |
+| **Fold** | One of five different ways of doing that division, so every fragment is tested exactly once across the set. The main change in this plan. |
+| **Arm A / Arm B** | Two training approaches. A freezes the language model and trains only the head (seconds per run). B retrains everything (minutes per run). |
+| **Effective n** | How many *independent ideas* a number was computed from. Nearly always far smaller than the example count, and the thing most likely to be over-read. |
+
+**The one habit to keep.** Every number this pipeline produces is built from a
+few hundred hand-written sentences. Quoting an example count — "evaluated on
+2,000 examples" — will mislead you and everyone downstream. Quote the effective
+n instead. Most of the machinery below exists for that reason.
+
+---
+
 # Plan
 
 Build offline tooling that reads the generated JSONL datasets, trains a 3-way
@@ -24,9 +82,13 @@ comparison is now made across **five fragment folds** rather than one split.
 
 ## Why folds, and why this is the load-bearing change
 
-The provisional plan named the per-sub-class null recall table as its most
-valuable output. Against the current single split, that table is computed from
-these test-split counts:
+`arch_training.md` section 10 ("Effective sample size") is the canonical
+statement of the underlying problem and is assumed here rather than restated:
+the effective sample size of any evaluation slice is the number of distinct
+fragment *clusters* behind it, not the number of examples.
+
+Applied to the per-sub-class null recall table — which the provisional plan
+named as its most valuable output — the current single split gives:
 
 | Sub-class | test fragments | **test clusters** |
 |---|---|---|
@@ -35,16 +97,15 @@ these test-split counts:
 | `metaphor` | 5 | **5** |
 | `third_party` | 2 | **2** |
 
-**Count clusters, not fragments.** The splitter hashes cluster keys, so
-`[c01]`-tagged siblings always travel together and are not independent
-observations. Fragments and clusters happen to coincide in the test split
-above, but they do not in general — the validation split holds 3 `hedged`
-fragments in only 2 clusters, and 7 `third_party` fragments in only 5.
+Fragments and clusters coincide in this particular test split, which makes it
+easy to read those counts as healthier than they are. They do not coincide in
+general: the validation split holds 3 `hedged` fragments in only 2 clusters, and
+7 `third_party` fragments in only 5.
 
 A recall figure over 2 clusters can only be 0, 0.5 or 1.0. All four hard
-sub-classes together are 12 clusters. The uncertainty on any such number is
-roughly ±30 points — wider than any effect the ticket could plausibly detect,
-so as specified the ticket could not answer its own question.
+sub-classes together are 12 clusters, giving an uncertainty of roughly ±30
+points — wider than any effect the ticket could plausibly detect, so as
+specified the ticket could not answer its own question.
 
 Five-fold cross-validation over fragment clusters fixes this for about ten
 minutes of GPU time. Every cluster becomes a test cluster in exactly one fold,
@@ -57,10 +118,17 @@ so the aggregate slice sizes become the whole library:
 | `metaphor` | 55 | **47** |
 | `third_party` | 46 | **35** |
 
-That is a 12- to 17-fold improvement in the only quantity that matters, and it
-costs one flag on the generator plus a loop. It does not create new ideas — 47
-metaphor clusters is still 47 — so section 9 of `arch_training.md` continues to
-apply in full.
+**What that is worth, stated honestly.** Effective n rises 12- to 17-fold, but
+the error bar does **not** shrink 12- to 17-fold. Uncertainty on a proportion
+goes as 1/√n, so the ±30 points above becomes roughly **±8**. That is still the
+difference between a number that can carry a conclusion and one that cannot — a
+metaphor recall of 0.6 ±0.08 is a finding, 0.5 ±0.30 is noise — and it costs one
+flag on the generator plus a loop. Quote ±8, not the 12–17× figure: task 6
+scores this plan against its own recorded predictions, and an inflated claim
+here fails that audit.
+
+Folds do not create new ideas — 47 metaphor clusters is still 47 — so section 9
+of `arch_training.md` continues to apply in full.
 
 ---
 
@@ -130,7 +198,17 @@ mode is opt-in. A fold's train share is 60% rather than 70%, so fold numbers are
 10 — the fold-aggregated numbers are the honest ones and the report leads with
 them.
 
-## DD5: Every reported number carries an error bar, and the unit of resampling is the fragment
+**One known and accepted subtlety.** With `val = bucket (fold_index + 1) % K`,
+fold *i*'s validation clusters are fold *i+1*'s test clusters. Within any single
+fold this is not leakage — each fold trains its own model and never sees its own
+test bucket. But the fold-*aggregated* result pools predictions from five models
+whose decision margins were each selected on a sibling fold's test data, so the
+aggregate carries a small optimism. Nested cross-validation would remove it and
+is not worth the cost for one scalar per fold. It is named here, and must be
+named again in the report's limitations (task 6), rather than left for a reader
+to discover: honest error bars are the entire point of this plan.
+
+## DD5: Every reported number carries an error bar, and the unit of resampling is the cluster
 
 Three mechanisms, all stdlib:
 
@@ -146,13 +224,19 @@ Three mechanisms, all stdlib:
 **Every slice in the report prints its effective n — the number of distinct
 decisive clusters behind it — next to its example count.** This is not a
 nicety. It is the single guard against the failure mode `arch_training.md`
-section 10 now names explicitly.
+section 10 names explicitly.
 
-The unit is the **cluster**, not the fragment. `[c01]`-tagged siblings are the
-same idea written twice and are not independent observations; the splitter
-already treats them as one unit and the statistics must too. Across the fever
-libraries this matters most where it hurts most: `fever_null_thirdparty` is 46
-fragments but 35 clusters, and `fever_null_hedged` is 42 fragments but 32.
+The unit is the **cluster**, not the fragment, for the reason that section
+gives; the per-library gap between the two is tabulated under "Why folds" above.
+The cluster key for every fragment comes from the sidecar block DD16 adds —
+nothing re-reads the fragment libraries at training time.
+
+**Which of the three mechanisms leads the report.** The pooled-across-folds
+cluster bootstrap is the headline confidence interval. The across-fold standard
+deviation is a *stability* check, not a CI: five folds give it four degrees of
+freedom, so it is itself noisy and will occasionally look reassuringly small for
+no reason. McNemar is used only for the specific paired comparisons task 6
+names, never as a general-purpose significance stamp.
 
 ## DD6: Slice on `fragment_ids`, not `fragment_subclasses`
 
@@ -268,6 +352,39 @@ ruleset dict, so editing any unrelated question invalidates the fever model's
 recorded hash. That is the right conservative default; it is recorded here so
 nobody reads a changed hash as a changed fever definition.
 
+## DD16: Cluster and library provenance travels with the dataset
+
+**New, found during review, and a prerequisite for DD5 and DD6 rather than a
+nicety.**
+
+DD5 makes the cluster the unit of resampling and DD6 makes the library the unit
+of slicing. Neither is recoverable from what the generator currently writes.
+`meta.fragment_ids` are `{library}:{sha1(text)[:8]}` (`recombine.py:534`), and
+`cluster_id` exists only inside `manifest.Fragment`
+(`scripts/synthetic_data/manifest.py:73`) — it is never serialised. The stats
+sidecar records per-library, per-split *fragment* counts and nothing about
+clusters. `fragment_type` is likewise manifest-only, so nothing in the dataset
+says which libraries are filler either.
+
+As specified, therefore, task 2 could not compute a single number DD5 requires.
+
+The obvious workaround — have `dataset.py` re-read `manifest.json` and the
+`.txt` libraries at training time — is rejected. It couples the training code to
+library state that may have moved since generation, and it fails *silently*:
+edit a library after generating and the cluster grouping is quietly wrong,
+producing confidence intervals that are too narrow with no error raised
+anywhere. That is precisely the class of failure this plan exists to rule out.
+
+**Decision: `build_stats` emits a `fragments` block in the `.stats.json`
+sidecar**, mapping every fragment id used by that split to its `library`,
+`cluster_key`, `fragment_type`, `signal_key`, `subclass` and `split`. The
+generator already holds all six fields on the `Fragment` dataclass, so this is a
+projection rather than new derivation. A few hundred entries per split,
+negligible on disk. The dataset and its sidecar then fully describe themselves,
+and `dataset.py` opens exactly the two files task 2's file table says it opens.
+
+Implemented in task 1, because every later task depends on it.
+
 ---
 
 # Task 1: Fold-aware splitting in the generator
@@ -283,9 +400,9 @@ everything downstream depends on it.
 |---|---|
 | `scripts/synthetic_data/manifest.py` | `assign_split` gains fold mode and a salt; `load_fragments` threads them through |
 | `scripts/synthetic_data/__main__.py` | `--folds` and `--fold` CLI flags |
-| `scripts/synthetic_data/recombine.py` | `build_stats` records fold config in the sidecar |
+| `scripts/synthetic_data/recombine.py` | `build_stats` records fold config **and the DD16 fragment-provenance block** in the sidecar |
 | `tests/test_synthetic_recombination.py` | New tests per C below |
-| `documentation/arch_training.md` | Document fold mode in sections 6 and 11 |
+| `documentation/arch_training.md` | Document fold mode in sections 6 and 11; retitle the section 10 tables as the default split; fold the 12.7 forward-reference into the built description and update the 12.6 sequencing |
 
 Deliverable: `python -m scripts.synthetic_data --folds 5 --fold 0 --split test …`
 generates a dataset whose test fragments are disjoint from the other four folds'
@@ -317,23 +434,43 @@ today's.
    integer salts from 0 upward and prints those that leave every library with
    every bucket populated. It is a lint-speed operation (no generation), so an
    exhaustive search to 1000 is free.
-6. **Use salt `"32"`.** This search has already been run: at `K=5`, the salts
-   satisfying the full-manifest guard are `32`, `136`, `179`, `266`, `291`
-   (roughly 1 in 400, because the two 7- and 8-cluster dysuria libraries have to
-   surject onto 5 buckets). Every later task uses `32`. Record it in this
+
+   Note what that search does and does not buy. Requiring every library to
+   populate all five buckets is five folds' worth of the empty-cell guard
+   satisfied at once. It does **not** make those cells useful:
+   `dysuria_null_thirdparty`'s 7 clusters spread over 5 buckets means some
+   fold's test cell holds exactly one. Passing the guard remains a floor, not a
+   health signal, exactly as `arch_training.md` section 10 says.
+6. **Use salt `"32"`.** This search has been run and independently re-run during
+   review. At `K=5`, the salts below 1000 satisfying the full-manifest guard are
+   `32, 136, 179, 266, 291, 321, 344, 406, 420, 449, 463, 514, 515, 526, 581,
+   616, 619, 773, 804, 837, 911, 947, 968, 976, 989` — 25 of them, so roughly
+   **1 in 40**. (An earlier partial search that stopped near 300 found only the
+   first five and reported 1 in 400; do not quote that figure as evidence of how
+   tight the constraint is.) Every later task uses `32`. Record it in this
    document, in the task 2 fixtures and in every sidecar. Implement
    `--find-fold-salt` anyway — it will be needed again the moment a library
    grows, and rediscovering the constraint by hand is worse than a flag.
    Note that if the fever libraries were the only constraint almost any salt
-   would do; the requirement comes entirely from the unrelated seed libraries,
-   which is worth knowing before someone "fixes" it by editing dysuria.
+   would do. The requirement comes entirely from the unrelated seed libraries —
+   `dysuria_null_thirdparty` (7 clusters) and `dysuria_null_hedged` (8), both of
+   which must surject onto 5 buckets — which is worth knowing before someone
+   "fixes" it by editing dysuria.
 7. `build_stats` records `folds`, `fold_index` and `split_salt` in the sidecar.
    A dataset whose fold configuration is not recorded is uninterpretable.
-8. Tests: (a) default invocation is byte-identical to a committed golden hash;
-   (b) across `fold in range(5)`, every cluster key appears in `test` exactly
-   once; (c) train/val/test fragment sets are disjoint within each fold;
-   (d) `--fold` without `--folds` exits non-zero; (e) a salt that empties a cell
-   still raises.
+8. **Emit the DD16 `fragments` provenance block** in the same sidecar: for every
+   fragment id appearing in the generated split, its `library`, `cluster_key`,
+   `fragment_type`, `signal_key`, `subclass` and `split`. All six already exist
+   on the `Fragment` dataclass. Without this, tasks 2 to 6 cannot compute
+   effective n at all.
+9. Tests: (a) default invocation is byte-identical to a committed golden hash —
+   note that no such test exists today, so the golden hash is new work rather
+   than a reference; (b) across `fold in range(5)`, every cluster key appears in
+   `test` exactly once; (c) train/val/test fragment sets are disjoint within
+   each fold; (d) `--fold` without `--folds` exits non-zero; (e) a salt that
+   empties a cell still raises; (f) every fragment id in the JSONL has an entry
+   in the sidecar's `fragments` block, and its `cluster_key` agrees with the
+   manifest loader's.
 
 ---
 
@@ -365,14 +502,19 @@ no GPU, and `ruff` is clean.
    **Fail loudly** if `generator_version` differs between the three splits of a
    fold, or if `folds`/`fold_index`/`split_salt` are inconsistent — three splits
    from two generator versions is a silent route to an uninterpretable result.
+   Fail loudly too if the sidecar carries no DD16 `fragments` block: a
+   pre-DD16 sidecar must be a hard error, never a fallback to example-level
+   counting, because that fallback would silently report effective n as the
+   example count and every confidence interval would be far too narrow.
 2. Represent labels as `0/1/2` for `false`/`true`/`null` plus a boolean mask per
    signal. **A missing signal key sets mask `False`; an explicit `null` sets
    mask `True` and class `null`** (DD10). Write the fixture for the missing-key
    case by hand — the generator will never produce one with a single signal.
 3. Expose the decisive fragment for each example, derived from
-   `meta.fragment_ids` by taking the id whose library prefix is not a filler
-   library (DD6). Structural nulls have none; return `None`. Expose the library
-   name and the subclass alongside it.
+   `meta.fragment_ids` by taking the id whose library is not filler — read
+   `fragment_type` from the sidecar's DD16 `fragments` block, never by
+   pattern-matching library names (DD6). Structural nulls have none; return
+   `None`. Expose the library, the subclass and the `cluster_key` alongside it.
 4. Assert fragment-level split disjointness at load time — no `fragment_id`
    appears in two splits of the same fold. The generator guarantees this and
    `test_synthetic_recombination.py` covers it, but the entire meaning of the
@@ -381,13 +523,14 @@ no GPU, and `ruff` is clean.
    per-class precision/recall/F1; macro-F1; slicing by label mode, by library
    and by subclass.
 6. Every slice result carries **both** an example count and an effective n —
-   the number of distinct decisive **clusters** in that slice, falling back to
-   the fragment when it carries no cluster tag (DD5).
+   the number of distinct decisive **clusters** in that slice, read from the
+   DD16 sidecar block, falling back to the fragment id when a fragment carries
+   no cluster tag (DD5).
 7. Bootstrap CI that resamples **decisive clusters** with replacement, then
-   takes all examples belonging to the sampled clusters. Structural nulls form
-   their own resampling unit. 2000 resamples, seeded. Resampling fragments
-   rather than clusters would treat `[c01]` siblings as independent and report
-   intervals that are too narrow.
+   takes all examples belonging to the sampled clusters, again grouping by the
+   DD16 `cluster_key`. Structural nulls form their own resampling unit. 2000
+   resamples, seeded. Resampling fragments rather than clusters would treat
+   `[c01]` siblings as independent and report intervals that are too narrow.
 8. McNemar's exact test on paired predictions: count discordant pairs, use a
    two-sided exact binomial from `math.comb`. No scipy.
 9. Threshold sweep: for a grid of margins, return the full metric set so the
@@ -395,8 +538,11 @@ no GPU, and `ruff` is clean.
    not choose.
 10. `ruleset_hash.py` duplicates `app/services/engine/ruleset.py:83`, with a
     test asserting both produce the same digest for `data/uti1.json`.
-11. Add a test asserting nothing under `app/` imports `scripts.encoder_training`
-    — mirroring the containment guard `scripts/synthetic_data` already has.
+11. Add a test asserting nothing under `app/` imports `scripts.encoder_training`.
+    **No such guard exists for `scripts/synthetic_data` either** — checked
+    during review; the rule currently lives only in a module docstring
+    (`scripts/synthetic_data/ruleset.py`). Write one test covering both
+    packages rather than mirroring something that is not there.
 
 ---
 
@@ -599,8 +745,15 @@ deliverable, which is the report rather than the weights.
    bottleneck, and what the next month should therefore contain.
 5. Reproduce `arch_training.md` section 9 and the "Effective sample size"
    subsection in the report's limitations, in full rather than by reference.
-   The report will be read on its own by someone who has not read the
-   architecture docs, and every number in it is a smoke test.
+   This is the one place duplication is deliberate: the report will be read on
+   its own by someone who has not read the architecture docs, and every number
+   in it is a smoke test. Everywhere else, cross-reference.
+
+   Add to the same limitations section: the fold-aggregate optimism named in
+   DD4 (each fold's margin was selected on a sibling fold's test bucket), and
+   the honest error-bar figure from "Why folds" — folds raise effective n
+   12- to 17-fold, which narrows the per-sub-class interval from roughly ±30
+   points to roughly ±8, not to nothing.
 6. Name the next ticket explicitly: **60–100 hand-written realistic full
    submissions, deliberately unlike the recombinations, labelled by hand, held
    out and never touched by a training decision.** It is cheap in code and

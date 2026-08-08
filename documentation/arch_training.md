@@ -7,9 +7,10 @@ overview. The full detail lives in `documentation/encoder/` — read
 `synthetic_recombination_implementation_plan.md` for the design decisions behind
 the generator. Read `scripts/synthetic_data/*.py` for implementation specifics.
 
-Sections 1 to 11 describe the system as it is. **Section 12 is a provisional
-plan for work not yet started or agreed** — do not treat it as a description of
-current behaviour.
+Sections 1 to 11 describe the system as it is. **Section 12 is work not yet
+built** — do not treat it as a description of current behaviour. Most of it is
+also not yet agreed; the one exception is 12.7, which is specified and signed
+off in an implementation plan but not written.
 
 ---
 
@@ -292,6 +293,11 @@ twinning, and hand-tagging 156 more lines was not judged worth it for a proof of
 concept. Instead the lint reports how many there are, so the number is known
 rather than assumed (currently 3 and 1).
 
+**Not built yet:** an opt-in five-fold mode replaces the 70/15/15 bands above
+with five 60/20/20 rotations, so that every cluster is a test cluster exactly
+once. The bands described in this section remain the default and are unchanged
+by it. See section 12.7.
+
 ---
 
 ## 7. Output
@@ -539,6 +545,12 @@ larger, not the fragment pool behind them.
 
 ### Effective sample size: count fragments, not examples
 
+**This subsection is the canonical statement of the point.** Other documents —
+notably `planned_updates/encoder_training_poc_implementation.md` — cross-refer
+to it rather than restating the argument. Keep it that way; the one deliberate
+exception is the evaluation report, which reproduces it in full because it is
+read standalone by people who have not read these docs.
+
 The single easiest way to over-read anything this pipeline produces is to quote
 an example count. **The effective sample size of any evaluation slice is the
 number of distinct clusters behind it, not the number of examples.** Ten
@@ -548,8 +560,9 @@ Clusters rather than fragments, because section 6's whole point is that
 `[c01]`-tagged siblings are one idea written twice. They always land in the same
 split, so they are one observation, not two.
 
-For the `fever_present` splits as they stand — fragments first, clusters in
-bold, because the two differ wherever manual clustering was done:
+For the `fever_present` splits as they stand under the default 70/15/15 split —
+fragments first, clusters in bold, because the two differ wherever manual
+clustering was done:
 
 | Library | train | val | test |
 |---|---|---|---|
@@ -577,6 +590,13 @@ prescription applies: the fix is more fragments. Until then, an evaluation that
 needs these sub-classes should re-split the fragments under several different
 hashes and aggregate, so that every fragment is a test fragment in some fold,
 rather than reading a single 5-sentence slice as though it were a measurement.
+
+That last sentence is no longer only advice: it has been specified as fold mode
+and is the load-bearing change in the encoder training plan. See section 12.7.
+Note what it is worth — pooling five folds raises effective n 12- to 17-fold,
+which narrows a per-sub-class interval from roughly ±30 points to roughly ±8.
+Uncertainty falls as 1/√n, so the interval does not narrow by the same factor as
+the count, and folds add no new ideas at all.
 
 ---
 
@@ -629,16 +649,21 @@ The tool uses the Python standard library only, and adds nothing to
 
 ## 12. Provisional: scaling beyond the proof of concept
 
-**Status: none of this is built, and none of it is agreed.** This section is a
-provisional plan, written down so it can be reviewed and turned into an
-implementation plan later. Everything above section 12 describes the system as
-it actually is; everything below describes what we are thinking about. Do not
-read this section as a description of current behaviour.
+**Status: none of this is built.** Everything above section 12 describes the
+system as it actually is; everything below describes what we are thinking about.
+Do not read this section as a description of current behaviour.
 
-There are three ideas here and they are additive — each one multiplies a
-different axis of the dataset, and they compose. Section 12.5 describes the
-single mechanism that makes 12.2 to 12.4 safe, and it is the part that most
-needs getting right.
+Sections 12.1 to 12.5 are additionally **not agreed** — they are a provisional
+plan, written down so it can be reviewed and turned into an implementation plan
+later. **Section 12.7 is different**: it is agreed and fully specified in
+`planned_updates/encoder_training_poc_implementation.md`, and is simply not
+written yet. It is filed here because it changes the splitter, which sections 6
+and 11 describe.
+
+Of 12.1 to 12.5 there are three ideas and they are additive — each one
+multiplies a different axis of the dataset, and they compose. Section 12.5
+describes the single mechanism that makes 12.2 to 12.4 safe, and it is the part
+that most needs getting right.
 
 ### 12.1 Procedural fragment generation
 
@@ -839,21 +864,72 @@ where the numbers it produces can be trusted:
 1. ~~Write real fragments for the blocked `fever_null` libraries and produce the
    proof-of-concept run.~~ **Done** — see section 10. This cleared the empty-cell
    guard honestly and gives us a baseline to compare everything else against.
-2. Add label vectors and declared silence (12.5) with the lint check, while
+2. Fold mode and the sidecar provenance block (12.7). **This is now first**, and
+   the reason is worth recording: it is the only change on this list that the
+   encoder training ticket is blocked on, and its effect is on how honestly we
+   can read the numbers rather than on what the dataset contains. It is also
+   small and self-contained, so it does not complicate anything below.
+3. Add label vectors and declared silence (12.5) with the lint check, while
    there is still only one signal and it is cheap to get right.
-3. Template the filler libraries (12.1), lowest-risk use of procedural
+4. Template the filler libraries (12.1), lowest-risk use of procedural
    generation, and add the templates-per-library and clusters-per-split lint
    reports. This is also what raises the fragment-count ceiling: the ceiling is
    the *number* of filler libraries, not their size (section 5), so templating
    existing ones does not help — new ones do.
-4. Add dysuria and frequency libraries (12.2), which is where the multi-head
+5. Add dysuria and frequency libraries (12.2), which is where the multi-head
    training data actually starts. The dysuria libraries are written; the
-   engine changes that would let anything read them are step 2's job, and
+   engine changes that would let anything read them are step 3's job, and
    deliberately are not being attempted before it.
-5. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
+6. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
    library format.
-6. Template the clinical libraries, once there are enough distinct templates per
+7. Template the clinical libraries, once there are enough distinct templates per
    library for the split arithmetic to work.
 
 The spelling-mistake pass can slot in anywhere after step 1, since it is a
 post-processing step over finished text and independent of everything else.
+
+### 12.7 Fold mode and sidecar provenance (agreed, specified, not built)
+
+Unlike the rest of section 12, this is settled. It is specified task by task in
+`planned_updates/encoder_training_poc_implementation.md` (task 1, and design
+decisions DD4 and DD16 there); this subsection records only what it changes
+about the pipeline described above, so sections 6, 10 and 11 can be rewritten
+correctly when it lands.
+
+**What it adds.** Two `--folds K` / `--fold i` flags on the generator, plus a
+`--find-fold-salt` helper. With `--folds` unset, nothing changes and output is
+byte-identical to today's — the 70/15/15 bands in section 6 stay the default.
+With `--folds 5`, `assign_split` hashes `f"{salt}:{cluster_key}"` into five
+buckets instead of the current 100, assigning bucket `i` to test, bucket
+`(i+1) % 5` to validation, and the rest to train. That is 60/20/20 per fold, and
+every cluster is a test cluster in exactly one of the five.
+
+**Why.** Section 10's "Effective sample size" table is the reason. A
+per-sub-class number computed on 2 to 5 clusters cannot separate two models.
+Running five folds and pooling makes the whole library the effective test set —
+32 to 47 clusters per hard sub-class rather than 2 to 5. It creates no new
+ideas, so section 9 applies unchanged.
+
+**The salt, and why there is one.** The empty-cell guard (section 10) runs over
+the whole manifest, so an unlucky fold assignment in an unrelated library blocks
+a fever run. Requiring every library to populate all five buckets is the fold
+equivalent of that guard, and only about 1 salt in 40 satisfies it. The binding
+constraint is entirely the seed libraries — `dysuria_null_thirdparty` has 7
+clusters and `dysuria_null_hedged` has 8, and both must cover 5 buckets. **Salt
+`"32"` is the agreed value.** Do not "fix" the constraint by editing dysuria.
+
+**The sidecar gains a fragment-provenance block.** This is the part with
+consequences beyond fold mode, so it is worth stating here rather than leaving
+in the implementation plan. Today `cluster_id` exists only inside
+`manifest.Fragment` and is never written out: the JSONL records
+`meta.fragment_ids` and the stats sidecar records per-library fragment counts,
+so **nothing in a generated dataset says which fragments are the same idea, or
+which libraries are filler.** Any consumer wanting either has to re-read the
+manifest and the `.txt` libraries, which silently goes wrong if a library was
+edited after generation.
+
+Fold mode therefore also adds a `fragments` block to `.stats.json`, mapping
+every fragment id in the split to its `library`, `cluster_key`,
+`fragment_type`, `signal_key`, `subclass` and `split`. After this, a dataset
+plus its sidecar describe themselves completely. Section 7 should be updated to
+document it when the work lands.
