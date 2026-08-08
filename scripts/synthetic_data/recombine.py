@@ -28,7 +28,7 @@ import random
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from .manifest import Fragment
+from .manifest import Fragment, cluster_key
 from .normalise import normalise
 
 #: Bumped when a change to this module would alter the emitted dataset.
@@ -574,6 +574,41 @@ def _length_stats(texts: Sequence[str]) -> dict:
     }
 
 
+def _fragment_provenance(fragments: Iterable[Fragment], split: str) -> dict[str, dict]:
+    """Project the split's fragments into the sidecar's ``fragments`` block.
+
+    Everything here already lives on :class:`~.manifest.Fragment`; none of it
+    survives into the dataset otherwise. ``meta.fragment_ids`` name the library
+    but say nothing about which fragments are the same idea, and nothing at all
+    says which libraries are filler -- so without this block a consumer cannot
+    compute effective sample size, which is the number of distinct *clusters*
+    behind a slice rather than the number of examples.
+
+    The obvious alternative -- have the consumer re-read the manifest and the
+    ``.txt`` libraries -- is rejected because it fails silently. Edit a library
+    after generating and the cluster grouping is quietly wrong, producing
+    confidence intervals that are too narrow with nothing raised anywhere. A
+    dataset and its sidecar describe themselves; that is the whole point.
+
+    Only the generated split's fragments are recorded, because only they can
+    appear in the JSONL. ``split`` is kept on every entry regardless, so blocks
+    merged across a fold's three sidecars stay unambiguous.
+    """
+    return {
+        fragment.fragment_id: {
+            "library": fragment.library,
+            "cluster_key": cluster_key(fragment.cluster_id, fragment.text),
+            "fragment_type": fragment.fragment_type,
+            "signal_key": fragment.signal_key,
+            "subclass": fragment.subclass,
+            "split": fragment.split,
+        }
+        for fragment in sorted(
+            (f for f in fragments if f.split == split), key=lambda f: f.fragment_id
+        )
+    }
+
+
 def build_stats(
     examples: Sequence[AssembledExample],
     *,
@@ -587,6 +622,9 @@ def build_stats(
     fragment_counts: Mapping[int, float],
     manifest_path: str,
     ruleset_path: str,
+    folds: int | None = None,
+    fold_index: int | None = None,
+    split_salt: str = "",
 ) -> dict:
     """Assemble the stats sidecar.
 
@@ -599,8 +637,14 @@ def build_stats(
     tallies. ``json.dump`` coerces integer keys to strings silently, and a dict
     that is written string-keyed but built int-keyed will bite whoever reads
     the sidecar back.
+
+    The fold configuration is recorded because a dataset whose fold
+    configuration is unknown is uninterpretable: ``test`` means a different set
+    of clusters under every ``(folds, fold_index, split_salt)`` triple, and
+    nothing in the JSONL says which one produced it.
     """
     signal_key = pools.signal_key
+    fragments = list(fragments)
     count_keys = [str(n) for n in sorted(fragment_counts)]
 
     def _empty_count_tally() -> dict[str, int]:
@@ -639,6 +683,9 @@ def build_stats(
         "seed": seed,
         "signal": signal_key,
         "split": pools.split,
+        "folds": folds,
+        "fold_index": fold_index,
+        "split_salt": split_salt,
         "manifest": manifest_path,
         "ruleset": ruleset_path,
         "requested": {
@@ -663,6 +710,11 @@ def build_stats(
             "by_label_mode": {mode: counts_by_mode[mode] for mode in LABEL_MODES},
         },
         "fragment_pool_sizes": {name: pool_sizes[name] for name in sorted(pool_sizes)},
+        # Cluster and library provenance for every fragment this split could
+        # draw on. Effective sample size is counted in clusters, and slicing is
+        # done per library and per fragment; neither is recoverable from the
+        # JSONL alone. See _fragment_provenance.
+        "fragments": _fragment_provenance(fragments, pools.split),
         "split_pool_sizes": {
             "positive": len(pools.positive),
             "negative": len(pools.negative),

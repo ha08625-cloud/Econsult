@@ -8,9 +8,8 @@ overview. The full detail lives in `documentation/encoder/` — read
 the generator. Read `scripts/synthetic_data/*.py` for implementation specifics.
 
 Sections 1 to 11 describe the system as it is. **Section 12 is work not yet
-built** — do not treat it as a description of current behaviour. Most of it is
-also not yet agreed; the one exception is 12.7, which is specified and signed
-off in an implementation plan but not written.
+built, and not yet agreed** — do not treat it as a description of current
+behaviour.
 
 ---
 
@@ -259,8 +258,9 @@ than the one it will meet.
 
 ## 6. Splitting into train / validation / test
 
-Training data is divided three ways: ~70% to train on, ~15% to check progress
-against (validation), ~15% held back for a final honest score (test).
+By default, training data is divided three ways: ~70% to train on, ~15% to check
+progress against (validation), ~15% held back for a final honest score (test).
+Fold mode, below, is the opt-in alternative.
 
 The split happens at the **fragment** level, before any examples are built. A
 fragment assigned to validation is never used in a training example. If we split
@@ -293,10 +293,47 @@ twinning, and hand-tagging 156 more lines was not judged worth it for a proof of
 concept. Instead the lint reports how many there are, so the number is known
 rather than assumed (currently 3 and 1).
 
-**Not built yet:** an opt-in five-fold mode replaces the 70/15/15 bands above
-with five 60/20/20 rotations, so that every cluster is a test cluster exactly
-once. The bands described in this section remain the default and are unchanged
-by it. See section 12.7.
+### Fold mode
+
+`--folds K --fold i` replaces the bands above with K rotations. Each cluster is
+hashed into one of K buckets instead of one of 100 bands; bucket `i` becomes
+test, bucket `i+1` becomes validation, and the rest become train. At `K=5` that
+is 60/20/20, and **every cluster is a test cluster in exactly one fold**, so
+running all five and pooling the predictions makes the whole library the
+effective test set rather than the 2-to-5-cluster slices a single split leaves
+behind (see section 10).
+
+This is what makes a per-sub-class number readable. Pooled over five folds, the
+hard sub-classes have 32 to 47 test clusters behind them rather than 2 to 5,
+which takes a per-sub-class interval from roughly ±30 points to roughly ±8.
+Uncertainty falls as 1/√n, so the interval does not narrow by the same factor as
+the count — and folds add no new *ideas* at all, so section 9 still applies in
+full.
+
+Three things are worth knowing before using it.
+
+**It is opt-in and the default is untouched.** Without `--folds`, the split is
+byte-identical to what it has always been. A fold's train share is 60% rather
+than 70%, so fold numbers are not directly comparable to the section 10 tables.
+
+**Fold *i*'s validation clusters are fold *i+1*'s test clusters.** Within a
+single fold that is not leakage — each fold trains its own model and never sees
+its own test bucket. But a result pooled across folds carries a little optimism,
+because each fold's decision threshold was tuned on a sibling fold's test
+clusters. Nested cross-validation would remove it and is not worth the cost for
+one number per fold. Any report using fold mode has to say so.
+
+**There is a salt, and it is `"32"`.** The cluster key is hashed as
+`"{salt}:{cluster_key}"`. The salt exists because the empty-cell guard (section
+10) covers the *whole* manifest, so a library for an unrelated signal that fails
+to populate all five buckets blocks a fever run. Only about 1 integer salt in 40
+clears that for every library, and the binding constraints are entirely the
+dysuria seed libraries — `dysuria_null_thirdparty` has 7 clusters and
+`dysuria_null_hedged` has 8, and both must cover 5 buckets. `--find-fold-salt`
+searches for salts that work; do not instead "fix" it by editing dysuria.
+
+Passing the guard remains a floor, not a health signal. Seven clusters spread
+over five buckets means some fold's test cell holds exactly one idea.
 
 ---
 
@@ -349,6 +386,31 @@ Two blocks in it exist specifically to police section 5's safety argument:
   the existing per-label breakdown. Read them together: a length gap between
   labels that the count mix explains is a different problem from one it does
   not.
+
+Two more blocks make the dataset self-describing:
+
+* `folds`, `fold_index` and `split_salt` — the fold configuration, `null`,
+  `null` and `""` in default mode. `test` means a different set of clusters
+  under every triple, and nothing in the JSONL says which one produced it, so a
+  dataset whose fold configuration was not recorded is uninterpretable.
+* `fragments` — for every fragment in the generated split, its `library`,
+  `cluster_key`, `fragment_type`, `signal_key`, `subclass` and `split`.
+
+That second block is the one with consequences beyond fold mode. Without it,
+**nothing in a generated dataset says which fragments are the same idea, or
+which libraries are filler**: `meta.fragment_ids` name the library and the
+fragment but `cluster_id` was never written out, and `subclass` is only set on
+the ambiguous and confounder libraries, so `fever_true`, `fever_false` and all
+five filler libraries are indistinguishable from each other in the JSONL.
+
+Any consumer that wants either — and computing effective sample size (section
+10) needs both — would otherwise have to re-read the manifest and the `.txt`
+libraries. That is rejected because it fails *silently*: edit a library after
+generating and the cluster grouping is quietly wrong, producing confidence
+intervals that are too narrow with nothing raised anywhere.
+
+One sidecar covers one split, and every entry keeps its own `split`, so merging
+a fold's three sidecars gives the whole library unambiguously.
 
 ### Reproducibility
 
@@ -560,9 +622,10 @@ Clusters rather than fragments, because section 6's whole point is that
 `[c01]`-tagged siblings are one idea written twice. They always land in the same
 split, so they are one observation, not two.
 
-For the `fever_present` splits as they stand under the default 70/15/15 split —
-fragments first, clusters in bold, because the two differ wherever manual
-clustering was done:
+For the `fever_present` splits as they stand **under the default 70/15/15
+bands** — fragments first, clusters in bold, because the two differ wherever
+manual clustering was done. Fold mode (section 6) produces different cells
+entirely; the pooled figures are in the table after this one:
 
 | Library | train | val | test |
 |---|---|---|---|
@@ -587,16 +650,29 @@ idea twice. `fever_null_hedged`'s validation cell is 3 fragments but 2 ideas.
 
 This is a library-size problem, not a splitter problem, and section 9's
 prescription applies: the fix is more fragments. Until then, an evaluation that
-needs these sub-classes should re-split the fragments under several different
-hashes and aggregate, so that every fragment is a test fragment in some fold,
-rather than reading a single 5-sentence slice as though it were a measurement.
+needs these sub-classes must not read a single 5-sentence slice as though it
+were a measurement.
 
-That last sentence is no longer only advice: it has been specified as fold mode
-and is the load-bearing change in the encoder training plan. See section 12.7.
-Note what it is worth — pooling five folds raises effective n 12- to 17-fold,
-which narrows a per-sub-class interval from roughly ±30 points to roughly ±8.
-Uncertainty falls as 1/√n, so the interval does not narrow by the same factor as
-the count, and folds add no new ideas at all.
+**Fold mode (section 6) is the mitigation, and it is built.** Running all five
+folds and pooling the predictions makes every cluster a test cluster exactly
+once, so the aggregate test set for a sub-class is its whole library:
+
+| Library | fragments | clusters (the effective n) |
+|---|---|---|
+| `fever_true` | 96 | **96** |
+| `fever_false` | 60 | **60** |
+| `fever_null_hedged` | 42 | **32** |
+| `fever_null_historical` | 45 | **36** |
+| `fever_null_metaphor` | 55 | **47** |
+| `fever_null_thirdparty` | 46 | **35** |
+
+Note what that is worth and no more. Effective n rises 12- to 17-fold for the
+hard sub-classes, but the error bar does **not** shrink 12- to 17-fold:
+uncertainty on a proportion goes as 1/√n, so roughly ±30 points becomes roughly
+±8. That is still the difference between a number that can carry a conclusion
+and one that cannot — a metaphor recall of 0.6 ±0.08 is a finding, 0.5 ±0.30 is
+noise. Folds create no new ideas, so 47 metaphor clusters is still 47 and
+section 9 applies unchanged.
 
 ---
 
@@ -625,11 +701,40 @@ start otherwise, rather than failing partway through a 10,000-example run. The
 mix applies identically to every label class and there is deliberately no way
 to set it per class; see section 5 for why.
 
+Generate one fold of a five-fold run (section 6). Every fold needs all three
+splits, so a full run is fifteen invocations:
+
+```
+python -m scripts.synthetic_data \
+    --folds 5 --fold 0 --split test --count 2000 \
+    --out data/synthetic/generated/fever_present.fold0.test.jsonl
+```
+
+`--fold` defaults to 0 and the salt defaults to `32`, but neither may be given
+without `--folds` — `--fold 3` on its own would silently generate the default
+70/15/15 split, and salting the default bands would move the split of every
+dataset generated so far. `--folds` must be at least 3: at two folds the test
+and validation buckets consume everything and there is nothing left to train on.
+
+Find the salts that populate every bucket of every library, which is what has to
+be re-run whenever a library grows:
+
+```
+python -m scripts.synthetic_data --folds 5 --find-fold-salt
+```
+
+Like `--lint`, it generates nothing and needs no `--split`, `--count` or
+`--out`. It sweeps integer salts up to `--salt-search-limit` (default 1000).
+
 Report on library health:
 
 ```
 python -m scripts.synthetic_data --lint
 ```
+
+`--lint` honours `--folds`/`--fold` too, so the split-coverage and cross-split
+near-duplicate reports describe the fold you are about to generate rather than
+the default bands.
 
 The manifest, ruleset and signal default to `data/synthetic/manifest.json`,
 `data/uti1.json` and `fever_present`. The generator checks at startup that the
@@ -653,15 +758,11 @@ The tool uses the Python standard library only, and adds nothing to
 system as it actually is; everything below describes what we are thinking about.
 Do not read this section as a description of current behaviour.
 
-Sections 12.1 to 12.5 are additionally **not agreed** — they are a provisional
-plan, written down so it can be reviewed and turned into an implementation plan
-later. **Section 12.7 is different**: it is agreed and fully specified in
-`planned_updates/encoder_training_poc_implementation.md`, and is simply not
-written yet. It is filed here because it changes the splitter, which sections 6
-and 11 describe.
+Everything here is additionally **not agreed** — it is a provisional plan,
+written down so it can be reviewed and turned into an implementation plan later.
 
-Of 12.1 to 12.5 there are three ideas and they are additive — each one
-multiplies a different axis of the dataset, and they compose. Section 12.5
+There are three ideas and they are additive — each one multiplies a different
+axis of the dataset, and they compose. Section 12.5
 describes the single mechanism that makes 12.2 to 12.4 safe, and it is the part
 that most needs getting right.
 
@@ -864,11 +965,11 @@ where the numbers it produces can be trusted:
 1. ~~Write real fragments for the blocked `fever_null` libraries and produce the
    proof-of-concept run.~~ **Done** — see section 10. This cleared the empty-cell
    guard honestly and gives us a baseline to compare everything else against.
-2. Fold mode and the sidecar provenance block (12.7). **This is now first**, and
-   the reason is worth recording: it is the only change on this list that the
-   encoder training ticket is blocked on, and its effect is on how honestly we
-   can read the numbers rather than on what the dataset contains. It is also
-   small and self-contained, so it does not complicate anything below.
+2. ~~Fold mode and the sidecar provenance block.~~ **Done** — see sections 6, 7
+   and 10. It came before everything below because it was the only change on
+   this list the encoder training ticket was blocked on, and its effect is on
+   how honestly the numbers can be read rather than on what the dataset
+   contains.
 3. Add label vectors and declared silence (12.5) with the lint check, while
    there is still only one signal and it is cheap to get right.
 4. Template the filler libraries (12.1), lowest-risk use of procedural
@@ -887,49 +988,3 @@ where the numbers it produces can be trusted:
 
 The spelling-mistake pass can slot in anywhere after step 1, since it is a
 post-processing step over finished text and independent of everything else.
-
-### 12.7 Fold mode and sidecar provenance (agreed, specified, not built)
-
-Unlike the rest of section 12, this is settled. It is specified task by task in
-`planned_updates/encoder_training_poc_implementation.md` (task 1, and design
-decisions DD4 and DD16 there); this subsection records only what it changes
-about the pipeline described above, so sections 6, 10 and 11 can be rewritten
-correctly when it lands.
-
-**What it adds.** Two `--folds K` / `--fold i` flags on the generator, plus a
-`--find-fold-salt` helper. With `--folds` unset, nothing changes and output is
-byte-identical to today's — the 70/15/15 bands in section 6 stay the default.
-With `--folds 5`, `assign_split` hashes `f"{salt}:{cluster_key}"` into five
-buckets instead of the current 100, assigning bucket `i` to test, bucket
-`(i+1) % 5` to validation, and the rest to train. That is 60/20/20 per fold, and
-every cluster is a test cluster in exactly one of the five.
-
-**Why.** Section 10's "Effective sample size" table is the reason. A
-per-sub-class number computed on 2 to 5 clusters cannot separate two models.
-Running five folds and pooling makes the whole library the effective test set —
-32 to 47 clusters per hard sub-class rather than 2 to 5. It creates no new
-ideas, so section 9 applies unchanged.
-
-**The salt, and why there is one.** The empty-cell guard (section 10) runs over
-the whole manifest, so an unlucky fold assignment in an unrelated library blocks
-a fever run. Requiring every library to populate all five buckets is the fold
-equivalent of that guard, and only about 1 salt in 40 satisfies it. The binding
-constraint is entirely the seed libraries — `dysuria_null_thirdparty` has 7
-clusters and `dysuria_null_hedged` has 8, and both must cover 5 buckets. **Salt
-`"32"` is the agreed value.** Do not "fix" the constraint by editing dysuria.
-
-**The sidecar gains a fragment-provenance block.** This is the part with
-consequences beyond fold mode, so it is worth stating here rather than leaving
-in the implementation plan. Today `cluster_id` exists only inside
-`manifest.Fragment` and is never written out: the JSONL records
-`meta.fragment_ids` and the stats sidecar records per-library fragment counts,
-so **nothing in a generated dataset says which fragments are the same idea, or
-which libraries are filler.** Any consumer wanting either has to re-read the
-manifest and the `.txt` libraries, which silently goes wrong if a library was
-edited after generation.
-
-Fold mode therefore also adds a `fragments` block to `.stats.json`, mapping
-every fragment id in the split to its `library`, `cluster_key`,
-`fragment_type`, `signal_key`, `subclass` and `split`. After this, a dataset
-plus its sidecar describe themselves completely. Section 7 should be updated to
-document it when the work lands.
