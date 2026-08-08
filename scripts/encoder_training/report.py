@@ -16,6 +16,19 @@ factor of fifty or more. The "How to read these numbers" section this module
 emits reproduces that argument in full rather than citing it, because the report
 is read standalone by people who have not read `arch_training.md`.
 
+**Two things are duplicated on purpose, and only two.** `arch_training.md`
+sections 9 and 10 are reproduced in full (:data:`DATA_LIMITS`,
+:data:`EFFECTIVE_SAMPLE_SIZE`) rather than cross-referenced, because the report
+is read standalone by people who have not read the architecture docs and every
+number in it is bounded by what those sections say. Everywhere else, cross-refer.
+
+**The report lays the ticket's question out and stops.** ``_render_ticket_question``
+assembles the three numbers the model-or-libraries decision turns on -- accuracy
+on ``null_ambiguous``, the paired McNemar on the same slice, and where the errors
+fall -- and then says in as many words that the conclusion is a sentence a person
+writes. Concluding automatically would mean concluding from whichever comparison
+happened to clear a threshold picked while writing a renderer.
+
 :class:`FoldRun` and :class:`ModelRun` are the input contract. Anything that
 wants to be reported -- the baselines here, the frozen probe and the fine-tune
 later -- produces those and hands them over. That is why they live here rather
@@ -54,7 +67,11 @@ from .metrics import (
     slice_by_subclass,
 )
 
-SCHEMA_VERSION = 1
+#: 2 added the error-concentration block, the reproduced data limits and the
+#: named next ticket. Additive -- a version 1 reader still finds everything it
+#: knew about -- but the version moves anyway, because a consumer that wants the
+#: DD7 concentration statistic needs a way to say so.
+SCHEMA_VERSION = 2
 
 #: Sub-classes the four hard `fever_null` libraries carry. Listed so that a
 #: sub-class the manifest declares but no test fold happened to draw shows up as
@@ -323,6 +340,55 @@ def _view(
     }
 
 
+def _error_concentration(rows: Sequence[Mapping[str, object]]) -> dict:
+    """Turn the per-fragment table into the one number the ticket turns on.
+
+    DD7 poses a qualitative question -- are the errors spread thinly across many
+    fragments, or piled onto a handful? -- and leaves it to a reader scrolling a
+    forty-row table. That reading is the difference between "the method is too
+    weak" and "these specific ideas are not learnable from the data we have",
+    which is the ticket's whole question, so it is worth computing rather than
+    eyeballing.
+
+    ``fragments_carrying_half`` against ``fragments_with_errors`` is the
+    comparison to read, and it has a fixed reference point: if every erring
+    fragment erred equally often, half the errors would sit on half of them, so
+    a share near 50% is an even spread and a share near zero is concentration.
+    ``share_in_worst_ten`` is the same shape of statement against a fixed
+    number of fragments, which is what a library-work decision would actually
+    be taken on.
+    """
+    counts = sorted((int(row["n_examples"]) - int(row["n_correct"]) for row in rows), reverse=True)
+    errors = [count for count in counts if count]
+    total = sum(errors)
+    if not total:
+        return {
+            "decisive_fragments": len(rows),
+            "fragments_with_errors": 0,
+            "total_errors": 0,
+            "fragments_carrying_half": 0,
+            "even_spread_would_be": None,
+            "share_in_worst_ten": None,
+        }
+    running = 0
+    carrying_half = 0
+    for count in errors:
+        running += count
+        carrying_half += 1
+        if running * 2 >= total:
+            break
+    return {
+        "decisive_fragments": len(rows),
+        "fragments_with_errors": len(errors),
+        "total_errors": total,
+        "fragments_carrying_half": carrying_half,
+        # What an even spread across the erring fragments would have given, so
+        # the figure above is read against something rather than against a hunch.
+        "even_spread_would_be": len(errors) / 2,
+        "share_in_worst_ten": sum(errors[:10]) / total,
+    }
+
+
 def _fragment_table(predictions: Sequence[Prediction]) -> list[dict]:
     """The DD7 per-fragment error table, worst first.
 
@@ -408,6 +474,7 @@ def _model_block(run: ModelRun, *, boot: BootstrapConfig) -> dict:
     margins = {fold.rule.margin for fold in run.folds}
     rule_is_argmax = margins == {0.0}
 
+    fragments = _fragment_table(ruled)
     accuracies = [accuracy(confusion_matrix(fold.ruled)) or 0.0 for fold in run.folds]
     macros = [macro_f1(confusion_matrix(fold.ruled)) or 0.0 for fold in run.folds]
     spread = {
@@ -442,7 +509,8 @@ def _model_block(run: ModelRun, *, boot: BootstrapConfig) -> dict:
             "ruled": _view(ruled, boot=boot, slice_boot=boot),
             "raw": _view(raw, boot=boot, slice_boot=None),
         },
-        "fragments": _fragment_table(ruled),
+        "fragments": fragments,
+        "error_concentration": _error_concentration(fragments),
     }
 
 
@@ -562,6 +630,102 @@ EXPECTATIONS = (
 )
 
 
+#: The `fever_present` libraries as fragments and as **clusters**, which is what
+#: the effective-sample-size argument is actually made of. Pooled over all five
+#: folds every cluster is a test cluster exactly once, so these are the effective
+#: n a sub-class row can reach.
+#:
+#: Hard-coded rather than derived, because the report must not open the fragment
+#: libraries: they may have moved since the dataset was generated, and a table
+#: that silently re-read them would describe a different library than the one the
+#: numbers above it came from. `tests/test_encoder_training_report.py` asserts
+#: this table against the real libraries, so drift is caught in CI instead.
+FEVER_LIBRARY_CLUSTERS = (
+    ("fever_true", 96, 96),
+    ("fever_false", 60, 60),
+    ("fever_null_hedged", 42, 32),
+    ("fever_null_historical", 45, 36),
+    ("fever_null_metaphor", 55, 47),
+    ("fever_null_thirdparty", 46, 35),
+)
+
+#: `arch_training.md` section 9 -- "what this data is and is not worth" --
+#: reproduced rather than cross-referenced. This is the one place duplication is
+#: deliberate: the report is read standalone by people who have not read the
+#: architecture docs, and every number in it is bounded by these five facts. A
+#: cross-reference here would be a footnote nobody follows.
+DATA_LIMITS = (
+    "**The validation score is a smoke test, not evidence.** Under the default bands validation "
+    "holds 15 distinct positive fragments, and every `true` validation example is a recombination "
+    "of those 15 sentences; one unlucky fragment moves the score several points. The training "
+    "plan asks for around 200 fragments per signal. We have roughly half that for `true` and a "
+    "third for `false`.",
+    "**Length may still leak.** Fragment *count* is drawn from one distribution that never sees "
+    "the label, so it cannot be a proxy for it. Fragment *length* is not controlled at all: "
+    "`fever_true` fragments run from 3 words to 98, while the `fever_null` libraries sit in a "
+    "9-40 word band. The medians are close (16 against 15-19), so this is a tail problem rather "
+    "than a systematic offset -- but a 98-word positive has no counterpart anywhere in the null "
+    "libraries, and a model can notice that. The `length_only` baseline in this report is the "
+    "direct measurement of how much is there to notice.",
+    "**Urgency language leaks too.** About 17% of `fever_true` fragments bundle the fever claim "
+    'with a justification -- "three important meetings I can\'t miss" -- against 8% of '
+    '`fever_false` and almost none of `fever_null`. That is exactly the "sounds urgent, must be '
+    'positive" shortcut the libraries are meant to prevent. Pairing with filler washes some of it '
+    "out; fixing it properly is library work.",
+    "**The examples are short.** Two or three sentences by default, against real submissions that "
+    "are longer and messier. The variable fragment count narrows that gap rather than closing it: "
+    "the count ceiling is the number of filler libraries, and past a few fragments each example "
+    "still carries exactly one supervised claim, just buried in more noise. The proof-of-concept "
+    "run's median example is 36 tokens against a `max_seq_len` of 256, so sequence length is not "
+    "the constraint and raising it would fix nothing.",
+    "**Only `fever_present` is covered.** Nothing here produces labels for dysuria, flank pain or "
+    "the other urinary signals, and `null` is deliberately not emitted for them: the filler "
+    "libraries are verified silent about *fever* and nothing else -- `uti_speculation` mentions "
+    'cystitis and kidney infection -- so claiming "no dysuria mentioned" would be inventing a '
+    "label.",
+)
+
+#: The "Effective sample size" subsection of `arch_training.md` section 10,
+#: reproduced for the same reason as :data:`DATA_LIMITS`. It is the single
+#: easiest way to over-read anything in this report, so it is stated before the
+#: reader can reach for an example count.
+EFFECTIVE_SAMPLE_SIZE = (
+    "The single easiest way to over-read anything this pipeline produces is to quote an example "
+    "count. **The effective sample size of any evaluation slice is the number of distinct "
+    "clusters behind it, not the number of examples.** Ten thousand examples built from 66 "
+    "training fragments is 66 ideas seen many times.",
+    "Clusters rather than fragments, because `[c01]`-tagged siblings are one idea written twice. "
+    "They always land in the same split, so they are one observation and not two -- which means "
+    "the manual clustering *reduces* effective n where it applies, correctly, because it stopped "
+    "counting the same idea twice.",
+    "Under a single 70/15/15 split a per-sub-class score is computed over **2 to 5 independent "
+    "ideas**, and all four hard sub-classes together are **12**. A third-party recall figure could "
+    "then take only the values 0, 0.5 or 1.0, carrying an uncertainty of roughly +/-30 percentage "
+    "points -- wider than any effect this ticket could plausibly detect. That is a library-size "
+    "problem, not a splitter problem, and the fix for it is more fragments.",
+    "Pooling all five folds is the mitigation and is what this report does: every cluster is a "
+    "test cluster in exactly one fold, so a sub-class's aggregate test set is its whole library.",
+)
+
+#: The next ticket, named rather than gestured at. It is cheap in code and
+#: expensive in careful thought, and it is the one that decides whether anything
+#: in this report is evidence about real patient text.
+NEXT_TICKET = (
+    "**Write 60-100 realistic full submissions by hand, deliberately unlike the recombinations, "
+    "label them by hand, and hold them out permanently.** Never touched by a training decision, "
+    "never used to select a margin, never used to choose a pooling mode.",
+    "Everything scored in this report is a recombination of the same few hundred fragments the "
+    "models were trained on. Held-out *clusters* remove memorisation, and that is all they remove: "
+    "the test examples are still short, still one supervised claim plus filler, still assembled by "
+    "the same generator from the same libraries in the same register. No number here measures what "
+    "happens when a real patient writes three paragraphs in their own voice.",
+    "This is cheap in code -- it is a JSONL file and a scoring run against the existing report "
+    "writer -- and expensive in careful thought, which is why it is its own ticket rather than a "
+    "task at the end of this one. Until it exists, nothing here resembles evidence about real "
+    "patient text, however wide or narrow the intervals above are.",
+)
+
+
 def build_report(
     runs: Sequence[ModelRun],
     *,
@@ -580,6 +744,13 @@ def build_report(
         "comparisons": compare_models(runs),
         "expectations": list(EXPECTATIONS),
         "limitations": list(LIMITATIONS),
+        "data_limits": list(DATA_LIMITS),
+        "effective_sample_size": list(EFFECTIVE_SAMPLE_SIZE),
+        "library_clusters": [
+            {"library": name, "fragments": fragments, "clusters": clusters}
+            for name, fragments, clusters in FEVER_LIBRARY_CLUSTERS
+        ],
+        "next_ticket": list(NEXT_TICKET),
     }
 
 
@@ -805,6 +976,158 @@ def _render_headline(report: Mapping[str, object]) -> list[str]:
     return lines
 
 
+#: The slice the ticket is decided on. Clear positives, clear negatives and
+#: `null_structural` are the easy three-quarters of the data and every model
+#: here is expected to handle them; a transformer can only earn its keep on the
+#: fragments that carry fever language and still mean `null`.
+DECIDING_SLICE = "null_ambiguous"
+
+
+def _concentration_sentence(model: Mapping[str, object]) -> str:
+    """One model's error concentration, in a sentence with its reference point."""
+    stats = model["error_concentration"]
+    if not stats["total_errors"]:
+        return f"`{model['name']}`: no errors on any decisive fragment."
+    even = stats["even_spread_would_be"]
+    return (
+        f"`{model['name']}`: {stats['total_errors']} errors across "
+        f"{stats['fragments_with_errors']} of {stats['decisive_fragments']} decisive fragments. "
+        f"Half of them fall on **{stats['fragments_carrying_half']}** fragments "
+        f"(an even spread would be {even:.1f}); the worst ten carry "
+        f"{_pct(stats['share_in_worst_ten'])} of all errors."
+    )
+
+
+def _render_ticket_question(report: Mapping[str, object]) -> list[str]:
+    """The section the ticket exists for, assembled from three numbers.
+
+    Deliberately stops short of stating a conclusion. The three numbers below
+    constrain it but do not determine it, and a report that concluded
+    automatically would be concluding from whichever comparison happened to
+    clear a threshold someone picked while writing the renderer.
+    """
+    models = [model for model in report["models"] if model["kind"] != "negative_control"]
+    lines = [
+        "## The ticket's question: model or libraries?",
+        "",
+        "This ticket exists to answer one question -- **is the bottleneck the model or the",
+        "fragment libraries?** -- and three numbers decide it. All three are on this page.",
+        "",
+        f"### 1. Accuracy on `{DECIDING_SLICE}`",
+        "",
+        "The only slice where a transformer can earn its keep. Clear positives, clear negatives",
+        "and `null_structural` are the easy three-quarters of the data; bag-of-words handles them,",
+        "so an overall accuracy is close to uninformative here.",
+        "",
+        "**This table cannot be read on its own, and the first row is why.** Every example in this",
+        "slice is truly `null`, so a model that answers `null` unconditionally scores 100% across",
+        "it -- which is exactly what `majority_class` does, and it has learned nothing. A number",
+        "here is a finding only when the `true` and `false` recalls in the same model's per-class",
+        "table are high at the same time. The same caveat applies to every McNemar row below it.",
+        "",
+    ]
+    rows = []
+    for model in models:
+        entry = next(
+            (
+                entry
+                for entry in model["pooled"]["ruled"]["by_label_mode"]
+                if entry["name"] == DECIDING_SLICE
+            ),
+            None,
+        )
+        if entry is None:
+            continue
+        rows.append(
+            [
+                f"`{model['name']}`",
+                model["kind"].replace("_", " "),
+                str(entry["n_examples"]),
+                f"**{entry['effective_n']}**",
+                _ci(entry["accuracy"]),
+            ]
+        )
+    lines.extend(_table(["model", "kind", "n", "eff n", "accuracy [95% CI]"], rows))
+
+    lines.append("### 2. The same comparison, paired")
+    lines.append("")
+    lines.append(
+        "Two overlapping intervals do not settle whether one model beats another on the same"
+    )
+    lines.append(
+        "examples. McNemar does, over the examples the two disagree about -- read it alongside the"
+    )
+    lines.append("intervals above, never instead of them.")
+    lines.append("")
+    deciding = [
+        comparison for comparison in report["comparisons"] if comparison["slice"] == DECIDING_SLICE
+    ]
+    if deciding:
+        rows = [
+            [
+                f"`{comparison['a']}` vs `{comparison['b']}`",
+                str(comparison["n_pairs"]),
+                str(comparison["a_only_correct"]),
+                str(comparison["b_only_correct"]),
+                f"{comparison['p_value']:.3g}",
+            ]
+            for comparison in deciding
+        ]
+        lines.extend(_table(["pair", "n", "a only", "b only", "p"], rows))
+    else:
+        lines.append(f"No pair of non-control models carries a `{DECIDING_SLICE}` slice.")
+        lines.append("")
+
+    lines.append("### 3. Where the errors fall")
+    lines.append("")
+    lines.append(
+        "The per-fragment table below, as one number per model. Errors spread thinly across many"
+    )
+    lines.append(
+        "fragments say the method is too weak. Errors piled onto a handful say those specific ideas"
+    )
+    lines.append(
+        "are not learnable from the data we have -- and the table names them, which is what makes"
+    )
+    lines.append("this the most decision-useful thing in the report.")
+    lines.append("")
+    lines.extend(f"* {_concentration_sentence(model)}" for model in models)
+    lines.append("")
+
+    lines.append("### Reading the three together")
+    lines.append("")
+    lines.append(
+        "* Fine-tune clear of the frozen probe **and** clear of TF-IDF on the slice above: the"
+    )
+    lines.append(
+        "  frozen pooled representation was the bottleneck, and the next month is model work."
+    )
+    lines.append(
+        "* Fine-tune no better than the frozen probe, with errors concentrated on a handful of"
+    )
+    lines.append(
+        "  named fragments: those ideas are not learnable from the data we have, and the next"
+    )
+    lines.append("  month is library work on the fragments the table names.")
+    lines.append(
+        "* Both arms poor with errors spread evenly across most fragments: neither reading is"
+    )
+    lines.append(
+        "  supported yet, and the honest answer is that the slice cannot separate them -- check"
+    )
+    lines.append("  `eff n` before concluding anything at all.")
+    lines.append("")
+    lines.append(
+        "**The conclusion is a sentence a person writes after reading those three, in the ticket's"
+    )
+    lines.append(
+        "own terms.** This report does not write it. The numbers constrain the conclusion; they do"
+    )
+    lines.append("not determine it.")
+    lines.append("")
+    return lines
+
+
 def _render_model(model: Mapping[str, object], *, fragment_rows: int) -> list[str]:
     lines = [f"## `{model['name']}`", "", model["description"], ""]
 
@@ -901,6 +1224,8 @@ def _render_fragments(model: Mapping[str, object], *, fragment_rows: int) -> lis
     lines.append(
         f"{len(wrong)} of {len(fragments)} decisive fragments were got wrong at least once."
     )
+    lines.append("")
+    lines.append(_concentration_sentence(model))
     lines.append("")
     shown = wrong[:fragment_rows]
     rows = [
@@ -1037,6 +1362,82 @@ def _render_appendix(report: Mapping[str, object]) -> list[str]:
     return lines
 
 
+def _render_expectations(report: Mapping[str, object]) -> list[str]:
+    """What was predicted before the run, and the instruction to score it.
+
+    The prediction is worth nothing unless someone goes back and says whether it
+    held, so the demand to do that is printed next to it rather than left in the
+    implementation plan.
+    """
+    lines = ["## What we expected before looking", ""]
+    lines.append(
+        "Recorded before any run, in this module, so the result can be scored against a prediction"
+    )
+    lines.append(
+        "rather than rationalised after the fact. **Whoever writes this run up owes each bullet a"
+    )
+    lines.append(
+        "verdict -- held, or did not hold, and by how much.** A plan that records a prediction and"
+    )
+    lines.append("never scores it has wasted the prediction.")
+    lines.append("")
+    lines.extend(f"* {bullet}" for bullet in report["expectations"])
+    lines.append("")
+    return lines
+
+
+def _render_data_limits(report: Mapping[str, object]) -> list[str]:
+    """`arch_training.md` sections 9 and 10, reproduced in full rather than cited.
+
+    The one place in this package where duplication is deliberate. Everywhere
+    else cross-references; here the report is read standalone, by someone who
+    has not read the architecture docs, and every number above is bounded by
+    what this section says.
+    """
+    lines = [
+        "## What this data is and is not worth",
+        "",
+        "*Reproduced in full from `arch_training.md` sections 9 and 10 rather than cross-",
+        "referenced, because this report is read on its own and every number in it is bounded by",
+        "what follows.*",
+        "",
+    ]
+    lines.extend(f"* {bullet}" for bullet in report["data_limits"])
+    lines.append("")
+    lines.append("### Effective sample size: count clusters, not examples")
+    lines.append("")
+    for paragraph in report["effective_sample_size"]:
+        lines.append(paragraph)
+        lines.append("")
+    rows = [
+        [
+            f"`{entry['library']}`",
+            str(entry["fragments"]),
+            f"**{entry['clusters']}**",
+        ]
+        for entry in report["library_clusters"]
+    ]
+    lines.extend(_table(["library", "fragments", "clusters (the effective n)"], rows))
+    lines.append(
+        "Note what that is worth and no more. Effective n rises 12- to 17-fold for the hard"
+    )
+    lines.append(
+        "sub-classes, but the error bar does **not** shrink 12- to 17-fold: uncertainty on a"
+    )
+    lines.append(
+        "proportion goes as 1/sqrt(n), so roughly +/-30 points becomes roughly +/-8. That is the"
+    )
+    lines.append(
+        "difference between a number that can carry a conclusion and one that cannot -- a metaphor"
+    )
+    lines.append(
+        "recall of 0.6 +/-0.08 is a finding, 0.5 +/-0.30 is noise. Folds create no new ideas, so 47"
+    )
+    lines.append("metaphor clusters is still 47 and everything above applies unchanged.")
+    lines.append("")
+    return lines
+
+
 def _render_bullets(title: str, bullets: Sequence[str]) -> list[str]:
     lines = [f"## {title}", ""]
     lines.extend(f"* {bullet}" for bullet in bullets)
@@ -1052,13 +1453,16 @@ def render_markdown(
     lines.extend(_render_header(report))
     lines.extend(_render_how_to_read())
     lines.extend(_render_headline(report))
-    lines.extend(_render_bullets("What we expected before looking", report["expectations"]))
+    lines.extend(_render_ticket_question(report))
+    lines.extend(_render_expectations(report))
     lines.extend(_render_checks(report))
     lines.extend(_render_comparisons(report))
     for model in report["models"]:
         lines.extend(_render_model(model, fragment_rows=fragment_rows))
     lines.extend(_render_appendix(report))
     lines.extend(_render_bullets("Limitations", report["limitations"]))
+    lines.extend(_render_data_limits(report))
+    lines.extend(_render_bullets("The next ticket", report["next_ticket"]))
     return "\n".join(lines).rstrip() + "\n"
 
 

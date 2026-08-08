@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "generated_at": "2026-08-08T12:30:42+00:00",
+  "schema_version": 2,
+  "generated_at": "2026-08-08T20:36:22+00:00",
   "header": {
     "signal": "fever_present",
     "folds": 5,
@@ -6291,7 +6291,15 @@
             "null": 6
           }
         }
-      ]
+      ],
+      "error_concentration": {
+        "decisive_fragments": 344,
+        "fragments_with_errors": 156,
+        "total_errors": 3960,
+        "fragments_carrying_half": 43,
+        "even_spread_would_be": 78.0,
+        "share_in_worst_ten": 0.13712121212121212
+      }
     },
     {
       "name": "length_only",
@@ -12555,7 +12563,15 @@
             "null": 6
           }
         }
-      ]
+      ],
+      "error_concentration": {
+        "decisive_fragments": 344,
+        "fragments_with_errors": 175,
+        "total_errors": 3883,
+        "fragments_carrying_half": 44,
+        "even_spread_would_be": 87.5,
+        "share_in_worst_ten": 0.13803759979397373
+      }
     },
     {
       "name": "tfidf_logreg",
@@ -18819,7 +18835,15 @@
             "null": 6
           }
         }
-      ]
+      ],
+      "error_concentration": {
+        "decisive_fragments": 344,
+        "fragments_with_errors": 176,
+        "total_errors": 2047,
+        "fragments_carrying_half": 28,
+        "even_spread_would_be": 88.0,
+        "share_in_worst_ten": 0.23204689789936492
+      }
     },
     {
       "name": "length_only__shuffled",
@@ -25083,7 +25107,15 @@
             "null": 6
           }
         }
-      ]
+      ],
+      "error_concentration": {
+        "decisive_fragments": 344,
+        "fragments_with_errors": 156,
+        "total_errors": 3960,
+        "fragments_carrying_half": 43,
+        "even_spread_would_be": 78.0,
+        "share_in_worst_ten": 0.13712121212121212
+      }
     },
     {
       "name": "tfidf_logreg__shuffled",
@@ -31347,7 +31379,15 @@
             "null": 6
           }
         }
-      ]
+      ],
+      "error_concentration": {
+        "decisive_fragments": 344,
+        "fragments_with_errors": 156,
+        "total_errors": 3960,
+        "fragments_carrying_half": 43,
+        "even_spread_would_be": 78.0,
+        "share_in_worst_ten": 0.13712121212121212
+      }
     }
   ],
   "comparisons": [
@@ -31410,7 +31450,13 @@
     "Majority-class should land near 60%, which is the generator's `null` share and not a property of the data worth anything.",
     "The length-only model is the direct measurable test of the length leak `arch_training.md` section 9 argues for but has never measured. Materially above majority means text length is a usable proxy for the label, which is a library problem rather than a model one.",
     "TF-IDF should do well on clear positives, clear negatives and `null_structural`, and badly on the ambiguous sub-classes. Its overall accuracy is therefore close to uninformative. **The number that matters is the `null_ambiguous` slice**, tested with McNemar against the transformer once that exists.",
-    "Both negative controls must fail. Shuffled train labels must score at chance on the unpermuted test split, and no fragment or cluster may appear on both sides of a split."
+    "Both negative controls must fail. Shuffled train labels must score at chance on the unpermuted test split, and no fragment or cluster may appear on both sides of a split.",
+    "Arm A -- the frozen probe -- should handle clear positives, clear negatives and `null_structural`, and should do **badly** on the four hard `null` sub-classes. Third-party attribution, tense and metaphor are compositional scope problems, and a single mean-pooled vector blurs the structure that carries them: a linear probe over it has no mechanism for \"the fever belongs to the daughter\". A bad Arm A result on those slices is the predicted outcome, not a bug.",
+    "Arm A beating TF-IDF on `null_ambiguous` would be a genuine finding about the encoder; losing to it there would say the pooled representation discards what the ambiguous libraries are made of. Either way the comparison is McNemar's, not two point estimates side by side -- and neither answers the ticket's question on its own, because Arm A cannot separate \"the libraries are the bottleneck\" from \"the method is too weak\". That is Arm B's job.",
+    "Arm B -- the fine-tune -- is the arm that answers the ticket, and **either outcome is a finding**. If unfreezing 110M parameters lifts the four hard `null` sub-classes clear of Arm A, the frozen pooled representation was the bottleneck and the fix is model work. If it does not -- if a fully fine-tuned encoder still cannot tell whose fever it is or when it happened -- then the limit is in the ideas the libraries contain, and the fix is library work on the fragments the per-fragment table names. Nothing here predicts which; the point of building both arms is that the question stops being answerable by argument.",
+    "Arm B's negative control passes by doing **two** things at once: driving training loss towards zero, because 110M parameters can memorise a permutation, while scoring at chance on the unpermuted test split. Near-zero training loss on its own is not a failure and chance test performance on its own is not a pass; the sidecar records the per-fold loss curve so both halves can be read.",
+    "Arm B is expected to be *unstable* across folds in a way Arm A is not. Fine-tuning a 110M-parameter model on 10,000 recombinations of a few dozen fragments has far more freedom to fit fold-specific detail, so the across-fold standard deviation should be the wider of the two. That is a property of the arm, not evidence against it -- but it is why the pooled cluster bootstrap, not the fold spread, remains the headline interval.",
+    "`max_seq_len` is not the interesting constraint. The proof-of-concept run's median example is 36 tokens and its 90th percentile 54, against a limit of 256. Training on 36-token recombinations and eventually serving 300-token real submissions is a distribution shift no sequence length fixes."
   ],
   "limitations": [
     "**Effective n, not n, bounds every number here.** A slice's example count says how much recombination happened. Its effective n -- the number of distinct hand-written fragment clusters behind it -- says how many independent ideas were tested, and that is what the error bar is computed over. Ten thousand examples built from sixty-six fragments is sixty-six ideas seen many times, and quoting the ten thousand is the single easiest way to over-read this report.",
@@ -31422,5 +31468,55 @@
     "**A slice containing only one class cannot be read on its own.** The four `null` sub-class slices hold nothing but truly-`null` examples, so a model that answers `null` unconditionally scores 100% on all of them. Sub-class recall is a finding only when the `true` and `false` recalls are high at the same time, which is why the per-class table sits beside it.",
     "**The overall interval is dominated by one resampling unit.** All structural nulls share one unit, by design -- thousands of recombinations of a handful of filler sentences are not thousands of observations. The cost is that the pooled overall accuracy swings widely under resampling for reasons that have nothing to do with the model. The `decisive` slice, which drops them, is the one to read.",
     "**Fragment libraries, not sample size, are the ceiling.** Forty-seven metaphor clusters is forty-seven ideas however many examples are drawn from them. Everything section 9 of `arch_training.md` says about what this data is and is not worth continues to apply in full."
+  ],
+  "data_limits": [
+    "**The validation score is a smoke test, not evidence.** Under the default bands validation holds 15 distinct positive fragments, and every `true` validation example is a recombination of those 15 sentences; one unlucky fragment moves the score several points. The training plan asks for around 200 fragments per signal. We have roughly half that for `true` and a third for `false`.",
+    "**Length may still leak.** Fragment *count* is drawn from one distribution that never sees the label, so it cannot be a proxy for it. Fragment *length* is not controlled at all: `fever_true` fragments run from 3 words to 98, while the `fever_null` libraries sit in a 9-40 word band. The medians are close (16 against 15-19), so this is a tail problem rather than a systematic offset -- but a 98-word positive has no counterpart anywhere in the null libraries, and a model can notice that. The `length_only` baseline in this report is the direct measurement of how much is there to notice.",
+    "**Urgency language leaks too.** About 17% of `fever_true` fragments bundle the fever claim with a justification -- \"three important meetings I can't miss\" -- against 8% of `fever_false` and almost none of `fever_null`. That is exactly the \"sounds urgent, must be positive\" shortcut the libraries are meant to prevent. Pairing with filler washes some of it out; fixing it properly is library work.",
+    "**The examples are short.** Two or three sentences by default, against real submissions that are longer and messier. The variable fragment count narrows that gap rather than closing it: the count ceiling is the number of filler libraries, and past a few fragments each example still carries exactly one supervised claim, just buried in more noise. The proof-of-concept run's median example is 36 tokens against a `max_seq_len` of 256, so sequence length is not the constraint and raising it would fix nothing.",
+    "**Only `fever_present` is covered.** Nothing here produces labels for dysuria, flank pain or the other urinary signals, and `null` is deliberately not emitted for them: the filler libraries are verified silent about *fever* and nothing else -- `uti_speculation` mentions cystitis and kidney infection -- so claiming \"no dysuria mentioned\" would be inventing a label."
+  ],
+  "effective_sample_size": [
+    "The single easiest way to over-read anything this pipeline produces is to quote an example count. **The effective sample size of any evaluation slice is the number of distinct clusters behind it, not the number of examples.** Ten thousand examples built from 66 training fragments is 66 ideas seen many times.",
+    "Clusters rather than fragments, because `[c01]`-tagged siblings are one idea written twice. They always land in the same split, so they are one observation and not two -- which means the manual clustering *reduces* effective n where it applies, correctly, because it stopped counting the same idea twice.",
+    "Under a single 70/15/15 split a per-sub-class score is computed over **2 to 5 independent ideas**, and all four hard sub-classes together are **12**. A third-party recall figure could then take only the values 0, 0.5 or 1.0, carrying an uncertainty of roughly +/-30 percentage points -- wider than any effect this ticket could plausibly detect. That is a library-size problem, not a splitter problem, and the fix for it is more fragments.",
+    "Pooling all five folds is the mitigation and is what this report does: every cluster is a test cluster in exactly one fold, so a sub-class's aggregate test set is its whole library."
+  ],
+  "library_clusters": [
+    {
+      "library": "fever_true",
+      "fragments": 96,
+      "clusters": 96
+    },
+    {
+      "library": "fever_false",
+      "fragments": 60,
+      "clusters": 60
+    },
+    {
+      "library": "fever_null_hedged",
+      "fragments": 42,
+      "clusters": 32
+    },
+    {
+      "library": "fever_null_historical",
+      "fragments": 45,
+      "clusters": 36
+    },
+    {
+      "library": "fever_null_metaphor",
+      "fragments": 55,
+      "clusters": 47
+    },
+    {
+      "library": "fever_null_thirdparty",
+      "fragments": 46,
+      "clusters": 35
+    }
+  ],
+  "next_ticket": [
+    "**Write 60-100 realistic full submissions by hand, deliberately unlike the recombinations, label them by hand, and hold them out permanently.** Never touched by a training decision, never used to select a margin, never used to choose a pooling mode.",
+    "Everything scored in this report is a recombination of the same few hundred fragments the models were trained on. Held-out *clusters* remove memorisation, and that is all they remove: the test examples are still short, still one supervised claim plus filler, still assembled by the same generator from the same libraries in the same register. No number here measures what happens when a real patient writes three paragraphs in their own voice.",
+    "This is cheap in code -- it is a JSONL file and a scoring run against the existing report writer -- and expensive in careful thought, which is why it is its own ticket rather than a task at the end of this one. Until it exists, nothing here resembles evidence about real patient text, however wide or narrow the intervals above are."
   ]
 }

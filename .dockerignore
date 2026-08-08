@@ -1,0 +1,37 @@
+# What must never enter the production image.
+#
+# The Dockerfile copies explicitly -- `COPY app/`, `COPY data/`, `COPY main.py`
+# -- rather than `COPY . .`, so most of the repository is already excluded by
+# construction. This file exists for the one path that is not: `COPY data/
+# ./data/` takes the whole directory, and `data/synthetic/generated/` holds the
+# training datasets and the Arm A embedding cache. That is roughly 40MB of JSONL
+# and 215MB of cached vectors after a five-fold sweep, git-ignored but present
+# on the machine of anyone who has run the generator. A local `docker build`
+# would bake all of it into an image that serves forms.
+#
+# Everything here is offline encoder-training output. None of it is read by
+# anything under `app/` -- `tests/test_wiring.py` asserts that the dependency
+# runs one way -- so excluding it cannot break the running application.
+
+# Generated training datasets, their .stats.json sidecars, and the Arm A
+# embedding cache.
+data/synthetic/generated/
+
+# Trained heads, metadata sidecars and Arm B's ~440MB-per-fold encoders.
+# Belt and braces: the Dockerfile never copies this directory today, and if a
+# future `COPY . .` arrives it should not be how 2.2GB of weights ships.
+models/
+
+# The evaluation reports. Same reasoning: offline output, no runtime consumer.
+reports/
+
+# Local build and tooling noise that only grows the build context.
+.git/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+node_modules/
+frontend/node_modules/
+frontend/dist/
