@@ -81,7 +81,8 @@ data/synthetic/
   manifest.json
   symptoms/fever/      six libraries, all about fever_present
   symptoms/dysuria/    four libraries, all about dysuria_present
-  filler/              five libraries, silent on every signal
+  symptoms/flank_pain/ four libraries, all about flank_pain_present
+  filler/              five libraries, verified silent on fever only (section 9)
   drafts/              scratch files, deliberately not libraries (section 4)
   generated/           output, git-ignored
 ```
@@ -89,7 +90,14 @@ data/synthetic/
 Nothing in the code keys off the directory — the manifest gives every library's
 path explicitly, so the layout is for humans. It matters as more signals arrive:
 "which files carry a dysuria label" should be answerable by looking, not by
-reading eleven manifest entries.
+reading nineteen manifest entries.
+
+Note the filler annotation carefully. The filler libraries are verified silent
+about **fever** and nothing else — that check is the lint's, and its lexicon is
+a fever lexicon. `uti_speculation` mentions cystitis and kidney infection, so
+filler is demonstrably *not* silent on every signal. Section 9 explains what
+that costs us today and section 12.5 explains what has to exist before the
+claim can be made per-signal.
 
 | Library | Fragments | What it contains |
 |---|---|---|
@@ -362,9 +370,18 @@ clean data on day one.
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
 different splits, i.e. the leakage described in section 6. Currently 52, of
 which **zero** are in the `fever_null` libraries, which tells us the manual
-clustering pass worked. Most are in the filler libraries (`justifiers` 14,
-`expectations` 10, `tangents` 8), which leak in exactly the same way and were
-not clustered; the rest are the unclustered `flank_pain` seed batch (9).
+clustering pass worked. The full breakdown:
+
+| Where | Count | Libraries |
+|---|---|---|
+| Filler | 39 | `justifiers` 14, `expectations` 10, `tangents` 8, `uti_speculation` 4, `emotional` 3 |
+| `flank_pain` seed batch | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
+| `fever` decisive | 4 | `fever_true` 3, `fever_false` 1 |
+
+Filler dominates, and those libraries leak in exactly the same way as the
+clinical ones but were never clustered. The `flank_pain` batch is unclustered
+for the same reason. The four `fever` hits are the incidental near-duplicates
+section 6 records as known and untagged.
 
 **Hedge markers** — lines in the positive and negative libraries that sound
 uncertain, as a prompt to re-read them by hand (currently 8). Its precision is poor by design
@@ -489,9 +506,13 @@ The dysuria libraries fill all twelve of their cells, but they are small enough
 again. They need the same 40–50 target as everything else before any number
 derived from them means anything.
 
-The flank_pain libraries (12–24 fragments each, a proof-of-concept batch) fill
+The flank_pain libraries (10–24 fragments each, a proof-of-concept batch) fill
 all twelve of their cells too, for the same reason and with the same caveat as
-dysuria above.
+dysuria above — but here "fills all its cells" is close to hollow.
+`flank_pain_true` and `flank_pain_false` have **one** fragment each in test, and
+`flank_pain_null_hedged` has **four** in train. The guard passes and nothing
+derived from those cells would mean anything. Passing the empty-cell guard is a
+floor, not a sign of health; see the effective sample size discussion below.
 
 ### The proof-of-concept run
 
@@ -507,12 +528,55 @@ generated without error. The two properties the stats sidecar exists to police
   (`false`), 34 (`null`) — a spread of about 1.15×, well inside the ~1.5×
   threshold section 9 sets. The 90th percentiles agree (53 / 54 / 47).
 
-The metaphor sub-class is now genuinely visible to evaluation: 187 of the 2,000
-validation examples contain a metaphor fragment.
+The metaphor sub-class is now visible to evaluation at all, which it was not
+before: 187 of the 2,000 validation examples contain a metaphor fragment. Read
+that number with the next subsection in hand — those 187 examples are
+recombinations of **7** distinct metaphor sentences.
 
 Section 9 still applies in full to what these numbers are worth. Nothing here
 makes the validation score evidence rather than a smoke test — the datasets are
 larger, not the fragment pool behind them.
+
+### Effective sample size: count fragments, not examples
+
+The single easiest way to over-read anything this pipeline produces is to quote
+an example count. **The effective sample size of any evaluation slice is the
+number of distinct clusters behind it, not the number of examples.** Ten
+thousand examples built from 66 training fragments is 66 ideas seen many times.
+
+Clusters rather than fragments, because section 6's whole point is that
+`[c01]`-tagged siblings are one idea written twice. They always land in the same
+split, so they are one observation, not two.
+
+For the `fever_present` splits as they stand — fragments first, clusters in
+bold, because the two differ wherever manual clustering was done:
+
+| Library | train | val | test |
+|---|---|---|---|
+| `fever_true` | 66 / **66** | 15 / **15** | 15 / **15** |
+| `fever_false` | 39 / **39** | 12 / **12** | 9 / **9** |
+| `fever_null_hedged` | 37 / **28** | 3 / **2** | 2 / **2** |
+| `fever_null_historical` | 36 / **29** | 6 / **4** | 3 / **3** |
+| `fever_null_metaphor` | 43 / **35** | 7 / **7** | 5 / **5** |
+| `fever_null_thirdparty` | 37 / **28** | 7 / **5** | 2 / **2** |
+
+The consequence is worth stating bluntly, because the four `fever_null`
+libraries exist precisely so that per-sub-class performance can be measured
+(section 3), and that is the measurement this table undermines. A per-sub-class
+score on the test split is computed over **2 to 5 independent ideas**; all four
+hard sub-classes together are **12**. A third-party recall figure can only take
+the values 0, 0.5 or 1.0. Any such number carries an uncertainty of roughly ±30
+percentage points and cannot separate two models.
+
+Note also that the clustering that fixed the leakage in section 6 *reduces*
+effective n where it applies — correctly, because it stopped counting the same
+idea twice. `fever_null_hedged`'s validation cell is 3 fragments but 2 ideas.
+
+This is a library-size problem, not a splitter problem, and section 9's
+prescription applies: the fix is more fragments. Until then, an evaluation that
+needs these sub-classes should re-split the fragments under several different
+hashes and aggregate, so that every fragment is a test fragment in some fold,
+rather than reading a single 5-sentence slice as though it were a measurement.
 
 ---
 
@@ -631,7 +695,7 @@ future empty cell has to be cleared the same way.
 requirements are that they contain no signal language and that they are varied
 enough not to become a shortcut. Templating them is low risk and immediately
 useful, and it would take the lint's cross-split near-duplicate count (currently
-43, of which 32 are filler) to zero by construction.
+52, of which 39 are filler) to zero by construction.
 
 **The draft YAML needs restructuring before it is implementable.** Slot values
 are declared per synonym but consumed by templates with different grammatical
