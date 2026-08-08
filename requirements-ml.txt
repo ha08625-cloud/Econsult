@@ -60,10 +60,15 @@
 # --- Task 3: baselines -----------------------------------------------------
 scikit-learn==1.7.2
 
-# --- Task 4: Arm A, the frozen probe ---------------------------------------
-# Pinned to the versions Arm A was written and tested against. transformers 5.x
-# is a deliberate choice rather than an accident of resolution: it is what the
-# tokeniser-casing probe and the local-model path in
-# tests/test_encoder_training_arm_a.py were verified on.
+# --- Tasks 4 and 5: Arm A (frozen probe) and Arm B (fine-tune) --------------
+# Pinned to the versions both arms were written and tested against.
+# transformers 5.x is a deliberate choice rather than an accident of resolution:
+# it is what the tokeniser-casing probe and the local-model paths in
+# tests/test_encoder_training_arm_{a,b}.py were verified on.
+#
+# Arm B needs nothing here that Arm A did not: it unfreezes the model it already
+# had. No bitsandbytes, no peft, no accelerate -- the plan's memory arithmetic
+# says BERT-base at batch 32 / seq 256 fits in 12GB with room to spare, so a
+# dependency bought to save memory would be a dependency bought for nothing.
 torch==2.13.0            # PyPI default wheel is a cu130 build; see the note above
 transformers==5.14.1

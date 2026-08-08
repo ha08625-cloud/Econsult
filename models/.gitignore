@@ -1,0 +1,12 @@
+# Arm B's fine-tuned encoders. Roughly 440MB per fold, 2.2GB for a five-fold
+# sweep, and regenerable in about two minutes per fold from the pinned dataset
+# seed and base-model revision recorded in the metadata sidecar beside them.
+#
+# The sidecar, the JSON heads and the decision rules ARE committed: they are what
+# make a set of weights identifiable, and they are small. The weights themselves
+# are not, and durable storage for them is a deliberate deferral rather than an
+# oversight -- see documentation/arch_training.md.
+*.pt
+*.pt.partial
+*.safetensors
+*.bin
