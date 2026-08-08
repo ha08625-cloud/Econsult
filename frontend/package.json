@@ -15,7 +15,7 @@
     "@zxcvbn-ts/core": "4.1.2",
     "@zxcvbn-ts/language-common": "3.0.4",
     "@zxcvbn-ts/language-en": "3.0.2",
-    "dompurify": "^3.3.3",
+    "dompurify": "^3.4.13",
     "quill": "2.0.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
