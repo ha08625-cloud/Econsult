@@ -785,3 +785,4 @@ Not in scope here; recorded so they are not lost.
    encoder until all seven heads exist or the contract changes.
 4. **The realistic held-out evaluation set** — task 6 instruction 6. The single
    most valuable thing to build next.
+5. **Further fragment libraries: remaining symptoms mentioned in uti1.json, further fillers: expectations (e.g. id like some antibiotics, i want to speak to my usual GP Dr Smith), past medical history (e.g i have a history of recurrent utis and i always need a 7 day course of antibiotics. ive just gotten over a flare up of asthma)
