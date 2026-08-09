@@ -600,6 +600,14 @@ def test_markdown_names_the_next_ticket():
     assert "60-100 realistic full submissions" in markdown
 
 
+def _fever_fragments():
+    return [
+        fragment
+        for fragment in load_fragments(Path("data/synthetic/manifest.json"), check_cells=False)
+        if fragment.signal_key == SIGNAL
+    ]
+
+
 def test_library_cluster_table_matches_the_libraries_on_disk():
     """Guards the one table in the report that is written down rather than derived.
 
@@ -608,12 +616,37 @@ def test_library_cluster_table_matches_the_libraries_on_disk():
     describe different libraries than the numbers above it came from. So the
     counts are a constant, and this test is what stops the constant drifting.
     """
-    fragments = load_fragments(Path("data/synthetic/manifest.json"), check_cells=False)
+    fragments = _fever_fragments()
     counted = Counter(fragment.library for fragment in fragments)
     clustered = Counter(library for library, _ in library_clusters(fragments))
     for library, fragment_count, cluster_count in FEVER_LIBRARY_CLUSTERS:
         assert counted[library] == fragment_count, library
         assert clustered[library] == cluster_count, library
+
+
+def test_library_cluster_table_covers_every_library_not_just_the_listed_ones():
+    """A *new* library must fail this too, which checking the listed rows does not.
+
+    `fever_null_attribution` was added to the manifest after the table was
+    written and the row-by-row check above passed throughout, because it only
+    ever looked at libraries already in the table. Effective sample size is a
+    claim about the whole signal, so the guard has to be about coverage.
+    """
+    listed = {library for library, _, _ in FEVER_LIBRARY_CLUSTERS}
+    assert {fragment.library for fragment in _fever_fragments()} == listed
+
+
+def test_null_subclasses_cover_every_subclass_the_manifest_declares():
+    """A sub-class missing here vanishes from the table the exercise exists for.
+
+    `_view` filters the sub-class rows to `NULL_SUBCLASSES`, so a confounder
+    library added to the manifest and forgotten here is not reported as zero or
+    as an empty row -- it is not reported at all, and the report looks complete.
+    """
+    declared = {
+        fragment.subclass for fragment in _fever_fragments() if fragment.subclass is not None
+    }
+    assert declared <= set(NULL_SUBCLASSES)
 
 
 # --------------------------------------------------------------------------

@@ -73,10 +73,14 @@ from .metrics import (
 #: DD7 concentration statistic needs a way to say so.
 SCHEMA_VERSION = 2
 
-#: Sub-classes the four hard `fever_null` libraries carry. Listed so that a
-#: sub-class the manifest declares but no test fold happened to draw shows up as
-#: an empty row rather than vanishing from the table.
-NULL_SUBCLASSES = ("hedged", "historical", "metaphor", "third_party")
+#: Sub-classes the hard `fever_null` libraries carry. Listed so that a sub-class
+#: the manifest declares but no test fold happened to draw shows up as an empty
+#: row rather than vanishing from the table -- and, more importantly, so that a
+#: sub-class added to the manifest and forgotten here cannot vanish from the one
+#: table the whole exercise exists for. `tests/test_encoder_training_baselines.py`
+#: asserts this tuple covers every sub-class the real manifest declares for this
+#: signal.
+NULL_SUBCLASSES = ("attribution", "hedged", "historical", "metaphor", "third_party")
 
 #: Rows of the per-fragment error table (DD7) the markdown prints inline. The
 #: JSON always holds every fragment; this only bounds what a reader scrolls
@@ -565,7 +569,7 @@ LIMITATIONS = (
     "**Fold mode trains on 60% of clusters, the legacy split on 70%.** Numbers here are "
     "therefore not directly comparable to any single-split figure recorded in "
     "`arch_training.md` section 10. The fold-aggregated numbers are the honest ones.",
-    "**A slice containing only one class cannot be read on its own.** The four `null` sub-class "
+    "**A slice containing only one class cannot be read on its own.** The five `null` sub-class "
     "slices hold nothing but truly-`null` examples, so a model that answers `null` unconditionally "
     "scores 100% on all of them. Sub-class recall is a finding only when the `true` and `false` "
     "recalls are high at the same time, which is why the per-class table sits beside it.",
@@ -595,7 +599,7 @@ EXPECTATIONS = (
     "Both negative controls must fail. Shuffled train labels must score at chance on the "
     "unpermuted test split, and no fragment or cluster may appear on both sides of a split.",
     "Arm A -- the frozen probe -- should handle clear positives, clear negatives and "
-    "`null_structural`, and should do **badly** on the four hard `null` sub-classes. "
+    "`null_structural`, and should do **badly** on the five hard `null` sub-classes. "
     "Third-party attribution, tense and metaphor are compositional scope problems, and a single "
     "mean-pooled vector blurs the structure that carries them: a linear probe over it has no "
     'mechanism for "the fever belongs to the daughter". A bad Arm A result on those slices is '
@@ -607,7 +611,7 @@ EXPECTATIONS = (
     'separate "the libraries are the bottleneck" from "the method is too weak". That is Arm '
     "B's job.",
     "Arm B -- the fine-tune -- is the arm that answers the ticket, and **either outcome is a "
-    "finding**. If unfreezing 110M parameters lifts the four hard `null` sub-classes clear of "
+    "finding**. If unfreezing 110M parameters lifts the five hard `null` sub-classes clear of "
     "Arm A, the frozen pooled representation was the bottleneck and the fix is model work. If it "
     "does not -- if a fully fine-tuned encoder still cannot tell whose fever it is or when it "
     "happened -- then the limit is in the ideas the libraries contain, and the fix is library "
@@ -643,6 +647,7 @@ EXPECTATIONS = (
 FEVER_LIBRARY_CLUSTERS = (
     ("fever_true", 96, 96),
     ("fever_false", 60, 60),
+    ("fever_null_attribution", 50, 43),
     ("fever_null_hedged", 42, 32),
     ("fever_null_historical", 45, 36),
     ("fever_null_metaphor", 55, 47),
@@ -699,7 +704,8 @@ EFFECTIVE_SAMPLE_SIZE = (
     "the manual clustering *reduces* effective n where it applies, correctly, because it stopped "
     "counting the same idea twice.",
     "Under a single 70/15/15 split a per-sub-class score is computed over **2 to 5 independent "
-    "ideas**, and all four hard sub-classes together are **12**. A third-party recall figure could "
+    "ideas**, and all five hard sub-classes together are of that order. A third-party recall "
+    "figure could "
     "then take only the values 0, 0.5 or 1.0, carrying an uncertainty of roughly +/-30 percentage "
     "points -- wider than any effect this ticket could plausibly detect. That is a library-size "
     "problem, not a splitter problem, and the fix for it is more fragments.",
