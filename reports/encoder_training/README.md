@@ -29,6 +29,10 @@ what remains is concentrated on 17 fragments and sits in `fever_true` and
 `fever_false`, not in the confounder libraries. Next month is library work on the
 clear classes. Read `2026-08-09.md` before quoting any figure from it.
 
+`2026-08-09-plain-english.md` is a jargon-free translation of that write-up for
+readers who do not work with ML terminology daily. It explains the same run and
+the same conclusion, and adds nothing — quote figures from `2026-08-09.md`.
+
 `fever_present.baselines` is the baselines-only report from the same folds, kept
 because it is what a model has to beat and it runs without a GPU.
 
