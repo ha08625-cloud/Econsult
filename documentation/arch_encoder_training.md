@@ -327,6 +327,14 @@ python -m scripts.encoder_training probe --folds 5            # Arm A, the froze
 python -m scripts.encoder_training finetune --folds 5         # Arm B, every layer unfrozen
 ```
 
+**Python 3.12 or later, in an environment of its own.** Every subcommand imports
+the generator's CLI for one constant, and `recombine.py` uses PEP 695 generics,
+so on 3.11 the whole package dies at import with a `SyntaxError` pointing at
+`def _weighted_draw[KeyT](` — including `smoke-cuda`, which touches neither the
+generator nor torch. It reads as a broken checkout and is nothing of the kind.
+The environment needs `requirements-ml.txt` alone; nothing here imports `app/`,
+so `requirements.txt` is not required for a training run.
+
 `generate-folds` is scripted rather than documented as a shell loop because the
 fifteen runs must agree on the fold count, the salt and the seed derivation, and a
 loop that gets one of those wrong produces a directory that loads cleanly and

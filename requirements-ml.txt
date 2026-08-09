@@ -19,6 +19,22 @@
 # at 3.12 (scripts/synthetic_data/recombine.py uses PEP 695 generics), and torch
 # cu128 wheels are reliable on 3.12 and patchier on 3.13/3.14.
 #
+# On 3.11 the failure does not look like a version problem. Every command in
+# scripts.encoder_training -- including smoke-cuda, which touches neither torch
+# nor the generator -- imports the generator's CLI for one constant, so the whole
+# package dies at import with:
+#
+#   File "scripts/synthetic_data/recombine.py", line 291
+#       def _weighted_draw[KeyT](
+#   SyntaxError: expected '('
+#
+# That is Python 3.11 meeting 3.12 syntax, not a bad torch wheel. Install this
+# file into a 3.12 environment rather than lowering the floor: app/core/settings.py
+# uses the same syntax, so the alternative is editing production code to
+# accommodate a local interpreter. The training tooling imports nothing from
+# app/, so the environment needs this file alone -- requirements.txt is not
+# required for a training run.
+#
 # ---------------------------------------------------------------------------
 # Blackwell (RTX 5070) warning -- read before installing torch
 # ---------------------------------------------------------------------------
