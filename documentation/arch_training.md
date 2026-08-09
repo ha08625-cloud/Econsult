@@ -82,7 +82,7 @@ convention:
 ```
 data/synthetic/
   manifest.json
-  symptoms/fever/      six libraries, all about fever_present
+  symptoms/fever/      seven libraries, all about fever_present
   symptoms/dysuria/    four libraries, all about dysuria_present
   symptoms/flank_pain/ four libraries, all about flank_pain_present
   filler/              five libraries, verified silent on fever only (section 9)
@@ -110,6 +110,7 @@ claim can be made per-signal.
 | `symptoms/fever/fever_null_metaphor.txt` | 55 | Fever words used non-clinically ("burning up with embarrassment") |
 | `symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
 | `symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
+| `symptoms/fever/fever_null_attribution.txt` | 50 | Hot now, confidently blamed on something that is not a fever ("I get hot flushes with the menopause") |
 | `symptoms/dysuria/dysuria_true.txt` | 24 | Says it hurts to pass urine ("it burns when I pee") |
 | `symptoms/dysuria/dysuria_false.txt` | 18 | Says it does not ("weeing itself is fine, no stinging") |
 | `symptoms/dysuria/dysuria_null_hedged.txt` | 16 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
@@ -143,12 +144,42 @@ an explicit, checkable declaration before it can be relied on.
 
 Two things are worth understanding about this table.
 
-**The four `fever_null` libraries are the hard cases.** They all contain fever
+**The five `fever_null` libraries are the hard cases.** They all contain fever
 language but none of them means "this patient has a fever right now". A model
 that has only seen clear positives and clear negatives will confidently mark
-"my son has a fever" as a positive. These four libraries exist to stop that.
+"my son has a fever" as a positive. These five libraries exist to stop that.
 They are split into separate files rather than one big one so that we can later
 ask "how did the model do specifically on third-party mentions?"
+
+Each one displaces the fever along a different axis, and the axis is the reason
+they are separate files rather than one pile of hard cases:
+
+| Library | What is displaced |
+|---|---|
+| `hedged` | certainty — the patient does not know |
+| `thirdparty` | person — someone else is hot |
+| `historical` | time — the fever was last month |
+| `metaphor` | meaning — the heat word is not about temperature |
+| `attribution` | cause — the patient *is* hot, and says why, and it is not a fever |
+
+`attribution` is the hardest of the five and the only one where every surface
+cue points the right way. The patient is genuinely, currently warm; it is
+genuinely their own body; there is no hedge to pick up on and no past tense to
+notice. The only thing separating "I get hot flushes with the menopause" from a
+positive is that the patient has named a cause which is not an infection.
+A model that has learned "first person + present tense + heat word ⇒ fever"
+scores well on the other four and fails this one completely, which is exactly
+why it is worth measuring on its own.
+
+Its families are menopause and HRT, thyroid disease, drug side effects
+(amitriptyline, SSRIs, tamoxifen, steroids, hormone therapy), exertion and hot
+workplaces, skin conditions that flush or burn (rosacea, sunburn, eczema, heat
+rash), food and alcohol triggers, lifelong constitutional heat and
+hyperhidrosis, bedding, and pregnancy. Note what these have in common with the
+`metaphor` library's ambient-temperature family and how they differ: there,
+something *other than the patient* is hot. Here the patient is hot and the
+cause is elsewhere. Keeping the two apart is what stops either library becoming
+"heat word plus an excuse ⇒ null".
 
 **The filler libraries must contain no fever language whatsoever.** A filler
 fragment can be paired with anything, including examples labelled "no fever
@@ -170,6 +201,12 @@ training example. Section 6 explains what the markers are for.
 
 Only the `fever_null` and `dysuria_null` libraries carry markers, because only
 they were written in a way that produced systematic near-duplicates.
+`fever_null_attribution` carries seven, and they are the one case where the
+twinning was deliberate rather than accidental: seven ideas were written twice
+on purpose so the library teaches that the same attribution in different
+clothes carries the same label. The remaining 36 lines are independent ideas.
+That is the trade section 12.1 describes — surface robustness bought at the
+cost of effective n — taken knowingly and in small doses.
 
 ---
 
@@ -307,7 +344,7 @@ effective test set rather than the 2-to-5-cluster slices a single split leaves
 behind (see section 10).
 
 This is what makes a per-sub-class number readable. Pooled over five folds, the
-hard sub-classes have 32 to 47 test clusters behind them rather than 2 to 5,
+hard sub-classes have 32 to 47 test clusters behind them rather than 2 to 6,
 which takes a per-sub-class interval from roughly ±30 points to roughly ±8.
 Uncertainty falls as 1/√n, so the interval does not narrow by the same factor as
 the count — and folds add no new *ideas* at all, so section 9 still applies in
@@ -441,7 +478,9 @@ clean data on day one.
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
 different splits, i.e. the leakage described in section 6. Currently 52, of
 which **zero** are in the `fever_null` libraries, which tells us the manual
-clustering pass worked. The full breakdown:
+clustering pass worked. `fever_null_attribution` contributes zero as well,
+which is the check that its seven deliberate twin pairs were tagged correctly:
+an untagged pair would show up here. The full breakdown:
 
 | Where | Count | Libraries |
 |---|---|---|
@@ -479,9 +518,10 @@ have roughly half that for `true` and a third for `false`.
 **Length may still leak.** Fragment *count* varies but its distribution does
 not vary by label (section 5); fragment *length* is not controlled at all.
 `fever_true` fragments run from 3 words to 98, while the `fever_null` libraries
-sit inside a narrow band — 9–27 words, widened to 9–40 in `fever_null_metaphor`
-by the section 10 expansion, which is a dent in the problem rather than a fix.
-The medians are close (16 against 15–19), so this is a tail problem rather than
+sit inside a narrow band — 8–26 words, widened to 9–40 in `fever_null_metaphor`
+and 8–33 in `fever_null_attribution`, which is a dent in the problem rather
+than a fix.
+The medians are close (16 against 14–17), so this is a tail problem rather than
 a systematic offset — but a 98-word positive has no counterpart anywhere in the
 null libraries, and the model can notice that. The stats sidecar reports median and 90th-percentile
 length per label class on every run; if the medians ever drift apart by more
@@ -596,13 +636,24 @@ generated without error. The two properties the stats sidecar exists to police
   — `true` 751/742, `false` 1186/1285, `null_structural` 1527/1537,
   `null_ambiguous` 1501/1471.
 * **Length is not a proxy for the label.** Median tokens run 36 (`true`), 39
-  (`false`), 34 (`null`) — a spread of about 1.15×, well inside the ~1.5×
+  (`false`), 35 (`null`) — a spread of about 1.11×, well inside the ~1.5×
   threshold section 9 sets. The 90th percentiles agree (53 / 54 / 47).
 
-The metaphor sub-class is now visible to evaluation at all, which it was not
-before: 187 of the 2,000 validation examples contain a metaphor fragment. Read
-that number with the next subsection in hand — those 187 examples are
-recombinations of **7** distinct metaphor sentences.
+Every hard sub-class is visible to evaluation, which the metaphor one was not
+before the section 10 expansion. Of the 2,000 validation examples, the number
+containing a fragment from each is: `attribution` 194, `metaphor` 139,
+`thirdparty` 126, `historical` 105, `hedged` 57. Read those with the next
+subsection in hand — the 139 metaphor examples are recombinations of **7**
+distinct sentences and the 194 attribution ones of **9**.
+
+Note that adding a fifth hard sub-class *diluted* the other four at a fixed
+example count: metaphor was 187 validation examples before `attribution`
+existed and is 139 now. The ambiguous pool is drawn from uniformly, so a new
+library takes its share from the existing ones rather than adding to them.
+Nothing is lost — the metaphor clusters behind those examples are the same 7
+either way, and section 10's point is that the clusters are what count — but
+anyone comparing example counts across dataset versions needs to know why the
+number moved.
 
 Section 9 still applies in full to what these numbers are worth. Nothing here
 makes the validation score evidence rather than a smoke test — the datasets are
@@ -638,14 +689,21 @@ entirely; the pooled figures are in the table after this one:
 | `fever_null_historical` | 36 / **29** | 6 / **4** | 3 / **3** |
 | `fever_null_metaphor` | 43 / **35** | 7 / **7** | 5 / **5** |
 | `fever_null_thirdparty` | 37 / **28** | 7 / **5** | 2 / **2** |
+| `fever_null_attribution` | 35 / **28** | 9 / **9** | 6 / **6** |
 
-The consequence is worth stating bluntly, because the four `fever_null`
+The consequence is worth stating bluntly, because the five `fever_null`
 libraries exist precisely so that per-sub-class performance can be measured
 (section 3), and that is the measurement this table undermines. A per-sub-class
-score on the test split is computed over **2 to 5 independent ideas**; all four
-hard sub-classes together are **12**. A third-party recall figure can only take
+score on the test split is computed over **2 to 6 independent ideas**; all five
+hard sub-classes together are **18**. A third-party recall figure can only take
 the values 0, 0.5 or 1.0. Any such number carries an uncertainty of roughly ±30
 percentage points and cannot separate two models.
+
+`fever_null_attribution` has the healthiest cells of the five — 9 validation
+clusters and 6 test clusters, against metaphor's 7 and 5 — because it was
+written after this table existed and sized against it. Six is still six. It
+buys a slightly less useless single-split number, not a usable one; fold mode
+below is what makes the sub-class readable.
 
 Note also that the clustering that fixed the leakage in section 6 *reduces*
 effective n where it applies — correctly, because it stopped counting the same
@@ -668,9 +726,10 @@ once, so the aggregate test set for a sub-class is its whole library:
 | `fever_null_historical` | 45 | **36** |
 | `fever_null_metaphor` | 55 | **47** |
 | `fever_null_thirdparty` | 46 | **35** |
+| `fever_null_attribution` | 50 | **43** |
 
-Note what that is worth and no more. Effective n rises 12- to 17-fold for the
-hard sub-classes, but the error bar does **not** shrink 12- to 17-fold:
+Note what that is worth and no more. Effective n rises 7- to 17-fold for the
+hard sub-classes, but the error bar does **not** shrink 7- to 17-fold:
 uncertainty on a proportion goes as 1/√n, so roughly ±30 points becomes roughly
 ±8. That is still the difference between a number that can carry a conclusion
 and one that cannot — a metaphor recall of 0.6 ±0.08 is a finding, 0.5 ±0.30 is

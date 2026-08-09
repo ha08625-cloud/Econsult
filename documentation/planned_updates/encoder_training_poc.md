@@ -27,7 +27,7 @@ The question worth spending the ticket on is:
 
 That decides what the next month looks like. If a fine-tuned ClinicalBERT
 handles the hard `fever_null` sub-classes — third-party, historical, metaphor,
-hay fever — then the pipeline works and the next work is scaling libraries and
+hay fever, attribution — then the pipeline works and the next work is scaling libraries and
 signals (`arch_training.md` section 12). If it does not beat a bag-of-words
 model on those same sub-classes, then no amount of model work helps and the next
 work is library work: more fragments, more ideas, the length and urgency leaks in
@@ -94,7 +94,7 @@ binary language, and the ambiguity has to be resolved before any code is written
 written, but it gives `null` no training target of its own — you would have to
 regress towards 0.5, which is unstable and makes the null band an artefact of
 calibration rather than a learned category. `null` is 60% of the dataset and
-contains four deliberately-separated hard sub-classes that exist precisely
+contains five deliberately-separated hard sub-classes that exist precisely
 because they are *learnable distinctions*. It earns a class.
 
 The instinct behind `add_encoder.md` section 4 is still right about one thing,
@@ -339,10 +339,13 @@ and has learned nothing. Report instead:
    (flipping a patient's meaning).
 2. **Per-class precision, recall, F1.**
 3. **Recall on `null`, broken out by sub-class** — `hedged`, `metaphor`,
-   `thirdparty`, `historical`, and `null_structural` separately. This is the
-   single most valuable table the ticket produces, and it is the reason those
-   libraries are four separate files rather than one (`arch_training.md`
-   section 3). The slicing reads `meta.fragment_subclasses` from the JSONL.
+   `thirdparty`, `historical`, `attribution`, and `null_structural` separately.
+   This is the single most valuable table the ticket produces, and it is the
+   reason those libraries are five separate files rather than one
+   (`arch_training.md` section 3). The slicing reads `meta.fragment_subclasses`
+   from the JSONL. `attribution` is the row to read first: it is the sub-class
+   where every surface cue points at a positive, so it is where a model that
+   learned "first person + present tense + heat word" will show itself.
 4. **Calibration on `null`** — `Fine_tuning_plan.md` section 4.2 is right that if
    null collapses, the safety boundary goes with it.
 
