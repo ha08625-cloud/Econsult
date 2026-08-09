@@ -42,6 +42,13 @@
       "subclass": "historical"
     },
     {
+      "name": "fever_null_attribution",
+      "file": "symptoms/fever/fever_null_attribution.txt",
+      "signal_key": "fever_present",
+      "fragment_type": "confounder",
+      "subclass": "attribution"
+    },
+    {
       "name": "dysuria_true",
       "file": "symptoms/dysuria/dysuria_true.txt",
       "signal_key": "dysuria_present",

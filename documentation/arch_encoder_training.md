@@ -85,7 +85,7 @@ is.** `arch_training.md` section 10 is the canonical statement of the problem:
 the effective sample size of an evaluation slice is the number of distinct
 fragment *clusters* behind it, not the number of examples.
 
-Under a single 70/15/15 split, a per-sub-class recall figure rests on 2 to 5
+Under a single 70/15/15 split, a per-sub-class recall figure rests on 2 to 6
 clusters — it can only take the values 0, 0.5 or 1.0 — and carries roughly ±30
 points of uncertainty. That is wider than any effect this work could plausibly
 detect, so as originally specified the ticket could not have answered its own
@@ -93,7 +93,7 @@ question.
 
 Fold mode fixes it for about ten minutes of GPU time. Every cluster is a test
 cluster in exactly one fold, so pooling the five folds makes a sub-class's
-aggregate test set its whole library: 32 to 47 clusters instead of 2 to 5.
+aggregate test set its whole library: 32 to 47 clusters instead of 2 to 6.
 
 **State the gain honestly.** Effective n rises 12- to 17-fold; the error bar does
 not. Uncertainty on a proportion falls as 1/√n, so ±30 points becomes about ±8.
