@@ -18,15 +18,19 @@ can only make it when both models are in one report.
 
 ## Current state
 
-**`fever_present.baselines`** — real numbers, five folds, reproducible from the
-seeds in its own header. Majority-class, length-only and TF-IDF + logistic
-regression, each with its shuffled-label negative control.
+**Both arms have run.** `fever_present.arm_b_finetune` carries Arm B, Arm A and
+the three baselines with their negative controls, five folds, on an RTX 5070.
+`2026-08-09.md` is the write-up: what the numbers mean, whether the recorded
+prediction held, and the conclusion in the ticket's terms.
 
-**Neither arm has been run yet.** Both need `requirements-ml.txt` and a CUDA
-device, and Arm B is what actually answers the ticket's question, so no
-conclusion about the fever head exists yet — model bottleneck or library
-bottleneck is still open. The baselines report is what a transformer has to beat,
-and its `null_ambiguous` column is the number to beat.
+The short version: unfreezing the encoder was worth ~12 points of decisive
+accuracy over the frozen probe, so the representation *was* a constraint — but
+what remains is concentrated on 17 fragments and sits in `fever_true` and
+`fever_false`, not in the confounder libraries. Next month is library work on the
+clear classes. Read `2026-08-09.md` before quoting any figure from it.
+
+`fever_present.baselines` is the baselines-only report from the same folds, kept
+because it is what a model has to beat and it runs without a GPU.
 
 ## Producing the ticket's report
 
