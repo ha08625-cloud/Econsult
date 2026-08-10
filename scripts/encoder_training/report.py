@@ -646,9 +646,9 @@ EXPECTATIONS = (
 #: this table against the real libraries, so drift is caught in CI instead.
 FEVER_LIBRARY_CLUSTERS = (
     ("fever_true", 96, 96),
-    ("fever_false", 60, 60),
+    ("fever_false", 98, 98),
     ("fever_null_attribution", 50, 43),
-    ("fever_null_hedged", 42, 32),
+    ("fever_null_hedged", 73, 63),
     ("fever_null_historical", 45, 36),
     ("fever_null_metaphor", 55, 47),
     ("fever_null_thirdparty", 46, 35),
