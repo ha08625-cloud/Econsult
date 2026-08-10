@@ -42,11 +42,27 @@ RUN apt-get update \
 # because pip vendors its own dependencies rather than resolving them.
 # ensurepip's bundled pip wheel is also removed since it embeds the same
 # vendored msgpack and would otherwise reintroduce the finding.
+# `pip uninstall` alone is not reliable here: uninstalling pip while it is
+# the interpreter running the uninstall does not always drop its own
+# dist-info (and therefore its vendored msgpack/setuptools) from the final
+# image layer, which is what let both CVEs back in. Force-delete the
+# packages from site-packages directly so removal isn't dependent on pip's
+# self-uninstall succeeding.
 COPY requirements.txt ./
 RUN pip install --no-cache-dir "setuptools>=78.1.1" \
     && pip install --no-cache-dir -r requirements.txt \
     && pip uninstall -y --no-input pip setuptools wheel \
-    && rm -rf /usr/local/lib/python3.14/ensurepip
+    && rm -rf /usr/local/lib/python3.14/ensurepip \
+    && rm -rf /usr/local/lib/python3.14/site-packages/pip \
+              /usr/local/lib/python3.14/site-packages/pip-*.dist-info \
+              /usr/local/lib/python3.14/site-packages/setuptools \
+              /usr/local/lib/python3.14/site-packages/setuptools-*.dist-info \
+              /usr/local/lib/python3.14/site-packages/pkg_resources \
+              /usr/local/lib/python3.14/site-packages/_distutils_hack \
+              /usr/local/lib/python3.14/site-packages/distutils-precedence.pth \
+              /usr/local/lib/python3.14/site-packages/wheel \
+              /usr/local/lib/python3.14/site-packages/wheel-*.dist-info \
+    && rm -f /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.14 /usr/local/bin/wheel
 
 # Copy application source
 COPY app/ ./app/
