@@ -85,9 +85,17 @@ Repeated here so you can check the output against them:
 3. `python -m scripts.synthetic_data --lint` — cross-split near-duplicates,
    hedge markers in the positive and negative libraries, split coverage.
 4. `python -m scripts.synthetic_data --folds 5 --find-fold-salt` — **new
-   fragments change bucket coverage and salt `32` may stop working.** The
-   empty-cell guard covers the whole manifest, so this can block generation for
-   every signal.
+   fragments change bucket coverage and the pinned salt may stop working.** The
+   pinned value is `DEFAULT_FOLD_SALT` in `scripts/synthetic_data/__main__.py`
+   (currently `"0"`); never quote a literal here, because it moves.
+   `test_the_agreed_salt_still_clears_the_real_libraries` fails when it does.
+   The empty-cell guard covers the whole manifest, so this can block generation
+   for every signal.
+
+   Editing existing lines in place is free here: the split is keyed on the
+   cluster marker, so a rewrite that keeps the `[dNN]` tags and the line count
+   cannot move a single fragment between splits, and the salt cannot change.
+   Only adding, removing or re-tagging lines can.
 5. Regenerate the folds, rerun `finetune`, and write the run up against the
    prediction in §7 below.
 6. Update the library sizes in `arch_training.md` §3 and §10, and

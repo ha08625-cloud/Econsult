@@ -83,7 +83,7 @@ convention:
 data/synthetic/
   manifest.json
   symptoms/fever/      seven libraries, all about fever_present
-  symptoms/dysuria/    four libraries, all about dysuria_present
+  symptoms/dysuria/    six libraries, all about dysuria_present
   symptoms/flank_pain/ four libraries, all about flank_pain_present
   filler/              five libraries, verified silent on fever only (section 9)
   drafts/              scratch files, deliberately not libraries (section 4)
@@ -111,9 +111,11 @@ claim can be made per-signal.
 | `symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
 | `symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
 | `symptoms/fever/fever_null_attribution.txt` | 50 | Hot now, confidently blamed on something that is not a fever ("I get hot flushes with the menopause") |
-| `symptoms/dysuria/dysuria_true.txt` | 24 | Says it hurts to pass urine ("it burns when I pee") |
+| `symptoms/dysuria/dysuria_true.txt` | 45 | Says it hurts to pass urine ("it burns when I pee") |
 | `symptoms/dysuria/dysuria_false.txt` | 47 | Says it does not ("weeing itself is fine, no stinging") |
-| `symptoms/dysuria/dysuria_null_hedged.txt` | 16 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
+| `symptoms/dysuria/dysuria_null_hedged.txt` | 40 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
+| `symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past ("last month I had dysuria for a few days") |
+| `symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burning/stinging words used non-clinically ("a stinging remark from my mother-in-law") |
 | `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
 | `symptoms/flank_pain/flank_pain_true.txt` | 18 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
 | `symptoms/flank_pain/flank_pain_false.txt` | 24 | Says there is not ("no pain in my back or sides at all") |
@@ -125,11 +127,13 @@ claim can be made per-signal.
 | `filler/expectations.txt` | 100 | Filler: what they want to happen — both *what* (tests, drugs, referrals) and *who, how and when* (a named regular GP, continuity, phone vs face to face, timing) |
 | `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
 
-**The dysuria and flank_pain libraries are a seed, not a working set.** They
-exist so the multi-signal recombination described in section 12.2 has
-something real to be built against. Both are proof-of-concept batches, not
-libraries sized for real training — see section 10 for what that means for
-split coverage. The generator does not read either symptom's libraries yet:
+**Dysuria is sized; flank_pain is still a seed.** Both exist so the
+multi-signal recombination described in section 12.2 has something real to be
+built against. The six dysuria libraries have since been grown to 38–47
+fragments each, which is the 40–50 band everything else is held to, so they are
+no longer the proof-of-concept batch this paragraph used to describe. The four
+flank_pain libraries are — 10 to 24 fragments — and section 10 says what that
+costs. The generator does not read either symptom's libraries yet:
 `build_pools` keeps only fragments whose `signal_key` matches the signal
 being generated, plus filler, so a dysuria or flank_pain fragment is dropped
 from a `fever_present` run rather than treated as filler. That is the
@@ -141,6 +145,15 @@ They were written to be silent about fever (verified: zero hits against the
 lint's fever lexicon) and about the other urinary signals, but "verified by
 reading them" is exactly the informal guarantee section 12.5 says has to become
 an explicit, checkable declaration before it can be relied on.
+
+That the check is *manual* is the point of the caveat, and it has already
+drifted once. The lint's filler-purity report screens filler libraries only, so
+when `dysuria_null_metaphor` acquired "burning up with questions" and "scalding
+hot under the collar", and `dysuria_true` a "sharp, hot pain", nothing fired —
+three fever-lexicon hits sitting in libraries the section above claims are
+clean. They have been reworded, but the general form of the fault is what 12.5
+exists to close: a guarantee no code checks is a guarantee that decays silently
+between the day it is written and the day something depends on it.
 
 Two things are worth understanding about this table.
 
@@ -217,6 +230,17 @@ on purpose so the library teaches that the same attribution in different
 clothes carries the same label. The remaining 36 lines are independent ideas.
 That is the trade section 12.1 describes — surface robustness bought at the
 cost of effective n — taken knowingly and in small doses.
+
+**A marker is a claim, and a wrong one costs both ways.** Grouping two lines
+that are not the same idea understates effective n on paper while doing nothing
+about the real twinning, which is usually somewhere else in the file. Leaving
+genuine twins in separate clusters lets them land on opposite sides of the
+split, which is the leakage the mechanism exists to prevent. Both faults were
+present in `dysuria_null_thirdparty` — unrelated lines yoked together while a
+0.81-similar pair sat in different clusters — and neither is visible from the
+fragment count. The cross-split near-duplicate report in section 8 is the only
+feedback loop on this, so a library that contributes to it is worth re-reading
+by hand rather than re-tagging by eye.
 
 ---
 
@@ -373,15 +397,27 @@ because each fold's decision threshold was tuned on a sibling fold's test
 clusters. Nested cross-validation would remove it and is not worth the cost for
 one number per fold. Any report using fold mode has to say so.
 
-**There is a salt, and it is `"32"`.** The cluster key is hashed as
-`"{salt}:{cluster_key}"`. The salt exists because the empty-cell guard (section
-10) covers the *whole* manifest, so a library for an unrelated signal that fails
-to populate all five buckets blocks a fever run. Only about 1 integer salt in 40
-clears that for every library, and the binding constraints were entirely the
-dysuria seed libraries — `dysuria_null_thirdparty` had 7 clusters but now has 23,
-and `dysuria_null_hedged` has 8, which means the salt constraint is no longer as
-tight. `--find-fold-salt` searches for salts that work; do not instead "fix" it
-by editing dysuria.
+**There is a salt, and it is `"0"`.** The value lives in one place —
+`DEFAULT_FOLD_SALT` in `scripts/synthetic_data/__main__.py` — and
+`test_the_agreed_salt_still_clears_the_real_libraries` re-checks it against the
+live manifest on every CI run, so a library that grows past the point where the
+pinned salt works fails there rather than halfway through a five-fold training
+run. Read the constant, not this sentence, if the two ever disagree.
+
+The cluster key is hashed as `"{salt}:{cluster_key}"`. The salt exists because
+the empty-cell guard (section 10) covers the *whole* manifest, so a library for
+an unrelated signal that fails to populate all five buckets blocks a fever run.
+293 of the first 1000 integer salts currently clear every library, up from about
+1 in 40 when this was written, because the binding libraries have grown.
+
+**Which library binds has moved from dysuria to flank_pain**, and it tracks
+cluster count almost exactly: `flank_pain_null_hedged` (10 clusters) fails 481
+of those 1000 salts on its own, `flank_pain_null_thirdparty` (14) fails 211, and
+every dysuria library now fails fewer than 70. That is the honest reading of the
+salt as a health signal — it is a proxy for the smallest library, and the way to
+loosen it is to write fragments for flank_pain. `--find-fold-salt` searches for
+salts that work; do not instead "fix" it by editing whichever library is
+currently binding.
 
 Passing the guard remains a floor, not a health signal. Seven clusters spread
 over five buckets means some fold's test cell holds exactly one idea.
@@ -487,7 +523,7 @@ Matching is on whole words only. Without that, "hot" matches inside
 clean data on day one.
 
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
-different splits, i.e. the leakage described in section 6. Currently 53, of
+different splits, i.e. the leakage described in section 6. Currently 62, of
 which **zero** are in the `fever_null` libraries, which tells us the manual
 clustering pass worked. `fever_null_attribution` contributes zero as well,
 which is the check that its seven deliberate twin pairs were tagged correctly:
@@ -496,6 +532,7 @@ an untagged pair would show up here. The full breakdown:
 | Where | Count | Libraries |
 |---|---|---|
 | Filler | 39 | `justifiers` 14, `expectations` 10, `tangents` 8, `uti_speculation` 4, `emotional` 3 |
+| `dysuria` | 9 | `dysuria_null_historical` 6, `dysuria_null_metaphor` 2, `dysuria_true` 1 |
 | `flank_pain` seed batch | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
 | `fever` decisive | 5 | `fever_true` 3, `fever_false` 2 |
 
@@ -503,6 +540,14 @@ Filler dominates, and those libraries leak in exactly the same way as the
 clinical ones but were never clustered. The `flank_pain` batch is unclustered
 for the same reason. The four `fever` hits are the incidental near-duplicates
 section 6 records as known and untagged.
+
+The dysuria row is the report earning its keep. `dysuria_null_thirdparty`
+contributed 8 of these — the worst of any clinical library — because half of it
+was one sentence frame with the relative swapped out, and that showed up here
+before it showed up anywhere else. Rewriting those 32 lines as distinct
+situations took the library to zero without moving a single cluster key, since
+the tags and the line count stayed put. `dysuria_null_historical`'s 6 are the
+same fault at smaller scale and have not been addressed.
 
 **Hedge markers** — lines in the positive and negative libraries that sound
 uncertain, as a prompt to re-read them by hand (currently 8). Its precision is poor by design
@@ -623,11 +668,19 @@ empty cell blocks generation for *every* signal, not only the one whose library
 is unbalanced. This is worth knowing before assuming a run against a different
 signal would work once that signal's own libraries are balanced.
 
-The dysuria libraries fill all twelve of their cells. `dysuria_false` has been
-expanded to 47 fragments, bringing it into the 40–50 target range. The remaining
-libraries (`dysuria_true` 24, `dysuria_null_hedged` 16, `dysuria_null_thirdparty`
-14) still sit at intermediate sizes. They need the same 40–50 target as everything
-else before any number derived from them means anything.
+The six dysuria libraries fill all eighteen of their cells and are all now in or
+near the 40–50 target range: `dysuria_false` 47, `dysuria_true` 45,
+`dysuria_null_thirdparty` 46, `dysuria_null_hedged` 40, `dysuria_null_metaphor`
+40, `dysuria_null_historical` 38. Size is no longer what limits them.
+
+What does is that fragment count and cluster count have come apart. The four
+`dysuria_null` libraries are fully twin-tagged, so their effective n is half
+their fragment count — 19 to 23 clusters each, against `dysuria_true`'s 45 and
+`dysuria_false`'s 47, which carry no markers at all. A dysuria run would
+therefore be measuring its hard sub-classes on roughly 3 to 5 test clusters
+apiece under the default bands, which is the section-10 problem this whole
+subsection is about, at the same magnitude fever had before fold mode. Growing
+these libraries further means new *ideas*, not new twins.
 
 The flank_pain libraries (10–24 fragments each, a proof-of-concept batch) fill
 all twelve of their cells too, for the same reason and with the same caveat as
@@ -784,7 +837,7 @@ python -m scripts.synthetic_data \
     --out data/synthetic/generated/fever_present.fold0.test.jsonl
 ```
 
-`--fold` defaults to 0 and the salt defaults to `32`, but neither may be given
+`--fold` defaults to 0 and the salt defaults to `0` (section 6), but neither may be given
 without `--folds` — `--fold 3` on its own would silently generate the default
 70/15/15 split, and salting the default bands would move the split of every
 dataset generated so far. `--folds` must be at least 3: at two folds the test
