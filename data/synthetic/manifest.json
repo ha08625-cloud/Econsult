@@ -75,6 +75,13 @@
       "subclass": "third_party"
     },
     {
+      "name": "dysuria_null_metaphor",
+      "file": "symptoms/dysuria/dysuria_null_metaphor.txt",
+      "signal_key": "dysuria_present",
+      "fragment_type": "confounder",
+      "subclass": "metaphor"
+    },
+    {
       "name": "flank_pain_true",
       "file": "symptoms/flank_pain/flank_pain_true.txt",
       "signal_key": "flank_pain_present",
