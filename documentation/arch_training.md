@@ -115,7 +115,7 @@ claim can be made per-signal.
 | `symptoms/dysuria/dysuria_false.txt` | 47 | Says it does not ("weeing itself is fine, no stinging") |
 | `symptoms/dysuria/dysuria_null_hedged.txt` | 40 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
 | `symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past ("I had antibiotics in March for a water infection, it burned to wee then") |
-| `symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burning/stinging words used non-clinically ("a stinging remark from my mother-in-law") |
+| `symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burn/sting words that are not about passing urine ("the stinging disappointment of not getting the promotion", "my eyes have been stinging with all the pollen") |
 | `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
 | `symptoms/flank_pain/flank_pain_true.txt` | 18 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
 | `symptoms/flank_pain/flank_pain_false.txt` | 24 | Says there is not ("no pain in my back or sides at all") |
@@ -523,7 +523,7 @@ Matching is on whole words only. Without that, "hot" matches inside
 clean data on day one.
 
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
-different splits, i.e. the leakage described in section 6. Currently 56, of
+different splits, i.e. the leakage described in section 6. Currently 54, of
 which **zero** are in the `fever_null` libraries, which tells us the manual
 clustering pass worked. `fever_null_attribution` contributes zero as well,
 which is the check that its seven deliberate twin pairs were tagged correctly:
@@ -532,7 +532,7 @@ an untagged pair would show up here. The full breakdown:
 | Where | Count | Libraries |
 |---|---|---|
 | Filler | 39 | `justifiers` 14, `expectations` 10, `tangents` 8, `uti_speculation` 4, `emotional` 3 |
-| `dysuria` | 3 | `dysuria_null_metaphor` 2, `dysuria_true` 1 |
+| `dysuria` | 1 | `dysuria_true` 1 |
 | `flank_pain` seed batch | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
 | `fever` decisive | 5 | `fever_true` 3, `fever_false` 2 |
 
@@ -552,6 +552,13 @@ fault at smaller scale — 6 cross-split pairs, and 25 cross-cluster pairs above
 anchor] I had [burning/stinging/pain] when I [peed/weed/went to the toilet]")
 with the time and cause slots swapped. It was rewritten the same way, to zero,
 again without moving a cluster key.
+
+`dysuria_null_metaphor` contributed the remaining 2, both from one family of
+three clusters that all said "I am angry about this situation" with a burn word
+(`burning with resentment` / `a burning injustice` / `burning over the unfair
+treatment`). It is now at zero, but the fix there was not a rewrite — the
+library's real fault was narrowness, and the near-duplicate report only saw the
+two worst symptoms of it. See the metaphor subsection in section 10.
 
 That rewrite also cleared a worse fault the near-duplicate report cannot see.
 The word **"dysuria" appeared on 16 of the library's 38 lines and nowhere else
@@ -768,14 +775,90 @@ near the 40–50 target range: `dysuria_false` 47, `dysuria_true` 45,
 `dysuria_null_thirdparty` 46, `dysuria_null_hedged` 40, `dysuria_null_metaphor`
 40, `dysuria_null_historical` 38. Size is no longer what limits them.
 
-What does is that fragment count and cluster count have come apart. The four
-`dysuria_null` libraries are fully twin-tagged, so their effective n is half
-their fragment count — 19 to 23 clusters each, against `dysuria_true`'s 45 and
-`dysuria_false`'s 47, which carry no markers at all. A dysuria run would
-therefore be measuring its hard sub-classes on roughly 3 to 5 test clusters
-apiece under the default bands, which is the section-10 problem this whole
-subsection is about, at the same magnitude fever had before fold mode. Growing
-these libraries further means new *ideas*, not new twins.
+What does is that fragment count and cluster count have come apart. Three of the
+four `dysuria_null` libraries are fully twin-tagged, so their effective n is
+half their fragment count — 19 to 23 clusters each, against `dysuria_true`'s 45
+and `dysuria_false`'s 47, which carry no markers at all. A dysuria run would
+therefore be measuring those sub-classes on roughly 3 to 5 test clusters apiece
+under the default bands, which is the section-10 problem this whole subsection
+is about, at the same magnitude fever had before fold mode. Growing these
+libraries further means new *ideas*, not new twins.
+
+`dysuria_null_metaphor` is the exception and shows what that costs: it is 40
+fragments over **28** clusters, because the fourteen fragments added in the
+review below were written as independent ideas rather than twin pairs.
+
+### `dysuria_null_metaphor`: one family is not a library
+
+The library passed every mechanical check — 40 fragments, all cells full, only
+two cross-split near-duplicates — and was still the weakest of the six, for the
+reason section 10 records the fever library having had before its expansion.
+Sixteen of its twenty clusters were the same idea: *the patient is upset —
+angry, hurt or grieving — described with a burn or sting word*. Eight of those
+sixteen were the same idea twice over, "somebody said something wounding to me".
+A model trained on that learns **burn word next to an emotion word ⇒ null**,
+which is a discourse cue rather than a clinical one and is exactly the shortcut
+section 9 warns transfers nothing to real submissions.
+
+Eight clusters were replaced. Two families of reason:
+
+* **Not plausible patient text.** "My temper's been scalding raw with all this
+  stress" and "my anxiety is stinging at my nerves" are not English idiom;
+  "there's a stinging realization that I may have made a terrible mistake" is
+  written register and US spelling; "the chemistry between us was absolutely
+  burning" is not something anyone puts in a free-text box about their waterworks.
+* **Redundancy, measured rather than eyeballed.** The `burning injustice` /
+  `burning resentment` / `burning over the unfair treatment` trio sat at 0.62
+  pairwise and produced both of the library's cross-split near-duplicates;
+  "the criticism was really stinging" sat at 0.56 against "that remark really
+  stung". One cluster of each pair went. `[d16]` was also a mis-tagged cluster in
+  the sense section 3 warns about — "stinging at my nerves" and "the stress has
+  got me burned out" are two ideas, not one written twice.
+
+One finding is worth recording separately because no report in the pipeline can
+see it: **three clusters were near-copies of `fever_null_metaphor` lines**
+("I've had a burning desire to sort this out for weeks now" at 0.64, "a burning
+question nobody can answer" at 0.58). The near-duplicate report is within-library
+by construction, so a library part-written by lifting its sibling's ideas scores
+clean. Only one of the three was replaced — the idioms are legitimately shared
+English — but anyone growing a symptom library by adapting another symptom's
+should know the check will not catch it.
+
+The sixteen replacements add three families the library did not have:
+
+* **A real burn or sting somewhere that is not urination** — indigestion,
+  pollen in the eyes, antiseptic on a graze, nettles, a curry, a wrist on the
+  oven shelf, calves on the stairs. This is the important one and the library had
+  none of it. The word is literal, the sensation is real, and the answer is still
+  `null`; the confounder is much harder than an emotional metaphor and much
+  closer to what a real submission contains. It is the same stretch of the
+  "metaphor" label that `fever_null_metaphor` already makes with ambient
+  temperature and hay fever, and it is worth naming: the axis this library
+  actually tests is *the burn word does not denote the clinical thing*, not
+  *the burn word is figurative*. The site is kept unambiguous in every line —
+  nothing genital, abdominal or flank, because a fragment whose site is unclear
+  stops having a determinate label and section 9 is about not manufacturing
+  those.
+* **Dead idioms carrying no sensation at all** — money burning a hole in a
+  pocket, being stung for eighty quid, getting your fingers burnt, a sting in
+  the tail, burning through savings.
+* **Something other than the patient burning** — the tea burnt to a crisp, a
+  burnt-out car on the estate, the log burner.
+
+Every replacement was checked against the lint's fever lexicon (section 8): the
+dysuria libraries claim silence on fever and section 3 records that claim
+drifting once already. The library's length band widened from 7–18 words to
+8–27, which narrows the gap to `dysuria_true`'s 4–25 that section 9 describes.
+
+Fragment count is unchanged at 40, so nothing about the split bands or the
+generator moved. What changed is that the 40 now carry 28 ideas instead of 20,
+the validation cell holds 2 clusters instead of 1, and the library contributes
+zero cross-split near-duplicates.
+
+Two clusters were left in place that are the next candidates if this library is
+revisited: `[d10]` ("got absolutely scalded by my partner", which is really
+*scolded*) and `[d17]` ("your words really burned me"), both weak members of the
+over-served hurtful-words family.
 
 The flank_pain libraries (10–24 fragments each, a proof-of-concept batch) fill
 all twelve of their cells too, for the same reason and with the same caveat as
