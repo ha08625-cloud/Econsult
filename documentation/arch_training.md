@@ -114,7 +114,7 @@ claim can be made per-signal.
 | `symptoms/dysuria/dysuria_true.txt` | 45 | Says it hurts to pass urine ("it burns when I pee") |
 | `symptoms/dysuria/dysuria_false.txt` | 47 | Says it does not ("weeing itself is fine, no stinging") |
 | `symptoms/dysuria/dysuria_null_hedged.txt` | 40 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
-| `symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past ("last month I had dysuria for a few days") |
+| `symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past ("I had antibiotics in March for a water infection, it burned to wee then") |
 | `symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burning/stinging words used non-clinically ("a stinging remark from my mother-in-law") |
 | `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
 | `symptoms/flank_pain/flank_pain_true.txt` | 18 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
@@ -523,7 +523,7 @@ Matching is on whole words only. Without that, "hot" matches inside
 clean data on day one.
 
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
-different splits, i.e. the leakage described in section 6. Currently 62, of
+different splits, i.e. the leakage described in section 6. Currently 56, of
 which **zero** are in the `fever_null` libraries, which tells us the manual
 clustering pass worked. `fever_null_attribution` contributes zero as well,
 which is the check that its seven deliberate twin pairs were tagged correctly:
@@ -532,7 +532,7 @@ an untagged pair would show up here. The full breakdown:
 | Where | Count | Libraries |
 |---|---|---|
 | Filler | 39 | `justifiers` 14, `expectations` 10, `tangents` 8, `uti_speculation` 4, `emotional` 3 |
-| `dysuria` | 9 | `dysuria_null_historical` 6, `dysuria_null_metaphor` 2, `dysuria_true` 1 |
+| `dysuria` | 3 | `dysuria_null_metaphor` 2, `dysuria_true` 1 |
 | `flank_pain` seed batch | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
 | `fever` decisive | 5 | `fever_true` 3, `fever_false` 2 |
 
@@ -546,8 +546,22 @@ contributed 8 of these — the worst of any clinical library — because half of
 was one sentence frame with the relative swapped out, and that showed up here
 before it showed up anywhere else. Rewriting those 32 lines as distinct
 situations took the library to zero without moving a single cluster key, since
-the tags and the line count stayed put. `dysuria_null_historical`'s 6 are the
-same fault at smaller scale and have not been addressed.
+the tags and the line count stayed put. `dysuria_null_historical` had the same
+fault at smaller scale — 6 cross-split pairs, and 25 cross-cluster pairs above
+0.55 out of a possible 703, because the whole library was four frames ("[time
+anchor] I had [burning/stinging/pain] when I [peed/weed/went to the toilet]")
+with the time and cause slots swapped. It was rewritten the same way, to zero,
+again without moving a cluster key.
+
+That rewrite also cleared a worse fault the near-duplicate report cannot see.
+The word **"dysuria" appeared on 16 of the library's 38 lines and nowhere else
+in any of the six dysuria libraries** — a token that separated `null` from
+`true` and `false` perfectly, and the single cheapest shortcut available to a
+model trained on this data. It is now absent. The lesson is not about this one
+word: a clinical term that lives in exactly one library is a label, not
+vocabulary. If we want the encoder to understand "dysuria" at all it
+has to be seeded across `dysuria_true`, `dysuria_false` and the other `null`
+libraries in the same breath, never into one of them alone.
 
 **Hedge markers** — lines in the positive and negative libraries that sound
 uncertain, as a prompt to re-read them by hand (currently 8). Its precision is poor by design
@@ -965,7 +979,7 @@ future empty cell has to be cleared the same way.
 requirements are that they contain no signal language and that they are varied
 enough not to become a shortcut. Templating them is low risk and immediately
 useful, and it would take the lint's cross-split near-duplicate count (currently
-53, of which 39 are filler) to zero by construction.
+56, of which 39 are filler) to zero by construction.
 
 **The draft YAML needs restructuring before it is implementable.** Slot values
 are declared per synonym but consumed by templates with different grammatical
