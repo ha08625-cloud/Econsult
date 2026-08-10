@@ -112,7 +112,7 @@ claim can be made per-signal.
 | `symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
 | `symptoms/fever/fever_null_attribution.txt` | 50 | Hot now, confidently blamed on something that is not a fever ("I get hot flushes with the menopause") |
 | `symptoms/dysuria/dysuria_true.txt` | 24 | Says it hurts to pass urine ("it burns when I pee") |
-| `symptoms/dysuria/dysuria_false.txt` | 18 | Says it does not ("weeing itself is fine, no stinging") |
+| `symptoms/dysuria/dysuria_false.txt` | 47 | Says it does not ("weeing itself is fine, no stinging") |
 | `symptoms/dysuria/dysuria_null_hedged.txt` | 16 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
 | `symptoms/dysuria/dysuria_null_thirdparty.txt` | 14 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
 | `symptoms/flank_pain/flank_pain_true.txt` | 18 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
@@ -622,10 +622,11 @@ empty cell blocks generation for *every* signal, not only the one whose library
 is unbalanced. This is worth knowing before assuming a run against a different
 signal would work once that signal's own libraries are balanced.
 
-The dysuria libraries fill all twelve of their cells, but they are small enough
-(14–24 fragments) that this is fragile: one reworded fragment can empty a cell
-again. They need the same 40–50 target as everything else before any number
-derived from them means anything.
+The dysuria libraries fill all twelve of their cells. `dysuria_false` has been
+expanded to 47 fragments, bringing it into the 40–50 target range. The remaining
+libraries (`dysuria_true` 24, `dysuria_null_hedged` 16, `dysuria_null_thirdparty`
+14) still sit at intermediate sizes. They need the same 40–50 target as everything
+else before any number derived from them means anything.
 
 The flank_pain libraries (10–24 fragments each, a proof-of-concept batch) fill
 all twelve of their cells too, for the same reason and with the same caveat as
