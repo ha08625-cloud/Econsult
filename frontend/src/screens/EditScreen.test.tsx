@@ -1,9 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 import EditScreen from "./EditScreen";
 import type { ClientStateView } from "../types";
 import type { PhotoTier } from "./EditScreen";
+import { MAX_FILE_SIZE_BYTES, MAX_TOTAL_SIZE_BYTES } from "../upload_constants";
 
 // Mock the api module so tests never make real HTTP calls
 vi.mock("../api", () => ({
@@ -363,6 +364,256 @@ describe("EditScreen — file input per tier", () => {
 
     expect(screen.getAllByText(/maximum of 5 photos/i).length).toBeGreaterThanOrEqual(1);
     expect(onPhotosChange).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Client-side photo validation gates (MIME type, per-file size, combined size)
+// ---------------------------------------------------------------------------
+
+describe("EditScreen — photo validation gates", () => {
+  it("shows an error and does not call onPhotosChange when the file type is not allowed", () => {
+    // userEvent.upload() respects the input's `accept` attribute and silently
+    // drops non-matching files before any change event fires, so it cannot
+    // exercise this branch. This guard exists precisely for files that bypass
+    // the browser's own accept-based filtering, so we assign `files` directly
+    // and dispatch the change event, the same way such a file would arrive.
+    const onPhotosChange = vi.fn();
+    render(
+      <EditScreen
+        {...defaultProps}
+        photoTier="standard"
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const badFile = new File([new Uint8Array([0x25, 0x50, 0x44, 0x46])], "doc.pdf", {
+      type: "application/pdf",
+    });
+    Object.defineProperty(input, "files", { value: [badFile], configurable: true });
+    fireEvent.change(input);
+
+    expect(
+      screen.getAllByText(/not a supported file type/i).length
+    ).toBeGreaterThanOrEqual(1);
+    expect(onPhotosChange).not.toHaveBeenCalled();
+  });
+
+  it("shows an error and does not call onPhotosChange when a file exceeds the per-file size limit", async () => {
+    const onPhotosChange = vi.fn();
+    render(
+      <EditScreen
+        {...defaultProps}
+        photoTier="standard"
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const oversized = new File([new Uint8Array([0xff, 0xd8, 0xff])], "big.jpg", {
+      type: "image/jpeg",
+    });
+    Object.defineProperty(oversized, "size", { value: MAX_FILE_SIZE_BYTES + 1 });
+    await userEvent.upload(input, oversized);
+
+    expect(screen.getAllByText(/too large/i).length).toBeGreaterThanOrEqual(1);
+    expect(onPhotosChange).not.toHaveBeenCalled();
+  });
+
+  it("accepts a file exactly at the per-file size limit", async () => {
+    const onPhotosChange = vi.fn();
+    render(
+      <EditScreen
+        {...defaultProps}
+        photoTier="standard"
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const atLimit = new File([new Uint8Array([0xff, 0xd8, 0xff])], "atlimit.jpg", {
+      type: "image/jpeg",
+    });
+    Object.defineProperty(atLimit, "size", { value: MAX_FILE_SIZE_BYTES });
+    await userEvent.upload(input, atLimit);
+
+    expect(screen.queryByText(/too large/i)).toBeNull();
+    expect(onPhotosChange).toHaveBeenCalledWith([
+      expect.objectContaining({ file: atLimit }),
+    ]);
+  });
+
+  it("shows an error and does not call onPhotosChange when combined size exceeds the total limit", async () => {
+    const existingPhoto = {
+      file: (() => {
+        const f = new File([new Uint8Array([0xff, 0xd8, 0xff])], "existing.jpg", {
+          type: "image/jpeg",
+        });
+        Object.defineProperty(f, "size", { value: MAX_TOTAL_SIZE_BYTES - 1000 });
+        return f;
+      })(),
+      previewUrl: "blob:existing",
+    };
+    const onPhotosChange = vi.fn();
+
+    render(
+      <EditScreen
+        {...defaultProps}
+        photoTier="standard"
+        photos={[existingPhoto]}
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const newFile = new File([new Uint8Array([0xff, 0xd8, 0xff])], "new.jpg", {
+      type: "image/jpeg",
+    });
+    Object.defineProperty(newFile, "size", { value: 5000 });
+    await userEvent.upload(input, newFile);
+
+    expect(
+      screen.getAllByText(/total size of all photos/i).length
+    ).toBeGreaterThanOrEqual(1);
+    expect(onPhotosChange).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid file within all limits and calls onPhotosChange with a new attachment", async () => {
+    const onPhotosChange = vi.fn();
+    render(
+      <EditScreen
+        {...defaultProps}
+        photoTier="standard"
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const goodFile = new File([new Uint8Array([0xff, 0xd8, 0xff])], "good.jpg", {
+      type: "image/jpeg",
+    });
+    await userEvent.upload(input, goodFile);
+
+    expect(onPhotosChange).toHaveBeenCalledTimes(1);
+    const [[attachments]] = onPhotosChange.mock.calls;
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].file).toBe(goodFile);
+    expect(typeof attachments[0].previewUrl).toBe("string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Photo removal and tier-change object URL lifecycle
+// ---------------------------------------------------------------------------
+
+describe("EditScreen — photo removal and object URL lifecycle", () => {
+  it("revokes the removed photo's object URL and calls onPhotosChange without it", async () => {
+    const photoA = {
+      file: new File([new Uint8Array([0xff, 0xd8, 0xff])], "a.jpg", { type: "image/jpeg" }),
+      previewUrl: "blob:photo-a",
+    };
+    const photoB = {
+      file: new File([new Uint8Array([0xff, 0xd8, 0xff])], "b.jpg", { type: "image/jpeg" }),
+      previewUrl: "blob:photo-b",
+    };
+    const onPhotosChange = vi.fn();
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL");
+
+    render(
+      <EditScreen
+        {...defaultProps}
+        photoTier="standard"
+        photos={[photoA, photoB]}
+        onPhotosChange={onPhotosChange}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /remove photo 1/i }));
+
+    expect(revokeSpy).toHaveBeenCalledWith("blob:photo-a");
+    expect(revokeSpy).not.toHaveBeenCalledWith("blob:photo-b");
+    expect(onPhotosChange).toHaveBeenCalledWith([photoB]);
+
+    revokeSpy.mockRestore();
+  });
+
+  it("revokes all photo URLs, clears photos, and resets photoError when switching tier with existing photos", async () => {
+    const photoA = {
+      file: new File([new Uint8Array([0xff, 0xd8, 0xff])], "a.jpg", { type: "image/jpeg" }),
+      previewUrl: "blob:photo-a",
+    };
+    const photoB = {
+      file: new File([new Uint8Array([0xff, 0xd8, 0xff])], "b.jpg", { type: "image/jpeg" }),
+      previewUrl: "blob:photo-b",
+    };
+    const onPhotosChange = vi.fn();
+    const onPhotoTierChange = vi.fn();
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL");
+
+    render(
+      <EditScreen
+        {...defaultProps}
+        photoTier="high"
+        photos={[photoA, photoB]}
+        onPhotosChange={onPhotosChange}
+        onPhotoTierChange={onPhotoTierChange}
+      />
+    );
+
+    await userEvent.click(screen.getByLabelText(/standard quality/i));
+
+    expect(revokeSpy).toHaveBeenCalledWith("blob:photo-a");
+    expect(revokeSpy).toHaveBeenCalledWith("blob:photo-b");
+    expect(onPhotosChange).toHaveBeenCalledWith([]);
+    expect(onPhotoTierChange).toHaveBeenCalledWith("standard");
+
+    revokeSpy.mockRestore();
+  });
+
+  it("does not revoke anything or call onPhotosChange when switching tier with no existing photos", async () => {
+    const onPhotosChange = vi.fn();
+    const onPhotoTierChange = vi.fn();
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL");
+
+    render(
+      <EditScreen
+        {...defaultProps}
+        photoTier="high"
+        photos={[]}
+        onPhotosChange={onPhotosChange}
+        onPhotoTierChange={onPhotoTierChange}
+      />
+    );
+
+    await userEvent.click(screen.getByLabelText(/standard quality/i));
+
+    expect(revokeSpy).not.toHaveBeenCalled();
+    expect(onPhotosChange).not.toHaveBeenCalled();
+    expect(onPhotoTierChange).toHaveBeenCalledWith("standard");
+
+    revokeSpy.mockRestore();
+  });
+
+  it("clears an existing photoError when switching tier with existing photos", async () => {
+    const photoA = {
+      file: new File([new Uint8Array([0xff, 0xd8, 0xff])], "a.jpg", { type: "image/jpeg" }),
+      previewUrl: "blob:photo-a",
+    };
+
+    render(<EditScreen {...defaultProps} photoTier="high" photos={[photoA]} />);
+
+    // Trigger a photoError via the count gate (high tier max is 1 photo).
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const secondFile = new File([new Uint8Array([0xff, 0xd8, 0xff])], "second.jpg", {
+      type: "image/jpeg",
+    });
+    await userEvent.upload(input, secondFile);
+    expect(screen.getAllByText(/maximum of 1 photo/i).length).toBeGreaterThanOrEqual(1);
+
+    await userEvent.click(screen.getByLabelText(/standard quality/i));
+
+    expect(screen.queryByText(/maximum of 1 photo/i)).toBeNull();
   });
 });
 
