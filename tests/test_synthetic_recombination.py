@@ -1580,9 +1580,9 @@ def test_every_salt_find_fold_salts_returns_generates_every_fold(unbalanced_fold
 
 
 def test_the_agreed_salt_still_clears_the_real_libraries():
-    # DD4 pins salt "32" and every downstream fold uses it. If a library grows
-    # past the point where 32 works, this fails here rather than halfway
-    # through a five-fold training run.
+    # DD4 pins DEFAULT_FOLD_SALT and every downstream fold uses it. If a
+    # library grows past the point where it still works, this fails here
+    # rather than halfway through a five-fold training run.
     for fold in range(FOLDS):
         load_fragments(REAL_MANIFEST, folds=FOLDS, fold_index=fold, salt=DEFAULT_FOLD_SALT)
 
