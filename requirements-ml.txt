@@ -74,7 +74,7 @@
 # on every commit. Installing this file locally is what turns the rest on.
 
 # --- Task 3: baselines -----------------------------------------------------
-scikit-learn==1.7.2
+scikit-learn==1.9.0
 
 # --- Tasks 4 and 5: Arm A (frozen probe) and Arm B (fine-tune) --------------
 # Pinned to the versions both arms were written and tested against.
