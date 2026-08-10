@@ -4,7 +4,7 @@ starlette==1.4.1
 pydantic==2.12.5
 anyio==4.14.2
 python-multipart==0.0.32
-nh3==0.3.3
+nh3==0.3.6
 psycopg2-binary==2.9.12
 alembic==1.19.0
 tzdata
