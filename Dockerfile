@@ -32,9 +32,21 @@ RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies, then strip the packaging toolchain (pip,
+# setuptools, wheel) from the final image. Nothing at runtime imports pip,
+# setuptools, or pkg_resources -- they are build-time-only tools. Keeping
+# them around ships two CE+ Trivy findings that pip upgrades alone cannot
+# fix: setuptools' own CVEs (e.g. CVE-2025-47273, a path traversal in its
+# PackageIndex) and pip's vendored msgpack copy (e.g. GHSA-6v7p-g79w-8964),
+# which stays pinned to a vulnerable version even in the latest pip release
+# because pip vendors its own dependencies rather than resolving them.
+# ensurepip's bundled pip wheel is also removed since it embeds the same
+# vendored msgpack and would otherwise reintroduce the finding.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir "setuptools>=78.1.1" \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip uninstall -y --no-input pip setuptools wheel \
+    && rm -rf /usr/local/lib/python3.14/ensurepip
 
 # Copy application source
 COPY app/ ./app/
