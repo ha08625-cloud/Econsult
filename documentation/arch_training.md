@@ -114,7 +114,7 @@ claim can be made per-signal.
 | `symptoms/dysuria/dysuria_true.txt` | 24 | Says it hurts to pass urine ("it burns when I pee") |
 | `symptoms/dysuria/dysuria_false.txt` | 18 | Says it does not ("weeing itself is fine, no stinging") |
 | `symptoms/dysuria/dysuria_null_hedged.txt` | 16 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
-| `symptoms/dysuria/dysuria_null_thirdparty.txt` | 14 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
+| `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
 | `symptoms/flank_pain/flank_pain_true.txt` | 18 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
 | `symptoms/flank_pain/flank_pain_false.txt` | 24 | Says there is not ("no pain in my back or sides at all") |
 | `symptoms/flank_pain/flank_pain_null_hedged.txt` | 10 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
@@ -377,10 +377,11 @@ one number per fold. Any report using fold mode has to say so.
 `"{salt}:{cluster_key}"`. The salt exists because the empty-cell guard (section
 10) covers the *whole* manifest, so a library for an unrelated signal that fails
 to populate all five buckets blocks a fever run. Only about 1 integer salt in 40
-clears that for every library, and the binding constraints are entirely the
-dysuria seed libraries — `dysuria_null_thirdparty` has 7 clusters and
-`dysuria_null_hedged` has 8, and both must cover 5 buckets. `--find-fold-salt`
-searches for salts that work; do not instead "fix" it by editing dysuria.
+clears that for every library, and the binding constraints were entirely the
+dysuria seed libraries — `dysuria_null_thirdparty` had 7 clusters but now has 23,
+and `dysuria_null_hedged` has 8, which means the salt constraint is no longer as
+tight. `--find-fold-salt` searches for salts that work; do not instead "fix" it
+by editing dysuria.
 
 Passing the guard remains a floor, not a health signal. Seven clusters spread
 over five buckets means some fold's test cell holds exactly one idea.
@@ -623,9 +624,10 @@ is unbalanced. This is worth knowing before assuming a run against a different
 signal would work once that signal's own libraries are balanced.
 
 The dysuria libraries fill all twelve of their cells, but they are small enough
-(14–24 fragments) that this is fragile: one reworded fragment can empty a cell
-again. They need the same 40–50 target as everything else before any number
-derived from them means anything.
+(16–46 fragments) that this is fragile: one reworded fragment can empty a cell
+again. `dysuria_null_thirdparty` has been expanded to 46 fragments; the others still need
+the same 40–50 target as everything else before any number derived from them means
+anything.
 
 The flank_pain libraries (10–24 fragments each, a proof-of-concept batch) fill
 all twelve of their cells too, for the same reason and with the same caveat as
