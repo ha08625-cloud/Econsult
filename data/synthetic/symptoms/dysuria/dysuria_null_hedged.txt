@@ -6,35 +6,35 @@
 [d03] It doesn't feel right when I go but I wouldn't describe it as painful exactly
 [d04] I've been so uncomfortable generally that I honestly can't tell if weeing makes it worse
 [d04] Everything is uncomfortable at the moment so I can't separate out whether passing urine actually hurts
-[d05] Maybe a twinge sometimes, maybe not, it comes and goes
-[d05] Now and again there might be a twinge but other times there's nothing at all
+[d05] Sometimes there's a twinge when I wee and other times nothing at all, it's really inconsistent
+[d05] The odd twinge when I go to the toilet some days, and completely fine other days, hard to know what to make of it
 [d06] I'd say it's more of a strange sensation than pain when I pass urine
 [d06] It's an odd feeling rather than pain when I wee, if that makes any sense
-[d07] Sometimes it feels like it might sting but I can't be sure if that's just anxiety
-[d07] There's maybe a bit of discomfort but I think some of it could be in my head
+[d07] Sometimes it feels like it might sting when I wee but I can't be sure if that's just anxiety
+[d07] There's maybe a bit of discomfort when I pass urine but I think some of it could be in my head
 [d08] It's hard to tell if the discomfort is actually during weeing or just before
 [d08] I'm uncertain whether the sensation happens when I'm actually passing urine or just around that time
-[d09] One day I think I notice something, the next day I can't feel anything at all
-[d09] Some days I'm convinced there's a slight burn, other days I think I imagined it
-[d10] I might have a bit of a sting but it's so mild I'm not confident it's actually there
-[d10] There's possibly a slight rawness but it's borderline whether I'm really noticing something
-[d11] It could be dysuria or it could just be that everything down there is irritated from something else
+[d09] One day I think I notice something when I wee, the next day I can't feel anything at all
+[d09] Some days I'm convinced there's a slight burn when I pass urine, other days I think I imagined it
+[d10] I might have a bit of a sting when I wee but it's so mild I'm not confident it's actually there
+[d10] There's possibly a slight rawness when I pass urine but it's borderline whether I'm really noticing something
+[d11] I'm not sure if it's actually painful to wee or if everything down there is just irritated from something else
 [d11] I'm not sure if it's specifically a weeing issue or just general irritation in that area
-[d12] Only had it for a couple of days so I'm still not sure if it's something real or if it'll pass
-[d12] It's quite recent so I haven't had long enough to work out if it's an actual symptom
+[d12] Only had the stinging when I wee for a couple of days so I'm still not sure if it's something real or if it'll pass
+[d12] It's quite recent, this soreness when I pass urine, so I haven't had long enough to work out if it's an actual symptom
 [d13] The nurse asked if it stings when I go and I genuinely didn't know how to answer her
 [d13] When I was asked whether weeing stings I couldn't give a straight answer either way
 [d14] I've been on painkillers all week so I can't tell whether passing urine would hurt without them
 [d14] I'm taking paracetamol regularly so I've no idea whether weeing would be sore otherwise
 [d15] I notice something when I wee but I honestly can't decide if it's painful or just uncomfortable
-[d15] There's a sensation there, uncomfortable maybe, but I can't quite call it pain
-[d16] It was bothering me but now I'm wondering if I was just reading too much into normal variation
-[d16] I thought there was something wrong but I'm second-guessing myself now
-[d17] The intensity changes so much it's hard to know what the actual baseline is
-[d17] It fluctuates so much between days that I can't tell what's normal for me anymore
-[d18] I might have noticed it more because I was paying closer attention, hard to say now
-[d18] I was hyper-aware of the area and might have been noticing things that aren't really there
-[d19] It feels like it could be dysuria but it's not severe enough for me to be certain
-[d19] There's possibly something there but it's so mild it might just be normal sensation
-[d20] I'm honestly not sure whether the stinging I'm describing is actual dysuria or something else entirely
-[d20] It might be dysuria but equally it could be a dozen other things and I've no idea which
+[d15] There's a sensation there when I go for a wee, uncomfortable maybe, but I can't quite call it pain
+[d16] The stinging when I wee was bothering me but now I'm wondering if I was just reading too much into normal variation
+[d16] I thought something was wrong with my waterworks but I'm second-guessing myself now
+[d17] The intensity of the stinging when I wee changes so much it's hard to know what the actual baseline is
+[d17] It fluctuates so much between days when I go to the toilet that I can't tell what's normal for me anymore
+[d18] I might have noticed the stinging more when I wee because I was paying closer attention, hard to say now
+[d18] I was hyper-aware down there and might have been noticing things when I went to the toilet that aren't really there
+[d19] It feels like there might be a sting when I wee but it's not bad enough for me to be certain it's really there
+[d19] There's possibly something a bit off when I pass urine but it's so mild it might just be normal sensation for me
+[d20] I'm honestly not sure whether the stinging I'm describing when I wee is a real symptom or just something I've never paid attention to before
+[d20] It might be a proper symptom or it could be normal and I've just started noticing it, I honestly can't tell
