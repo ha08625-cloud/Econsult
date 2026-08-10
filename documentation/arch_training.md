@@ -122,7 +122,7 @@ claim can be made per-signal.
 | `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
 | `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
 | `filler/emotional.txt` | 60 | Filler: worry and feelings |
-| `filler/expectations.txt` | 60 | Filler: what they want to happen |
+| `filler/expectations.txt` | 100 | Filler: what they want to happen — both *what* (tests, drugs, referrals) and *who, how and when* (a named regular GP, continuity, phone vs face to face, timing) |
 | `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
 
 **The dysuria and flank_pain libraries are a seed, not a working set.** They
@@ -180,6 +180,16 @@ hyperhidrosis, bedding, and pregnancy. Note what these have in common with the
 something *other than the patient* is hot. Here the patient is hot and the
 cause is elsewhere. Keeping the two apart is what stops either library becoming
 "heat word plus an excuse ⇒ null".
+
+**`expectations` covers two families, and the second was a gap.** The first 60
+fragments are all about *what* the patient wants done — a test, a drug, a scan,
+a referral. The remaining 40 are about *who they want to see and how*: a named
+regular GP who has been dealing with them recently, continuity rather than a
+fourth locum, a phone call instead of a face-to-face, a female clinician, a slot
+that fits round work. This is among the most common things a real patient writes
+in a free-text box and it was absent from every library, so a model trained on
+the old set had never seen a clinician's name next to a symptom claim. All the
+staff names are invented.
 
 **The filler libraries must contain no fever language whatsoever.** A filler
 fragment can be paired with anything, including examples labelled "no fever
