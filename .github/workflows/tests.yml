@@ -112,8 +112,17 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && npm ci
 
+      # frontend/tsconfig.json is a solution file ("files": [] plus references),
+      # so a bare `tsc --noEmit` there resolves zero source files and checks
+      # nothing. `tsc -b` builds the referenced projects instead. Both projects
+      # already set noEmit, so this type checks without producing output.
+      # consultation_outcomes.json lives at app/core/ and is copied into
+      # frontend/ at image build time (see Dockerfile); do the same here so the
+      # import in src/screens/OutcomeScreen.tsx resolves.
       - name: TypeScript type check
-        run: cd frontend && npx tsc --noEmit
+        run: |
+          cp app/core/consultation_outcomes.json frontend/
+          cd frontend && npx tsc -b
 
       - name: Run frontend tests
         run: cd frontend && npx vitest run
