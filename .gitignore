@@ -7,3 +7,7 @@ __pycache__/
 
 # Generated synthetic training datasets (regenerable, large)
 data/synthetic/generated/
+
+# Copied from app/core/ at build time (Dockerfile) and by the CI type check;
+# never committed here.
+frontend/consultation_outcomes.json
