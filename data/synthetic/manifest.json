@@ -82,6 +82,13 @@
       "subclass": "metaphor"
     },
     {
+      "name": "dysuria_null_historical",
+      "file": "symptoms/dysuria/dysuria_null_historical.txt",
+      "signal_key": "dysuria_present",
+      "fragment_type": "confounder",
+      "subclass": "historical"
+    },
+    {
       "name": "flank_pain_true",
       "file": "symptoms/flank_pain/flank_pain_true.txt",
       "signal_key": "flank_pain_present",

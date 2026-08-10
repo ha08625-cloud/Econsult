@@ -105,16 +105,16 @@ claim can be made per-signal.
 | Library | Fragments | What it contains |
 |---|---|---|
 | `symptoms/fever/fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
-| `symptoms/fever/fever_false.txt` | 60 | Says the patient does not ("no temperature, I checked") |
-| `symptoms/fever/fever_null_hedged.txt` | 42 | Genuinely uncertain ("I feel a bit off, hard to say") |
+| `symptoms/fever/fever_false.txt` | 98 | Says the patient does not ("no temperature, I checked") |
+| `symptoms/fever/fever_null_hedged.txt` | 73 | Genuinely uncertain ("I feel a bit off, hard to say") |
 | `symptoms/fever/fever_null_metaphor.txt` | 55 | Fever words used non-clinically ("burning up with embarrassment") |
 | `symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
 | `symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
 | `symptoms/fever/fever_null_attribution.txt` | 50 | Hot now, confidently blamed on something that is not a fever ("I get hot flushes with the menopause") |
 | `symptoms/dysuria/dysuria_true.txt` | 24 | Says it hurts to pass urine ("it burns when I pee") |
-| `symptoms/dysuria/dysuria_false.txt` | 18 | Says it does not ("weeing itself is fine, no stinging") |
+| `symptoms/dysuria/dysuria_false.txt` | 47 | Says it does not ("weeing itself is fine, no stinging") |
 | `symptoms/dysuria/dysuria_null_hedged.txt` | 16 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
-| `symptoms/dysuria/dysuria_null_thirdparty.txt` | 14 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
+| `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
 | `symptoms/flank_pain/flank_pain_true.txt` | 18 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
 | `symptoms/flank_pain/flank_pain_false.txt` | 24 | Says there is not ("no pain in my back or sides at all") |
 | `symptoms/flank_pain/flank_pain_null_hedged.txt` | 10 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
@@ -377,10 +377,11 @@ one number per fold. Any report using fold mode has to say so.
 `"{salt}:{cluster_key}"`. The salt exists because the empty-cell guard (section
 10) covers the *whole* manifest, so a library for an unrelated signal that fails
 to populate all five buckets blocks a fever run. Only about 1 integer salt in 40
-clears that for every library, and the binding constraints are entirely the
-dysuria seed libraries — `dysuria_null_thirdparty` has 7 clusters and
-`dysuria_null_hedged` has 8, and both must cover 5 buckets. `--find-fold-salt`
-searches for salts that work; do not instead "fix" it by editing dysuria.
+clears that for every library, and the binding constraints were entirely the
+dysuria seed libraries — `dysuria_null_thirdparty` had 7 clusters but now has 23,
+and `dysuria_null_hedged` has 8, which means the salt constraint is no longer as
+tight. `--find-fold-salt` searches for salts that work; do not instead "fix" it
+by editing dysuria.
 
 Passing the guard remains a floor, not a health signal. Seven clusters spread
 over five buckets means some fold's test cell holds exactly one idea.
@@ -486,7 +487,7 @@ Matching is on whole words only. Without that, "hot" matches inside
 clean data on day one.
 
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
-different splits, i.e. the leakage described in section 6. Currently 52, of
+different splits, i.e. the leakage described in section 6. Currently 53, of
 which **zero** are in the `fever_null` libraries, which tells us the manual
 clustering pass worked. `fever_null_attribution` contributes zero as well,
 which is the check that its seven deliberate twin pairs were tagged correctly:
@@ -496,7 +497,7 @@ an untagged pair would show up here. The full breakdown:
 |---|---|---|
 | Filler | 39 | `justifiers` 14, `expectations` 10, `tangents` 8, `uti_speculation` 4, `emotional` 3 |
 | `flank_pain` seed batch | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
-| `fever` decisive | 4 | `fever_true` 3, `fever_false` 1 |
+| `fever` decisive | 5 | `fever_true` 3, `fever_false` 2 |
 
 Filler dominates, and those libraries leak in exactly the same way as the
 clinical ones but were never clustered. The `flank_pain` batch is unclustered
@@ -523,7 +524,7 @@ Stated plainly, because the numbers this produces are easy to over-read.
 distinct positive fragments. Every `true` example in validation is a
 recombination of those 15 sentences. One unlucky fragment moves the score
 several points. The training plan asks for around 200 fragments per signal; we
-have roughly half that for `true` and a third for `false`.
+have roughly half that for `true` and for `false` alike.
 
 **Length may still leak.** Fragment *count* varies but its distribution does
 not vary by label (section 5); fragment *length* is not controlled at all.
@@ -622,10 +623,11 @@ empty cell blocks generation for *every* signal, not only the one whose library
 is unbalanced. This is worth knowing before assuming a run against a different
 signal would work once that signal's own libraries are balanced.
 
-The dysuria libraries fill all twelve of their cells, but they are small enough
-(14–24 fragments) that this is fragile: one reworded fragment can empty a cell
-again. They need the same 40–50 target as everything else before any number
-derived from them means anything.
+The dysuria libraries fill all twelve of their cells. `dysuria_false` has been
+expanded to 47 fragments, bringing it into the 40–50 target range. The remaining
+libraries (`dysuria_true` 24, `dysuria_null_hedged` 16, `dysuria_null_thirdparty`
+14) still sit at intermediate sizes. They need the same 40–50 target as everything
+else before any number derived from them means anything.
 
 The flank_pain libraries (10–24 fragments each, a proof-of-concept batch) fill
 all twelve of their cells too, for the same reason and with the same caveat as
@@ -694,8 +696,8 @@ entirely; the pooled figures are in the table after this one:
 | Library | train | val | test |
 |---|---|---|---|
 | `fever_true` | 66 / **66** | 15 / **15** | 15 / **15** |
-| `fever_false` | 39 / **39** | 12 / **12** | 9 / **9** |
-| `fever_null_hedged` | 37 / **28** | 3 / **2** | 2 / **2** |
+| `fever_false` | 68 / **68** | 19 / **19** | 11 / **11** |
+| `fever_null_hedged` | 59 / **50** | 8 / **7** | 6 / **6** |
 | `fever_null_historical` | 36 / **29** | 6 / **4** | 3 / **3** |
 | `fever_null_metaphor` | 43 / **35** | 7 / **7** | 5 / **5** |
 | `fever_null_thirdparty` | 37 / **28** | 7 / **5** | 2 / **2** |
@@ -731,8 +733,8 @@ once, so the aggregate test set for a sub-class is its whole library:
 | Library | fragments | clusters (the effective n) |
 |---|---|---|
 | `fever_true` | 96 | **96** |
-| `fever_false` | 60 | **60** |
-| `fever_null_hedged` | 42 | **32** |
+| `fever_false` | 98 | **98** |
+| `fever_null_hedged` | 73 | **63** |
 | `fever_null_historical` | 45 | **36** |
 | `fever_null_metaphor` | 55 | **47** |
 | `fever_null_thirdparty` | 46 | **35** |
@@ -910,7 +912,7 @@ future empty cell has to be cleared the same way.
 requirements are that they contain no signal language and that they are varied
 enough not to become a shortcut. Templating them is low risk and immediately
 useful, and it would take the lint's cross-split near-duplicate count (currently
-52, of which 39 are filler) to zero by construction.
+53, of which 39 are filler) to zero by construction.
 
 **The draft YAML needs restructuring before it is implementable.** Slot values
 are declared per synonym but consumed by templates with different grammatical
