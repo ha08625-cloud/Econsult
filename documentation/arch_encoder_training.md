@@ -42,6 +42,17 @@ the bottleneck and the next month is model work.
 Nothing predicts which. The point of building both arms is that the question
 stops being settled by argument.
 
+**There is a third answer, and it is not a way out of the first two.** Some
+fragments do not settle the clinical question at all, so their ceiling is below
+100% however good the model and however large the library. `arch_training.md`
+section 9 sets out which ones actually qualify — fewer than it first appears,
+because `null` is itself the determinate answer for "the text does not say" —
+and sets the rule that keeps this from swallowing the question above: a ceiling
+below the general target is declared per library *before* the run that measures
+it. Declared afterwards it is unfalsifiable, and a model-versus-libraries
+comparison in which any inconvenient slice can be reclassified once seen answers
+nothing.
+
 ---
 
 ## 2. Data flow
@@ -277,7 +288,11 @@ Four sections carry the weight:
   errors piled onto a handful mean those specific ideas are not learnable from the
   data we have, and the table names them. `error_concentration` states this as a
   number, against the fixed reference point that an even spread would put half the
-  errors on half the erring fragments.
+  errors on half the erring fragments. "Not learnable from the data we have"
+  splits one step further, and the table is where the split is visible: a thin
+  library, an inconsistency in how a recurring case was sorted, or a fragment
+  whose text genuinely does not settle the question. Only the third is a ceiling,
+  and `arch_training.md` section 9 is the test for which one is in front of you.
 * **Both confusion matrices** — raw argmax and post-decision-rule, because "the
   model is wrong" and "the rule is conservative" are different findings.
 
