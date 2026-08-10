@@ -621,6 +621,87 @@ for them. We have not verified those signals are absent from the filler text —
 `uti_speculation` mentions cystitis and kidney infection — so claiming "no
 dysuria mentioned" would be inventing a label.
 
+### The accuracy ceiling is not the same for every library
+
+A model that scores 70% on one library and 95% on another has not necessarily
+failed on the first. Some patient text does not contain enough information for a
+competent clinician to answer the question either, and no amount of training
+extracts an answer the text does not hold. Where that is so, the ceiling sits
+below 100% permanently, and holding every library to one target asks for effort
+where none can pay off.
+
+That principle is right. Applying it here needs two distinctions that are easy
+to collapse, because most of what currently *looks* like irreducible ambiguity
+is not.
+
+**`null` is already the answer for "the text does not say".** Section 7 defines
+it that way — not as "the patient did not mention fever". So a fragment that
+leaves the clinical question open still has a determinate correct label, and a
+model can be held to a high standard on it. `fever_null_hedged` is the clearest
+case: nearly every line states the patient's own uncertainty outright ("so I
+can't tell", "no real way for me to check", "so hard to judge"). The right
+answer is `null`, the text says so plainly, and 70% there would be a model
+failure rather than a ceiling. The same holds for the other four hard
+sub-classes — each displaces the fever along an axis the text makes explicit
+(section 3), and each is therefore determinate.
+
+**The genuine ambiguity is at the `true`/`null` boundary, and an unwritten
+policy currently settles it.** `fever_true` holds "I was burning up and sweating
+a lot", "I kept feeling hot even when the room was cool" and "I was sweating and
+shaking all night". None is a measurement, and no clinician could confirm a fever
+from any of them. `fever_null_hedged` holds "i feel like im roasting on the
+inside but when i touch my forehead its perfectly cool". The clinical content of
+the two groups is the same. What separates them is whether the patient
+volunteered their own doubt. The libraries therefore encode a rule — *unhedged
+first-person present subjective heat counts as `true`* — that is defensible,
+load-bearing on hundreds of fragments, and recorded nowhere.
+
+That distinction changes what to do about a low number, and there are three
+cases, not one:
+
+* **Undeclared policy.** The library is inconsistent about a recurring case
+  because nobody decided it. This *presents* as irreducible ambiguity and is
+  not. It is fixable by writing the rule down, and it has to be fixed, because
+  until it is, new fragments get sorted by feel and the inconsistency grows with
+  the library.
+* **Irreducible ambiguity.** The policy is decided and this particular fragment
+  still sits on the line. The ceiling is real and permanent, 70% is the right
+  expectation, and further work on it is waste.
+* **Model or library weakness.** The answer is determinate and the model gets it
+  wrong anyway. This is what training and more fragments are for.
+
+The failure mode to guard against is filing the first and third under the
+second. "That one is just ambiguous" is available as an explanation for every
+error and is unfalsifiable after the fact, which would destroy the question
+`arch_encoder_training.md` section 1 exists to answer: no accuracy figure can
+separate a weak model from a thin library if any inconvenient part of it may be
+reclassified as a ceiling once seen.
+
+So the rule is that **an expected ceiling below the general target is declared
+per library, in writing, before the run that measures it.** A ceiling asserted
+after a disappointing report is not a ceiling, it is an excuse. The honest way
+to establish one is to measure it: have a second person label a sample of that
+library's fragments from the text alone, blind to the file they came from, and
+take the agreement rate. A model cannot be expected to beat the rate at which
+two clinicians agree with each other. Until that measurement exists a declared
+ceiling is an assertion, and should be written as one.
+
+One consequence runs the other way and is worth stating because it is
+counter-intuitive. **A high score on an ambiguous boundary is worse news than a
+low one.** If `true` versus `null` is decided by whether the patient volunteered
+doubt, then a model scoring 95% has learned to detect volunteered doubt — a
+discourse cue, not a clinical one — and will carry that straight into real
+submissions, where the cue and the clinical fact come apart. That belongs with
+the length and urgency leaks above: a shortcut that inflates our numbers and
+transfers nothing. It would show in the per-fragment error table
+(`arch_encoder_training.md` section 8) as errors concentrated on exactly those
+fragments where the cue and the label disagree.
+
+Nothing in the pipeline enforces any of this today. There is no per-library
+ceiling field in the manifest, no written policy for the `true`/`null` boundary,
+and no second-labeller agreement measurement. This subsection records the
+position, not a mechanism.
+
 ---
 
 ## 10. Current state
@@ -1146,3 +1227,12 @@ where the numbers it produces can be trusted:
 
 The spelling-mistake pass can slot in anywhere after step 1, since it is a
 post-processing step over finished text and independent of everything else.
+
+**Writing down the `true`/`null` labelling policy (section 9) belongs with step
+3.** Both are the same kind of work — turning a guarantee that currently lives
+in the author's head into something declared per library and checkable — and
+step 3's argument for doing it now applies unchanged: it is cheap while there is
+one signal and expensive once dysuria and frequency fragments are being sorted
+against a rule nobody has stated. It also has to come before any per-library
+accuracy ceiling is declared, because until the policy exists there is no way to
+tell an irreducible ceiling from an inconsistency.
