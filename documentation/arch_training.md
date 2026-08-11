@@ -117,23 +117,43 @@ claim can be made per-signal.
 | `symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past ("I had antibiotics in March for a water infection, it burned to wee then") |
 | `symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burning/stinging words used non-clinically ("a stinging remark from my mother-in-law") |
 | `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
-| `symptoms/flank_pain/flank_pain_true.txt` | 18 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
-| `symptoms/flank_pain/flank_pain_false.txt` | 24 | Says there is not ("no pain in my back or sides at all") |
-| `symptoms/flank_pain/flank_pain_null_hedged.txt` | 10 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
-| `symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 14 | *Someone else* has flank pain ("my son says his back hurts under his ribs") |
+| `symptoms/flank_pain/flank_pain_true.txt` | 48 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
+| `symptoms/flank_pain/flank_pain_false.txt` | 55 | Says there is not ("no pain in my back or sides at all") |
+| `symptoms/flank_pain/flank_pain_null_hedged.txt` | 53 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
+| `symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 47 | *Someone else* has flank pain ("my son says his back hurts under his ribs") |
 | `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
 | `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
 | `filler/emotional.txt` | 60 | Filler: worry and feelings |
 | `filler/expectations.txt` | 100 | Filler: what they want to happen — both *what* (tests, drugs, referrals) and *who, how and when* (a named regular GP, continuity, phone vs face to face, timing) |
 | `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
 
-**Dysuria is sized; flank_pain is still a seed.** Both exist so the
+**Dysuria and flank_pain are both sized now.** Both exist so the
 multi-signal recombination described in section 12.2 has something real to be
 built against. The six dysuria libraries have since been grown to 38–47
-fragments each, which is the 40–50 band everything else is held to, so they are
-no longer the proof-of-concept batch this paragraph used to describe. The four
-flank_pain libraries are — 10 to 24 fragments — and section 10 says what that
-costs. The generator does not read either symptom's libraries yet:
+fragments each, and the four flank_pain libraries to 47–55, at or just above the
+40–50 band everything else is held to, so neither is the proof-of-concept batch
+this paragraph used to describe.
+
+**flank_pain carries no cluster markers, deliberately.** Every one of its 203
+fragments is a distinct idea, so its effective n equals its fragment count —
+unlike the four twin-tagged `dysuria_null` libraries, whose effective n is half
+theirs (section 10). That was the right trade for a library being grown from a
+seed: the binding constraint on flank_pain was cluster count, not surface
+robustness.
+
+**flank_pain covers two of the five null axes, not five.** It has `hedged` and
+`thirdparty`; it has no `historical`, `metaphor` or `attribution` library. The
+axis table below says why that matters, and `attribution` is the gap with the
+most weight for this signal specifically — musculoskeletal flank pain with a
+confidently named cause ("I shifted a wardrobe on Saturday and my back has been
+sore since") is common, is not a hedge, and has nowhere to live today.
+`metaphor` is unusually rich for this signal too ("a pain in my side", "a thorn
+in my side", "stabbed in the back", "back-breaking"). Until those libraries
+exist, a flank_pain run measures the model on a narrower set of confounders
+than the fever run does, and its numbers are not comparable to fever's on that
+basis.
+
+The generator does not read either symptom's libraries yet:
 `build_pools` keeps only fragments whose `signal_key` matches the signal
 being generated, plus filler, so a dysuria or flank_pain fragment is dropped
 from a `fever_present` run rather than treated as filler. That is the
@@ -142,12 +162,24 @@ filler would silently assert they say nothing about fever, and that
 guarantee is not yet written down anywhere the code can check.
 
 They were written to be silent about fever (verified: zero hits against the
-lint's fever lexicon) and about the other urinary signals, but "verified by
-reading them" is exactly the informal guarantee section 12.5 says has to become
-an explicit, checkable declaration before it can be relied on.
+lint's fever lexicon, and the flank_pain expansion preserves that) and about the
+other urinary signals, but "verified by reading them" is exactly the informal
+guarantee section 12.5 says has to become an explicit, checkable declaration
+before it can be relied on.
+
+**The silence claim is already false for `flank_pain_false`.** Three of its
+original lines resolve the flank question by contrasting it against a urinary
+one — "just the usual urine symptoms", "it's just uncomfortable when I wee",
+"it's just the waterworks that are the problem". Each asserts `dysuria_present:
+true` in a library the manifest will eventually declare silent on dysuria, so
+under 12.5 a multi-signal run would emit `dysuria_present: null` for them and
+that label would be a lie. They are the only such lines in the four libraries
+and nothing in the expansion added more. Left in place because rewriting them
+is a labelling decision, not a mechanical one, and recorded here so it is not
+rediscovered later as a mystery.
 
 That the check is *manual* is the point of the caveat, and it has already
-drifted once. The lint's filler-purity report screens filler libraries only, so
+drifted twice. The lint's filler-purity report screens filler libraries only, so
 when `dysuria_null_metaphor` acquired "burning up with questions" and "scalding
 hot under the collar", and `dysuria_true` a "sharp, hot pain", nothing fired —
 three fever-lexicon hits sitting in libraries the section above claims are
@@ -407,15 +439,21 @@ run. Read the constant, not this sentence, if the two ever disagree.
 The cluster key is hashed as `"{salt}:{cluster_key}"`. The salt exists because
 the empty-cell guard (section 10) covers the *whole* manifest, so a library for
 an unrelated signal that fails to populate all five buckets blocks a fever run.
-293 of the first 1000 integer salts currently clear every library, up from about
-1 in 40 when this was written, because the binding libraries have grown.
+792 of the first 1000 integer salts currently clear every library, up from about
+1 in 40 when this was written and from 293 before the flank_pain expansion,
+because the binding libraries have grown.
 
-**Which library binds has moved from dysuria to flank_pain**, and it tracks
-cluster count almost exactly: `flank_pain_null_hedged` (10 clusters) fails 481
-of those 1000 salts on its own, `flank_pain_null_thirdparty` (14) fails 211, and
-every dysuria library now fails fewer than 70. That is the honest reading of the
-salt as a health signal — it is a proxy for the smallest library, and the way to
-loosen it is to write fragments for flank_pain. `--find-fold-salt` searches for
+**Which library binds has moved back from flank_pain to dysuria**, and it tracks
+cluster count almost exactly. Before the expansion `flank_pain_null_hedged` (10
+clusters) failed 481 of those 1000 salts on its own and
+`flank_pain_null_thirdparty` (14) failed 211; at 48 and 47 clusters they now
+fail 1 and 0. The binding libraries are `dysuria_null_historical` (68 failures),
+`dysuria_null_metaphor` (61) and `dysuria_null_hedged` (57) — all four
+`dysuria_null` libraries are twin-tagged, so their cluster count is half their
+fragment count and that, not their size, is what binds. That is the honest
+reading of the salt as a health signal: it is a proxy for the smallest library
+measured in *clusters*, and the way to loosen it is to write new ideas for
+whichever library is smallest by that measure. `--find-fold-salt` searches for
 salts that work; do not instead "fix" it by editing whichever library is
 currently binding.
 
@@ -533,13 +571,31 @@ an untagged pair would show up here. The full breakdown:
 |---|---|---|
 | Filler | 39 | `justifiers` 14, `expectations` 10, `tangents` 8, `uti_speculation` 4, `emotional` 3 |
 | `dysuria` | 3 | `dysuria_null_metaphor` 2, `dysuria_true` 1 |
-| `flank_pain` seed batch | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
+| `flank_pain` | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
 | `fever` decisive | 5 | `fever_true` 3, `fever_false` 2 |
 
 Filler dominates, and those libraries leak in exactly the same way as the
-clinical ones but were never clustered. The `flank_pain` batch is unclustered
-for the same reason. The four `fever` hits are the incidental near-duplicates
-section 6 records as known and untagged.
+clinical ones but were never clustered. The `flank_pain` libraries are
+unclustered by design (section 3). The four `fever` hits are the incidental
+near-duplicates section 6 records as known and untagged.
+
+**The `flank_pain` row is 9 both before and after the expansion**, which is the
+number worth noticing: the four libraries went from 66 fragments to 203 and
+contributed no new leakage, because the new lines were written as distinct
+situations rather than as reworded frames. All nine surviving pairs are between
+*original* lines and are the review list for the next pass — the worst three are
+in `flank_pain_null_thirdparty`, which was written as one frame ("my [relative]
+has pain in [their] side") with the relative swapped out, exactly the fault the
+dysuria row below describes.
+
+One structural caveat on reading this row at all. Every flank_pain fragment
+shares a small anatomical vocabulary — *back*, *side*, *ribs*, *flank* — so
+character-level similarity between two genuinely distinct ideas runs higher here
+than in the fever libraries, and pairs land just over the 0.60 threshold on
+shared anatomy alone. Chasing this count to zero by rewording is partly chasing
+noise, and worse, the split is hashed on the fragment text, so every reword
+reassigns that fragment's split and can surface a different pair. Rewrite for
+distinct *ideas*, then read whatever the count settles at.
 
 The dysuria row is the report earning its keep. `dysuria_null_thirdparty`
 contributed 8 of these — the worst of any clinical library — because half of it
@@ -777,13 +833,33 @@ apiece under the default bands, which is the section-10 problem this whole
 subsection is about, at the same magnitude fever had before fold mode. Growing
 these libraries further means new *ideas*, not new twins.
 
-The flank_pain libraries (10–24 fragments each, a proof-of-concept batch) fill
-all twelve of their cells too, for the same reason and with the same caveat as
-dysuria above — but here "fills all its cells" is close to hollow.
-`flank_pain_true` and `flank_pain_false` have **one** fragment each in test, and
-`flank_pain_null_hedged` has **four** in train. The guard passes and nothing
-derived from those cells would mean anything. Passing the empty-cell guard is a
-floor, not a sign of health; see the effective sample size discussion below.
+**The flank_pain libraries have been grown from that seed batch and no longer
+have the opposite problem.** They were 10–24 fragments each, filling all twelve
+cells so thinly that "fills all its cells" was close to hollow —
+`flank_pain_true` and `flank_pain_false` had **one** fragment each in test and
+`flank_pain_null_hedged` had **four** in train. They are now 47–55 fragments
+each, carry no cluster markers at all, and so have 47–55 clusters apiece: more
+effective n than any dysuria library and more than every `fever_null` library
+except `hedged`. Under the default bands the test cells hold 5 to 14 clusters,
+and under five folds every cluster is a test cluster exactly once, which is the
+readable configuration.
+
+Two things about the expansion are worth recording because they are properties
+a later edit could quietly undo. The four libraries were held to a common
+register — about 35% of lines in each carry apostrophe-free contractions, so
+"messy text" cannot become a cue for any one label — and to a common length
+band, medians 12 to 16 words against the 1.5× ratio section 9 sets as the point
+at which length becomes a usable proxy for the label. The `null_hedged` library
+is the one to watch on both counts: hedging naturally runs long and informal,
+and it drifted to 1.64× and 62% before being pulled back.
+
+The caveat that survives is not size. It is that flank_pain covers two null
+axes rather than five (section 3), so a flank run measures a narrower set of
+confounders than a fever run and the two are not comparable sub-class for
+sub-class.
+
+Passing the empty-cell guard remains a floor rather than a sign of health; see
+the effective sample size discussion below.
 
 ### The proof-of-concept run
 
