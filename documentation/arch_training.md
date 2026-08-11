@@ -815,6 +815,35 @@ so. It is a reading list, not a fault list.
 **Split coverage** — how many fragments of each library landed in each split,
 flagging any empty cell. See section 10.
 
+### Four guards against a bad merge
+
+The lint reports; these four tests fail the build, and they exist because four
+library tickets landed in quick succession and their merges concatenated
+conflicting edits rather than merging them. They live in
+`tests/test_synthetic_recombination.py` and run against the committed tree
+rather than any fixture.
+
+* **No duplicate JSON keys in the manifest.** The merge fused two library
+  entries into one object. `json.load` resolves duplicate keys last-wins, so the
+  first library *silently vanished* rather than raising — the file still parsed.
+  Only an `object_pairs_hook` sees it.
+* **Every `.txt` on disk is declared in the manifest.** The other half of the
+  same fault. `load_fragments` checks only the reverse direction, so a library
+  the manifest stops naming quietly stops being training data with nothing
+  raised anywhere.
+* **The section 3 table lists every library exactly once**, and its set of paths
+  matches the manifest. The merge left flank_pain in the table twice, once with
+  current counts and once with pre-expansion ones, and a reader has no way to
+  tell which block is live.
+* **Every count in that table matches its file.** These are per-library totals
+  that only a merged tree can compute, so they go stale *on merge* rather than
+  in the PR that moved them — which is why review does not catch it.
+
+`documentation/arch_training.md` is in the `rulesets` path filter in
+`.github/workflows/tests.yml` for the third and fourth of these. Without it the
+workflow's `'!**/*.md'` exclusion means a PR that rewrites the table runs no job
+at all.
+
 ---
 
 ## 9. What this data is and is not worth
