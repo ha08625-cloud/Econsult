@@ -41,9 +41,12 @@ real patient text could not be used for this without a lot of governance work.
 So we write a few hundred sentence fragments by hand and recombine them into
 thousands of examples.
 
-The current work covers exactly one signal: `fever_present`, on the
-`urinary_symptoms` condition. It is a proof of concept for the *pipeline*, not
-an attempt to produce clinical-grade training data — see section 9.
+Everything trained and measured so far covers one signal: `fever_present`, on
+the `urinary_symptoms` condition. It is a proof of concept for the *pipeline*,
+not an attempt to produce clinical-grade training data — see section 9.
+`nocturia_present` now has a complete set of libraries built to the same
+pattern and generates without error, but nothing has been trained on it; a
+dataset still carries exactly one signal's key (section 9).
 
 ---
 
@@ -83,7 +86,8 @@ convention:
 data/synthetic/
   manifest.json
   symptoms/fever/      seven libraries, all about fever_present
-  symptoms/dysuria/    four libraries, all about dysuria_present
+  symptoms/dysuria/    six libraries, all about dysuria_present
+  symptoms/nocturia/   seven libraries, all about nocturia_present
   symptoms/flank_pain/ four libraries, all about flank_pain_present
   filler/              five libraries, verified silent on fever only (section 9)
   drafts/              scratch files, deliberately not libraries (section 4)
@@ -93,7 +97,7 @@ data/synthetic/
 Nothing in the code keys off the directory — the manifest gives every library's
 path explicitly, so the layout is for humans. It matters as more signals arrive:
 "which files carry a dysuria label" should be answerable by looking, not by
-reading nineteen manifest entries.
+reading twenty-six manifest entries.
 
 Note the filler annotation carefully. The filler libraries are verified silent
 about **fever** and nothing else — that check is the lint's, and its lexicon is
@@ -105,16 +109,25 @@ claim can be made per-signal.
 | Library | Fragments | What it contains |
 |---|---|---|
 | `symptoms/fever/fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
-| `symptoms/fever/fever_false.txt` | 60 | Says the patient does not ("no temperature, I checked") |
-| `symptoms/fever/fever_null_hedged.txt` | 42 | Genuinely uncertain ("I feel a bit off, hard to say") |
+| `symptoms/fever/fever_false.txt` | 98 | Says the patient does not ("no temperature, I checked") |
+| `symptoms/fever/fever_null_hedged.txt` | 73 | Genuinely uncertain ("I feel a bit off, hard to say") |
 | `symptoms/fever/fever_null_metaphor.txt` | 55 | Fever words used non-clinically ("burning up with embarrassment") |
 | `symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
 | `symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
 | `symptoms/fever/fever_null_attribution.txt` | 50 | Hot now, confidently blamed on something that is not a fever ("I get hot flushes with the menopause") |
-| `symptoms/dysuria/dysuria_true.txt` | 24 | Says it hurts to pass urine ("it burns when I pee") |
-| `symptoms/dysuria/dysuria_false.txt` | 18 | Says it does not ("weeing itself is fine, no stinging") |
-| `symptoms/dysuria/dysuria_null_hedged.txt` | 16 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
-| `symptoms/dysuria/dysuria_null_thirdparty.txt` | 14 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
+| `symptoms/dysuria/dysuria_true.txt` | 45 | Says it hurts to pass urine ("it burns when I pee") |
+| `symptoms/dysuria/dysuria_false.txt` | 47 | Says it does not ("weeing itself is fine, no stinging") |
+| `symptoms/dysuria/dysuria_null_hedged.txt` | 40 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
+| `symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past ("I had antibiotics in March for a water infection, it burned to wee then") |
+| `symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burning/stinging words used non-clinically ("a stinging remark from my mother-in-law") |
+| `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
+| `symptoms/nocturia/nocturia_true.txt` | 54 | Says they wake in the night to pass urine ("I'm getting up two or three times a night for a wee") |
+| `symptoms/nocturia/nocturia_false.txt` | 54 | Says they do not ("I sleep right through, no getting up for the toilet") |
+| `symptoms/nocturia/nocturia_null_hedged.txt` | 47 | Genuinely uncertain ("I'm half asleep when I go so I couldn't tell you if it's once or twice") |
+| `symptoms/nocturia/nocturia_null_metaphor.txt` | 52 | Night, sleep, toilet and "wee" words used non-urinary ("a wee bit worried", "up all night worrying about the letter") |
+| `symptoms/nocturia/nocturia_null_thirdparty.txt` | 47 | *Someone else* is up at night ("my husband is up three times before morning for the toilet") |
+| `symptoms/nocturia/nocturia_null_historical.txt` | 46 | Night voiding, but in the past ("hourly trips to the loo went on for weeks after my prostate op") |
+| `symptoms/nocturia/nocturia_null_attribution.txt` | 51 | Woken by something that is not a need to void, and voids incidentally ("my little one climbs in with us at three and once I'm awake I go for a wee") |
 | `symptoms/flank_pain/flank_pain_true.txt` | 18 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
 | `symptoms/flank_pain/flank_pain_false.txt` | 24 | Says there is not ("no pain in my back or sides at all") |
 | `symptoms/flank_pain/flank_pain_null_hedged.txt` | 10 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
@@ -125,14 +138,18 @@ claim can be made per-signal.
 | `filler/expectations.txt` | 100 | Filler: what they want to happen — both *what* (tests, drugs, referrals) and *who, how and when* (a named regular GP, continuity, phone vs face to face, timing) |
 | `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
 
-**The dysuria and flank_pain libraries are a seed, not a working set.** They
-exist so the multi-signal recombination described in section 12.2 has
-something real to be built against. Both are proof-of-concept batches, not
-libraries sized for real training — see section 10 for what that means for
-split coverage. The generator does not read either symptom's libraries yet:
+**Dysuria and nocturia are sized; flank_pain is still a seed.** All three exist
+so the multi-signal recombination described in section 12.2 has something real
+to be built against. The six dysuria libraries have since been grown to 38–47
+fragments each, which is the 40–50 band everything else is held to, so they are
+no longer the proof-of-concept batch this paragraph used to describe. The seven
+nocturia libraries were written to the fever pattern at 46–54 fragments each and
+have never been a seed batch. The four flank_pain libraries are — 10 to 24
+fragments — and section 10 says what that costs. The generator does not read
+these symptoms' libraries in a fever run:
 `build_pools` keeps only fragments whose `signal_key` matches the signal
-being generated, plus filler, so a dysuria or flank_pain fragment is dropped
-from a `fever_present` run rather than treated as filler. That is the
+being generated, plus filler, so a dysuria, nocturia or flank_pain fragment is
+dropped from a `fever_present` run rather than treated as filler. That is the
 correct behaviour until the machinery in 12.5 exists — treating them as
 filler would silently assert they say nothing about fever, and that
 guarantee is not yet written down anywhere the code can check.
@@ -141,6 +158,32 @@ They were written to be silent about fever (verified: zero hits against the
 lint's fever lexicon) and about the other urinary signals, but "verified by
 reading them" is exactly the informal guarantee section 12.5 says has to become
 an explicit, checkable declaration before it can be relied on.
+
+**The reverse direction is not verified at all, and nocturia is where it first
+bites.** A `nocturia_present` run *does* start and produce output — the signal
+is Boolean and `send_to_encoder`, so the generator accepts it — and it draws
+from the same five filler libraries. Those libraries are checked against a fever
+lexicon and nothing else. Reading them, none asserts night-time voiding, so the
+`null_structural` label holds; but three families come close enough to be worth
+naming here rather than rediscovering later. `tangents` carries sleep
+disturbance ("I've been struggling to sleep properly", "the stress from my
+mortgage application has been keeping me up at night"), which is the same idea
+as the `nocturia_null_metaphor` family and is correctly `null` for that reason.
+`expectations` and `uti_speculation` mention the bladder ("could I get an urgent
+ultrasound of my bladder", "think it might be my bladder infection again"), and
+one `expectations` line uses "wee" to mean urine. None of that says the patient
+wakes at night to pass urine, so none of it is a wrong label today. It does mean
+a nocturia dataset rests on the same manual reading the fever one does, with no
+lexicon behind it — 12.5, not more fragments, is the fix.
+
+That the check is *manual* is the point of the caveat, and it has already
+drifted once. The lint's filler-purity report screens filler libraries only, so
+when `dysuria_null_metaphor` acquired "burning up with questions" and "scalding
+hot under the collar", and `dysuria_true` a "sharp, hot pain", nothing fired —
+three fever-lexicon hits sitting in libraries the section above claims are
+clean. They have been reworded, but the general form of the fault is what 12.5
+exists to close: a guarantee no code checks is a guarantee that decays silently
+between the day it is written and the day something depends on it.
 
 Two things are worth understanding about this table.
 
@@ -181,6 +224,56 @@ something *other than the patient* is hot. Here the patient is hot and the
 cause is elsewhere. Keeping the two apart is what stops either library becoming
 "heat word plus an excuse ⇒ null".
 
+### The five nocturia axes, and the one that does not transfer
+
+The seven nocturia libraries copy the fever pattern deliberately, so that a
+second signal exists with the same sub-class structure and the per-sub-class
+table means the same thing in both. Four of the five axes carry over unchanged —
+`hedged` is uncertainty, `thirdparty` is someone else, `historical` is the past,
+`metaphor` is night, sleep, toilet and "wee" words that are not about voiding at
+night ("a wee bit worried", "up all night worrying", "burning the midnight oil",
+"gone down the pan"). The fever library's ambient-temperature family has a
+direct analogue here and it is the larger part of the library: night waking with
+no urinary content at all, the baby, the dog, the neighbours, jet lag.
+
+**`attribution` does not transfer, and rebuilding it is the one real design
+decision in this batch.** Fever's attribution axis is *cause*: the patient is
+hot, names why, and the cause is not an infection. The same move for nocturia
+would be "I'm up twice a night because I take my water tablet at teatime" — and
+that is `true`, not `null`. The question the ruleset asks is "are you waking in
+the night needing to pass urine", not "why", so naming a cause for the urine
+does not displace anything. Fragments of exactly that shape are therefore in
+`nocturia_true` on purpose, and they are what stops the library teaching "a
+cause was named, so answer null".
+
+What displaces nocturia is the *reason for waking*, which is where the clinical
+definition actually sits: nocturia is waking **because** of the need to void.
+So `nocturia_null_attribution` holds fragments where the patient is up in the
+night, does use the toilet, and the thing that woke them is something else —
+pain, a child, a pet, an alarm, reflux, a cough, insomnia, a shift pattern, or a
+bowel upset where the toilet trip is not a wee at all. Every surface cue points
+at nocturia: first person, present tense, night, toilet. Only the causal clause
+says otherwise. That makes it the hardest of the five, for the same structural
+reason fever's attribution is.
+
+**The boundary rule, written down before any run measures it**, because section
+9 says an undeclared policy is the failure mode that masquerades as a ceiling:
+
+* Waking to void is `true` **whatever the patient blames it on** — fluid,
+  caffeine, alcohol, diuretics. Cause is not part of the question.
+* Woken by something else, voiding incidentally, is `null`. The text leaves open
+  whether they would also have woken needing to go.
+* The same sentence with an explicit denial attached — "I wake with my shoulder
+  and use the loo while I'm up, but nothing wakes me needing to go" — is
+  `false`, and those live in `nocturia_false` as its contrastive negatives.
+  Delete the denial clause and the fragment must belong in `attribution`; that
+  is the test applied to every line in both libraries.
+
+No accuracy ceiling is declared for any nocturia library. Section 9 permits one
+only in writing and in advance, and only as an assertion until a second labeller
+has measured agreement — which has not happened for any library in this
+repository.
+
 **`expectations` covers two families, and the second was a gap.** The first 60
 fragments are all about *what* the patient wants done — a test, a drug, a scan,
 a referral. The remaining 40 are about *who they want to see and how*: a named
@@ -210,13 +303,33 @@ generator strips the marker before using the text — it never appears in any
 training example. Section 6 explains what the markers are for.
 
 Only the `fever_null` and `dysuria_null` libraries carry markers, because only
-they were written in a way that produced systematic near-duplicates.
+they were written in a way that produced systematic near-duplicates. **The
+nocturia libraries carry none at all, and that is the point of them**: all 351
+fragments are independent ideas, so effective n equals fragment count in every
+one of the seven. The dysuria row below is the counter-example — fully
+twin-tagged, so its effective n is half its size — and section 10 records what
+that costs. Getting there took the rewrite section 8 describes rather than a
+tagging pass: the first draft of `nocturia_null_thirdparty` and
+`nocturia_null_historical` was one sentence frame with the relative and the time
+anchor swapped out, and it contributed 28 cross-split near-duplicates before
+they were rewritten as distinct situations.
 `fever_null_attribution` carries seven, and they are the one case where the
 twinning was deliberate rather than accidental: seven ideas were written twice
 on purpose so the library teaches that the same attribution in different
 clothes carries the same label. The remaining 36 lines are independent ideas.
 That is the trade section 12.1 describes — surface robustness bought at the
 cost of effective n — taken knowingly and in small doses.
+
+**A marker is a claim, and a wrong one costs both ways.** Grouping two lines
+that are not the same idea understates effective n on paper while doing nothing
+about the real twinning, which is usually somewhere else in the file. Leaving
+genuine twins in separate clusters lets them land on opposite sides of the
+split, which is the leakage the mechanism exists to prevent. Both faults were
+present in `dysuria_null_thirdparty` — unrelated lines yoked together while a
+0.81-similar pair sat in different clusters — and neither is visible from the
+fragment count. The cross-split near-duplicate report in section 8 is the only
+feedback loop on this, so a library that contributes to it is worth re-reading
+by hand rather than re-tagging by eye.
 
 ---
 
@@ -373,14 +486,27 @@ because each fold's decision threshold was tuned on a sibling fold's test
 clusters. Nested cross-validation would remove it and is not worth the cost for
 one number per fold. Any report using fold mode has to say so.
 
-**There is a salt, and it is `"32"`.** The cluster key is hashed as
-`"{salt}:{cluster_key}"`. The salt exists because the empty-cell guard (section
-10) covers the *whole* manifest, so a library for an unrelated signal that fails
-to populate all five buckets blocks a fever run. Only about 1 integer salt in 40
-clears that for every library, and the binding constraints are entirely the
-dysuria seed libraries — `dysuria_null_thirdparty` has 7 clusters and
-`dysuria_null_hedged` has 8, and both must cover 5 buckets. `--find-fold-salt`
-searches for salts that work; do not instead "fix" it by editing dysuria.
+**There is a salt, and it is `"0"`.** The value lives in one place —
+`DEFAULT_FOLD_SALT` in `scripts/synthetic_data/__main__.py` — and
+`test_the_agreed_salt_still_clears_the_real_libraries` re-checks it against the
+live manifest on every CI run, so a library that grows past the point where the
+pinned salt works fails there rather than halfway through a five-fold training
+run. Read the constant, not this sentence, if the two ever disagree.
+
+The cluster key is hashed as `"{salt}:{cluster_key}"`. The salt exists because
+the empty-cell guard (section 10) covers the *whole* manifest, so a library for
+an unrelated signal that fails to populate all five buckets blocks a fever run.
+293 of the first 1000 integer salts currently clear every library, up from about
+1 in 40 when this was written, because the binding libraries have grown.
+
+**Which library binds has moved from dysuria to flank_pain**, and it tracks
+cluster count almost exactly: `flank_pain_null_hedged` (10 clusters) fails 481
+of those 1000 salts on its own, `flank_pain_null_thirdparty` (14) fails 211, and
+every dysuria library now fails fewer than 70. That is the honest reading of the
+salt as a health signal — it is a proxy for the smallest library, and the way to
+loosen it is to write fragments for flank_pain. `--find-fold-salt` searches for
+salts that work; do not instead "fix" it by editing whichever library is
+currently binding.
 
 Passing the guard remains a floor, not a health signal. Seven clusters spread
 over five buckets means some fold's test cell holds exactly one idea.
@@ -486,7 +612,7 @@ Matching is on whole words only. Without that, "hot" matches inside
 clean data on day one.
 
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
-different splits, i.e. the leakage described in section 6. Currently 52, of
+different splits, i.e. the leakage described in section 6. Currently 56, of
 which **zero** are in the `fever_null` libraries, which tells us the manual
 clustering pass worked. `fever_null_attribution` contributes zero as well,
 which is the check that its seven deliberate twin pairs were tagged correctly:
@@ -495,13 +621,46 @@ an untagged pair would show up here. The full breakdown:
 | Where | Count | Libraries |
 |---|---|---|
 | Filler | 39 | `justifiers` 14, `expectations` 10, `tangents` 8, `uti_speculation` 4, `emotional` 3 |
+| `dysuria` | 3 | `dysuria_null_metaphor` 2, `dysuria_true` 1 |
 | `flank_pain` seed batch | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
-| `fever` decisive | 4 | `fever_true` 3, `fever_false` 1 |
+| `fever` decisive | 5 | `fever_true` 3, `fever_false` 2 |
+| `nocturia` | 0 | — |
 
 Filler dominates, and those libraries leak in exactly the same way as the
 clinical ones but were never clustered. The `flank_pain` batch is unclustered
 for the same reason. The four `fever` hits are the incidental near-duplicates
 section 6 records as known and untagged.
+
+The `nocturia` zero is worth reading with the dysuria paragraph below rather
+than as a clean first draft. All seven libraries carry no cluster markers, so
+nothing suppresses a pair by construction: the first draft contributed 39 —
+`nocturia_null_thirdparty` 18, `nocturia_null_historical` 10, `nocturia_false` 7
+— all of them the same frame-with-slots fault dysuria had, and the report is
+what surfaced it. They were rewritten as distinct situations rather than tagged,
+because tagging would have recorded the twinning honestly while leaving effective
+n halved.
+
+The dysuria row is the report earning its keep. `dysuria_null_thirdparty`
+contributed 8 of these — the worst of any clinical library — because half of it
+was one sentence frame with the relative swapped out, and that showed up here
+before it showed up anywhere else. Rewriting those 32 lines as distinct
+situations took the library to zero without moving a single cluster key, since
+the tags and the line count stayed put. `dysuria_null_historical` had the same
+fault at smaller scale — 6 cross-split pairs, and 25 cross-cluster pairs above
+0.55 out of a possible 703, because the whole library was four frames ("[time
+anchor] I had [burning/stinging/pain] when I [peed/weed/went to the toilet]")
+with the time and cause slots swapped. It was rewritten the same way, to zero,
+again without moving a cluster key.
+
+That rewrite also cleared a worse fault the near-duplicate report cannot see.
+The word **"dysuria" appeared on 16 of the library's 38 lines and nowhere else
+in any of the six dysuria libraries** — a token that separated `null` from
+`true` and `false` perfectly, and the single cheapest shortcut available to a
+model trained on this data. It is now absent. The lesson is not about this one
+word: a clinical term that lives in exactly one library is a label, not
+vocabulary. If we want the encoder to understand "dysuria" at all it
+has to be seeded across `dysuria_true`, `dysuria_false` and the other `null`
+libraries in the same breath, never into one of them alone.
 
 **Hedge markers** — lines in the positive and negative libraries that sound
 uncertain, as a prompt to re-read them by hand (currently 8). Its precision is poor by design
@@ -523,7 +682,7 @@ Stated plainly, because the numbers this produces are easy to over-read.
 distinct positive fragments. Every `true` example in validation is a
 recombination of those 15 sentences. One unlucky fragment moves the score
 several points. The training plan asks for around 200 fragments per signal; we
-have roughly half that for `true` and a third for `false`.
+have roughly half that for `true` and for `false` alike.
 
 **Length may still leak.** Fragment *count* varies but its distribution does
 not vary by label (section 5); fragment *length* is not controlled at all.
@@ -555,11 +714,98 @@ fragments each example is still one supervised claim in more noise. Closing it
 properly needs more filler libraries and richer fragments, which is library
 work.
 
-**Only `fever_present` is covered.** Nothing here produces labels for dysuria,
-flank pain or the other urinary signals, and we deliberately do not emit `null`
-for them. We have not verified those signals are absent from the filler text —
-`uti_speculation` mentions cystitis and kidney infection — so claiming "no
-dysuria mentioned" would be inventing a label.
+**One dataset carries one signal.** A run emits the key for the signal it was
+asked for and nothing else. `fever_present` and `nocturia_present` both have
+libraries complete enough to generate from, and `dysuria_present` nearly so, but
+a fever dataset carries no dysuria or nocturia key and vice versa — we
+deliberately do not emit `null` for the signals a run did not cover. Doing so
+would require knowing the filler is silent about them, and we do not: the lint's
+lexicon is a fever lexicon, `uti_speculation` mentions cystitis and kidney
+infection, and `tangents` carries sleep-disturbance lines. Claiming "no dysuria
+mentioned" on that basis would be inventing a label. Section 12.5 is the
+mechanism that would let one example carry several keys honestly, and it is not
+built.
+
+### The accuracy ceiling is not the same for every library
+
+A model that scores 70% on one library and 95% on another has not necessarily
+failed on the first. Some patient text does not contain enough information for a
+competent clinician to answer the question either, and no amount of training
+extracts an answer the text does not hold. Where that is so, the ceiling sits
+below 100% permanently, and holding every library to one target asks for effort
+where none can pay off.
+
+That principle is right. Applying it here needs two distinctions that are easy
+to collapse, because most of what currently *looks* like irreducible ambiguity
+is not.
+
+**`null` is already the answer for "the text does not say".** Section 7 defines
+it that way — not as "the patient did not mention fever". So a fragment that
+leaves the clinical question open still has a determinate correct label, and a
+model can be held to a high standard on it. `fever_null_hedged` is the clearest
+case: nearly every line states the patient's own uncertainty outright ("so I
+can't tell", "no real way for me to check", "so hard to judge"). The right
+answer is `null`, the text says so plainly, and 70% there would be a model
+failure rather than a ceiling. The same holds for the other four hard
+sub-classes — each displaces the fever along an axis the text makes explicit
+(section 3), and each is therefore determinate.
+
+**The genuine ambiguity is at the `true`/`null` boundary, and an unwritten
+policy currently settles it.** `fever_true` holds "I was burning up and sweating
+a lot", "I kept feeling hot even when the room was cool" and "I was sweating and
+shaking all night". None is a measurement, and no clinician could confirm a fever
+from any of them. `fever_null_hedged` holds "i feel like im roasting on the
+inside but when i touch my forehead its perfectly cool". The clinical content of
+the two groups is the same. What separates them is whether the patient
+volunteered their own doubt. The libraries therefore encode a rule — *unhedged
+first-person present subjective heat counts as `true`* — that is defensible,
+load-bearing on hundreds of fragments, and recorded nowhere.
+
+That distinction changes what to do about a low number, and there are three
+cases, not one:
+
+* **Undeclared policy.** The library is inconsistent about a recurring case
+  because nobody decided it. This *presents* as irreducible ambiguity and is
+  not. It is fixable by writing the rule down, and it has to be fixed, because
+  until it is, new fragments get sorted by feel and the inconsistency grows with
+  the library.
+* **Irreducible ambiguity.** The policy is decided and this particular fragment
+  still sits on the line. The ceiling is real and permanent, 70% is the right
+  expectation, and further work on it is waste.
+* **Model or library weakness.** The answer is determinate and the model gets it
+  wrong anyway. This is what training and more fragments are for.
+
+The failure mode to guard against is filing the first and third under the
+second. "That one is just ambiguous" is available as an explanation for every
+error and is unfalsifiable after the fact, which would destroy the question
+`arch_encoder_training.md` section 1 exists to answer: no accuracy figure can
+separate a weak model from a thin library if any inconvenient part of it may be
+reclassified as a ceiling once seen.
+
+So the rule is that **an expected ceiling below the general target is declared
+per library, in writing, before the run that measures it.** A ceiling asserted
+after a disappointing report is not a ceiling, it is an excuse. The honest way
+to establish one is to measure it: have a second person label a sample of that
+library's fragments from the text alone, blind to the file they came from, and
+take the agreement rate. A model cannot be expected to beat the rate at which
+two clinicians agree with each other. Until that measurement exists a declared
+ceiling is an assertion, and should be written as one.
+
+One consequence runs the other way and is worth stating because it is
+counter-intuitive. **A high score on an ambiguous boundary is worse news than a
+low one.** If `true` versus `null` is decided by whether the patient volunteered
+doubt, then a model scoring 95% has learned to detect volunteered doubt — a
+discourse cue, not a clinical one — and will carry that straight into real
+submissions, where the cue and the clinical fact come apart. That belongs with
+the length and urgency leaks above: a shortcut that inflates our numbers and
+transfers nothing. It would show in the per-fragment error table
+(`arch_encoder_training.md` section 8) as errors concentrated on exactly those
+fragments where the cue and the label disagree.
+
+Nothing in the pipeline enforces any of this today. There is no per-library
+ceiling field in the manifest, no written policy for the `true`/`null` boundary,
+and no second-labeller agreement measurement. This subsection records the
+position, not a mechanism.
 
 ---
 
@@ -622,10 +868,46 @@ empty cell blocks generation for *every* signal, not only the one whose library
 is unbalanced. This is worth knowing before assuming a run against a different
 signal would work once that signal's own libraries are balanced.
 
-The dysuria libraries fill all twelve of their cells, but they are small enough
-(14–24 fragments) that this is fragile: one reworded fragment can empty a cell
-again. They need the same 40–50 target as everything else before any number
-derived from them means anything.
+The six dysuria libraries fill all eighteen of their cells and are all now in or
+near the 40–50 target range: `dysuria_false` 47, `dysuria_true` 45,
+`dysuria_null_thirdparty` 46, `dysuria_null_hedged` 40, `dysuria_null_metaphor`
+40, `dysuria_null_historical` 38. Size is no longer what limits them.
+
+What does is that fragment count and cluster count have come apart. The four
+`dysuria_null` libraries are fully twin-tagged, so their effective n is half
+their fragment count — 19 to 23 clusters each, against `dysuria_true`'s 45 and
+`dysuria_false`'s 47, which carry no markers at all. A dysuria run would
+therefore be measuring its hard sub-classes on roughly 3 to 5 test clusters
+apiece under the default bands, which is the section-10 problem this whole
+subsection is about, at the same magnitude fever had before fold mode. Growing
+these libraries further means new *ideas*, not new twins.
+
+The seven nocturia libraries fill all twenty-one of their cells and are the
+first batch written with this subsection already in hand, so fragment count and
+cluster count do not come apart at all:
+
+| Library | fragments | clusters | train / val / test |
+|---|---|---|---|
+| `nocturia_true` | 54 | **54** | 35 / 10 / 9 |
+| `nocturia_false` | 54 | **54** | 38 / 10 / 6 |
+| `nocturia_null_hedged` | 47 | **47** | 34 / 10 / 3 |
+| `nocturia_null_metaphor` | 52 | **52** | 31 / 9 / 12 |
+| `nocturia_null_thirdparty` | 47 | **47** | 35 / 8 / 4 |
+| `nocturia_null_historical` | 46 | **46** | 36 / 5 / 5 |
+| `nocturia_null_attribution` | 51 | **51** | 41 / 3 / 7 |
+
+Under fold mode the effective n for each sub-class is the whole library, 46 to
+52 clusters, which is the band the fever sub-classes reach only after the
+expansion described above. Read the default-band columns with the same
+scepticism as everything else in this subsection, though: `attribution`'s three
+validation clusters and `hedged`'s three test clusters are the same 2-to-6-idea
+cells that make a single-split per-sub-class number unreadable. Nocturia's
+advantage is in the pooled figure, not in the bands.
+
+Nothing has been trained on any of it. No `nocturia_present` dataset has been
+generated beyond a 400-example smoke run, and the training tooling
+(`arch_encoder_training.md`) is single-signal and wired to `fever_present`, so
+these libraries are input that nothing yet consumes.
 
 The flank_pain libraries (10–24 fragments each, a proof-of-concept batch) fill
 all twelve of their cells too, for the same reason and with the same caveat as
@@ -694,8 +976,8 @@ entirely; the pooled figures are in the table after this one:
 | Library | train | val | test |
 |---|---|---|---|
 | `fever_true` | 66 / **66** | 15 / **15** | 15 / **15** |
-| `fever_false` | 39 / **39** | 12 / **12** | 9 / **9** |
-| `fever_null_hedged` | 37 / **28** | 3 / **2** | 2 / **2** |
+| `fever_false` | 68 / **68** | 19 / **19** | 11 / **11** |
+| `fever_null_hedged` | 59 / **50** | 8 / **7** | 6 / **6** |
 | `fever_null_historical` | 36 / **29** | 6 / **4** | 3 / **3** |
 | `fever_null_metaphor` | 43 / **35** | 7 / **7** | 5 / **5** |
 | `fever_null_thirdparty` | 37 / **28** | 7 / **5** | 2 / **2** |
@@ -731,8 +1013,8 @@ once, so the aggregate test set for a sub-class is its whole library:
 | Library | fragments | clusters (the effective n) |
 |---|---|---|
 | `fever_true` | 96 | **96** |
-| `fever_false` | 60 | **60** |
-| `fever_null_hedged` | 42 | **32** |
+| `fever_false` | 98 | **98** |
+| `fever_null_hedged` | 73 | **63** |
 | `fever_null_historical` | 45 | **36** |
 | `fever_null_metaphor` | 55 | **47** |
 | `fever_null_thirdparty` | 46 | **35** |
@@ -782,7 +1064,7 @@ python -m scripts.synthetic_data \
     --out data/synthetic/generated/fever_present.fold0.test.jsonl
 ```
 
-`--fold` defaults to 0 and the salt defaults to `32`, but neither may be given
+`--fold` defaults to 0 and the salt defaults to `0` (section 6), but neither may be given
 without `--folds` — `--fold 3` on its own would silently generate the default
 70/15/15 split, and salting the default bands would move the split of every
 dataset generated so far. `--folds` must be at least 3: at two folds the test
@@ -910,7 +1192,7 @@ future empty cell has to be cleared the same way.
 requirements are that they contain no signal language and that they are varied
 enough not to become a shortcut. Templating them is low risk and immediately
 useful, and it would take the lint's cross-split near-duplicate count (currently
-52, of which 39 are filler) to zero by construction.
+56, of which 39 are filler) to zero by construction.
 
 **The draft YAML needs restructuring before it is implementable.** Slot values
 are declared per synonym but consumed by templates with different grammatical
@@ -928,14 +1210,16 @@ raw fragment counts, so the two numbers are always visible together.
 
 ### 12.2 Multi-signal libraries
 
-**Partial status: the dysuria libraries exist (section 3), the engine work does
-not.** The fragments are written and declared in the manifest; nothing reads
-them yet. Everything below is still the plan.
+**Partial status: the dysuria, nocturia and flank_pain libraries exist (section
+3), the engine work does not.** The fragments are written and declared in the
+manifest, and a single-signal run against nocturia or dysuria works today; what
+does not exist is any way for *one* example to carry more than one key.
+Everything below is still the plan.
 
-Add fragment libraries for the other urinary signals — dysuria, urinary
-frequency, and so on — each with its own true, false and ambiguous variants, on
-the same pattern as the fever libraries. Twenty or so fragments per variant to
-begin with. Then recombine them with the fever fragments.
+Add fragment libraries for the other urinary signals — urinary frequency,
+haematuria, and so on — each with its own true, false and ambiguous variants, on
+the same pattern as the fever and nocturia libraries. Then recombine them with
+the fever fragments.
 
 **The payoff is not more examples, it is more label per example.** Today a
 `true` example is one positive fever fragment plus one or more fillers, and the
@@ -1066,10 +1350,11 @@ where the numbers it produces can be trusted:
    reports. This is also what raises the fragment-count ceiling: the ceiling is
    the *number* of filler libraries, not their size (section 5), so templating
    existing ones does not help — new ones do.
-5. Add dysuria and frequency libraries (12.2), which is where the multi-head
-   training data actually starts. The dysuria libraries are written; the
-   engine changes that would let anything read them are step 3's job, and
-   deliberately are not being attempted before it.
+5. Add the remaining signal libraries (12.2), which is where the multi-head
+   training data actually starts. Dysuria, nocturia and flank_pain are written;
+   frequency and haematuria are not. The engine changes that would let one
+   example carry several of their keys are step 3's job, and deliberately are
+   not being attempted before it.
 6. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
    library format.
 7. Template the clinical libraries, once there are enough distinct templates per
@@ -1077,3 +1362,12 @@ where the numbers it produces can be trusted:
 
 The spelling-mistake pass can slot in anywhere after step 1, since it is a
 post-processing step over finished text and independent of everything else.
+
+**Writing down the `true`/`null` labelling policy (section 9) belongs with step
+3.** Both are the same kind of work — turning a guarantee that currently lives
+in the author's head into something declared per library and checkable — and
+step 3's argument for doing it now applies unchanged: it is cheap while there is
+one signal and expensive once dysuria and frequency fragments are being sorted
+against a rule nobody has stated. It also has to come before any per-library
+accuracy ceiling is declared, because until the policy exists there is no way to
+tell an irreducible ceiling from an inconsistency.

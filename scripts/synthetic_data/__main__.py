@@ -65,12 +65,13 @@ DEFAULT_FRAGMENT_COUNTS_ARG = "2=0.5,3=0.5"
 #: ``--find-fold-salt``: at K=5 only about one integer salt in forty leaves
 #: every library populating all five buckets, and an unlucky assignment in a
 #: library for an unrelated signal blocks the run (the empty-cell guard covers
-#: the whole manifest). The binding constraints are the dysuria seed libraries
-#: -- ``dysuria_null_thirdparty`` at 7 clusters and ``dysuria_null_hedged`` at 8
-#: -- both of which must surject onto 5 buckets, so this is not a fever
-#: property and editing the fever libraries will not change it. Pinned rather
-#: than searched at runtime so every fold of every arm splits identically.
-DEFAULT_FOLD_SALT = "32"
+#: the whole manifest). Which library binds shifts as libraries grow, so this
+#: is not tied to one signal and editing an unrelated library can still move
+#: it. ``test_the_agreed_salt_still_clears_the_real_libraries`` re-checks this
+#: salt against the live manifest; if that test fails, rerun --find-fold-salt
+#: and pin the new value here. Pinned rather than searched at runtime so every
+#: fold of every arm splits identically.
+DEFAULT_FOLD_SALT = "0"
 
 #: How far ``--find-fold-salt`` searches by default. The search does no
 #: generation, so an exhaustive sweep to here costs a second or two.
