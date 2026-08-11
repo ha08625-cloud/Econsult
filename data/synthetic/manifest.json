@@ -89,6 +89,21 @@
       "subclass": "historical"
     },
     {
+      "name": "urinary_frequency_true",
+      "file": "symptoms/urinary_frequency/urinary_frequency_true.txt",
+      "signal_key": "urinary_frequency_present",
+      "fragment_type": "positive"
+    },
+    {
+      "name": "urinary_frequency_false",
+      "file": "symptoms/urinary_frequency/urinary_frequency_false.txt",
+      "signal_key": "urinary_frequency_present",
+      "fragment_type": "negative"
+    },
+    {
+      "name": "urinary_frequency_null_hedged",
+      "file": "symptoms/urinary_frequency/urinary_frequency_null_hedged.txt",
+      "signal_key": "urinary_frequency_present",
       "name": "nocturia_true",
       "file": "symptoms/nocturia/nocturia_true.txt",
       "signal_key": "nocturia_present",
@@ -108,6 +123,32 @@
       "subclass": "hedged"
     },
     {
+      "name": "urinary_frequency_null_thirdparty",
+      "file": "symptoms/urinary_frequency/urinary_frequency_null_thirdparty.txt",
+      "signal_key": "urinary_frequency_present",
+      "fragment_type": "confounder",
+      "subclass": "third_party"
+    },
+    {
+      "name": "urinary_frequency_null_historical",
+      "file": "symptoms/urinary_frequency/urinary_frequency_null_historical.txt",
+      "signal_key": "urinary_frequency_present",
+      "fragment_type": "confounder",
+      "subclass": "historical"
+    },
+    {
+      "name": "urinary_frequency_null_metaphor",
+      "file": "symptoms/urinary_frequency/urinary_frequency_null_metaphor.txt",
+      "signal_key": "urinary_frequency_present",
+      "fragment_type": "confounder",
+      "subclass": "metaphor"
+    },
+    {
+      "name": "urinary_frequency_null_adjacent",
+      "file": "symptoms/urinary_frequency/urinary_frequency_null_adjacent.txt",
+      "signal_key": "urinary_frequency_present",
+      "fragment_type": "confounder",
+      "subclass": "adjacent"
       "name": "nocturia_null_metaphor",
       "file": "symptoms/nocturia/nocturia_null_metaphor.txt",
       "signal_key": "nocturia_present",

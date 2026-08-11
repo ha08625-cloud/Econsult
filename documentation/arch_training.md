@@ -85,6 +85,11 @@ convention:
 ```
 data/synthetic/
   manifest.json
+  symptoms/fever/             seven libraries, all about fever_present
+  symptoms/dysuria/           six libraries, all about dysuria_present
+  symptoms/urinary_frequency/ seven libraries, all about urinary_frequency_present
+  symptoms/flank_pain/        four libraries, all about flank_pain_present
+  filler/                     five libraries, verified silent on fever only (section 9)
   symptoms/fever/      seven libraries, all about fever_present
   symptoms/dysuria/    six libraries, all about dysuria_present
   symptoms/nocturia/   seven libraries, all about nocturia_present
@@ -97,6 +102,7 @@ data/synthetic/
 Nothing in the code keys off the directory — the manifest gives every library's
 path explicitly, so the layout is for humans. It matters as more signals arrive:
 "which files carry a dysuria label" should be answerable by looking, not by
+reading twenty-nine manifest entries.
 reading twenty-six manifest entries.
 
 Note the filler annotation carefully. The filler libraries are verified silent
@@ -121,6 +127,13 @@ claim can be made per-signal.
 | `symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past ("I had antibiotics in March for a water infection, it burned to wee then") |
 | `symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burn/sting words that are not about passing urine ("the stinging disappointment of not getting the promotion", "my eyes have been stinging with all the pollen") |
 | `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
+| `symptoms/urinary_frequency/urinary_frequency_true.txt` | 46 | Says they are passing urine more often than usual ("I'm going every twenty minutes or so") |
+| `symptoms/urinary_frequency/urinary_frequency_false.txt` | 46 | Says they are not ("I go about five times a day and that's exactly what I've always done") |
+| `symptoms/urinary_frequency/urinary_frequency_null_hedged.txt` | 42 | Genuinely uncertain ("I might be going more often but I've honestly never counted before") |
+| `symptoms/urinary_frequency/urinary_frequency_null_historical.txt` | 40 | More often, but in the past ("when I was pregnant I was in the loo every twenty minutes, but that was two years ago") |
+| `symptoms/urinary_frequency/urinary_frequency_null_metaphor.txt` | 44 | Frequency/flow/urinary words used non-clinically ("she turned on the waterworks", "a wee bit of a worry", "sales have slowed to a trickle") |
+| `symptoms/urinary_frequency/urinary_frequency_null_thirdparty.txt` | 44 | *Someone else* is going more often ("my husband's up and down to the loo all day") |
+| `symptoms/urinary_frequency/urinary_frequency_null_adjacent.txt` | 40 | A different urinary complaint, silent on how often ("the stream is much weaker than it used to be") |
 | `symptoms/nocturia/nocturia_true.txt` | 54 | Says they wake in the night to pass urine ("I'm getting up two or three times a night for a wee") |
 | `symptoms/nocturia/nocturia_false.txt` | 54 | Says they do not ("I sleep right through, no getting up for the toilet") |
 | `symptoms/nocturia/nocturia_null_hedged.txt` | 47 | Genuinely uncertain ("I'm half asleep when I go so I couldn't tell you if it's once or twice") |
@@ -138,6 +151,15 @@ claim can be made per-signal.
 | `filler/expectations.txt` | 100 | Filler: what they want to happen — both *what* (tests, drugs, referrals) and *who, how and when* (a named regular GP, continuity, phone vs face to face, timing) |
 | `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
 
+**Dysuria and urinary_frequency are sized; flank_pain is still a seed.** All
+three exist so the multi-signal recombination described in section 12.2 has
+something real to be built against. The six dysuria libraries have since been
+grown to 38–47 fragments each, and the seven urinary_frequency libraries were
+written at 40–46, which is the 40–50 band everything else is held to, so neither
+is the proof-of-concept batch this paragraph used to describe. The four
+flank_pain libraries are — 10 to 24 fragments — and section 10 says what that
+costs. The generator does not read another symptom's libraries during a fever
+run:
 **Dysuria and nocturia are sized; flank_pain is still a seed.** All three exist
 so the multi-signal recombination described in section 12.2 has something real
 to be built against. The six dysuria libraries have since been grown to 38–47
@@ -224,6 +246,51 @@ something *other than the patient* is hot. Here the patient is hot and the
 cause is elsewhere. Keeping the two apart is what stops either library becoming
 "heat word plus an excuse ⇒ null".
 
+**The `urinary_frequency_null` axes are four of fever's five plus one of their
+own, and the swap is a design decision rather than an oversight.** `hedged`,
+`thirdparty`, `historical` and `metaphor` transfer unchanged — certainty,
+person, time and meaning displace a frequency claim exactly as they displace a
+fever one. **`attribution` does not transfer, and inventing one would have put
+wrong labels in the data.** The fever version works because a patient who is hot
+for a named non-infective reason does not have a fever: the cause changes the
+answer. Frequency is a *rate*, not a disease, so a patient going more often
+because of water tablets, hot weather, three litres of squash or a pregnancy
+still **is** passing urine more frequently than usual, which is what
+`urinary_frequency_present`'s `encoder_prompt` in `data/uti1.json` asks. Those
+fragments belong in `urinary_frequency_true`, and a file of them labelled `null`
+would teach the model to answer `null` whenever a patient explains themselves.
+
+In its place is `adjacent`, which occupies the same role attribution does for
+fever — the sub-class where every surface cue points the wrong way:
+
+| Library | What is displaced |
+|---|---|
+| `hedged` | certainty — the patient does not know whether it has changed |
+| `thirdparty` | person — someone else is going more often |
+| `historical` | time — the frequency went up last spring |
+| `metaphor` | meaning — the flow/urinary word is not about passing urine |
+| `adjacent` | referent — the complaint is urinary and current and first-person, and it is not about *how often* |
+
+`adjacent` holds urgency, hesitancy, weak or interrupted stream, incomplete
+emptying, leaking, and colour or smell changes. The patient is genuinely
+describing their own waterworks, right now, with no hedge and no past tense; the
+text simply never says whether the number of trips has changed. A model that has
+learned "first person + present tense + bathroom language ⇒ frequency" scores
+well on the other four and fails this one completely. Its families were chosen
+so that every line is silent on the *other* signals in the ruleset too — nothing
+in it mentions pain (`dysuria_present`), blood (`haematuria_present`), the night
+(`nocturia_present`) or the flank — so it stays a single-signal library under the
+rules 12.5 will make checkable.
+
+The `metaphor` library needs one note of its own, because its raw material is
+richer than fever's. English is full of dead metaphors built from flow and
+urinary words, and they divide into four families: **idioms** ("waterworks",
+"pissing down", "spend a penny", "down the toilet", "in dribs and drabs"),
+**`frequency` in its non-urinary senses** (radio frequencies, frequent flyers,
+buses every eight minutes), **something other than the patient flowing or
+leaking** (the roof, the tap, the loft tank, a stream of visitors), and **"wee"
+as the Scottish diminutive** ("a wee bit of a worry"). That last one is probably
+the hardest confounder in the library and is the direct counterpart of hay fever.
 ### The five nocturia axes, and the one that does not transfer
 
 The seven nocturia libraries copy the fever pattern deliberately, so that a
@@ -303,6 +370,17 @@ generator strips the marker before using the text — it never appears in any
 training example. Section 6 explains what the markers are for.
 
 Only the `fever_null` and `dysuria_null` libraries carry markers, because only
+they were written in a way that produced systematic near-duplicates. **The seven
+`urinary_frequency` libraries carry none, deliberately**: they were written as
+independent ideas rather than in two passes over one list, so their effective n
+equals their fragment count rather than half of it — 40 to 46 clusters apiece
+against the `dysuria_null` libraries' 19 to 23. That is what section 10 asks for
+when it says growing a library means new ideas, not new twins, and the lint is
+the check that the claim is true rather than merely intended: `urinary_frequency`
+contributes **zero** cross-split near-duplicates (section 8). The first draft
+contributed eighteen, and every one was fixed by rewriting the line rather than
+by tagging the pair, because a marker would have recorded the twinning instead of
+removing it.
 they were written in a way that produced systematic near-duplicates. **The
 nocturia libraries carry none at all, and that is the point of them**: all 351
 fragments are independent ideas, so effective n equals fragment count in every
@@ -624,6 +702,14 @@ an untagged pair would show up here. The full breakdown:
 | `dysuria` | 1 | `dysuria_true` 1 |
 | `flank_pain` seed batch | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
 | `fever` decisive | 5 | `fever_true` 3, `fever_false` 2 |
+| `urinary_frequency` | 0 | — |
+
+The zero on the `urinary_frequency` row is the point of putting it there. Those
+seven libraries carry no cluster markers at all, so unlike the `fever_null` and
+`dysuria_null` rows there is no mechanism keeping twins together — the number is
+zero because the lines are actually distinct, and it will stop being zero the
+moment someone adds a paraphrase. Read it as the live check on that claim rather
+than as a boast.
 | `nocturia` | 0 | — |
 
 Filler dominates, and those libraries leak in exactly the same way as the
@@ -670,7 +756,10 @@ has to be seeded across `dysuria_true`, `dysuria_false` and the other `null`
 libraries in the same breath, never into one of them alone.
 
 **Hedge markers** — lines in the positive and negative libraries that sound
-uncertain, as a prompt to re-read them by hand (currently 8). Its precision is poor by design
+uncertain, as a prompt to re-read them by hand (currently 9: 8 in `fever`, and
+`urinary_frequency_false`'s "my toilet trips are unchanged, maybe fewer because
+I've been drinking less", where the *maybe* qualifies "fewer" and not the "no
+increase" claim the label rests on). Its precision is poor by design
 (about 25%), because many fragments deliberately open with uncertainty and then
 resolve it: "I thought maybe I was dehydrated but when I checked I had a
 temperature" is correctly labelled positive. The report prints a header saying
@@ -721,6 +810,13 @@ fragments each example is still one supervised claim in more noise. Closing it
 properly needs more filler libraries and richer fragments, which is library
 work.
 
+**Only `fever_present` is covered by a generated dataset.** The dysuria,
+urinary_frequency and flank_pain libraries exist and a run against any of them
+produces output, but nothing yet emits labels for more than one signal at a
+time, and we deliberately do not emit `null` for the signals a run is not about.
+We have not verified those signals are absent from the filler text —
+`uti_speculation` mentions cystitis and kidney infection — so claiming "no
+dysuria mentioned" would be inventing a label.
 **One dataset carries one signal.** A run emits the key for the signal it was
 asked for and nothing else. `fever_present` and `nocturia_present` both have
 libraries complete enough to generate from, and `dysuria_present` nearly so, but
@@ -767,6 +863,35 @@ the two groups is the same. What separates them is whether the patient
 volunteered their own doubt. The libraries therefore encode a rule — *unhedged
 first-person present subjective heat counts as `true`* — that is defensible,
 load-bearing on hundreds of fragments, and recorded nowhere.
+
+**For `urinary_frequency_present` the equivalent policy is written down here,
+before any run measures it.** Three rules settled every borderline line while the
+seven libraries were being sorted, and they are recorded now rather than
+reconstructed later, because a policy discovered after a disappointing report is
+indistinguishable from an excuse:
+
+1. **The comparison is against the patient's own baseline, not a population
+   norm.** "I've always gone twice an hour and that hasn't changed" is `false`,
+   not `true`. The question is "more frequently than usual", and *usual* means
+   usual for them.
+2. **Cause is irrelevant to the answer.** Water tablets, hot weather, pregnancy,
+   anxiety, deliberately drinking more to flush an infection out — if the trips
+   have gone up, the answer is `true`. This is the rule that makes an
+   `attribution` library wrong for this signal (section 3), and it is the one a
+   clinician is most likely to disagree with, because a GP taking a history would
+   discount a self-induced increase. We are labelling the `encoder_prompt`'s
+   question, not the clinician's inference from it, and the ruleset is where that
+   inference belongs.
+3. **Adjacent urinary complaints are `null`, not `true`.** Urgency, hesitancy, a
+   weak stream, leaking and incomplete emptying travel with frequency
+   clinically and say nothing about it textually, so they go to
+   `urinary_frequency_null_adjacent`. This is the rule most likely to be
+   contested — some readers will hear "I have to run for it" as implying frequent
+   trips — and it is therefore the first thing to test with a second labeller.
+
+Rules 2 and 3 both cut against clinical instinct, which is exactly why they are
+worth having in writing: without them the next person to add fragments sorts by
+feel, and the inconsistency grows with the library.
 
 That distinction changes what to do about a low number, and there are three
 cases, not one:
@@ -991,6 +1116,29 @@ Nothing has been trained on any of it. No `nocturia_present` dataset has been
 generated beyond a 400-example smoke run, and the training tooling
 (`arch_encoder_training.md`) is single-signal and wired to `fever_present`, so
 these libraries are input that nothing yet consumes.
+
+The seven urinary_frequency libraries were written after all of the above and
+sized against it, so they do not repeat either fault. They fill all
+twenty-one of their cells, they hold 40 to 46 fragments each, and because they
+carry no cluster markers their **effective n equals their fragment count**:
+
+| Library | fragments | clusters | train / val / test (default bands) |
+|---|---|---|---|
+| `urinary_frequency_true` | 46 | **46** | 35 / 8 / 3 |
+| `urinary_frequency_false` | 46 | **46** | 29 / 12 / 5 |
+| `urinary_frequency_null_hedged` | 42 | **42** | 34 / 4 / 4 |
+| `urinary_frequency_null_historical` | 40 | **40** | 31 / 5 / 4 |
+| `urinary_frequency_null_metaphor` | 44 | **44** | 27 / 8 / 9 |
+| `urinary_frequency_null_thirdparty` | 44 | **44** | 32 / 7 / 5 |
+| `urinary_frequency_null_adjacent` | 40 | **40** | 32 / 2 / 6 |
+
+Read the third column, not the second. Under the default bands the test cells are
+3 to 9 clusters, which is the same unusable range fever sits in and for the same
+reason — a single 15% slice of a 40-fragment library is a handful of ideas. The
+40-to-46 figure is what fold mode makes available (section 6), and it is the
+number worth quoting. `urinary_frequency_null_adjacent` has **two** validation
+clusters under the default bands, which is a warning about single-split numbers
+rather than about the library.
 
 The flank_pain libraries (10–24 fragments each, a proof-of-concept batch) fill
 all twelve of their cells too, for the same reason and with the same caveat as
@@ -1293,6 +1441,11 @@ raw fragment counts, so the two numbers are always visible together.
 
 ### 12.2 Multi-signal libraries
 
+**Partial status: the dysuria and urinary_frequency libraries exist (section 3),
+the engine work does not.** The fragments are written and declared in the
+manifest, and a single-signal run against either produces a valid dataset;
+nothing yet combines two signals in one example. Everything below is still the
+plan.
 **Partial status: the dysuria, nocturia and flank_pain libraries exist (section
 3), the engine work does not.** The fragments are written and declared in the
 manifest, and a single-signal run against nocturia or dysuria works today; what
@@ -1433,6 +1586,11 @@ where the numbers it produces can be trusted:
    reports. This is also what raises the fragment-count ceiling: the ceiling is
    the *number* of filler libraries, not their size (section 5), so templating
    existing ones does not help — new ones do.
+5. Add dysuria and frequency libraries (12.2), which is where the multi-head
+   training data actually starts. **The library half of this is done** — six
+   dysuria and seven urinary_frequency libraries are written and in the
+   manifest. The engine changes that would let one example carry both labels
+   are step 3's job, and deliberately are not being attempted before it.
 5. Add the remaining signal libraries (12.2), which is where the multi-head
    training data actually starts. Dysuria, nocturia and flank_pain are written;
    frequency and haematuria are not. The engine changes that would let one
