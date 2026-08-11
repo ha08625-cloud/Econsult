@@ -88,22 +88,17 @@ data/synthetic/
   symptoms/fever/             seven libraries, all about fever_present
   symptoms/dysuria/           six libraries, all about dysuria_present
   symptoms/urinary_frequency/ seven libraries, all about urinary_frequency_present
+  symptoms/nocturia/          seven libraries, all about nocturia_present
   symptoms/flank_pain/        four libraries, all about flank_pain_present
   filler/                     five libraries, verified silent on fever only (section 9)
-  symptoms/fever/      seven libraries, all about fever_present
-  symptoms/dysuria/    six libraries, all about dysuria_present
-  symptoms/nocturia/   seven libraries, all about nocturia_present
-  symptoms/flank_pain/ four libraries, all about flank_pain_present
-  filler/              five libraries, verified silent on fever only (section 9)
-  drafts/              scratch files, deliberately not libraries (section 4)
-  generated/           output, git-ignored
+  drafts/                     scratch files, deliberately not libraries (section 4)
+  generated/                  output, git-ignored
 ```
 
 Nothing in the code keys off the directory — the manifest gives every library's
 path explicitly, so the layout is for humans. It matters as more signals arrive:
 "which files carry a dysuria label" should be answerable by looking, not by
-reading twenty-nine manifest entries.
-reading twenty-six manifest entries.
+reading thirty-six manifest entries.
 
 Note the filler annotation carefully. The filler libraries are verified silent
 about **fever** and nothing else — that check is the lint's, and its lexicon is
@@ -127,10 +122,6 @@ claim can be made per-signal.
 | `symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past ("I had antibiotics in March for a water infection, it burned to wee then") |
 | `symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burn/sting words that are not about passing urine ("the stinging disappointment of not getting the promotion", "my eyes have been stinging with all the pollen") |
 | `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
-| `symptoms/flank_pain/flank_pain_true.txt` | 48 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
-| `symptoms/flank_pain/flank_pain_false.txt` | 55 | Says there is not ("no pain in my back or sides at all") |
-| `symptoms/flank_pain/flank_pain_null_hedged.txt` | 53 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
-| `symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 47 | *Someone else* has flank pain ("my son says his back hurts under his ribs") |
 | `symptoms/urinary_frequency/urinary_frequency_true.txt` | 46 | Says they are passing urine more often than usual ("I'm going every twenty minutes or so") |
 | `symptoms/urinary_frequency/urinary_frequency_false.txt` | 46 | Says they are not ("I go about five times a day and that's exactly what I've always done") |
 | `symptoms/urinary_frequency/urinary_frequency_null_hedged.txt` | 42 | Genuinely uncertain ("I might be going more often but I've honestly never counted before") |
@@ -145,22 +136,23 @@ claim can be made per-signal.
 | `symptoms/nocturia/nocturia_null_thirdparty.txt` | 47 | *Someone else* is up at night ("my husband is up three times before morning for the toilet") |
 | `symptoms/nocturia/nocturia_null_historical.txt` | 46 | Night voiding, but in the past ("hourly trips to the loo went on for weeks after my prostate op") |
 | `symptoms/nocturia/nocturia_null_attribution.txt` | 51 | Woken by something that is not a need to void, and voids incidentally ("my little one climbs in with us at three and once I'm awake I go for a wee") |
-| `symptoms/flank_pain/flank_pain_true.txt` | 18 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
-| `symptoms/flank_pain/flank_pain_false.txt` | 24 | Says there is not ("no pain in my back or sides at all") |
-| `symptoms/flank_pain/flank_pain_null_hedged.txt` | 10 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
-| `symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 14 | *Someone else* has flank pain ("my son says his back hurts under his ribs") |
+| `symptoms/flank_pain/flank_pain_true.txt` | 48 | Says there is pain in the side/back below the ribs ("there's a sharp pain in my back on the right side, below my ribs") |
+| `symptoms/flank_pain/flank_pain_false.txt` | 55 | Says there is not ("no pain in my back or sides at all") |
+| `symptoms/flank_pain/flank_pain_null_hedged.txt` | 53 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
+| `symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 47 | *Someone else* has flank pain ("my son says his back hurts under his ribs") |
 | `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
 | `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
 | `filler/emotional.txt` | 60 | Filler: worry and feelings |
 | `filler/expectations.txt` | 100 | Filler: what they want to happen — both *what* (tests, drugs, referrals) and *who, how and when* (a named regular GP, continuity, phone vs face to face, timing) |
 | `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
 
-**Dysuria and flank_pain are both sized now.** Both exist so the
+**Every symptom is sized now; none is still a seed batch.** They exist so the
 multi-signal recombination described in section 12.2 has something real to be
-built against. The six dysuria libraries have since been grown to 38–47
-fragments each, and the four flank_pain libraries to 47–55, at or just above the
-40–50 band everything else is held to, so neither is the proof-of-concept batch
-this paragraph used to describe.
+built against. The six dysuria libraries have been grown to 38–47 fragments
+each, the seven urinary_frequency libraries were written at 40–46, the seven
+nocturia libraries at 46–54, and the four flank_pain libraries have been grown
+to 47–55 — at or just above the 40–50 band everything else is held to. No part
+of this table is the proof-of-concept batch this paragraph used to describe.
 
 **flank_pain carries no cluster markers, deliberately.** Every one of its 203
 fragments is a distinct idea, so its effective n equals its fragment count —
@@ -181,28 +173,11 @@ exist, a flank_pain run measures the model on a narrower set of confounders
 than the fever run does, and its numbers are not comparable to fever's on that
 basis.
 
-The generator does not read either symptom's libraries yet:
-**Dysuria and urinary_frequency are sized; flank_pain is still a seed.** All
-three exist so the multi-signal recombination described in section 12.2 has
-something real to be built against. The six dysuria libraries have since been
-grown to 38–47 fragments each, and the seven urinary_frequency libraries were
-written at 40–46, which is the 40–50 band everything else is held to, so neither
-is the proof-of-concept batch this paragraph used to describe. The four
-flank_pain libraries are — 10 to 24 fragments — and section 10 says what that
-costs. The generator does not read another symptom's libraries during a fever
-run:
-**Dysuria and nocturia are sized; flank_pain is still a seed.** All three exist
-so the multi-signal recombination described in section 12.2 has something real
-to be built against. The six dysuria libraries have since been grown to 38–47
-fragments each, which is the 40–50 band everything else is held to, so they are
-no longer the proof-of-concept batch this paragraph used to describe. The seven
-nocturia libraries were written to the fever pattern at 46–54 fragments each and
-have never been a seed batch. The four flank_pain libraries are — 10 to 24
-fragments — and section 10 says what that costs. The generator does not read
-these symptoms' libraries in a fever run:
+The generator does not read these symptoms' libraries in a fever run:
 `build_pools` keeps only fragments whose `signal_key` matches the signal
-being generated, plus filler, so a dysuria, nocturia or flank_pain fragment is
-dropped from a `fever_present` run rather than treated as filler. That is the
+being generated, plus filler, so a dysuria, urinary_frequency, nocturia or
+flank_pain fragment is dropped from a `fever_present` run rather than treated as
+filler. That is the
 correct behaviour until the machinery in 12.5 exists — treating them as
 filler would silently assert they say nothing about fever, and that
 guarantee is not yet written down anywhere the code can check.
@@ -414,10 +389,12 @@ training example. Section 6 explains what the markers are for.
 
 Only the `fever_null` and `dysuria_null` libraries carry markers, because only
 they were written in a way that produced systematic near-duplicates. **The seven
-`urinary_frequency` libraries carry none, deliberately**: they were written as
-independent ideas rather than in two passes over one list, so their effective n
-equals their fragment count rather than half of it — 40 to 46 clusters apiece
-against the `dysuria_null` libraries' 19 to 23. That is what section 10 asks for
+`urinary_frequency` libraries carry none, deliberately**, as do the seven
+nocturia and four flank_pain ones: they were written as independent ideas rather
+than in two passes over one list, so their effective n equals their fragment
+count rather than half of it — 40 to 46 clusters apiece for urinary_frequency,
+against the 19 to 23 of the three `dysuria_null` libraries that are still fully
+twin-tagged. That is what section 10 asks for
 when it says growing a library means new ideas, not new twins, and the lint is
 the check that the claim is true rather than merely intended: `urinary_frequency`
 contributes **zero** cross-split near-duplicates (section 8). The first draft
@@ -575,7 +552,7 @@ This was only done for the `fever_null` libraries. `fever_true` and
 `fever_false` have some incidental near-duplicates too, but not the systematic
 twinning, and hand-tagging 156 more lines was not judged worth it for a proof of
 concept. Instead the lint reports how many there are, so the number is known
-rather than assumed (currently 3 and 1).
+rather than assumed (currently 3 and 2).
 
 ### Fold mode
 
@@ -617,18 +594,21 @@ run. Read the constant, not this sentence, if the two ever disagree.
 The cluster key is hashed as `"{salt}:{cluster_key}"`. The salt exists because
 the empty-cell guard (section 10) covers the *whole* manifest, so a library for
 an unrelated signal that fails to populate all five buckets blocks a fever run.
-792 of the first 1000 integer salts currently clear every library, up from about
-1 in 40 when this was written and from 293 before the flank_pain expansion,
-because the binding libraries have grown.
+836 of the first 1000 integer salts currently clear every library, up from about
+1 in 40 when this was written, from 293 before the flank_pain expansion, and
+from 792 before `dysuria_null_metaphor` was rewritten, because the binding
+libraries have grown.
 
 **Which library binds has moved back from flank_pain to dysuria**, and it tracks
 cluster count almost exactly. Before the expansion `flank_pain_null_hedged` (10
 clusters) failed 481 of those 1000 salts on its own and
 `flank_pain_null_thirdparty` (14) failed 211; at 48 and 47 clusters they now
 fail 1 and 0. The binding libraries are `dysuria_null_historical` (68 failures),
-`dysuria_null_metaphor` (61) and `dysuria_null_hedged` (57) — all four
-`dysuria_null` libraries are twin-tagged, so their cluster count is half their
-fragment count and that, not their size, is what binds. That is the honest
+`dysuria_null_hedged` (57), `dysuria_null_thirdparty` (32) and
+`dysuria_null_metaphor` (8) — all four `dysuria_null` libraries are twin-tagged,
+so their cluster count is half their fragment count and that, not their size, is
+what binds. Every urinary_frequency and nocturia library fails at most one salt
+apiece, which is what an untwinned 40-plus-cluster library looks like here. That is the honest
 reading of the salt as a health signal: it is a proxy for the smallest library
 measured in *clusters*, and the way to loosen it is to write new ideas for
 whichever library is smallest by that measure. `--find-fold-salt` searches for
@@ -748,24 +728,22 @@ an untagged pair would show up here. The full breakdown:
 | Where | Count | Libraries |
 |---|---|---|
 | Filler | 39 | `justifiers` 14, `expectations` 10, `tangents` 8, `uti_speculation` 4, `emotional` 3 |
-| `dysuria` | 3 | `dysuria_null_metaphor` 2, `dysuria_true` 1 |
+| `fever` decisive | 5 | `fever_true` 3, `fever_false` 2 |
 | `flank_pain` | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
 | `dysuria` | 1 | `dysuria_true` 1 |
-| `flank_pain` seed batch | 9 | `flank_pain_false` 3, `flank_pain_null_thirdparty` 3, `flank_pain_true` 3 |
-| `fever` decisive | 5 | `fever_true` 3, `fever_false` 2 |
 | `urinary_frequency` | 0 | — |
-
-The zero on the `urinary_frequency` row is the point of putting it there. Those
-seven libraries carry no cluster markers at all, so unlike the `fever_null` and
-`dysuria_null` rows there is no mechanism keeping twins together — the number is
-zero because the lines are actually distinct, and it will stop being zero the
-moment someone adds a paraphrase. Read it as the live check on that claim rather
-than as a boast.
 | `nocturia` | 0 | — |
+
+The zeros on the `urinary_frequency` and `nocturia` rows are the point of
+putting them there. Those fourteen libraries carry no cluster markers at all, so
+unlike the `fever_null` and `dysuria_null` rows there is no mechanism keeping
+twins together — the number is zero because the lines are actually distinct, and
+it will stop being zero the moment someone adds a paraphrase. Read it as the
+live check on that claim rather than as a boast.
 
 Filler dominates, and those libraries leak in exactly the same way as the
 clinical ones but were never clustered. The `flank_pain` libraries are
-unclustered by design (section 3). The four `fever` hits are the incidental
+unclustered by design (section 3). The five `fever` hits are the incidental
 near-duplicates section 6 records as known and untagged.
 
 **The `flank_pain` row is 9 both before and after the expansion**, which is the
@@ -836,6 +814,35 @@ so. It is a reading list, not a fault list.
 
 **Split coverage** — how many fragments of each library landed in each split,
 flagging any empty cell. See section 10.
+
+### Four guards against a bad merge
+
+The lint reports; these four tests fail the build, and they exist because four
+library tickets landed in quick succession and their merges concatenated
+conflicting edits rather than merging them. They live in
+`tests/test_synthetic_recombination.py` and run against the committed tree
+rather than any fixture.
+
+* **No duplicate JSON keys in the manifest.** The merge fused two library
+  entries into one object. `json.load` resolves duplicate keys last-wins, so the
+  first library *silently vanished* rather than raising — the file still parsed.
+  Only an `object_pairs_hook` sees it.
+* **Every `.txt` on disk is declared in the manifest.** The other half of the
+  same fault. `load_fragments` checks only the reverse direction, so a library
+  the manifest stops naming quietly stops being training data with nothing
+  raised anywhere.
+* **The section 3 table lists every library exactly once**, and its set of paths
+  matches the manifest. The merge left flank_pain in the table twice, once with
+  current counts and once with pre-expansion ones, and a reader has no way to
+  tell which block is live.
+* **Every count in that table matches its file.** These are per-library totals
+  that only a merged tree can compute, so they go stale *on merge* rather than
+  in the PR that moved them — which is why review does not catch it.
+
+`documentation/arch_training.md` is in the `rulesets` path filter in
+`.github/workflows/tests.yml` for the third and fourth of these. Without it the
+workflow's `'!**/*.md'` exclusion means a PR that rewrites the table runs no job
+at all.
 
 ---
 
@@ -1197,7 +1204,7 @@ carry no cluster markers their **effective n equals their fragment count**:
 | `urinary_frequency_false` | 46 | **46** | 29 / 12 / 5 |
 | `urinary_frequency_null_hedged` | 42 | **42** | 34 / 4 / 4 |
 | `urinary_frequency_null_historical` | 40 | **40** | 31 / 5 / 4 |
-| `urinary_frequency_null_metaphor` | 44 | **44** | 27 / 8 / 9 |
+| `urinary_frequency_null_metaphor` | 44 | **44** | 28 / 7 / 9 |
 | `urinary_frequency_null_thirdparty` | 44 | **44** | 32 / 7 / 5 |
 | `urinary_frequency_null_adjacent` | 40 | **40** | 32 / 2 / 6 |
 
@@ -1530,21 +1537,16 @@ raw fragment counts, so the two numbers are always visible together.
 
 ### 12.2 Multi-signal libraries
 
-**Partial status: the dysuria and urinary_frequency libraries exist (section 3),
-the engine work does not.** The fragments are written and declared in the
-manifest, and a single-signal run against either produces a valid dataset;
-nothing yet combines two signals in one example. Everything below is still the
-plan.
-**Partial status: the dysuria, nocturia and flank_pain libraries exist (section
-3), the engine work does not.** The fragments are written and declared in the
-manifest, and a single-signal run against nocturia or dysuria works today; what
-does not exist is any way for *one* example to carry more than one key.
-Everything below is still the plan.
+**Partial status: the dysuria, urinary_frequency, nocturia and flank_pain
+libraries all exist (section 3), the engine work does not.** The fragments are
+written and declared in the manifest, and a single-signal run against any of
+them produces a valid dataset; what does not exist is any way for *one* example
+to carry more than one key. Everything below is still the plan.
 
-Add fragment libraries for the other urinary signals — urinary frequency,
-haematuria, and so on — each with its own true, false and ambiguous variants, on
-the same pattern as the fever and nocturia libraries. Then recombine them with
-the fever fragments.
+Add fragment libraries for the remaining urinary signals — haematuria,
+recent_uti, and so on — each with its own true, false and ambiguous variants, on
+the same pattern as the fever libraries. Then recombine them with the fever
+fragments.
 
 **The payoff is not more examples, it is more label per example.** Today a
 `true` example is one positive fever fragment plus one or more fillers, and the

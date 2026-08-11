@@ -6,6 +6,7 @@ These are pure unit tests with no database, so there is no ``pytestmark``.
 import hashlib
 import json
 import math
+import re
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
@@ -1251,6 +1252,104 @@ def test_the_known_substring_traps_are_not_flagged():
 def test_fever_language_in_a_signal_library_is_not_a_filler_leak():
     fragment = _fragment("I've had a fever", fragment_type="positive", signal_key=SIGNAL)
     assert filler_lexicon_hits([fragment]) == []
+
+
+# --------------------------------------------------------------------------
+# The merge guards.
+#
+# Four library tickets landed in quick succession and their merges concatenated
+# conflicting edits instead of merging them. The manifest ended up as invalid
+# JSON with two pairs of entries fused into one object, and one library
+# disappeared entirely because duplicate JSON keys are last-wins. The
+# architecture doc ended up listing flank_pain twice, once with pre-expansion
+# counts.
+#
+# None of the tests above fire on any of that: they load the manifest through
+# ``json.load``, which accepts duplicate keys silently, and they never read the
+# doc. These four do, and they are deliberately about the *tree as committed*
+# rather than about any fixture.
+# --------------------------------------------------------------------------
+
+DOC = Path(__file__).resolve().parents[1] / "documentation" / "arch_training.md"
+
+#: Directories under data/synthetic/ whose .txt files are not libraries.
+_NON_LIBRARY_DIRS = ("drafts", "generated")
+
+#: A section 3 table row: ``| `symptoms/fever/fever_true.txt` | 96 | ... |``
+_DOC_ROW = re.compile(r"^\| `([^`]+\.txt)` \| (\d+) \|", re.M)
+
+
+def _doc_rows() -> list[tuple[str, int]]:
+    return [(path, int(count)) for path, count in _DOC_ROW.findall(DOC.read_text())]
+
+
+def _library_line_count(relative_path: str) -> int:
+    text = (REAL_MANIFEST.parent / relative_path).read_text()
+    return sum(1 for line in text.splitlines() if line.strip())
+
+
+def test_the_manifest_has_no_duplicate_json_keys():
+    # The fault that made the manifest invalid: a merge fused two entries into
+    # one object. json.load resolves duplicate keys last-wins, so the first
+    # library silently vanishes rather than raising. Only object_pairs_hook
+    # sees it.
+    offenders: list[str] = []
+
+    def reject_duplicates(pairs):
+        keys = [key for key, _ in pairs]
+        offenders.extend(key for key in keys if keys.count(key) > 1)
+        return dict(pairs)
+
+    json.loads(REAL_MANIFEST.read_text(), object_pairs_hook=reject_duplicates)
+    assert not offenders, (
+        "the manifest has duplicate keys within one object, which means a merge "
+        f"fused two library entries and one of them has been lost: {sorted(set(offenders))}"
+    )
+
+
+def test_every_library_file_on_disk_is_declared_in_the_manifest():
+    # The other half of the same fault. A library the manifest no longer names
+    # is not an error anywhere -- load_fragments only checks the reverse
+    # direction -- so it would quietly stop being training data.
+    declared = {entry["file"] for entry in json.loads(REAL_MANIFEST.read_text())["libraries"]}
+    root = REAL_MANIFEST.parent
+    on_disk = {
+        str(path.relative_to(root))
+        for path in root.rglob("*.txt")
+        if not any(part in _NON_LIBRARY_DIRS for part in path.relative_to(root).parts)
+    }
+    assert on_disk == declared, (
+        "a fragment library on disk is missing from the manifest (or vice versa): "
+        f"undeclared={sorted(on_disk - declared)} missing_from_disk={sorted(declared - on_disk)}"
+    )
+
+
+def test_the_architecture_doc_lists_every_library_exactly_once():
+    # Catches the duplicated table: flank_pain appeared twice, once with its
+    # current counts and once with the pre-expansion seed numbers, and a reader
+    # has no way to tell which block is live.
+    rows = _doc_rows()
+    paths = [path for path, _ in rows]
+    duplicated = sorted({path for path in paths if paths.count(path) > 1})
+    assert not duplicated, f"arch_training.md lists these libraries more than once: {duplicated}"
+
+    declared = {entry["file"] for entry in json.loads(REAL_MANIFEST.read_text())["libraries"]}
+    assert set(paths) == declared, (
+        "arch_training.md's library table has drifted from the manifest: "
+        f"undocumented={sorted(declared - set(paths))} stale_rows={sorted(set(paths) - declared)}"
+    )
+
+
+def test_the_architecture_doc_fragment_counts_match_the_libraries():
+    # The counts are per-library totals that only a merged tree can compute, so
+    # they go stale on merge rather than in the PR that moved them. Growing a
+    # library and not updating the table is the common case.
+    wrong = [
+        f"{path}: doc says {count}, file has {_library_line_count(path)}"
+        for path, count in _doc_rows()
+        if count != _library_line_count(path)
+    ]
+    assert not wrong, "arch_training.md's fragment counts are out of date: " + "; ".join(wrong)
 
 
 def test_hedge_markers_are_reported_for_decisive_libraries_only():
