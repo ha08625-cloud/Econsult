@@ -663,8 +663,8 @@ DATA_LIMITS = (
     "**The validation score is a smoke test, not evidence.** Under the default bands validation "
     "holds 15 distinct positive fragments, and every `true` validation example is a recombination "
     "of those 15 sentences; one unlucky fragment moves the score several points. The training "
-    "plan asks for around 200 fragments per signal. We have roughly half that for `true` and a "
-    "third for `false`.",
+    "plan asks for around 200 fragments per signal. We have roughly half that for `true` and for "
+    "`false` alike.",
     "**Length may still leak.** Fragment *count* is drawn from one distribution that never sees "
     "the label, so it cannot be a proxy for it. Fragment *length* is not controlled at all: "
     "`fever_true` fragments run from 3 words to 98, while the `fever_null` libraries sit in a "

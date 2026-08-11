@@ -75,6 +75,67 @@
       "subclass": "third_party"
     },
     {
+      "name": "dysuria_null_metaphor",
+      "file": "symptoms/dysuria/dysuria_null_metaphor.txt",
+      "signal_key": "dysuria_present",
+      "fragment_type": "confounder",
+      "subclass": "metaphor"
+    },
+    {
+      "name": "dysuria_null_historical",
+      "file": "symptoms/dysuria/dysuria_null_historical.txt",
+      "signal_key": "dysuria_present",
+      "fragment_type": "confounder",
+      "subclass": "historical"
+    },
+    {
+      "name": "nocturia_true",
+      "file": "symptoms/nocturia/nocturia_true.txt",
+      "signal_key": "nocturia_present",
+      "fragment_type": "positive"
+    },
+    {
+      "name": "nocturia_false",
+      "file": "symptoms/nocturia/nocturia_false.txt",
+      "signal_key": "nocturia_present",
+      "fragment_type": "negative"
+    },
+    {
+      "name": "nocturia_null_hedged",
+      "file": "symptoms/nocturia/nocturia_null_hedged.txt",
+      "signal_key": "nocturia_present",
+      "fragment_type": "ambiguous",
+      "subclass": "hedged"
+    },
+    {
+      "name": "nocturia_null_metaphor",
+      "file": "symptoms/nocturia/nocturia_null_metaphor.txt",
+      "signal_key": "nocturia_present",
+      "fragment_type": "confounder",
+      "subclass": "metaphor"
+    },
+    {
+      "name": "nocturia_null_thirdparty",
+      "file": "symptoms/nocturia/nocturia_null_thirdparty.txt",
+      "signal_key": "nocturia_present",
+      "fragment_type": "confounder",
+      "subclass": "third_party"
+    },
+    {
+      "name": "nocturia_null_historical",
+      "file": "symptoms/nocturia/nocturia_null_historical.txt",
+      "signal_key": "nocturia_present",
+      "fragment_type": "confounder",
+      "subclass": "historical"
+    },
+    {
+      "name": "nocturia_null_attribution",
+      "file": "symptoms/nocturia/nocturia_null_attribution.txt",
+      "signal_key": "nocturia_present",
+      "fragment_type": "confounder",
+      "subclass": "attribution"
+    },
+    {
       "name": "flank_pain_true",
       "file": "symptoms/flank_pain/flank_pain_true.txt",
       "signal_key": "flank_pain_present",
