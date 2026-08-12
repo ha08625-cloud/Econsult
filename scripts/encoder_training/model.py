@@ -121,20 +121,42 @@ class TokeniserFacts:
         }
 
 
+#: Share of a vocabulary that must carry capitals before it counts as cased.
+#:
+#: A threshold rather than "any", because "any" is wrong, and it was wrong in a
+#: way that only a real run exposed: the first version of this probe flagged
+#: ``bert-base-uncased`` as cased in the 2026-08-12 comparison report. An uncased
+#: vocabulary is not free of capitals -- it holds a handful of single characters
+#: from non-Latin scripts that are upper-case in Unicode's sense -- so a test that
+#: fires on one token fires on every vocabulary there is. A cased BERT vocabulary
+#: is *thousands* of capitalised wordpieces out of ~29,000, so any threshold
+#: between "a few tokens" and "a few percent" separates the two cleanly, and 1%
+#: sits in the middle of that gap rather than at either edge.
+CASED_VOCAB_SHARE = 0.01
+
+
 def vocabulary_is_cased(tokenizer) -> bool:
     """Whether the vocabulary holds entries only cased input could ever match.
 
     Asked of the vocabulary itself rather than inferred from its size, because
     28,996 identifies ``bert-base-cased``'s vocabulary by coincidence of arithmetic
     and nothing else -- a fine-tuned checkpoint with a handful of added tokens
-    would not match the magic number and would still be cased. Special tokens are
-    excluded: ``[CLS]`` is upper-case in every vocabulary there is, cased or not.
+    would not match the magic number and would still be cased.
+
+    Two things are deliberately narrow. Special tokens are excluded, since
+    ``[CLS]`` is upper-case in every vocabulary there is. And only ASCII ``A-Z``
+    counts, because ``str.isupper`` is true for capitals in scripts an uncased
+    English vocabulary still carries as single characters -- which is the reading
+    that produced a wrong answer the first time.
     """
     special = set(getattr(tokenizer, "all_special_tokens", ()) or ())
-    return any(
-        token not in special and any(character.isupper() for character in token)
-        for token in tokenizer.get_vocab()
+    vocabulary = [token for token in tokenizer.get_vocab() if token not in special]
+    if not vocabulary:
+        return False
+    capitalised = sum(
+        1 for token in vocabulary if any("A" <= character <= "Z" for character in token)
     )
+    return capitalised / len(vocabulary) >= CASED_VOCAB_SHARE
 
 
 def probe_tokeniser(tokenizer) -> TokeniserFacts:
@@ -426,6 +448,7 @@ __all__ = [
     "TokeniserFacts",
     "masked_cross_entropy",
     "pool",
+    "CASED_VOCAB_SHARE",
     "probe_tokeniser",
     "vocabulary_is_cased",
 ]
