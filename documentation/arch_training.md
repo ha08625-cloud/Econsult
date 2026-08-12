@@ -740,6 +740,125 @@ Nothing in the pipeline enforces any of this today. There is no per-library
 ceiling field in the manifest and no second-labeller agreement measurement. This
 subsection records the position, not a mechanism.
 
+### What sixty-seven real submissions show
+
+Sixty-seven UTI free-text submissions have arrived for the held-out evaluation
+set that `planned_updates/encoder_next_steps.md` Ticket A specifies. They are
+not labelled yet and nothing has been scored against them. What follows is what
+*reading* them says about the libraries — available before any model touches
+them, and the cheaper half of their value.
+
+**Length was not the gap; claim density is.** The bullet above says the examples
+are still short. On length that is now measurably wrong: the real submissions run
+9 to 69 words with a median of 38, and a default two-or-three-fragment example is
+28 to 42. What separates them is how much clinical content sits in those words.
+The median real submission asserts something about **two** of the six signals and
+the longest about all six, while every generated example carries **exactly one**
+decisive claim by construction (section 5). So a model trained on this data has
+seen roughly the right amount of text and a fraction of the clinical density in
+it, and may have learned an unstated one-claim-per-submission prior. That is
+section 12.3's argument, now with evidence attached rather than asserted.
+
+**The class prior was a good bet.** Hand-labelling fever across the sixty-seven
+gives roughly 9 `true`, 9 `false` and 49 `null` — 13/13/73 against the
+generator's 15/25/60 default. Explicit denials are genuinely common: patients
+volunteer "no fever", "no blood in my urine", "no back pain" unprompted, which is
+the thing the `false` class was a bet on.
+
+**Six labelling policies the libraries never declared, all landed on.** Every one
+of these is section 9's *first* case — undeclared policy — and not a ceiling:
+
+* **Chills with no stated heat.** Two submissions say only "feeling hot and cold"
+  or "chills". `fever_true` has four chills lines and every one pairs chills with
+  an explicit heat claim; `fever_false` has ten, all denials. As the libraries
+  stand, a chills word is evidence *against* a fever. Real patients use it as
+  evidence for.
+* **A number below the clinical threshold that the patient calls a fever.** "a
+  mild fever of 37.9°C". Two numeric temperatures exist across ~460 fever
+  fragments and both are unambiguously high.
+* **Confident hedges.** "im pretty sure ive got a fever now" hedges, and asserts a
+  conclusion rather than a sensation, so the section 9 rule (*unhedged
+  first-person present subjective heat counts as `true`*) does not reach it.
+  `fever_true` holds one such line and `fever_null_hedged` two — split across
+  labels, which is what undeclared looks like.
+* **Unlateralised "lower back".** Six submissions say it. All three
+  `flank_pain_true` lines using the phrase qualify it — "on one side", "and
+  sides", "and side" — and all three `flank_pain_false` lines pair it with ribs.
+  The library therefore has a rule (lower back counts only with laterality or a
+  rib reference) that nobody wrote down, and real patients mostly do not
+  lateralise.
+* **Particulate urine.** "dark specks in it". The haematuria boundary rule
+  (section 3) settles red/pink against dark/brown, and says nothing about this.
+* **Discomfort short of pain.** "It doesn't hurt too badly to pee", "There isn't
+  much pain, just a strange irritation and discomfort right at the end of
+  peeing". The dysuria libraries have no stated floor.
+
+**A composite the libraries never produce.** One submission carries a past fever
+and a present one in a single sentence — "last year i was hospitalised with a
+severe kidney infection ... with a raging fever and im pretty sure ive got a
+fever now". No fragment anywhere holds both, because each library holds one
+claim, so the contrast the `historical` axis exists to teach is never shown in
+the form patients actually write it.
+
+**Two filler families that do not exist.** *What the patient has already tried*
+— cranberry sachets, sodium citrate, D-mannose, paracetamol, ibuprofen, extra
+fluids, a pharmacist visit, a just-finished antibiotic course — appears in about
+half the submissions; the nearest library is `expectations`, which is about what
+they *want*, and 11 of its lines touch treatment at all. *Relevant history and
+risk factors* — pregnancy, diabetes, kidney stones, recurrent UTIs, male sex,
+age, a previous admission — appears in about a quarter; there are two such lines
+across all five filler libraries.
+
+Neither can simply be written as filler, and the reason is section 8's check
+working correctly: "I finished a course of nitrofurantoin ten days ago for a
+urine infection" and "last year I was hospitalised with a kidney infection" carry
+signal language, so as filler they would make every label they were paired with a
+lie. They belong either in the `_null_historical` libraries or behind section
+12.5's declared silence. Two new filler libraries would also raise the
+fragment-count ceiling of section 5 from four to six, which is the only way that
+ceiling moves.
+
+**The set is not written in one register.** It splits into three blocks by
+punctuation and contraction habits: seven submissions with missing apostrophes in
+71% of lines and terminal punctuation in 14%, then forty at 5% and 92%, then
+twenty at 0% and 100% with a near-uniform three-sentence shape. Section 8's
+principle — *writing style is vocabulary* — applies to an evaluation set as much
+as to a library. Here it creates no label shortcut, because register does not
+track the label; it creates a coverage problem, because sixty of the
+sixty-seven sit in a tidier register than the libraries deliberately aim at, and
+the seven that do not are too few to score on their own. **Record each
+submission's provenance so the strata can at least be reported apart**, and treat
+an aggregate number over the whole set as a number about the tidy register.
+
+**What it can and cannot measure.** The resampling unit is the submission and
+there is no cluster structure, so sixty-seven independent observations give
+roughly ±11 points at 80% for one overall decisive figure. Ticket A's ±9 assumed
+eighty. Per signal it is far thinner — about 9 fever positives, 9 haematuria
+positives, 6 flank positives — so any per-signal recall from this set carries
+something like ±30 points. That is section 10's problem again, and **fold mode
+cannot fix it here**: there are sixty-seven texts and no mechanism makes more.
+
+So it is a *validity* instrument, not a *precision* one. It can show that 83.5%
+is really 55%, which is the question that matters most and which nothing else
+answers. It cannot rank two models, and per Ticket A it must not be used to
+select anything.
+
+**It does not replace the held-out fragment split, and swapping one for the other
+would be a mistake.** The two answer different questions. The fold-pooled
+recombination test set asks whether the model generalises to *ideas* it has not
+seen, in the register it was trained on, and it is the only instrument with
+enough effective n to say anything per sub-class. The real set asks whether that
+register and that claim density transfer at all. Dropping the first leaves a
+single sixty-seven-item number with no sub-class resolution and no way to tell a
+library problem from a model one — which is the question
+`arch_encoder_training.md` section 1 exists to answer. Run both.
+
+**Provenance is unresolved and gates committing the corpus.** Section 1's reason
+for generating data at all is that real patient text needs governance work first.
+Whether these submissions are real patient text, clinician-written, or generated
+decides both what they are worth as evidence and whether they may live in this
+repository, and it has to be recorded per submission before they are used.
+
 ---
 
 ## 10. Current state
@@ -1136,4 +1255,12 @@ post-processing step over finished text and independent of everything else.
 in the author's head into something declared per library and checkable — and it
 has to come before any per-library accuracy ceiling is declared, because until
 the policy exists there is no way to tell an irreducible ceiling from an
-inconsistency.
+inconsistency. The six policies the real submissions land on (section 9) are the
+concrete list to start from: they are not hypothetical gaps, they are cases
+patients produce.
+
+**Nothing on this list is worth starting before the real-text set is labelled and
+scored.** Every step here buys more or better generated data, and no number
+produced so far says whether generated data is where the limit is. Ticket A in
+`planned_updates/encoder_next_steps.md` is what makes this list either an
+investment or an expensive way to improve a score that does not transfer.
