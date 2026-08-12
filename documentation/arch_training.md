@@ -90,6 +90,7 @@ data/synthetic/
   symptoms/urinary_frequency/ seven libraries, all about urinary_frequency_present
   symptoms/nocturia/          seven libraries, all about nocturia_present
   symptoms/flank_pain/        five libraries, all about flank_pain_present
+  symptoms/haematuria/        two libraries, all about haematuria_present
   filler/                     five libraries, verified silent on fever only (section 9)
   drafts/                     scratch files, deliberately not libraries (section 4)
   generated/                  output, git-ignored
@@ -141,6 +142,8 @@ claim can be made per-signal.
 | `symptoms/flank_pain/flank_pain_null_hedged.txt` | 53 | Genuinely uncertain ("maybe some tenderness under my ribs, hard to tell") |
 | `symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 47 | *Someone else* has flank pain ("my son says his back hurts under his ribs") |
 | `symptoms/flank_pain/flank_pain_null_historical.txt` | 40 | Flank pain, but in the past ("ten years ago when I had kidney stones I had terrible pain in my side") |
+| `symptoms/haematuria/haematuria_true.txt` | 45 | Says there is visible blood in the urine ("the water in the toilet was bright pink after I passed urine just now") |
+| `symptoms/haematuria/haematuria_false.txt` | 45 | Says there is not ("my urine is the usual straw colour and there is no blood in it") |
 | `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
 | `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
 | `filler/emotional.txt` | 60 | Filler: worry and feelings |
@@ -183,6 +186,97 @@ while decorating", "after that fall down the stairs last winter"). That is not
 the `attribution` axis and does not close it: attribution's difficulty is that
 the pain is present *now* with no past tense to catch, and every line here is
 resolved by its time marker before the cause is reached.
+
+### haematuria: two libraries, and the boundary rule that decides what `true` means
+
+`haematuria_present` has a `true` and a `false` library and **nothing else**. It
+is the least complete signal in the repository: no `hedged`, no `thirdparty`, no
+`historical`, no `metaphor`, no confounder of any kind. A haematuria run
+therefore measures a model on the easy half of the problem only, and its numbers
+are not comparable to fever's, nocturia's or urinary_frequency's on that basis.
+That is a stated gap rather than a finished signal.
+
+**The boundary rule, written down before any run measures it**, because two
+families of plausible-looking line are *not* `true` and both were present in the
+first draft:
+
+* **Red or pink urine is `true`. Dark, brown or tea-coloured urine is not.**
+  "The bowl was bright pink", "it looks like diluted ribena", "dark plum" — a
+  patient reporting red urine is reporting blood they have seen, which is what
+  the ruleset's `encoder_prompt` asks. "My water looked like cold tea", "a
+  brownish Coca Cola colour", "a strange rusty orange", "the colour of copper",
+  "dark mahogany" are a different claim: concentrated urine from not drinking,
+  and bilirubin, and rifampicin all look like that, and the text does not say
+  the patient saw blood. Clinically those colours are worth a dipstick; as
+  *labels* they are `null`, and labelling them `true` would teach the model that
+  any darkening of the urine means blood. Seven such lines were cut. They are
+  the natural seed of a future `haematuria_null_adjacent` library — a current,
+  first-person, unhedged urinary complaint that is silent on blood — and that is
+  where they should be rewritten to, not back into `true`.
+* **Blood in the urine is `true`. Blood on the toilet paper is not.** Four
+  first-draft lines put the blood on the tissue or on the wipe ("a distinct
+  streak of fresh blood on the toilet paper", "a pink tinge every time I
+  wipe"). Blood on the paper after passing urine may be vaginal, rectal or
+  perineal in origin, and for a large fraction of patients answering this
+  question the source is genuinely undetermined by the text. Those are `null`,
+  not `true`, and they were removed rather than reworded, because the reword
+  that saves them ("...and it was in the water too") makes them duplicates of
+  lines already in the library. The `false` library keeps its paper lines: "no
+  blood on the tissue or in the toilet bowl" denies both sources at once and is
+  decisive whichever one the patient had in mind.
+
+The other corrections to the draft were mechanical rather than clinical. About a
+third of the `true` library was one frame — "[there's] [colour] blood in my
+[wee/pee/urine/water] [today]" — written out with the slots swapped, the exact
+fault section 8's near-duplicate report exists to catch; those lines were
+rewritten as distinct situations (where in the stream the blood appears, clots,
+what the bowl looked like before flushing, a sample in a pot, the pattern across
+the day) rather than tagged as clusters, so effective n equals fragment count in
+both libraries. Two lines carried their own emotional filler ("...and I am quite
+worried about it", "no blood, though I was a bit worried about it") and were
+stripped: emotion is `filler/emotional.txt`'s job, and section 9 records what
+happens when it leaks into a decisive library instead. Roughly three quarters of
+the `false` draft opened with the literal word "No" and fourteen of its forty
+lines named a checking behaviour ("I checked", "I looked", "I've been watching");
+both were thinned so the library is not one sentence shape repeated.
+
+Two lines in `haematuria_false` are deliberate hard negatives — a darker or
+stronger yellow than usual, explained by not drinking much, with the blood
+question then answered `no`. They are the counterweight to the colour half of
+the boundary rule above: without them the model can learn "any mention of a
+colour change ⇒ blood", which is the mirror image of the mistake the seven cut
+`true` lines would have taught.
+
+**Silence on the other signals holds; the filler caveat has a new wrinkle.**
+Neither library mentions pain, frequency, the night, the flank or temperature.
+But `filler/expectations.txt` and `filler/tangents.txt` carry "blood test",
+"blood pressure tablets" and "PSA blood test" — the word *blood*, several times,
+in text that says nothing about urine. Under the structural-null labelling that
+is not a wrong label, and it is arguably the most useful lexical confounder
+available to a haematuria run for free. It is recorded here for the same reason
+`uti_speculation`'s cystitis mention is: the guarantee is a manual reading, the
+lint's lexicon is a fever lexicon and knows nothing about blood, and section
+12.5 is what would make the claim checkable.
+
+**A haematuria run does not start yet, and that is the guard working.**
+`_check_pools` requires a non-empty ambiguous/confounder pool for the signal
+being generated, so `--signal haematuria_present` exits with *"split 'train' has
+no ambiguous/confounder fragments"* whatever `--null-ambiguous-ratio` is set to.
+Every `null` example would otherwise be a structural one — filler only — and
+those all share a single resampling unit (section 5 of `arch_encoder_training.md`),
+so the run would produce a dataset whose entire `null` class is a handful of
+ideas seen thousands of times. The fix is one confounder library, not a change to
+the guard. Nothing about the two libraries below blocks a *fever* run: the
+empty-cell check passes for both, all five folds populate under the default salt,
+and `build_pools` filters by `signal_key`.
+
+Length is close enough not to be a label proxy today: medians 13 words against
+10, well inside the 1.5× threshold section 9 sets, with both libraries spanning
+4 to about 20 words.
+
+No accuracy ceiling is declared for either library. Section 9 permits one only
+in writing and in advance, and neither of these is a slice where the text
+withholds the answer — that is precisely what the boundary rule above moved out.
 
 The generator does not read these symptoms' libraries in a fever run:
 `build_pools` keeps only fragments whose `signal_key` matches the signal
@@ -730,7 +824,9 @@ Matching is on whole words only. Without that, "hot" matches inside
 clean data on day one.
 
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
-different splits, i.e. the leakage described in section 6. Currently 54, of
+different splits, i.e. the leakage described in section 6. Currently 57 — the
+figure here read 54 while the breakdown below already summed to 57, and the
+breakdown was the correct half — of
 which **zero** are in the `fever_null` libraries, which tells us the manual
 clustering pass worked. `fever_null_attribution` contributes zero as well,
 which is the check that its seven deliberate twin pairs were tagged correctly:
@@ -744,9 +840,10 @@ an untagged pair would show up here. The full breakdown:
 | `dysuria` | 1 | `dysuria_true` 1 |
 | `urinary_frequency` | 0 | — |
 | `nocturia` | 0 | — |
+| `haematuria` | 0 | — |
 
-The zeros on the `urinary_frequency` and `nocturia` rows are the point of
-putting them there. Those fourteen libraries carry no cluster markers at all, so
+The zeros on the `urinary_frequency`, `nocturia` and `haematuria` rows are the
+point of putting them there. Those sixteen libraries carry no cluster markers at all, so
 unlike the `fever_null` and `dysuria_null` rows there is no mechanism keeping
 twins together — the number is zero because the lines are actually distinct, and
 it will stop being zero the moment someone adds a paraphrase. Read it as the
@@ -792,6 +889,13 @@ nothing suppresses a pair by construction: the first draft contributed 39 —
 what surfaced it. They were rewritten as distinct situations rather than tagged,
 because tagging would have recorded the twinning honestly while leaving effective
 n halved.
+
+The `haematuria` zero was 1 on the first draft of the two libraries, and the
+pair it caught is worth recording because it is the smallest possible version of
+the fault: "There is bright red blood in my wee" against "Theres blood in my
+urine", two flat statements of the bare claim with the urine word swapped, at
+0.68. One of them was replaced with a distinct idea rather than reworded, since
+rewording a six-word sentence only moves it below the threshold.
 
 The dysuria row is the report earning its keep. `dysuria_null_thirdparty`
 contributed 8 of these — the worst of any clinical library — because half of it
