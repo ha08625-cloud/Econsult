@@ -216,6 +216,18 @@
       "subclass": "historical"
     },
     {
+      "name": "haematuria_true",
+      "file": "symptoms/haematuria/haematuria_true.txt",
+      "signal_key": "haematuria_present",
+      "fragment_type": "positive"
+    },
+    {
+      "name": "haematuria_false",
+      "file": "symptoms/haematuria/haematuria_false.txt",
+      "signal_key": "haematuria_present",
+      "fragment_type": "negative"
+    },
+    {
       "name": "tangents",
       "file": "filler/tangents.txt",
       "signal_key": null,
