@@ -1,5 +1,5 @@
 {
-  "arm": "arm_b_finetune",
+  "arm": "arm_b_finetune__Bio-ClinicalBERT",
   "signal": "fever_present",
   "fold": 3,
   "classes": [
@@ -2329,7 +2329,5 @@
         0.00833937805145979
       ]
     }
-  },
-  "encoder_weights": "models/encoder/fever_present/arm_b_finetune/weights/fold3.encoder.pt",
-  "encoder_weights_committed": false
+  }
 }

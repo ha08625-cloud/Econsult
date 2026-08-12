@@ -1,5 +1,5 @@
 {
-  "arm": "arm_b_finetune",
+  "arm": "arm_b_finetune__Bio-ClinicalBERT",
   "signal": "fever_present",
   "classes": [
     "false",
@@ -167,7 +167,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -248,7 +248,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold1.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -329,7 +329,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold2.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -410,7 +410,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold3.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -491,7 +491,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold4.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -508,11 +508,5 @@
       "4": 0.0
     }
   },
-  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it.",
-  "negative_control": {
-    "shuffle_seed": 7,
-    "permuted": "training labels only; validation and test left unpermuted",
-    "run_name": "arm_b_finetune__shuffled",
-    "passing_looks_like": "near-zero training loss (the model memorises the permutation) together with chance performance on the unpermuted test split. Either one alone is not the control passing; the per-fold train_loss_by_epoch in this sidecar is where the first half is read"
-  }
+  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it."
 }

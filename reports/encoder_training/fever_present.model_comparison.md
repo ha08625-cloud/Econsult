@@ -1,6 +1,6 @@
 # Encoder training: evaluation report
 
-*Generated 2026-08-12T15:56:10+00:00.*
+*Generated 2026-08-12T16:38:05+00:00.*
 
 |  |  |
 |---|---|
@@ -16,7 +16,7 @@
 | examples per fold | `train 10000, val 2000, test 2000` |
 | shuffle seed | `7` |
 | arm | `arm_b_finetune` |
-| base model | `emilyalsentzer/Bio_ClinicalBERT` |
+| comparison | `[{'label': 'Bio_ClinicalBERT', 'base_model': 'emilyalsentzer/Bio_ClinicalBERT', 'revision': 'd5892b39a4adaed74b92212a44081509db72f87b', 'revision_pinned': False, 'vocab_size': 28996, 'lowercases_input': True, 'discards_casing': True}, {'label': 'bert-base-uncased', 'base_model': 'bert-base-uncased', 'revision': '86b5e0934494bd15c9632b12f734a8a67f723594', 'revision_pinned': False, 'vocab_size': 30522, 'lowercases_input': True, 'discards_casing': True}, {'label': 'roberta-base', 'base_model': 'roberta-base', 'revision': 'e2da8e2f811d1448a5b465c236feacd80ffbac7b', 'revision_pinned': False, 'vocab_size': 50265, 'lowercases_input': False, 'discards_casing': False}]` |
 | pooling | `mean` |
 | max seq len | `256` |
 | device | `cuda` |
@@ -26,15 +26,9 @@
 | warmup ratio | `0.1` |
 | determinism | `strict` |
 | train seed | `1234` |
-| trainable | `all layers unfrozen` |
-| validation guided decisions | `['pooling mode (DD3) -- mean vs CLS, compared once', 'learning rate', "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)", 'decision margin (DD9)']` |
-| artefacts | `models/encoder/fever_present/arm_b_finetune` |
-| weights | `models/encoder/fever_present/arm_b_finetune/weights -- ~440MB per fold, not committed` |
-| model revision | `d5892b39a4adaed74b92212a44081509db72f87b` |
-| revision pinned | `False` |
-| tokeniser lowercases | `True` |
-| tokeniser vocab size | `28996` |
-| tokeniser discards casing | `True` |
+| arm a included | `False` |
+| negative control | `not run (--control is off)` |
+| artefacts | `models/encoder/fever_present` |
 | bootstrap | `2000 resamples over clusters, alpha=0.05, seed=0` |
 
 ## How to read these numbers
@@ -82,9 +76,9 @@ with a real sample behind it.
 | `tfidf_logreg` | baseline | 7022 | **418** | 73.6% [70.0%, 77.3%] | 70.8% [66.7%, 74.6%] | 81.4% | 81.4% +/- 3.1% |
 | `length_only__shuffled` | negative control | 7022 | **418** | 43.6% [38.6%, 48.9%] | 20.2% [18.6%, 21.9%] | 60.4% | 60.4% +/- 0.2% |
 | `tfidf_logreg__shuffled` | negative control | 7022 | **418** | 43.6% [38.6%, 48.9%] | 20.3% [18.6%, 21.9%] | 60.4% | 60.4% +/- 0.2% |
-| `arm_a_probe` | probe | 7022 | **418** | 69.0% [65.8%, 72.1%] | 65.6% [62.0%, 69.1%] | 77.8% | 77.8% +/- 1.7% |
-| `arm_b_finetune` | finetune | 7022 | **418** | 84.1% [80.8%, 87.3%] | 82.8% [79.2%, 86.2%] | 88.6% | 88.6% +/- 4.1% |
-| `arm_b_finetune__shuffled` | negative control | 7022 | **418** | 43.6% [38.6%, 48.9%] | 20.2% [18.6%, 21.9%] | 60.4% | 60.4% +/- 0.2% |
+| `arm_b_finetune@Bio_ClinicalBERT` | finetune | 7022 | **418** | 84.1% [80.8%, 87.3%] | 82.8% [79.2%, 86.2%] | 88.6% | 88.6% +/- 4.1% |
+| `arm_b_finetune@bert-base-uncased` | finetune | 7022 | **418** | 85.8% [82.6%, 88.9%] | 84.6% [80.9%, 87.9%] | 89.8% | 89.8% +/- 2.2% |
+| `arm_b_finetune@roberta-base` | finetune | 7022 | **418** | 92.9% [90.6%, 95.0%] | 92.3% [89.7%, 94.6%] | 95.0% | 95.0% +/- 2.9% |
 
 ### Null sub-class recall, pooled
 
@@ -103,9 +97,9 @@ high too.
 | `tfidf_logreg` | 95.3% [92.1%, 98.0%] (eff n 43) | 90.0% [82.4%, 96.0%] (eff n 63) | 92.9% [87.3%, 97.1%] (eff n 36) | 97.5% [95.2%, 99.2%] (eff n 47) | 93.7% [90.7%, 96.7%] (eff n 35) |
 | `length_only__shuffled` | 100.0% [100.0%, 100.0%] (eff n 43) | 100.0% [100.0%, 100.0%] (eff n 63) | 100.0% [100.0%, 100.0%] (eff n 36) | 100.0% [100.0%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 35) |
 | `tfidf_logreg__shuffled` | 100.0% [100.0%, 100.0%] (eff n 43) | 100.0% [100.0%, 100.0%] (eff n 63) | 100.0% [100.0%, 100.0%] (eff n 36) | 100.0% [100.0%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 35) |
-| `arm_a_probe` | 87.0% [80.5%, 92.7%] (eff n 43) | 69.1% [60.7%, 77.1%] (eff n 63) | 78.1% [69.4%, 85.6%] (eff n 36) | 88.5% [82.9%, 93.1%] (eff n 47) | 88.2% [82.8%, 93.2%] (eff n 35) |
-| `arm_b_finetune` | 89.5% [80.4%, 96.7%] (eff n 43) | 76.4% [65.5%, 85.5%] (eff n 63) | 91.9% [84.9%, 97.5%] (eff n 36) | 91.8% [82.5%, 97.7%] (eff n 47) | 95.9% [91.0%, 99.0%] (eff n 35) |
-| `arm_b_finetune__shuffled` | 100.0% [100.0%, 100.0%] (eff n 43) | 100.0% [100.0%, 100.0%] (eff n 63) | 100.0% [100.0%, 100.0%] (eff n 36) | 100.0% [100.0%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 35) |
+| `arm_b_finetune@Bio_ClinicalBERT` | 89.5% [80.4%, 96.7%] (eff n 43) | 76.4% [65.5%, 85.5%] (eff n 63) | 91.9% [84.9%, 97.5%] (eff n 36) | 91.8% [82.5%, 97.7%] (eff n 47) | 95.9% [91.0%, 99.0%] (eff n 35) |
+| `arm_b_finetune@bert-base-uncased` | 92.3% [83.0%, 99.5%] (eff n 43) | 87.5% [78.6%, 94.8%] (eff n 63) | 93.9% [87.6%, 98.5%] (eff n 36) | 96.4% [91.1%, 99.8%] (eff n 47) | 99.2% [98.4%, 99.8%] (eff n 35) |
+| `arm_b_finetune@roberta-base` | 96.3% [91.5%, 99.7%] (eff n 43) | 88.8% [80.1%, 95.7%] (eff n 63) | 96.3% [91.5%, 99.8%] (eff n 36) | 99.5% [98.5%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 35) |
 
 ## The ticket's question: model or libraries?
 
@@ -129,8 +123,9 @@ table are high at the same time. The same caveat applies to every McNemar row be
 | `majority_class` | baseline | 3062 | **224** | 100.0% [100.0%, 100.0%] |
 | `length_only` | baseline | 3062 | **224** | 99.9% [99.8%, 100.0%] |
 | `tfidf_logreg` | baseline | 3062 | **224** | 93.7% [91.3%, 95.7%] |
-| `arm_a_probe` | probe | 3062 | **224** | 81.2% [77.7%, 84.2%] |
-| `arm_b_finetune` | finetune | 3062 | **224** | 87.9% [84.0%, 91.5%] |
+| `arm_b_finetune@Bio_ClinicalBERT` | finetune | 3062 | **224** | 87.9% [84.0%, 91.5%] |
+| `arm_b_finetune@bert-base-uncased` | finetune | 3062 | **224** | 93.3% [90.1%, 96.1%] |
+| `arm_b_finetune@roberta-base` | finetune | 3062 | **224** | 95.6% [93.0%, 97.8%] |
 
 ### 2. The same comparison, paired
 
@@ -142,14 +137,19 @@ intervals above, never instead of them.
 |---|---|---|---|---|
 | `majority_class` vs `length_only` | 3062 | 3 | 0 | 0.25 |
 | `majority_class` vs `tfidf_logreg` | 3062 | 194 | 0 | 7.97e-59 |
-| `majority_class` vs `arm_a_probe` | 3062 | 576 | 0 | 8.09e-174 |
-| `majority_class` vs `arm_b_finetune` | 3062 | 404 | 0 | 4.84e-122 |
+| `majority_class` vs `arm_b_finetune@Bio_ClinicalBERT` | 3062 | 404 | 0 | 4.84e-122 |
+| `majority_class` vs `arm_b_finetune@bert-base-uncased` | 3062 | 231 | 0 | 5.8e-70 |
+| `majority_class` vs `arm_b_finetune@roberta-base` | 3062 | 148 | 0 | 5.61e-45 |
 | `length_only` vs `tfidf_logreg` | 3062 | 194 | 3 | 1.27e-53 |
-| `length_only` vs `arm_a_probe` | 3062 | 575 | 2 | 6.74e-169 |
-| `length_only` vs `arm_b_finetune` | 3062 | 403 | 2 | 1.99e-117 |
-| `tfidf_logreg` vs `arm_a_probe` | 3062 | 473 | 91 | 3.24e-63 |
-| `tfidf_logreg` vs `arm_b_finetune` | 3062 | 289 | 79 | 3.04e-29 |
-| `arm_a_probe` vs `arm_b_finetune` | 3062 | 218 | 390 | 2.93e-12 |
+| `length_only` vs `arm_b_finetune@Bio_ClinicalBERT` | 3062 | 403 | 2 | 1.99e-117 |
+| `length_only` vs `arm_b_finetune@bert-base-uncased` | 3062 | 230 | 2 | 7.83e-66 |
+| `length_only` vs `arm_b_finetune@roberta-base` | 3062 | 147 | 2 | 3.13e-41 |
+| `tfidf_logreg` vs `arm_b_finetune@Bio_ClinicalBERT` | 3062 | 289 | 79 | 3.04e-29 |
+| `tfidf_logreg` vs `arm_b_finetune@bert-base-uncased` | 3062 | 171 | 134 | 0.0391 |
+| `tfidf_logreg` vs `arm_b_finetune@roberta-base` | 3062 | 87 | 133 | 0.00234 |
+| `arm_b_finetune@Bio_ClinicalBERT` vs `arm_b_finetune@bert-base-uncased` | 3062 | 88 | 261 | 4.98e-21 |
+| `arm_b_finetune@Bio_ClinicalBERT` vs `arm_b_finetune@roberta-base` | 3062 | 35 | 291 | 2.22e-51 |
+| `arm_b_finetune@bert-base-uncased` vs `arm_b_finetune@roberta-base` | 3062 | 54 | 137 | 1.66e-09 |
 
 ### 3. Where the errors fall
 
@@ -161,8 +161,9 @@ this the most decision-useful thing in the report.
 * `majority_class`: 3960 errors across 194 of 463 decisive fragments. Half of them fall on **71** fragments (an even spread would be 97.0); the worst ten carry 8.9% of all errors.
 * `length_only`: 3939 errors across 196 of 463 decisive fragments. Half of them fall on **70** fragments (an even spread would be 98.0); the worst ten carry 9.0% of all errors.
 * `tfidf_logreg`: 1851 errors across 205 of 463 decisive fragments. Half of them fall on **46** fragments (an even spread would be 102.5); the worst ten carry 15.0% of all errors.
-* `arm_a_probe`: 2180 errors across 329 of 463 decisive fragments. Half of them fall on **69** fragments (an even spread would be 164.5); the worst ten carry 12.0% of all errors.
-* `arm_b_finetune`: 1118 errors across 134 of 463 decisive fragments. Half of them fall on **29** fragments (an even spread would be 67.0); the worst ten carry 23.0% of all errors.
+* `arm_b_finetune@Bio_ClinicalBERT`: 1118 errors across 134 of 463 decisive fragments. Half of them fall on **29** fragments (an even spread would be 67.0); the worst ten carry 23.0% of all errors.
+* `arm_b_finetune@bert-base-uncased`: 999 errors across 104 of 463 decisive fragments. Half of them fall on **24** fragments (an even spread would be 52.0); the worst ten carry 25.5% of all errors.
+* `arm_b_finetune@roberta-base`: 496 errors across 60 of 463 decisive fragments. Half of them fall on **14** fragments (an even spread would be 30.0); the worst ten carry 41.3% of all errors.
 
 ### Reading the three together
 
@@ -211,7 +212,6 @@ and says nothing. Only the test score is the control.
 |---|---|---|
 | `length_only__shuffled` | 60.4% [39.9%, 76.5%] | 25.1% [19.0%, 28.9%] |
 | `tfidf_logreg__shuffled` | 60.4% [39.9%, 76.5%] | 25.1% [19.0%, 28.9%] |
-| `arm_b_finetune__shuffled` | 60.4% [39.9%, 76.5%] | 25.1% [19.0%, 28.9%] |
 
 ## Paired comparisons (McNemar, raw argmax)
 
@@ -224,22 +224,32 @@ example, not the cluster -- see the limitations.
 | `majority_class` vs `length_only` | null_ambiguous | 3062 | 3 | 0 | 0.25 |
 | `majority_class` vs `tfidf_logreg` | overall | 10000 | 201 | 2303 | 0 |
 | `majority_class` vs `tfidf_logreg` | null_ambiguous | 3062 | 194 | 0 | 7.97e-59 |
-| `majority_class` vs `arm_a_probe` | overall | 10000 | 618 | 2356 | 2.92e-237 |
-| `majority_class` vs `arm_a_probe` | null_ambiguous | 3062 | 576 | 0 | 8.09e-174 |
-| `majority_class` vs `arm_b_finetune` | overall | 10000 | 423 | 3244 | 0 |
-| `majority_class` vs `arm_b_finetune` | null_ambiguous | 3062 | 404 | 0 | 4.84e-122 |
+| `majority_class` vs `arm_b_finetune@Bio_ClinicalBERT` | overall | 10000 | 423 | 3244 | 0 |
+| `majority_class` vs `arm_b_finetune@Bio_ClinicalBERT` | null_ambiguous | 3062 | 404 | 0 | 4.84e-122 |
+| `majority_class` vs `arm_b_finetune@bert-base-uncased` | overall | 10000 | 249 | 3189 | 0 |
+| `majority_class` vs `arm_b_finetune@bert-base-uncased` | null_ambiguous | 3062 | 231 | 0 | 5.8e-70 |
+| `majority_class` vs `arm_b_finetune@roberta-base` | overall | 10000 | 148 | 3606 | 0 |
+| `majority_class` vs `arm_b_finetune@roberta-base` | null_ambiguous | 3062 | 148 | 0 | 5.61e-45 |
 | `length_only` vs `tfidf_logreg` | overall | 10000 | 202 | 2283 | 0 |
 | `length_only` vs `tfidf_logreg` | null_ambiguous | 3062 | 194 | 3 | 1.27e-53 |
-| `length_only` vs `arm_a_probe` | overall | 10000 | 618 | 2335 | 4.53e-233 |
-| `length_only` vs `arm_a_probe` | null_ambiguous | 3062 | 575 | 2 | 6.74e-169 |
-| `length_only` vs `arm_b_finetune` | overall | 10000 | 422 | 3222 | 0 |
-| `length_only` vs `arm_b_finetune` | null_ambiguous | 3062 | 403 | 2 | 1.99e-117 |
-| `tfidf_logreg` vs `arm_a_probe` | overall | 10000 | 1116 | 752 | 3.6e-17 |
-| `tfidf_logreg` vs `arm_a_probe` | null_ambiguous | 3062 | 473 | 91 | 3.24e-63 |
-| `tfidf_logreg` vs `arm_b_finetune` | overall | 10000 | 478 | 1197 | 4.07e-71 |
-| `tfidf_logreg` vs `arm_b_finetune` | null_ambiguous | 3062 | 289 | 79 | 3.04e-29 |
-| `arm_a_probe` vs `arm_b_finetune` | overall | 10000 | 434 | 1517 | 3.47e-140 |
-| `arm_a_probe` vs `arm_b_finetune` | null_ambiguous | 3062 | 218 | 390 | 2.93e-12 |
+| `length_only` vs `arm_b_finetune@Bio_ClinicalBERT` | overall | 10000 | 422 | 3222 | 0 |
+| `length_only` vs `arm_b_finetune@Bio_ClinicalBERT` | null_ambiguous | 3062 | 403 | 2 | 1.99e-117 |
+| `length_only` vs `arm_b_finetune@bert-base-uncased` | overall | 10000 | 248 | 3167 | 0 |
+| `length_only` vs `arm_b_finetune@bert-base-uncased` | null_ambiguous | 3062 | 230 | 2 | 7.83e-66 |
+| `length_only` vs `arm_b_finetune@roberta-base` | overall | 10000 | 147 | 3584 | 0 |
+| `length_only` vs `arm_b_finetune@roberta-base` | null_ambiguous | 3062 | 147 | 2 | 3.13e-41 |
+| `tfidf_logreg` vs `arm_b_finetune@Bio_ClinicalBERT` | overall | 10000 | 478 | 1197 | 4.07e-71 |
+| `tfidf_logreg` vs `arm_b_finetune@Bio_ClinicalBERT` | null_ambiguous | 3062 | 289 | 79 | 3.04e-29 |
+| `tfidf_logreg` vs `arm_b_finetune@bert-base-uncased` | overall | 10000 | 357 | 1195 | 1.39e-105 |
+| `tfidf_logreg` vs `arm_b_finetune@bert-base-uncased` | null_ambiguous | 3062 | 171 | 134 | 0.0391 |
+| `tfidf_logreg` vs `arm_b_finetune@roberta-base` | overall | 10000 | 158 | 1514 | 5.04e-278 |
+| `tfidf_logreg` vs `arm_b_finetune@roberta-base` | null_ambiguous | 3062 | 87 | 133 | 0.00234 |
+| `arm_b_finetune@Bio_ClinicalBERT` vs `arm_b_finetune@bert-base-uncased` | overall | 10000 | 431 | 550 | 0.000162 |
+| `arm_b_finetune@Bio_ClinicalBERT` vs `arm_b_finetune@bert-base-uncased` | null_ambiguous | 3062 | 88 | 261 | 4.98e-21 |
+| `arm_b_finetune@Bio_ClinicalBERT` vs `arm_b_finetune@roberta-base` | overall | 10000 | 180 | 817 | 1.83e-97 |
+| `arm_b_finetune@Bio_ClinicalBERT` vs `arm_b_finetune@roberta-base` | null_ambiguous | 3062 | 35 | 291 | 2.22e-51 |
+| `arm_b_finetune@bert-base-uncased` vs `arm_b_finetune@roberta-base` | overall | 10000 | 129 | 647 | 9.87e-84 |
+| `arm_b_finetune@bert-base-uncased` vs `arm_b_finetune@roberta-base` | null_ambiguous | 3062 | 54 | 137 | 1.66e-09 |
 
 ## What moved, and where
 
@@ -253,16 +263,16 @@ a row where every encoder lands together is a row model choice does not touch.
 Worst-performing library first. For a single-class library -- `fever_false` holds only
 `false` examples -- accuracy here *is* that class's recall on that library.
 
-| library | n | `majority_class` | `length_only` | `tfidf_logreg` | `arm_a_probe` | `arm_b_finetune` | spread |
-|---|---|---|---|---|---|---|---|
-| `fever_false` | 2479 | 0.0% | 0.1% | 63.7% | 68.2% | 84.0% | 84.0pp |
-| `fever_true` | 1481 | 0.0% | 1.4% | 48.9% | 44.9% | 76.4% | 76.4pp |
-| `fever_null_hedged` | 833 | 100.0% | 99.9% | 90.0% | 69.1% | 76.4% | 30.9pp |
-| `fever_null_historical` | 508 | 100.0% | 100.0% | 92.9% | 78.1% | 91.9% | 21.9pp |
-| `fever_null_attribution` | 569 | 100.0% | 99.8% | 95.3% | 87.0% | 89.5% | 13.0pp |
-| `fever_null_thirdparty` | 508 | 100.0% | 100.0% | 93.7% | 88.2% | 95.9% | 11.8pp |
-| `fever_null_metaphor` | 644 | 100.0% | 99.8% | 97.5% | 88.5% | 91.8% | 11.5pp |
-| `(none)` | 2978 | 100.0% | 100.0% | 99.8% | 98.6% | 99.4% | 1.4pp |
+| library | n | `majority_class` | `length_only` | `tfidf_logreg` | `arm_b_finetune@Bio_ClinicalBERT` | `arm_b_finetune@bert-base-uncased` | `arm_b_finetune@roberta-base` | spread |
+|---|---|---|---|---|---|---|---|---|
+| `fever_false` | 2479 | 0.0% | 0.1% | 63.7% | 84.0% | 82.7% | 92.9% | 92.9pp |
+| `fever_true` | 1481 | 0.0% | 1.4% | 48.9% | 76.4% | 75.5% | 87.6% | 87.6pp |
+| `fever_null_hedged` | 833 | 100.0% | 99.9% | 90.0% | 76.4% | 87.5% | 88.8% | 23.6pp |
+| `fever_null_attribution` | 569 | 100.0% | 99.8% | 95.3% | 89.5% | 92.3% | 96.3% | 10.5pp |
+| `fever_null_metaphor` | 644 | 100.0% | 99.8% | 97.5% | 91.8% | 96.4% | 99.5% | 8.2pp |
+| `fever_null_historical` | 508 | 100.0% | 100.0% | 92.9% | 91.9% | 93.9% | 96.3% | 8.1pp |
+| `fever_null_thirdparty` | 508 | 100.0% | 100.0% | 93.7% | 95.9% | 99.2% | 100.0% | 6.3pp |
+| `(none)` | 2978 | 100.0% | 100.0% | 99.8% | 99.4% | 99.5% | 100.0% | 0.6pp |
 
 ### By fragment, errors
 
@@ -270,50 +280,50 @@ Ordered by the worst model's error count, so the fragments the comparison is abo
 to the top whichever encoder wins. Counts, not rates: these are the sentences a month of
 library work would be spent on. The JSON holds every fragment.
 
-| fragment | library | truth | `majority_class` | `length_only` | `tfidf_logreg` | `arm_a_probe` | `arm_b_finetune` | spread |
-|---|---|---|---|---|---|---|---|---|
-| `fever_false:5a6a9b80` | `fever_false` | false | 42 | 42 | 0 | 8 | 0 | 42 |
-| `fever_false:24e5c247` | `fever_false` | false | 37 | 37 | 9 | 3 | 0 | 37 |
-| `fever_false:d0ca84a7` | `fever_false` | false | 37 | 37 | 0 | 0 | 0 | 37 |
-| `fever_false:fc2ae0f2` | `fever_false` | false | 37 | 37 | 5 | 12 | 0 | 37 |
-| `fever_false:17f6c637` | `fever_false` | false | 35 | 35 | 0 | 2 | 0 | 35 |
-| `fever_false:9f46e710` | `fever_false` | false | 34 | 34 | 3 | 9 | 0 | 34 |
-| `fever_false:55bf1913` | `fever_false` | false | 33 | 33 | 0 | 0 | 0 | 33 |
-| `fever_false:5969c6c9` | `fever_false` | false | 33 | 33 | 0 | 4 | 0 | 33 |
-| `fever_false:a9a0220e` | `fever_false` | false | 33 | 33 | 0 | 0 | 0 | 33 |
-| `fever_false:b9076eff` | `fever_false` | false | 33 | 33 | 17 | 2 | 0 | 33 |
-| `fever_false:b96ed279` | `fever_false` | false | 33 | 33 | 33 | 8 | 0 | 33 |
-| `fever_false:f586e96d` | `fever_false` | false | 33 | 33 | 15 | 23 | 6 | 27 |
-| `fever_false:2b944abc` | `fever_false` | false | 32 | 32 | 0 | 0 | 0 | 32 |
-| `fever_false:cdf2609b` | `fever_false` | false | 32 | 32 | 31 | 0 | 19 | 32 |
-| `fever_false:de0596c4` | `fever_false` | false | 32 | 32 | 17 | 28 | 27 | 15 |
-| `fever_false:0429068c` | `fever_false` | false | 31 | 31 | 25 | 0 | 0 | 31 |
-| `fever_false:a5b671a1` | `fever_false` | false | 31 | 31 | 16 | 29 | 30 | 15 |
-| `fever_false:147d5cf0` | `fever_false` | false | 30 | 30 | 16 | 2 | 0 | 30 |
-| `fever_false:56a45ff1` | `fever_false` | false | 30 | 30 | 6 | 9 | 0 | 30 |
-| `fever_false:5c2a065d` | `fever_false` | false | 30 | 30 | 30 | 25 | 1 | 29 |
-| `fever_false:8d02bd9e` | `fever_false` | false | 30 | 30 | 24 | 13 | 29 | 17 |
-| `fever_false:d5ed3ff1` | `fever_false` | false | 30 | 30 | 18 | 13 | 4 | 26 |
-| `fever_false:e2aff3b8` | `fever_false` | false | 30 | 30 | 16 | 8 | 0 | 30 |
-| `fever_false:758d5434` | `fever_false` | false | 29 | 29 | 0 | 2 | 0 | 29 |
-| `fever_false:cbf9d7a5` | `fever_false` | false | 29 | 29 | 29 | 27 | 0 | 29 |
-| `fever_true:18173593` | `fever_true` | true | 29 | 29 | 13 | 28 | 0 | 29 |
-| `fever_false:033927e6` | `fever_false` | false | 28 | 28 | 28 | 20 | 0 | 28 |
-| `fever_false:3a3043ff` | `fever_false` | false | 28 | 28 | 17 | 16 | 1 | 27 |
-| `fever_false:463f8189` | `fever_false` | false | 28 | 28 | 0 | 14 | 0 | 28 |
-| `fever_false:7b64d17a` | `fever_false` | false | 28 | 28 | 20 | 14 | 0 | 28 |
-| `fever_false:a4cda1e2` | `fever_false` | false | 28 | 28 | 0 | 10 | 0 | 28 |
-| `fever_false:a6c0d44a` | `fever_false` | false | 28 | 28 | 11 | 4 | 0 | 28 |
-| `fever_true:f3ee0d07` | `fever_true` | true | 28 | 28 | 0 | 27 | 0 | 28 |
-| `fever_false:3de7ecac` | `fever_false` | false | 27 | 27 | 26 | 17 | 26 | 10 |
-| `fever_false:43f5b35d` | `fever_false` | false | 27 | 27 | 5 | 2 | 0 | 27 |
-| `fever_false:90f7b87f` | `fever_false` | false | 27 | 27 | 0 | 1 | 0 | 27 |
-| `fever_false:c747066d` | `fever_false` | false | 27 | 27 | 2 | 18 | 27 | 25 |
-| `fever_true:753c7815` | `fever_true` | true | 27 | 27 | 0 | 0 | 0 | 27 |
-| `fever_false:4bf3caad` | `fever_false` | false | 26 | 26 | 1 | 7 | 0 | 26 |
-| `fever_false:8599e318` | `fever_false` | false | 26 | 26 | 0 | 2 | 0 | 26 |
+| fragment | library | truth | `majority_class` | `length_only` | `tfidf_logreg` | `arm_b_finetune@Bio_ClinicalBERT` | `arm_b_finetune@bert-base-uncased` | `arm_b_finetune@roberta-base` | spread |
+|---|---|---|---|---|---|---|---|---|---|
+| `fever_false:5a6a9b80` | `fever_false` | false | 42 | 42 | 0 | 0 | 0 | 0 | 42 |
+| `fever_false:24e5c247` | `fever_false` | false | 37 | 37 | 9 | 0 | 0 | 0 | 37 |
+| `fever_false:d0ca84a7` | `fever_false` | false | 37 | 37 | 0 | 0 | 0 | 0 | 37 |
+| `fever_false:fc2ae0f2` | `fever_false` | false | 37 | 37 | 5 | 0 | 0 | 3 | 37 |
+| `fever_false:17f6c637` | `fever_false` | false | 35 | 35 | 0 | 0 | 0 | 0 | 35 |
+| `fever_false:9f46e710` | `fever_false` | false | 34 | 34 | 3 | 0 | 0 | 0 | 34 |
+| `fever_false:55bf1913` | `fever_false` | false | 33 | 33 | 0 | 0 | 0 | 0 | 33 |
+| `fever_false:5969c6c9` | `fever_false` | false | 33 | 33 | 0 | 0 | 0 | 0 | 33 |
+| `fever_false:a9a0220e` | `fever_false` | false | 33 | 33 | 0 | 0 | 0 | 0 | 33 |
+| `fever_false:b9076eff` | `fever_false` | false | 33 | 33 | 17 | 0 | 2 | 0 | 33 |
+| `fever_false:b96ed279` | `fever_false` | false | 33 | 33 | 33 | 0 | 2 | 0 | 33 |
+| `fever_false:f586e96d` | `fever_false` | false | 33 | 33 | 15 | 6 | 1 | 0 | 33 |
+| `fever_false:2b944abc` | `fever_false` | false | 32 | 32 | 0 | 0 | 0 | 0 | 32 |
+| `fever_false:cdf2609b` | `fever_false` | false | 32 | 32 | 31 | 19 | 0 | 1 | 32 |
+| `fever_false:de0596c4` | `fever_false` | false | 32 | 32 | 17 | 27 | 0 | 0 | 32 |
+| `fever_false:0429068c` | `fever_false` | false | 31 | 31 | 25 | 0 | 0 | 0 | 31 |
+| `fever_false:a5b671a1` | `fever_false` | false | 31 | 31 | 16 | 30 | 22 | 1 | 30 |
+| `fever_false:147d5cf0` | `fever_false` | false | 30 | 30 | 16 | 0 | 0 | 0 | 30 |
+| `fever_false:56a45ff1` | `fever_false` | false | 30 | 30 | 6 | 0 | 0 | 0 | 30 |
+| `fever_false:5c2a065d` | `fever_false` | false | 30 | 30 | 30 | 1 | 19 | 30 | 29 |
+| `fever_false:8d02bd9e` | `fever_false` | false | 30 | 30 | 24 | 29 | 27 | 0 | 30 |
+| `fever_false:d5ed3ff1` | `fever_false` | false | 30 | 30 | 18 | 4 | 29 | 0 | 30 |
+| `fever_false:e2aff3b8` | `fever_false` | false | 30 | 30 | 16 | 0 | 0 | 0 | 30 |
+| `fever_false:758d5434` | `fever_false` | false | 29 | 29 | 0 | 0 | 0 | 0 | 29 |
+| `fever_false:cbf9d7a5` | `fever_false` | false | 29 | 29 | 29 | 0 | 29 | 9 | 29 |
+| `fever_true:18173593` | `fever_true` | true | 29 | 29 | 13 | 0 | 0 | 0 | 29 |
+| `fever_false:033927e6` | `fever_false` | false | 28 | 28 | 28 | 0 | 0 | 0 | 28 |
+| `fever_false:3a3043ff` | `fever_false` | false | 28 | 28 | 17 | 1 | 8 | 28 | 27 |
+| `fever_false:463f8189` | `fever_false` | false | 28 | 28 | 0 | 0 | 0 | 0 | 28 |
+| `fever_false:7b64d17a` | `fever_false` | false | 28 | 28 | 20 | 0 | 0 | 0 | 28 |
+| `fever_false:a4cda1e2` | `fever_false` | false | 28 | 28 | 0 | 0 | 0 | 0 | 28 |
+| `fever_false:a6c0d44a` | `fever_false` | false | 28 | 28 | 11 | 0 | 28 | 0 | 28 |
+| `fever_true:f3ee0d07` | `fever_true` | true | 28 | 28 | 0 | 0 | 0 | 0 | 28 |
+| `fever_false:3de7ecac` | `fever_false` | false | 27 | 27 | 26 | 26 | 25 | 18 | 9 |
+| `fever_false:43f5b35d` | `fever_false` | false | 27 | 27 | 5 | 0 | 0 | 0 | 27 |
+| `fever_false:90f7b87f` | `fever_false` | false | 27 | 27 | 0 | 0 | 0 | 0 | 27 |
+| `fever_false:c747066d` | `fever_false` | false | 27 | 27 | 2 | 27 | 0 | 0 | 27 |
+| `fever_true:753c7815` | `fever_true` | true | 27 | 27 | 0 | 0 | 0 | 0 | 27 |
+| `fever_false:4bf3caad` | `fever_false` | false | 26 | 26 | 1 | 0 | 0 | 0 | 26 |
+| `fever_false:8599e318` | `fever_false` | false | 26 | 26 | 0 | 0 | 0 | 0 | 26 |
 
-*339 further fragments erred on at least one model; the JSON holds them all.*
+*271 further fragments erred on at least one model; the JSON holds them all.*
 
 ## `majority_class`
 
@@ -940,132 +950,7 @@ a fragment is one cluster, so an interval over its own examples measures nothing
 
 *154 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
 
-## `arm_a_probe`
-
-Frozen `Bio_ClinicalBERT`, mean-pooled, with a `Linear(768, 3)` probe over the cached embeddings (2,307 parameters). The encoder learns nothing; only the probe is fitted. Expected to handle clear positives, clear negatives and `null_structural`, and to do badly on the four hard `null` sub-classes, which turn on compositional scope that a single pooled vector blurs. That is the predicted result rather than a fault, and it is what makes Arm B necessary: a weak probe cannot distinguish "the libraries are the bottleneck" from "the method is too weak".
-
-Decision-rule margins selected per fold (on each fold's own validation split): 0.0.
-Every fold selected margin 0, so the ruled and raw views below are the same decisions. That is a finding rather than a bug: no margin improved macro-F1 without worsening the `null -> true` rate.
-
-*Confusion matrix, raw argmax*
-
-|  | pred false | pred true | pred null | total |
-|---|---|---|---|---|
-| **truth false** | 1691 | 202 | 586 | 2479 |
-| **truth true** | 248 | 665 | 568 | 1481 |
-| **truth null** | 379 | 239 | 5422 | 6040 |
-| **total** | 2318 | 1106 | 6576 | 10000 |
-
-`null -> true`: 239 of 6040 truly-null examples (3.96%).
-
-*Confusion matrix, after the decision rule*
-
-|  | pred false | pred true | pred null | total |
-|---|---|---|---|---|
-| **truth false** | 1691 | 202 | 586 | 2479 |
-| **truth true** | 248 | 665 | 568 | 1481 |
-| **truth null** | 379 | 239 | 5422 | 6040 |
-| **total** | 2318 | 1106 | 6576 | 10000 |
-
-`null -> true`: 239 of 6040 truly-null examples (3.96%).
-
-### Per class, after the decision rule
-
-| class | support | predicted | precision | recall | F1 |
-|---|---|---|---|---|---|
-| `false` | 2479 | 2318 | 73.0% | 68.2% | 70.5% |
-| `true` | 1481 | 1106 | 60.1% | 44.9% | 51.4% |
-| `null` | 6040 | 6576 | 82.5% | 89.8% | 86.0% |
-
-### By label mode
-
-| label mode | n | eff n | accuracy [95% CI] |
-|---|---|---|---|
-| false | 2479 | **98** | 68.2% [62.7%, 73.5%] |
-| null_ambiguous | 3062 | **224** | 81.2% [77.7%, 84.2%] |
-| null_structural | 2978 | **1** | 98.6% [98.6%, 98.6%] |
-| true | 1481 | **96** | 44.9% [37.3%, 52.5%] |
-
-### By null sub-class
-
-| sub-class | n | eff n | null recall [95% CI] |
-|---|---|---|---|
-| attribution | 569 | **43** | 87.0% [80.5%, 92.7%] |
-| hedged | 833 | **63** | 69.1% [60.7%, 77.1%] |
-| historical | 508 | **36** | 78.1% [69.4%, 85.6%] |
-| metaphor | 644 | **47** | 88.5% [82.9%, 93.1%] |
-| third_party | 508 | **35** | 88.2% [82.8%, 93.2%] |
-
-### By fragment library
-
-| library | n | eff n | accuracy [95% CI] |
-|---|---|---|---|
-| fever_false | 2479 | **98** | 68.2% [62.7%, 73.5%] |
-| fever_null_attribution | 569 | **43** | 87.0% [80.5%, 92.7%] |
-| fever_null_hedged | 833 | **63** | 69.1% [60.7%, 77.1%] |
-| fever_null_historical | 508 | **36** | 78.1% [69.4%, 85.6%] |
-| fever_null_metaphor | 644 | **47** | 88.5% [82.9%, 93.1%] |
-| fever_null_thirdparty | 508 | **35** | 88.2% [82.8%, 93.2%] |
-| fever_true | 1481 | **96** | 44.9% [37.3%, 52.5%] |
-| (none) | 2978 | **1** | 98.6% [98.6%, 98.6%] |
-
-### Per-fragment errors (worst first)
-
-Whether errors are spread thinly across many fragments or piled onto a few is the difference
-between "the method is too weak" (model work) and "these specific ideas are not learnable from
-the data we have" (library work, and these are the fragments to write more of). No intervals:
-a fragment is one cluster, so an interval over its own examples measures nothing.
-
-329 of 463 decisive fragments were got wrong at least once.
-
-`arm_a_probe`: 2180 errors across 329 of 463 decisive fragments. Half of them fall on **69** fragments (an even spread would be 164.5); the worst ten carry 12.0% of all errors.
-
-| fragment | library | sub-class | truth | correct | accuracy | predicted as |
-|---|---|---|---|---|---|---|
-| `fever_true:1c3df822` | `fever_true` | -- | true | 0/26 | 0.0% | null 26 |
-| `fever_true:3d00c372` | `fever_true` | -- | true | 0/25 | 0.0% | null 25 |
-| `fever_false:afdc7129` | `fever_false` | -- | false | 0/22 | 0.0% | null 22 |
-| `fever_false:e0897296` | `fever_false` | -- | false | 0/21 | 0.0% | true 15, null 6 |
-| `fever_true:ed3c8c83` | `fever_true` | -- | true | 0/19 | 0.0% | false 3, null 16 |
-| `fever_true:391fb2ce` | `fever_true` | -- | true | 0/18 | 0.0% | false 9, null 9 |
-| `fever_true:7844c66b` | `fever_true` | -- | true | 0/18 | 0.0% | false 3, null 15 |
-| `fever_true:38830530` | `fever_true` | -- | true | 0/16 | 0.0% | false 15, null 1 |
-| `fever_null_hedged:18ebc3eb` | `fever_null_hedged` | hedged | null | 0/14 | 0.0% | false 14 |
-| `fever_true:0ddb8a11` | `fever_true` | -- | true | 0/14 | 0.0% | false 3, null 11 |
-| `fever_true:d00c307b` | `fever_true` | -- | true | 0/14 | 0.0% | false 1, null 13 |
-| `fever_true:e919adf9` | `fever_true` | -- | true | 0/14 | 0.0% | null 14 |
-| `fever_true:80f7ba2e` | `fever_true` | -- | true | 0/13 | 0.0% | null 13 |
-| `fever_true:c5d3e4a0` | `fever_true` | -- | true | 0/13 | 0.0% | false 13 |
-| `fever_true:74ccf7bd` | `fever_true` | -- | true | 0/12 | 0.0% | null 12 |
-| `fever_true:5e4f1da7` | `fever_true` | -- | true | 0/11 | 0.0% | false 1, null 10 |
-| `fever_true:b950a4fc` | `fever_true` | -- | true | 0/11 | 0.0% | false 2, null 9 |
-| `fever_true:5ce7adbd` | `fever_true` | -- | true | 0/9 | 0.0% | false 8, null 1 |
-| `fever_null_hedged:60bffa1a` | `fever_null_hedged` | hedged | null | 0/8 | 0.0% | true 8 |
-| `fever_null_historical:2c3501f1` | `fever_null_historical` | historical | null | 0/1 | 0.0% | false 1 |
-| `fever_true:18173593` | `fever_true` | -- | true | 1/29 | 3.4% | false 12, true 1, null 16 |
-| `fever_true:f3ee0d07` | `fever_true` | -- | true | 1/28 | 3.6% | false 27, true 1 |
-| `fever_true:76170ee2` | `fever_true` | -- | true | 1/25 | 4.0% | false 4, true 1, null 20 |
-| `fever_true:65e4286c` | `fever_true` | -- | true | 1/17 | 5.9% | false 6, true 1, null 10 |
-| `fever_true:a92fcdc7` | `fever_true` | -- | true | 1/17 | 5.9% | false 9, true 1, null 7 |
-| `fever_false:a5b671a1` | `fever_false` | -- | false | 2/31 | 6.5% | false 2, true 29 |
-| `fever_true:dd079c14` | `fever_true` | -- | true | 1/15 | 6.7% | false 1, true 1, null 13 |
-| `fever_false:cbf9d7a5` | `fever_false` | -- | false | 2/29 | 6.9% | false 2, true 23, null 4 |
-| `fever_true:ef344ff7` | `fever_true` | -- | true | 1/13 | 7.7% | true 1, null 12 |
-| `fever_true:872e3af9` | `fever_true` | -- | true | 1/12 | 8.3% | false 7, true 1, null 4 |
-| `fever_true:f885b3cb` | `fever_true` | -- | true | 1/12 | 8.3% | true 1, null 11 |
-| `fever_true:c5273bcd` | `fever_true` | -- | true | 1/11 | 9.1% | true 1, null 10 |
-| `fever_true:fc118943` | `fever_true` | -- | true | 1/11 | 9.1% | true 1, null 10 |
-| `fever_false:f6985a04` | `fever_false` | -- | false | 2/21 | 9.5% | false 2, true 1, null 18 |
-| `fever_null_hedged:88739d12` | `fever_null_hedged` | hedged | null | 1/10 | 10.0% | false 9, null 1 |
-| `fever_true:dd7a11e2` | `fever_true` | -- | true | 1/10 | 10.0% | false 1, true 1, null 8 |
-| `fever_false:de0596c4` | `fever_false` | -- | false | 4/32 | 12.5% | false 4, null 28 |
-| `fever_false:ebba1ba0` | `fever_false` | -- | false | 2/16 | 12.5% | false 2, null 14 |
-| `fever_null_metaphor:ea0a7bd1` | `fever_null_metaphor` | metaphor | null | 1/8 | 12.5% | true 7, null 1 |
-| `fever_true:7ef2ecf5` | `fever_true` | -- | true | 3/23 | 13.0% | false 10, true 3, null 10 |
-
-*289 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
-
-## `arm_b_finetune`
+## `arm_b_finetune@Bio_ClinicalBERT`
 
 `Bio_ClinicalBERT` with **every layer unfrozen**, mean-pooled, with the same `Linear(768, 3)` head -- 110M trainable parameters against Arm A's 2,307. Three epochs at batch 32, learning rate 2e-5, 10% linear warmup, AdamW, fp32. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation: the full model fits in 12GB with room to spare, so anything that reads like a compute compromise would be a mistake rather than a saving. This is the arm that separates "the fragment libraries are the bottleneck" from "the method is too weak": if a fully fine-tuned encoder still cannot read third-party attribution, tense or metaphor, the limit is in the ideas the libraries contain and the fix is library work, not model work.
 
@@ -1142,7 +1027,7 @@ a fragment is one cluster, so an interval over its own examples measures nothing
 
 134 of 463 decisive fragments were got wrong at least once.
 
-`arm_b_finetune`: 1118 errors across 134 of 463 decisive fragments. Half of them fall on **29** fragments (an even spread would be 67.0); the worst ten carry 23.0% of all errors.
+`arm_b_finetune@Bio_ClinicalBERT`: 1118 errors across 134 of 463 decisive fragments. Half of them fall on **29** fragments (an even spread would be 67.0); the worst ten carry 23.0% of all errors.
 
 | fragment | library | sub-class | truth | correct | accuracy | predicted as |
 |---|---|---|---|---|---|---|
@@ -1189,73 +1074,196 @@ a fragment is one cluster, so an interval over its own examples measures nothing
 
 *94 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
 
-## `arm_b_finetune__shuffled`
+## `arm_b_finetune@bert-base-uncased`
 
-`Bio_ClinicalBERT` with **every layer unfrozen**, mean-pooled, with the same `Linear(768, 3)` head -- 110M trainable parameters against Arm A's 2,307. Three epochs at batch 32, learning rate 2e-5, 10% linear warmup, AdamW, fp32. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation: the full model fits in 12GB with room to spare, so anything that reads like a compute compromise would be a mistake rather than a saving. This is the arm that separates "the fragment libraries are the bottleneck" from "the method is too weak": if a fully fine-tuned encoder still cannot read third-party attribution, tense or metaphor, the limit is in the ideas the libraries contain and the fix is library work, not model work. **Negative control:** fine-tuned on permuted training labels (seed 7) and evaluated on the unpermuted test split. A 110M-parameter model is expected to drive train loss towards zero by memorising the permutation while landing at chance on test; that combination is the control passing, and the per-fold train-loss curve in the sidecar is where the first half of it is read.
+`bert-base-uncased` with **every layer unfrozen**, mean-pooled, with the same `Linear(768, 3)` head -- 110M trainable parameters against Arm A's 2,307. Three epochs at batch 32, learning rate 2e-5, 10% linear warmup, AdamW, fp32. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation: the full model fits in 12GB with room to spare, so anything that reads like a compute compromise would be a mistake rather than a saving. This is the arm that separates "the fragment libraries are the bottleneck" from "the method is too weak": if a fully fine-tuned encoder still cannot read third-party attribution, tense or metaphor, the limit is in the ideas the libraries contain and the fix is library work, not model work.
 
-Decision-rule margins selected per fold (on each fold's own validation split): 0.0.
-Every fold selected margin 0, so the ruled and raw views below are the same decisions. That is a finding rather than a bug: no margin improved macro-F1 without worsening the `null -> true` rate.
+Decision-rule margins selected per fold (on each fold's own validation split): 0.1, 0.7, 0.8, 0.9.
 
 *Confusion matrix, raw argmax*
 
 |  | pred false | pred true | pred null | total |
 |---|---|---|---|---|
-| **truth false** | 0 | 0 | 2479 | 2479 |
-| **truth true** | 0 | 0 | 1481 | 1481 |
-| **truth null** | 0 | 0 | 6040 | 6040 |
-| **total** | 0 | 0 | 10000 | 10000 |
+| **truth false** | 2022 | 159 | 298 | 2479 |
+| **truth true** | 51 | 1167 | 263 | 1481 |
+| **truth null** | 78 | 171 | 5791 | 6040 |
+| **total** | 2151 | 1497 | 6352 | 10000 |
 
-`null -> true`: 0 of 6040 truly-null examples (0.00%).
+`null -> true`: 171 of 6040 truly-null examples (2.83%).
 
 *Confusion matrix, after the decision rule*
 
 |  | pred false | pred true | pred null | total |
 |---|---|---|---|---|
-| **truth false** | 0 | 0 | 2479 | 2479 |
-| **truth true** | 0 | 0 | 1481 | 1481 |
-| **truth null** | 0 | 0 | 6040 | 6040 |
-| **total** | 0 | 0 | 10000 | 10000 |
+| **truth false** | 2049 | 124 | 306 | 2479 |
+| **truth true** | 56 | 1118 | 307 | 1481 |
+| **truth null** | 87 | 135 | 5818 | 6040 |
+| **total** | 2192 | 1377 | 6431 | 10000 |
 
-`null -> true`: 0 of 6040 truly-null examples (0.00%).
+`null -> true`: 135 of 6040 truly-null examples (2.24%).
 
 ### Per class, after the decision rule
 
 | class | support | predicted | precision | recall | F1 |
 |---|---|---|---|---|---|
-| `false` | 2479 | 0 | -- | 0.0% | 0.0% |
-| `true` | 1481 | 0 | -- | 0.0% | 0.0% |
-| `null` | 6040 | 10000 | 60.4% | 100.0% | 75.3% |
+| `false` | 2479 | 2192 | 93.5% | 82.7% | 87.7% |
+| `true` | 1481 | 1377 | 81.2% | 75.5% | 78.2% |
+| `null` | 6040 | 6431 | 90.5% | 96.3% | 93.3% |
 
 ### By label mode
 
 | label mode | n | eff n | accuracy [95% CI] |
 |---|---|---|---|
-| false | 2479 | **98** | 0.0% [0.0%, 0.0%] |
-| null_ambiguous | 3062 | **224** | 100.0% [100.0%, 100.0%] |
-| null_structural | 2978 | **1** | 100.0% [100.0%, 100.0%] |
-| true | 1481 | **96** | 0.0% [0.0%, 0.0%] |
+| false | 2479 | **98** | 82.7% [75.8%, 89.0%] |
+| null_ambiguous | 3062 | **224** | 93.3% [90.1%, 96.1%] |
+| null_structural | 2978 | **1** | 99.5% [99.5%, 99.5%] |
+| true | 1481 | **96** | 75.5% [66.7%, 83.2%] |
 
 ### By null sub-class
 
 | sub-class | n | eff n | null recall [95% CI] |
 |---|---|---|---|
-| attribution | 569 | **43** | 100.0% [100.0%, 100.0%] |
-| hedged | 833 | **63** | 100.0% [100.0%, 100.0%] |
-| historical | 508 | **36** | 100.0% [100.0%, 100.0%] |
-| metaphor | 644 | **47** | 100.0% [100.0%, 100.0%] |
+| attribution | 569 | **43** | 92.3% [83.0%, 99.5%] |
+| hedged | 833 | **63** | 87.5% [78.6%, 94.8%] |
+| historical | 508 | **36** | 93.9% [87.6%, 98.5%] |
+| metaphor | 644 | **47** | 96.4% [91.1%, 99.8%] |
+| third_party | 508 | **35** | 99.2% [98.4%, 99.8%] |
+
+### By fragment library
+
+| library | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| fever_false | 2479 | **98** | 82.7% [75.8%, 89.0%] |
+| fever_null_attribution | 569 | **43** | 92.3% [83.0%, 99.5%] |
+| fever_null_hedged | 833 | **63** | 87.5% [78.6%, 94.8%] |
+| fever_null_historical | 508 | **36** | 93.9% [87.6%, 98.5%] |
+| fever_null_metaphor | 644 | **47** | 96.4% [91.1%, 99.8%] |
+| fever_null_thirdparty | 508 | **35** | 99.2% [98.4%, 99.8%] |
+| fever_true | 1481 | **96** | 75.5% [66.7%, 83.2%] |
+| (none) | 2978 | **1** | 99.5% [99.5%, 99.5%] |
+
+### Per-fragment errors (worst first)
+
+Whether errors are spread thinly across many fragments or piled onto a few is the difference
+between "the method is too weak" (model work) and "these specific ideas are not learnable from
+the data we have" (library work, and these are the fragments to write more of). No intervals:
+a fragment is one cluster, so an interval over its own examples measures nothing.
+
+104 of 463 decisive fragments were got wrong at least once.
+
+`arm_b_finetune@bert-base-uncased`: 999 errors across 104 of 463 decisive fragments. Half of them fall on **24** fragments (an even spread would be 52.0); the worst ten carry 25.5% of all errors.
+
+| fragment | library | sub-class | truth | correct | accuracy | predicted as |
+|---|---|---|---|---|---|---|
+| `fever_false:cbf9d7a5` | `fever_false` | -- | false | 0/29 | 0.0% | true 28, null 1 |
+| `fever_false:a6c0d44a` | `fever_false` | -- | false | 0/28 | 0.0% | null 28 |
+| `fever_true:3d00c372` | `fever_true` | -- | true | 0/25 | 0.0% | null 25 |
+| `fever_false:0cc191ec` | `fever_false` | -- | false | 0/24 | 0.0% | null 24 |
+| `fever_false:f6985a04` | `fever_false` | -- | false | 0/21 | 0.0% | true 21 |
+| `fever_true:ed3c8c83` | `fever_true` | -- | true | 0/19 | 0.0% | false 19 |
+| `fever_false:d15cd85c` | `fever_false` | -- | false | 0/18 | 0.0% | true 3, null 15 |
+| `fever_true:391fb2ce` | `fever_true` | -- | true | 0/18 | 0.0% | null 18 |
+| `fever_null_hedged:31694959` | `fever_null_hedged` | hedged | null | 0/17 | 0.0% | false 17 |
+| `fever_false:e8c514ff` | `fever_false` | -- | false | 0/16 | 0.0% | true 16 |
+| `fever_null_attribution:17b7ab2a` | `fever_null_attribution` | attribution | null | 0/14 | 0.0% | true 14 |
+| `fever_null_hedged:5bf1b63f` | `fever_null_hedged` | hedged | null | 0/14 | 0.0% | true 14 |
+| `fever_true:0ddb8a11` | `fever_true` | -- | true | 0/14 | 0.0% | null 14 |
+| `fever_true:d00c307b` | `fever_true` | -- | true | 0/14 | 0.0% | null 14 |
+| `fever_true:97087dd7` | `fever_true` | -- | true | 0/13 | 0.0% | null 13 |
+| `fever_true:c5d3e4a0` | `fever_true` | -- | true | 0/13 | 0.0% | false 13 |
+| `fever_true:ef344ff7` | `fever_true` | -- | true | 0/13 | 0.0% | null 13 |
+| `fever_null_metaphor:56c7f3e1` | `fever_null_metaphor` | metaphor | null | 0/12 | 0.0% | false 12 |
+| `fever_true:74ccf7bd` | `fever_true` | -- | true | 0/12 | 0.0% | null 12 |
+| `fever_true:872e3af9` | `fever_true` | -- | true | 0/12 | 0.0% | null 12 |
+| `fever_true:ed36ef0f` | `fever_true` | -- | true | 0/12 | 0.0% | null 12 |
+| `fever_null_hedged:42486de4` | `fever_null_hedged` | hedged | null | 0/11 | 0.0% | true 11 |
+| `fever_true:5e4f1da7` | `fever_true` | -- | true | 0/11 | 0.0% | null 11 |
+| `fever_true:781b30e3` | `fever_true` | -- | true | 0/11 | 0.0% | false 11 |
+| `fever_true:b950a4fc` | `fever_true` | -- | true | 0/11 | 0.0% | null 11 |
+| `fever_true:fc118943` | `fever_true` | -- | true | 0/11 | 0.0% | null 11 |
+| `fever_null_attribution:eb9e8ecd` | `fever_null_attribution` | attribution | null | 0/10 | 0.0% | false 6, true 4 |
+| `fever_null_hedged:8d1c41e3` | `fever_null_hedged` | hedged | null | 0/10 | 0.0% | false 8, true 2 |
+| `fever_true:0e369d96` | `fever_true` | -- | true | 0/10 | 0.0% | null 10 |
+| `fever_null_hedged:965c4a64` | `fever_null_hedged` | hedged | null | 0/9 | 0.0% | true 9 |
+| `fever_null_metaphor:15ab0c24` | `fever_null_metaphor` | metaphor | null | 0/9 | 0.0% | false 9 |
+| `fever_true:5ce7adbd` | `fever_true` | -- | true | 0/9 | 0.0% | false 9 |
+| `fever_null_hedged:60bffa1a` | `fever_null_hedged` | hedged | null | 0/8 | 0.0% | true 8 |
+| `fever_null_historical:feadcb2c` | `fever_null_historical` | historical | null | 0/8 | 0.0% | true 8 |
+| `fever_null_attribution:086cf3a5` | `fever_null_attribution` | attribution | null | 0/6 | 0.0% | false 3, true 3 |
+| `fever_false:d5ed3ff1` | `fever_false` | -- | false | 1/30 | 3.3% | false 1, null 29 |
+| `fever_true:7844c66b` | `fever_true` | -- | true | 1/18 | 5.6% | true 1, null 17 |
+| `fever_false:3de7ecac` | `fever_false` | -- | false | 2/27 | 7.4% | false 2, null 25 |
+| `fever_false:ebac5db7` | `fever_false` | -- | false | 2/23 | 8.7% | false 2, null 21 |
+| `fever_false:8d02bd9e` | `fever_false` | -- | false | 3/30 | 10.0% | false 3, null 27 |
+
+*64 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+
+## `arm_b_finetune@roberta-base`
+
+`roberta-base` with **every layer unfrozen**, mean-pooled, with the same `Linear(768, 3)` head -- 110M trainable parameters against Arm A's 2,307. Three epochs at batch 32, learning rate 2e-5, 10% linear warmup, AdamW, fp32. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation: the full model fits in 12GB with room to spare, so anything that reads like a compute compromise would be a mistake rather than a saving. This is the arm that separates "the fragment libraries are the bottleneck" from "the method is too weak": if a fully fine-tuned encoder still cannot read third-party attribution, tense or metaphor, the limit is in the ideas the libraries contain and the fix is library work, not model work.
+
+Decision-rule margins selected per fold (on each fold's own validation split): 0.0, 0.1, 0.75, 0.9.
+
+*Confusion matrix, raw argmax*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 2298 | 88 | 93 | 2479 |
+| **truth true** | 5 | 1308 | 168 | 1481 |
+| **truth null** | 55 | 93 | 5892 | 6040 |
+| **total** | 2358 | 1489 | 6153 | 10000 |
+
+`null -> true`: 93 of 6040 truly-null examples (1.54%).
+
+*Confusion matrix, after the decision rule*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 2303 | 83 | 93 | 2479 |
+| **truth true** | 6 | 1297 | 178 | 1481 |
+| **truth null** | 55 | 81 | 5904 | 6040 |
+| **total** | 2364 | 1461 | 6175 | 10000 |
+
+`null -> true`: 81 of 6040 truly-null examples (1.34%).
+
+### Per class, after the decision rule
+
+| class | support | predicted | precision | recall | F1 |
+|---|---|---|---|---|---|
+| `false` | 2479 | 2364 | 97.4% | 92.9% | 95.1% |
+| `true` | 1481 | 1461 | 88.8% | 87.6% | 88.2% |
+| `null` | 6040 | 6175 | 95.6% | 97.7% | 96.7% |
+
+### By label mode
+
+| label mode | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| false | 2479 | **98** | 92.9% [87.8%, 97.1%] |
+| null_ambiguous | 3062 | **224** | 95.6% [93.0%, 97.8%] |
+| null_structural | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+| true | 1481 | **96** | 87.6% [81.4%, 93.1%] |
+
+### By null sub-class
+
+| sub-class | n | eff n | null recall [95% CI] |
+|---|---|---|---|
+| attribution | 569 | **43** | 96.3% [91.5%, 99.7%] |
+| hedged | 833 | **63** | 88.8% [80.1%, 95.7%] |
+| historical | 508 | **36** | 96.3% [91.5%, 99.8%] |
+| metaphor | 644 | **47** | 99.5% [98.5%, 100.0%] |
 | third_party | 508 | **35** | 100.0% [100.0%, 100.0%] |
 
 ### By fragment library
 
 | library | n | eff n | accuracy [95% CI] |
 |---|---|---|---|
-| fever_false | 2479 | **98** | 0.0% [0.0%, 0.0%] |
-| fever_null_attribution | 569 | **43** | 100.0% [100.0%, 100.0%] |
-| fever_null_hedged | 833 | **63** | 100.0% [100.0%, 100.0%] |
-| fever_null_historical | 508 | **36** | 100.0% [100.0%, 100.0%] |
-| fever_null_metaphor | 644 | **47** | 100.0% [100.0%, 100.0%] |
+| fever_false | 2479 | **98** | 92.9% [87.8%, 97.1%] |
+| fever_null_attribution | 569 | **43** | 96.3% [91.5%, 99.7%] |
+| fever_null_hedged | 833 | **63** | 88.8% [80.1%, 95.7%] |
+| fever_null_historical | 508 | **36** | 96.3% [91.5%, 99.8%] |
+| fever_null_metaphor | 644 | **47** | 99.5% [98.5%, 100.0%] |
 | fever_null_thirdparty | 508 | **35** | 100.0% [100.0%, 100.0%] |
-| fever_true | 1481 | **96** | 0.0% [0.0%, 0.0%] |
+| fever_true | 1481 | **96** | 87.6% [81.4%, 93.1%] |
 | (none) | 2978 | **1** | 100.0% [100.0%, 100.0%] |
 
 ### Per-fragment errors (worst first)
@@ -1265,54 +1273,54 @@ between "the method is too weak" (model work) and "these specific ideas are not 
 the data we have" (library work, and these are the fragments to write more of). No intervals:
 a fragment is one cluster, so an interval over its own examples measures nothing.
 
-194 of 463 decisive fragments were got wrong at least once.
+60 of 463 decisive fragments were got wrong at least once.
 
-`arm_b_finetune__shuffled`: 3960 errors across 194 of 463 decisive fragments. Half of them fall on **71** fragments (an even spread would be 97.0); the worst ten carry 8.9% of all errors.
+`arm_b_finetune@roberta-base`: 496 errors across 60 of 463 decisive fragments. Half of them fall on **14** fragments (an even spread would be 30.0); the worst ten carry 41.3% of all errors.
 
 | fragment | library | sub-class | truth | correct | accuracy | predicted as |
 |---|---|---|---|---|---|---|
-| `fever_false:5a6a9b80` | `fever_false` | -- | false | 0/42 | 0.0% | null 42 |
-| `fever_false:24e5c247` | `fever_false` | -- | false | 0/37 | 0.0% | null 37 |
-| `fever_false:d0ca84a7` | `fever_false` | -- | false | 0/37 | 0.0% | null 37 |
-| `fever_false:fc2ae0f2` | `fever_false` | -- | false | 0/37 | 0.0% | null 37 |
-| `fever_false:17f6c637` | `fever_false` | -- | false | 0/35 | 0.0% | null 35 |
-| `fever_false:9f46e710` | `fever_false` | -- | false | 0/34 | 0.0% | null 34 |
-| `fever_false:55bf1913` | `fever_false` | -- | false | 0/33 | 0.0% | null 33 |
-| `fever_false:5969c6c9` | `fever_false` | -- | false | 0/33 | 0.0% | null 33 |
-| `fever_false:a9a0220e` | `fever_false` | -- | false | 0/33 | 0.0% | null 33 |
-| `fever_false:b9076eff` | `fever_false` | -- | false | 0/33 | 0.0% | null 33 |
-| `fever_false:b96ed279` | `fever_false` | -- | false | 0/33 | 0.0% | null 33 |
-| `fever_false:f586e96d` | `fever_false` | -- | false | 0/33 | 0.0% | null 33 |
-| `fever_false:2b944abc` | `fever_false` | -- | false | 0/32 | 0.0% | null 32 |
-| `fever_false:cdf2609b` | `fever_false` | -- | false | 0/32 | 0.0% | null 32 |
-| `fever_false:de0596c4` | `fever_false` | -- | false | 0/32 | 0.0% | null 32 |
-| `fever_false:0429068c` | `fever_false` | -- | false | 0/31 | 0.0% | null 31 |
-| `fever_false:a5b671a1` | `fever_false` | -- | false | 0/31 | 0.0% | null 31 |
-| `fever_false:147d5cf0` | `fever_false` | -- | false | 0/30 | 0.0% | null 30 |
-| `fever_false:56a45ff1` | `fever_false` | -- | false | 0/30 | 0.0% | null 30 |
 | `fever_false:5c2a065d` | `fever_false` | -- | false | 0/30 | 0.0% | null 30 |
-| `fever_false:8d02bd9e` | `fever_false` | -- | false | 0/30 | 0.0% | null 30 |
-| `fever_false:d5ed3ff1` | `fever_false` | -- | false | 0/30 | 0.0% | null 30 |
-| `fever_false:e2aff3b8` | `fever_false` | -- | false | 0/30 | 0.0% | null 30 |
-| `fever_false:758d5434` | `fever_false` | -- | false | 0/29 | 0.0% | null 29 |
-| `fever_false:cbf9d7a5` | `fever_false` | -- | false | 0/29 | 0.0% | null 29 |
-| `fever_true:18173593` | `fever_true` | -- | true | 0/29 | 0.0% | null 29 |
-| `fever_false:033927e6` | `fever_false` | -- | false | 0/28 | 0.0% | null 28 |
-| `fever_false:3a3043ff` | `fever_false` | -- | false | 0/28 | 0.0% | null 28 |
-| `fever_false:463f8189` | `fever_false` | -- | false | 0/28 | 0.0% | null 28 |
-| `fever_false:7b64d17a` | `fever_false` | -- | false | 0/28 | 0.0% | null 28 |
-| `fever_false:a4cda1e2` | `fever_false` | -- | false | 0/28 | 0.0% | null 28 |
-| `fever_false:a6c0d44a` | `fever_false` | -- | false | 0/28 | 0.0% | null 28 |
-| `fever_true:f3ee0d07` | `fever_true` | -- | true | 0/28 | 0.0% | null 28 |
-| `fever_false:3de7ecac` | `fever_false` | -- | false | 0/27 | 0.0% | null 27 |
-| `fever_false:43f5b35d` | `fever_false` | -- | false | 0/27 | 0.0% | null 27 |
-| `fever_false:90f7b87f` | `fever_false` | -- | false | 0/27 | 0.0% | null 27 |
-| `fever_false:c747066d` | `fever_false` | -- | false | 0/27 | 0.0% | null 27 |
-| `fever_true:753c7815` | `fever_true` | -- | true | 0/27 | 0.0% | null 27 |
-| `fever_false:4bf3caad` | `fever_false` | -- | false | 0/26 | 0.0% | null 26 |
-| `fever_false:8599e318` | `fever_false` | -- | false | 0/26 | 0.0% | null 26 |
+| `fever_false:3a3043ff` | `fever_false` | -- | false | 0/28 | 0.0% | true 28 |
+| `fever_false:e70e24b6` | `fever_false` | -- | false | 0/26 | 0.0% | true 26 |
+| `fever_false:f7d03fcb` | `fever_false` | -- | false | 0/22 | 0.0% | null 22 |
+| `fever_true:391fb2ce` | `fever_true` | -- | true | 0/18 | 0.0% | null 18 |
+| `fever_true:7844c66b` | `fever_true` | -- | true | 0/18 | 0.0% | null 18 |
+| `fever_null_hedged:081a5883` | `fever_null_hedged` | hedged | null | 0/16 | 0.0% | false 16 |
+| `fever_null_hedged:5bf1b63f` | `fever_null_hedged` | hedged | null | 0/14 | 0.0% | true 14 |
+| `fever_true:0ddb8a11` | `fever_true` | -- | true | 0/14 | 0.0% | null 14 |
+| `fever_true:d00c307b` | `fever_true` | -- | true | 0/14 | 0.0% | null 14 |
+| `fever_true:ed36ef0f` | `fever_true` | -- | true | 0/12 | 0.0% | null 12 |
+| `fever_null_hedged:42486de4` | `fever_null_hedged` | hedged | null | 0/11 | 0.0% | false 11 |
+| `fever_true:5e4f1da7` | `fever_true` | -- | true | 0/11 | 0.0% | null 11 |
+| `fever_null_hedged:8d1c41e3` | `fever_null_hedged` | hedged | null | 0/10 | 0.0% | true 10 |
+| `fever_true:2ee57e4c` | `fever_true` | -- | true | 0/10 | 0.0% | null 10 |
+| `fever_null_hedged:965c4a64` | `fever_null_hedged` | hedged | null | 0/9 | 0.0% | false 9 |
+| `fever_true:5ce7adbd` | `fever_true` | -- | true | 0/9 | 0.0% | null 9 |
+| `fever_null_historical:1b314733` | `fever_null_historical` | historical | null | 0/8 | 0.0% | true 8 |
+| `fever_null_historical:feadcb2c` | `fever_null_historical` | historical | null | 0/8 | 0.0% | true 8 |
+| `fever_null_historical:2c3501f1` | `fever_null_historical` | historical | null | 0/1 | 0.0% | false 1 |
+| `fever_true:97087dd7` | `fever_true` | -- | true | 1/13 | 7.7% | true 1, null 12 |
+| `fever_true:ef344ff7` | `fever_true` | -- | true | 1/13 | 7.7% | true 1, null 12 |
+| `fever_true:74ccf7bd` | `fever_true` | -- | true | 1/12 | 8.3% | true 1, null 11 |
+| `fever_true:b950a4fc` | `fever_true` | -- | true | 1/11 | 9.1% | true 1, null 10 |
+| `fever_null_hedged:cf95d564` | `fever_null_hedged` | hedged | null | 2/13 | 15.4% | true 11, null 2 |
+| `fever_false:e8c514ff` | `fever_false` | -- | false | 3/16 | 18.8% | false 3, true 13 |
+| `fever_true:781b30e3` | `fever_true` | -- | true | 3/11 | 27.3% | true 3, null 8 |
+| `fever_null_attribution:17b7ab2a` | `fever_null_attribution` | attribution | null | 4/14 | 28.6% | true 10, null 4 |
+| `fever_false:3de7ecac` | `fever_false` | -- | false | 9/27 | 33.3% | false 9, null 18 |
+| `fever_null_hedged:fafa0b56` | `fever_null_hedged` | hedged | null | 5/13 | 38.5% | true 8, null 5 |
+| `fever_null_hedged:9e333f46` | `fever_null_hedged` | hedged | null | 4/10 | 40.0% | false 6, null 4 |
+| `fever_false:93390aea` | `fever_false` | -- | false | 11/26 | 42.3% | false 11, null 15 |
+| `fever_true:872e3af9` | `fever_true` | -- | true | 6/12 | 50.0% | true 6, null 6 |
+| `fever_null_metaphor:4076133d` | `fever_null_metaphor` | metaphor | null | 3/6 | 50.0% | true 3, null 3 |
+| `fever_null_attribution:dba8c443` | `fever_null_attribution` | attribution | null | 6/11 | 54.5% | false 5, null 6 |
+| `fever_null_hedged:bba323b8` | `fever_null_hedged` | hedged | null | 9/14 | 64.3% | true 5, null 9 |
+| `fever_false:5935e477` | `fever_false` | -- | false | 12/18 | 66.7% | false 12, true 6 |
+| `fever_null_attribution:1eb2016b` | `fever_null_attribution` | attribution | null | 8/12 | 66.7% | false 4, null 8 |
+| `fever_false:cbf9d7a5` | `fever_false` | -- | false | 20/29 | 69.0% | false 20, true 9 |
+| `fever_true:199d4eb4` | `fever_true` | -- | true | 11/14 | 78.6% | true 11, null 3 |
 
-*154 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+*20 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
 
 ## Appendix: per-fold numbers
 
@@ -1369,17 +1377,7 @@ is the whole reason the headline is pooled.
 | 3 | 10000 | 2000 | 2000 | 0.0 | 60.8% | 60.8% | 25.2% | 0.00% |
 | 4 | 10000 | 2000 | 2000 | 0.0 | 60.3% | 60.3% | 25.1% | 0.00% |
 
-### `arm_a_probe`
-
-| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
-|---|---|---|---|---|---|---|---|---|
-| 0 | 10000 | 2000 | 2000 | 0.0 | 80.2% | 80.2% | 73.4% | 5.38% |
-| 1 | 10000 | 2000 | 2000 | 0.0 | 75.5% | 75.5% | 67.2% | 4.99% |
-| 2 | 10000 | 2000 | 2000 | 0.0 | 78.1% | 78.1% | 66.5% | 2.32% |
-| 3 | 10000 | 2000 | 2000 | 0.0 | 76.8% | 76.8% | 69.2% | 4.77% |
-| 4 | 10000 | 2000 | 2000 | 0.0 | 78.2% | 78.2% | 69.0% | 2.32% |
-
-### `arm_b_finetune`
+### `arm_b_finetune@Bio_ClinicalBERT`
 
 | fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
 |---|---|---|---|---|---|---|---|---|
@@ -1389,15 +1387,25 @@ is the whole reason the headline is pooled.
 | 3 | 10000 | 2000 | 2000 | 0.05 | 84.7% | 84.9% | 80.7% | 11.44% |
 | 4 | 10000 | 2000 | 2000 | 0.0 | 92.8% | 92.8% | 89.8% | 1.58% |
 
-### `arm_b_finetune__shuffled`
+### `arm_b_finetune@bert-base-uncased`
 
 | fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
 |---|---|---|---|---|---|---|---|---|
-| 0 | 10000 | 2000 | 2000 | 0.0 | 60.5% | 60.5% | 25.1% | 0.00% |
-| 1 | 10000 | 2000 | 2000 | 0.0 | 60.1% | 60.1% | 25.0% | 0.00% |
-| 2 | 10000 | 2000 | 2000 | 0.0 | 60.4% | 60.4% | 25.1% | 0.00% |
-| 3 | 10000 | 2000 | 2000 | 0.0 | 60.8% | 60.8% | 25.2% | 0.00% |
-| 4 | 10000 | 2000 | 2000 | 0.0 | 60.3% | 60.3% | 25.1% | 0.00% |
+| 0 | 10000 | 2000 | 2000 | 0.9 | 90.1% | 90.0% | 87.8% | 0.74% |
+| 1 | 10000 | 2000 | 2000 | 0.1 | 90.5% | 90.6% | 86.6% | 2.00% |
+| 2 | 10000 | 2000 | 2000 | 0.8 | 86.2% | 86.5% | 82.8% | 2.90% |
+| 3 | 10000 | 2000 | 2000 | 0.7 | 88.8% | 89.5% | 85.9% | 5.19% |
+| 4 | 10000 | 2000 | 2000 | 0.8 | 93.2% | 92.5% | 89.1% | 0.33% |
+
+### `arm_b_finetune@roberta-base`
+
+| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 2000 | 2000 | 0.0 | 95.2% | 95.2% | 94.0% | 0.83% |
+| 1 | 10000 | 2000 | 2000 | 0.1 | 94.4% | 94.3% | 92.5% | 1.16% |
+| 2 | 10000 | 2000 | 2000 | 0.75 | 91.2% | 91.3% | 88.1% | 3.48% |
+| 3 | 10000 | 2000 | 2000 | 0.9 | 94.5% | 94.8% | 93.2% | 1.15% |
+| 4 | 10000 | 2000 | 2000 | 0.0 | 99.5% | 99.5% | 99.1% | 0.08% |
 
 ## Limitations
 

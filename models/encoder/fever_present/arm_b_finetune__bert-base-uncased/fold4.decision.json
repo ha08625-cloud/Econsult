@@ -1,11 +1,11 @@
 {
-  "margin": 0.9,
+  "margin": 0.8,
   "gated_class": 1,
   "gated_class_name": "true",
   "selected_on": "val",
-  "argmax_null_to_true_rate": 0.0109151973131822,
-  "null_to_true_rate": 0.0016792611251049538,
-  "macro_f1": 0.9019347768899187,
+  "argmax_null_to_true_rate": 0.011945392491467578,
+  "null_to_true_rate": 0.0034129692832764505,
+  "macro_f1": 0.9291659099287618,
   "margins_considered": [
     0.0,
     0.05,

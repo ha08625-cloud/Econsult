@@ -944,6 +944,46 @@ def test_tokeniser_casing_is_probed_rather_than_assumed(transformers_module, tmp
     assert lowered.to_dict()["tokeniser"]["discards_casing"] is True
 
 
+class _StubTokeniser:
+    """Just enough tokeniser to ask the vocabulary a question."""
+
+    def __init__(self, tokens):
+        self.tokens = list(tokens)
+        self.all_special_tokens = ["[PAD]", "[UNK]", "[CLS]", "[SEP]", "[MASK]"]
+
+    def get_vocab(self):
+        return {token: index for index, token in enumerate(self.tokens + self.all_special_tokens)}
+
+
+def test_an_uncased_vocabulary_is_not_called_cased_by_a_handful_of_capitals(transformers_module):
+    """The bug the 2026-08-12 comparison report exposed, pinned.
+
+    `bert-base-uncased` was reported as discarding casing. An uncased English
+    vocabulary still carries single characters from non-Latin scripts that are
+    upper-case in Unicode's sense, so a probe that fires on one such token fires
+    on every vocabulary and the field says nothing. What separates a cased
+    vocabulary is that capitals are *pervasive* in it, not present in it.
+    """
+    from scripts.encoder_training.model import vocabulary_is_cased
+
+    uncased = _StubTokeniser(
+        [f"tok{index}" for index in range(1000)] + ["\u0414", "\u03a9", "\u00c5"]
+    )
+    assert vocabulary_is_cased(uncased) is False
+
+    cased = _StubTokeniser(
+        [f"tok{index}" for index in range(900)] + [f"Tok{index}" for index in range(100)]
+    )
+    assert vocabulary_is_cased(cased) is True
+
+
+def test_a_vocabulary_of_nothing_but_special_tokens_is_not_cased(transformers_module):
+    """`[CLS]` is upper-case in every vocabulary there is, so it cannot count."""
+    from scripts.encoder_training.model import vocabulary_is_cased
+
+    assert vocabulary_is_cased(_StubTokeniser([])) is False
+
+
 def test_encoder_without_a_resolvable_revision_refuses_to_be_cached(transformers_module, tmp_path):
     """A local directory has no commit, and an unkeyed cache is worse than an error.
 
