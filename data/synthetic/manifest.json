@@ -209,6 +209,13 @@
       "subclass": "third_party"
     },
     {
+      "name": "flank_pain_null_historical",
+      "file": "symptoms/flank_pain/flank_pain_null_historical.txt",
+      "signal_key": "flank_pain_present",
+      "fragment_type": "confounder",
+      "subclass": "historical"
+    },
+    {
       "name": "tangents",
       "file": "filler/tangents.txt",
       "signal_key": null,
