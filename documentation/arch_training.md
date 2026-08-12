@@ -365,7 +365,8 @@ clause".
 
 **Fragments are used verbatim.** Original spelling, casing, typos and
 contractions are all preserved. The only change is adding a full stop if a
-fragment ends without punctuation. The live encoder receives raw, unedited
+fragment ends without punctuation. (Section 12.6 proposes a separate pass that
+would damage the finished text afterwards; nothing does that today.) The live encoder receives raw, unedited
 patient text, so cleaning it up here would train the model on a tidier world
 than the one it will meet.
 
@@ -1065,10 +1066,11 @@ section 12 describes the system as it actually is; everything below is a
 provisional plan, written down so it can be reviewed and turned into an
 implementation plan later.
 
-There are three ideas and they are additive — each one multiplies a different
-axis of the dataset, and they compose. Section 12.5 describes the single
-mechanism that makes 12.2 to 12.4 safe, and it is the part that most needs
-getting right.
+The ideas below are additive — each one multiplies a different axis of the
+dataset, and they compose. Section 12.5 describes the single mechanism that
+makes 12.2 to 12.4 safe, and it is the part that most needs getting right.
+Section 12.6 is the exception to "additive": it multiplies surface forms only
+and adds no new ideas at all, which is the whole of what it is and is not worth.
 
 ### 12.1 Procedural fragment generation
 
@@ -1117,8 +1119,8 @@ are declared per synonym but consumed by templates with different grammatical
 requirements, so they collide. Slots need per-template scoping or role-carrying
 names, and contraction joining needs handling.
 
-The planned spelling-mistake pass has the same character: it makes the text
-harder and more realistic, which is worth doing, but adds no diversity of ideas.
+The random-error pass in 12.6 has the same character: it makes the text harder
+and more realistic, which is worth doing, but adds no diversity of ideas.
 Neither templating nor typos should be allowed to make a dataset *look* richer
 than its template count says it is, so the lint should report templates per
 library and clusters per split alongside the raw fragment counts.
@@ -1220,7 +1222,173 @@ signals in the ruleset. That check should run in CI against the real libraries
 in the same way the current one does, because a library that quietly stops being
 silent is a source of permanently wrong labels and nothing else would catch it.
 
-### 12.6 Sequencing
+### 12.6 Random character-level errors
+
+Everything above section 12 preserves fragments verbatim (section 5). That is
+right for the libraries — a hand-written fragment already carries whatever
+spelling and casing its author typed — but it means the dataset's error profile
+is whatever a handful of authors happened to produce while concentrating, which
+is a great deal cleaner than what a patient types into a phone at eleven at
+night.
+
+The idea is a small script that reads a finished dataset and writes a second one
+with random single-character damage: drop a letter, double one, replace one with
+a keyboard neighbour, transpose two adjacent letters, drop a space, drop an
+apostrophe or a terminal full stop. Transposition and doubling are not in the
+original sketch and belong there — "teh" and "temperatureature" are two of the
+most common real typing errors, and both are free once the machinery exists.
+Keyboard adjacency rather than a uniform random letter is likewise nearly free
+(a thirty-line QWERTY neighbour map) and much closer to what a real slip looks
+like.
+
+**It is a post-processing pass over the JSONL, not a change to the generator.**
+Four reasons, and the third is the one that decides it. The generator stays
+byte-identical, so every dataset generated so far is still reproducible. The
+pass can be unit-tested against fixed input strings with no manifest, no pools
+and no ruleset. One generation run yields both a clean and a noisy dataset from
+identical fragments, which is exactly what the experiment below needs and what a
+flag inside the generator would make awkward. And deduplication (`generate`'s
+`seen` set) keeps operating on clean text, so damage can never be what makes two
+otherwise-identical examples look distinct.
+
+Command shape, mirroring the existing tool:
+
+```
+python -m scripts.synthetic_data.noise \
+    --in  data/synthetic/generated/fever_present.train.jsonl \
+    --out data/synthetic/generated/fever_present.train.noisy.jsonl \
+    --rate 0.02 --seed 42
+```
+
+**Reproducibility on the generator's terms.** Per-example RNG seeded from
+`"{noise_seed}|{example_id}"` — keyed on the ID, not the line number — so
+noising a 20,000-line file leaves the first 10,000 lines identical to noising
+the 10,000-line one, matching section 7. Same input, same seed, same rate gives
+a byte-identical file.
+
+#### The label-safety question is the whole of the risk
+
+Section 2's guarantee is that nothing in the pipeline lets the text influence
+the label. A pass that edits text *after* the label is fixed inverts that: for
+the first time, a mechanical step can make text stop matching its label. Most
+edits are harmless — "temperatuer" is still a fever claim to a human and to a
+subword model. A few are not:
+
+* one substitution turns `hot` into `not`, and `not` into `hot`;
+* `no` is two characters, so any edit inside it is proportionally enormous — "no
+  temperature, I checked" becomes "on temperature, I checked";
+* dropping a space welds a negation to its neighbour ("nofever"), which is a
+  single unknown token to the tokenizer, so the negation can become effectively
+  invisible while the label still says `false`;
+* the null axes hang on short words too. `my son` → `my sun` is still
+  third-party, but any hit on `my`, `his`, `had` or `was` is a coin flip on
+  whether the axis the fragment exists to teach survives at all.
+
+Three ways to handle this, and the recommendation is the third.
+
+1. **Accept it and quantify it.** At a 2% per-word rate the damage lands in a
+   two-character negation rarely, and roughly uniformly across labels. This is
+   defensible, but it leaves permanently wrong labels in the data with nothing
+   recording which ones — the exact failure mode section 2 exists to make
+   impossible.
+2. **Only edit words of five characters or more.** Simple and it protects almost
+   everything that matters. It is also unrealistic in a *directional* way: real
+   typists hit short words too, so the model would learn that short words are
+   always spelled correctly, which is a new artefact traded for an old one.
+3. **Declare a protected lexicon and enforce it both ways.** Never edit a token
+   in the protected list, and never *produce* a protected token from an
+   unprotected one — redraw if an edit would. The list is negation, person,
+   tense and modality words plus the signal vocabulary, and half of it already
+   exists as `lint.FEVER_LEXICON` for the filler-purity check. This keeps
+   section 2's argument intact in spirit: the edits that could change the answer
+   are excluded by construction rather than judged to be rare after the fact.
+
+Option 3 has a cost worth naming rather than discovering. The protected list is
+**per signal**, and only fever's exists today. A missing or thin list for another
+signal fails silently — the pass runs, the output looks fine, and the label noise
+is invisible. That is the same shape of problem as 12.5's declared silence, and
+the two want the same home: a lexicon field in the manifest, next to the silence
+declaration, rather than two lists drifting apart in two modules.
+
+#### The rate must not vary by label, and the sidecar must prove it
+
+This is section 5's fragment-count argument in a new place. The pass is applied
+blind to the label, so equality holds by construction — but "by construction" is
+also true of the fragment-count mix, and that is measured on every run anyway.
+The noisy dataset's sidecar gains a `noise` block: edits per hundred words by
+label, by label mode, and the realised tally by operation. If error density ever
+tracks the label, the model learns "misspelt ⇒ fever" and every number
+downstream of it is worthless, and nothing else in the pipeline would show it.
+
+Two details follow from this. The rate is **per word, not per example**, so it
+cannot introduce any correlation with the label beyond the length one section 9
+already describes. And **a share of examples should be left completely clean**:
+real submissions run from immaculate to unreadable, and a dataset where every
+example carries the same error density is its own kind of unrealistic.
+
+#### Which splits get noised is an experimental decision
+
+This is the part most easily got wrong. Noising all three splits and reading one
+number cannot answer whether the pass helped: noise makes the test set harder at
+the same time as it makes the training set richer, and those move the number in
+opposite directions. What answers it is a 2×2 — train on clean and on noisy,
+evaluate each against a clean test set and a noisy one:
+
+* noisy-trained vs clean-trained on the **noisy** test set — does training on
+  damaged text buy robustness to damaged text? This is the claim being made.
+* noisy-trained vs clean-trained on the **clean** test set — does it cost
+  anything on text that is fine?
+
+Four training runs against one fold configuration, all four sharing the same
+generated data, which is the practical reason the pass is post-processing. How
+that is run and reported is `arch_encoder_training.md`'s territory; it is noted
+here so the script is built in a shape that permits it rather than one that
+forces noise on every split at generation time.
+
+#### What it is worth
+
+Stated the same way as section 9, because this is easy to over-read.
+
+**It adds no ideas, and effective sample size is unchanged.** Sixty-six training
+fragments damaged four ways is still sixty-six ideas (section 10). The noisy
+dataset carries the same `fragments` provenance block with the same cluster keys,
+and the honest count still comes from there.
+
+**There are two reasons the honest outcome may be "no measurable benefit".**
+First, a subword tokenizer shatters a misspelt word into pieces carrying little
+of the original meaning, so above some rate this is training on noise rather
+than on harder text. That rate exists and finding it is part of the experiment,
+not something to guess — which is an argument for sweeping two or three rates
+rather than picking one.
+
+Second, and more awkward: the free-text box in `frontend/src/screens/EditScreen.tsx`
+is a plain `<textarea>` with browser spellcheck left on, and on a phone with
+autocorrect on top of that. A large share of the nonword typos this pass
+generates would never reach us, because the red squiggle or the autocorrect
+catches them first. The errors that *survive* that filter are disproportionately
+**real-word** errors — autocorrect substitutions, homophones, the wrong "there",
+a dropped word — and those are a different generator entirely, and probably the
+more valuable one. Character-level damage is the cheap half of the problem, and
+it should be described that way rather than as "making the data realistic".
+
+**The cheapest operations are the ones most worth having.** Missing apostrophes
+and casing — "im", "ive", "dont", "cant", all-lowercase, no terminal
+punctuation — are extremely common in real free text, cannot produce a different
+protected word, and survive spellcheck on most phones because they are what the
+keyboard produces. Section 8 already records a case where casing alone separated
+a whole library perfectly. These should be the first operations built, not a
+footnote to the letter-level ones.
+
+#### Scope boundary
+
+The script never touches `data/synthetic/`. It reads and writes only under
+`data/synthetic/generated/`, which is git-ignored. Fragment IDs, cluster keys and
+the `fragments` provenance block pass through unchanged — they describe the
+fragments, and the fragments are not what was edited. The `token_counts` blocks
+*are* recomputed, because deleting a space changes a word count and a sidecar has
+to describe the file sitting next to it.
+
+### 12.7 Sequencing
 
 Rough order, on the grounds that each step should leave the pipeline in a state
 where the numbers it produces can be trusted:
@@ -1247,8 +1415,14 @@ where the numbers it produces can be trusted:
 7. Template the clinical libraries, once there are enough distinct templates per
    library for the split arithmetic to work.
 
-The spelling-mistake pass can slot in anywhere after step 1, since it is a
-post-processing step over finished text and independent of everything else.
+**The random-error pass (12.6) is independent of all of the above** — it is
+post-processing over finished text and touches no other module — so it can slot
+in anywhere after step 1. Two things pull on where it actually goes. If the
+protected-lexicon option is taken, it wants the manifest field that step 3
+introduces, so it either follows step 3 or ships fever-only against a
+hand-written list and stays fever-only until step 3 lands. And its apostrophe
+and casing operations are cheap, safe and independent of the lexicon question
+entirely, so they can go first and on their own.
 
 **Writing down the `true`/`null` labelling policy (section 9) belongs with step
 3.** Both are the same kind of work — turning a guarantee that currently lives
