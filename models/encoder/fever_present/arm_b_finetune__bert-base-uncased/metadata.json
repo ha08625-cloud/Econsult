@@ -1,0 +1,512 @@
+{
+  "arm": "arm_b_finetune__bert-base-uncased",
+  "signal": "fever_present",
+  "classes": [
+    "false",
+    "true",
+    "null"
+  ],
+  "encoder": {
+    "base_model": "bert-base-uncased",
+    "revision": "86b5e0934494bd15c9632b12f734a8a67f723594",
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "requested_revision": null,
+    "revision_pinned": false,
+    "hidden_size": 768,
+    "tokeniser": {
+      "reported_do_lower_case": true,
+      "lowercases_input": true,
+      "cased_vocab": true,
+      "discards_casing": true,
+      "vocab_size": 30522,
+      "model_max_length": 512,
+      "tokenizer_class": "BertTokenizer"
+    }
+  },
+  "config": {
+    "base_model": "bert-base-uncased",
+    "revision": null,
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "epochs": 3,
+    "batch_size": 32,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "seed": 1234,
+    "fold_seed_rule": "seed + 1000 * fold_index",
+    "device": "auto",
+    "eval_batch_size": 64,
+    "determinism": "strict",
+    "trainable": "all layers; the encoder is unfrozen and trained with the head",
+    "loss": "cross_entropy, unweighted (DD8), masked on missing signals (DD10)",
+    "optimiser": "AdamW with linear warmup then linear decay",
+    "epoch_selection": "highest macro-F1 on the fold's own validation split",
+    "dtype": "float32",
+    "memory_strategy": "none. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation -- BERT-base at batch 32 / seq 256 fits in 12GB with room to spare",
+    "hyperparameter_provenance": "learning rate, epochs, warmup and optimiser are the published BERT-base recipe, fixed before any run. Hyperparameter search is out of scope",
+    "validation_guided_decisions": [
+      "pooling mode (DD3) -- mean vs CLS, compared once",
+      "learning rate",
+      "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+      "decision margin (DD9)"
+    ]
+  },
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "cuda_available": true,
+    "deterministic_env": ":4096:8",
+    "device_name": "NVIDIA GeForce RTX 5070",
+    "compute_capability": [
+      12,
+      0
+    ],
+    "capability_matches_expected": true,
+    "wheel_covers_blackwell": true,
+    "kernel_launch_ok": true
+  },
+  "dataset": {
+    "dir": "data/synthetic/generated/folds",
+    "folds": 5,
+    "generator_version": 2,
+    "generator_base_seed": 42,
+    "split_salt": "0",
+    "dataset_seeds": [
+      42,
+      142,
+      242,
+      342,
+      442
+    ],
+    "examples_per_fold": {
+      "train": 10000,
+      "val": 2000,
+      "test": 2000
+    }
+  },
+  "ruleset": "data/uti1.json",
+  "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+  "folds": [
+    {
+      "fold": 0,
+      "n_parameters": 109484547,
+      "n_trainable": 109484547,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.9104751567810707,
+        0.8879992329956959,
+        0.9126079196830404
+      ],
+      "train_loss_by_epoch": [
+        0.2710819123865571,
+        0.0002665456988848746,
+        0.0001471342887962237
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 85,
+        "accuracy": 0.9295,
+        "macro_f1": 0.9160652462869502,
+        "confusion": [
+          [
+            461,
+            1,
+            62
+          ],
+          [
+            1,
+            236,
+            48
+          ],
+          [
+            19,
+            10,
+            1162
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.8797709923664122,
+          "true": 0.8280701754385965,
+          "null": 0.9756507136859782
+        }
+      },
+      "decision_rule": {
+        "margin": 0.9,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.014273719563392108,
+        "null_to_true_rate": 0.008396305625524769,
+        "macro_f1": 0.9160652462869502,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 1,
+      "n_parameters": 109484547,
+      "n_trainable": 109484547,
+      "best_epoch": 2,
+      "val_macro_f1_by_epoch": [
+        0.8254171143145094,
+        0.8320407972464854,
+        0.8314127333333033
+      ],
+      "train_loss_by_epoch": [
+        0.24796742968996988,
+        0.00024181821923702955,
+        0.00015526691775303333
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 93,
+        "accuracy": 0.8705,
+        "macro_f1": 0.8335279796289895,
+        "confusion": [
+          [
+            409,
+            24,
+            76
+          ],
+          [
+            15,
+            222,
+            79
+          ],
+          [
+            23,
+            42,
+            1110
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.8035363457760314,
+          "true": 0.7025316455696202,
+          "null": 0.9446808510638298
+        }
+      },
+      "decision_rule": {
+        "margin": 0.1,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.03829787234042553,
+        "null_to_true_rate": 0.03574468085106383,
+        "macro_f1": 0.8335279796289895,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 2,
+      "n_parameters": 109484547,
+      "n_trainable": 109484547,
+      "best_epoch": 2,
+      "val_macro_f1_by_epoch": [
+        0.8912022274114942,
+        0.9064782525976365,
+        0.8996847665294571
+      ],
+      "train_loss_by_epoch": [
+        0.24442210222259164,
+        0.00020435054118279368,
+        0.00013412003823323176
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 93,
+        "accuracy": 0.934,
+        "macro_f1": 0.9118998643037592,
+        "confusion": [
+          [
+            493,
+            1,
+            20
+          ],
+          [
+            16,
+            255,
+            47
+          ],
+          [
+            2,
+            46,
+            1120
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9591439688715954,
+          "true": 0.8018867924528302,
+          "null": 0.958904109589041
+        }
+      },
+      "decision_rule": {
+        "margin": 0.8,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.04794520547945205,
+        "null_to_true_rate": 0.039383561643835614,
+        "macro_f1": 0.9118998643037592,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 3,
+      "n_parameters": 109484547,
+      "n_trainable": 109484547,
+      "best_epoch": 2,
+      "val_macro_f1_by_epoch": [
+        0.8683813992574486,
+        0.890096981112822,
+        0.8891937860534781
+      ],
+      "train_loss_by_epoch": [
+        0.24937444984093307,
+        0.00032009442846756426,
+        0.0005844718131003901
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 70,
+        "accuracy": 0.9255,
+        "macro_f1": 0.8971275128863865,
+        "confusion": [
+          [
+            408,
+            60,
+            34
+          ],
+          [
+            1,
+            278,
+            20
+          ],
+          [
+            12,
+            22,
+            1165
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.8127490039840638,
+          "true": 0.9297658862876255,
+          "null": 0.9716430358632193
+        }
+      },
+      "decision_rule": {
+        "margin": 0.7,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.027522935779816515,
+        "null_to_true_rate": 0.01834862385321101,
+        "macro_f1": 0.8971275128863865,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 4,
+      "n_parameters": 109484547,
+      "n_trainable": 109484547,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.9193969440445429,
+        0.9238677677283945,
+        0.9264433896308999
+      ],
+      "train_loss_by_epoch": [
+        0.2624371857249178,
+        0.0009714372762711719,
+        0.00016867667953483762
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 82,
+        "accuracy": 0.943,
+        "macro_f1": 0.9291659099287618,
+        "confusion": [
+          [
+            511,
+            0,
+            13
+          ],
+          [
+            4,
+            244,
+            56
+          ],
+          [
+            37,
+            4,
+            1131
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9751908396946565,
+          "true": 0.8026315789473685,
+          "null": 0.9650170648464164
+        }
+      },
+      "decision_rule": {
+        "margin": 0.8,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.011945392491467578,
+        "null_to_true_rate": 0.0034129692832764505,
+        "macro_f1": 0.9291659099287618,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    }
+  ],
+  "margins": {
+    "objective": "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9)",
+    "selected_on": "each fold's own validation split, never test and never pooled",
+    "by_fold": {
+      "0": 0.9,
+      "1": 0.1,
+      "2": 0.8,
+      "3": 0.7,
+      "4": 0.8
+    }
+  },
+  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it."
+}
