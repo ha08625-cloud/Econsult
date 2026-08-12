@@ -3,9 +3,9 @@
   "gated_class": 1,
   "gated_class_name": "true",
   "selected_on": "val",
-  "argmax_null_to_true_rate": 0.06638297872340425,
-  "null_to_true_rate": 0.05106382978723404,
-  "macro_f1": 0.8815740304784256,
+  "argmax_null_to_true_rate": 0.03914893617021276,
+  "null_to_true_rate": 0.017872340425531916,
+  "macro_f1": 0.8217998844167193,
   "margins_considered": [
     0.0,
     0.05,

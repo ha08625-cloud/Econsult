@@ -17,6 +17,8 @@
     "tokeniser": {
       "reported_do_lower_case": true,
       "lowercases_input": true,
+      "cased_vocab": true,
+      "discards_casing": true,
       "vocab_size": 28996,
       "model_max_length": 1000000000000000019884624838656,
       "tokenizer_class": "BertTokenizer"
@@ -72,7 +74,7 @@
     "folds": 5,
     "generator_version": 2,
     "generator_base_seed": 42,
-    "split_salt": "32",
+    "split_salt": "0",
     "dataset_seeds": [
       42,
       142,
@@ -95,43 +97,43 @@
       "n_trainable": 108312579,
       "best_epoch": 3,
       "val_macro_f1_by_epoch": [
-        0.7065271550920209,
-        0.7775890431680405,
-        0.7929896829836794
+        0.8502483473074266,
+        0.8813463399152098,
+        0.8906094643964488
       ],
       "train_loss_by_epoch": [
-        0.27143539803866296,
-        0.0009250092652626335,
-        0.00011435239636339247
+        0.3059289974713698,
+        0.0003020711529767141,
+        0.0001428294744109735
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 70,
-        "accuracy": 0.862,
-        "macro_f1": 0.8121860324920792,
+        "effective_n": 85,
+        "accuracy": 0.92,
+        "macro_f1": 0.9019347768899187,
         "confusion": [
           [
-            351,
-            87,
-            86
+            434,
+            16,
+            74
           ],
           [
-            0,
-            230,
-            55
+            5,
+            238,
+            42
           ],
           [
-            14,
-            34,
-            1143
+            21,
+            2,
+            1168
           ]
         ],
         "per_class_recall": {
-          "false": 0.6698473282442748,
-          "true": 0.8070175438596491,
-          "null": 0.9596977329974811
+          "false": 0.8282442748091603,
+          "true": 0.8350877192982457,
+          "null": 0.980688497061293
         }
       },
       "decision_rule": {
@@ -139,9 +141,9 @@
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.03190596137699412,
-        "null_to_true_rate": 0.028547439126784216,
-        "macro_f1": 0.8121860324920792,
+        "argmax_null_to_true_rate": 0.0109151973131822,
+        "null_to_true_rate": 0.0016792611251049538,
+        "macro_f1": 0.9019347768899187,
         "margins_considered": [
           0.0,
           0.05,
@@ -174,45 +176,45 @@
       "fold": 1,
       "n_parameters": 108312579,
       "n_trainable": 108312579,
-      "best_epoch": 3,
+      "best_epoch": 1,
       "val_macro_f1_by_epoch": [
-        0.830720473506417,
-        0.8517188775853953,
-        0.8668934554364234
+        0.8110807535766753,
+        0.7698760485157358,
+        0.7922500002485283
       ],
       "train_loss_by_epoch": [
-        0.2783056159195024,
-        0.0019166264870669693,
-        0.00012917864221381024
+        0.286446312107984,
+        0.0009747526087565347,
+        0.00011377608564216643
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 66,
-        "accuracy": 0.915,
-        "macro_f1": 0.8815740304784256,
+        "effective_n": 93,
+        "accuracy": 0.8525,
+        "macro_f1": 0.8217998844167193,
         "confusion": [
           [
-            452,
-            57,
-            0
+            390,
+            11,
+            108
           ],
           [
-            29,
-            278,
-            9
+            0,
+            213,
+            103
           ],
           [
-            15,
-            60,
-            1100
+            52,
+            21,
+            1102
           ]
         ],
         "per_class_recall": {
-          "false": 0.888015717092338,
-          "true": 0.879746835443038,
-          "null": 0.9361702127659575
+          "false": 0.7662082514734774,
+          "true": 0.6740506329113924,
+          "null": 0.9378723404255319
         }
       },
       "decision_rule": {
@@ -220,9 +222,9 @@
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.06638297872340425,
-        "null_to_true_rate": 0.05106382978723404,
-        "macro_f1": 0.8815740304784256,
+        "argmax_null_to_true_rate": 0.03914893617021276,
+        "null_to_true_rate": 0.017872340425531916,
+        "macro_f1": 0.8217998844167193,
         "margins_considered": [
           0.0,
           0.05,
@@ -257,53 +259,53 @@
       "n_trainable": 108312579,
       "best_epoch": 2,
       "val_macro_f1_by_epoch": [
-        0.8057006795148371,
-        0.8356725542084225,
-        0.8355602188833074
+        0.8411386689806785,
+        0.8420402169617826,
+        0.8319924095971999
       ],
       "train_loss_by_epoch": [
-        0.2774277542992029,
-        0.0016203821807866917,
-        9.777601499808953e-05
+        0.2875802787428256,
+        0.0007060889960732311,
+        0.00014599774591624737
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 70,
-        "accuracy": 0.8685,
-        "macro_f1": 0.8428050247985306,
+        "effective_n": 93,
+        "accuracy": 0.884,
+        "macro_f1": 0.8580087822805469,
         "confusion": [
           [
-            401,
-            18,
-            95
+            462,
+            29,
+            23
           ],
           [
-            6,
-            252,
-            60
+            7,
+            261,
+            50
           ],
           [
-            28,
-            56,
-            1084
+            45,
+            78,
+            1045
           ]
         ],
         "per_class_recall": {
-          "false": 0.7801556420233463,
-          "true": 0.7924528301886793,
-          "null": 0.928082191780822
+          "false": 0.8988326848249028,
+          "true": 0.8207547169811321,
+          "null": 0.8946917808219178
         }
       },
       "decision_rule": {
-        "margin": 0.2,
+        "margin": 0.9,
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.05736301369863014,
-        "null_to_true_rate": 0.04794520547945205,
-        "macro_f1": 0.8428050247985306,
+        "argmax_null_to_true_rate": 0.0898972602739726,
+        "null_to_true_rate": 0.06678082191780822,
+        "macro_f1": 0.8580087822805469,
         "margins_considered": [
           0.0,
           0.05,
@@ -336,55 +338,55 @@
       "fold": 3,
       "n_parameters": 108312579,
       "n_trainable": 108312579,
-      "best_epoch": 2,
+      "best_epoch": 1,
       "val_macro_f1_by_epoch": [
-        0.865731219637157,
-        0.8759671045124483,
-        0.8514601473398694
+        0.8631185853574109,
+        0.8521608655864895,
+        0.8520462067269851
       ],
       "train_loss_by_epoch": [
-        0.2723782015417237,
-        0.0002906159620732069,
-        0.00021049376267474144
+        0.29331471980828794,
+        0.0002896218975656666,
+        0.00011824484693352134
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 80,
-        "accuracy": 0.9155,
-        "macro_f1": 0.8937788880196408,
+        "effective_n": 70,
+        "accuracy": 0.902,
+        "macro_f1": 0.8636106973119397,
         "confusion": [
           [
-            433,
-            10,
-            59
+            403,
+            98,
+            1
           ],
           [
-            17,
-            265,
-            17
+            2,
+            281,
+            16
           ],
           [
-            7,
-            59,
-            1133
+            19,
+            60,
+            1120
           ]
         ],
         "per_class_recall": {
-          "false": 0.8625498007968128,
-          "true": 0.8862876254180602,
-          "null": 0.944954128440367
+          "false": 0.8027888446215139,
+          "true": 0.939799331103679,
+          "null": 0.9341117597998332
         }
       },
       "decision_rule": {
-        "margin": 0.9,
+        "margin": 0.05,
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.06672226855713094,
-        "null_to_true_rate": 0.04920767306088407,
-        "macro_f1": 0.8937788880196408,
+        "argmax_null_to_true_rate": 0.05087572977481234,
+        "null_to_true_rate": 0.05004170141784821,
+        "macro_f1": 0.8636106973119397,
         "margins_considered": [
           0.0,
           0.05,
@@ -419,53 +421,53 @@
       "n_trainable": 108312579,
       "best_epoch": 2,
       "val_macro_f1_by_epoch": [
-        0.8723274433272556,
-        0.8785333203322314,
-        0.8776109207941011
+        0.914744833030179,
+        0.931183153766907,
+        0.919248566208064
       ],
       "train_loss_by_epoch": [
-        0.2707307891186327,
-        0.0008644173879059963,
-        9.888352232519537e-05
+        0.2955486415759195,
+        0.0004795341455144808,
+        0.00011898922137916087
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 68,
-        "accuracy": 0.9165,
-        "macro_f1": 0.891308155911502,
+        "effective_n": 82,
+        "accuracy": 0.944,
+        "macro_f1": 0.931183153766907,
         "confusion": [
           [
-            508,
-            12,
-            4
-          ],
-          [
-            0,
-            252,
-            52
-          ],
-          [
+            499,
             6,
-            93,
-            1073
+            19
+          ],
+          [
+            11,
+            260,
+            33
+          ],
+          [
+            36,
+            7,
+            1129
           ]
         ],
         "per_class_recall": {
-          "false": 0.9694656488549618,
-          "true": 0.8289473684210527,
-          "null": 0.9155290102389079
+          "false": 0.9522900763358778,
+          "true": 0.8552631578947368,
+          "null": 0.9633105802047781
         }
       },
       "decision_rule": {
-        "margin": 0.9,
+        "margin": 0.0,
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.09044368600682594,
-        "null_to_true_rate": 0.07935153583617748,
-        "macro_f1": 0.891308155911502,
+        "argmax_null_to_true_rate": 0.005972696245733789,
+        "null_to_true_rate": 0.005972696245733789,
+        "macro_f1": 0.931183153766907,
         "margins_considered": [
           0.0,
           0.05,
@@ -501,9 +503,9 @@
     "by_fold": {
       "0": 0.9,
       "1": 0.9,
-      "2": 0.2,
-      "3": 0.9,
-      "4": 0.9
+      "2": 0.9,
+      "3": 0.05,
+      "4": 0.0
     }
   },
   "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it.",
