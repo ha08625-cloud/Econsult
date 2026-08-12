@@ -71,7 +71,12 @@ from .metrics import (
 #: named next ticket. Additive -- a version 1 reader still finds everything it
 #: knew about -- but the version moves anyway, because a consumer that wants the
 #: DD7 concentration statistic needs a way to say so.
-SCHEMA_VERSION = 2
+#:
+#: 3 added `model_movement`: the per-library and per-fragment comparison across
+#: several encoders in one report. Additive again, and empty on a report holding
+#: fewer than two non-control models, which is every report written before the
+#: `compare-models` command existed.
+SCHEMA_VERSION = 3
 
 #: Sub-classes the hard `fever_null` libraries carry. Listed so that a sub-class
 #: the manifest declares but no test fold happened to draw shows up as an empty
@@ -431,6 +436,82 @@ def _fragment_table(predictions: Sequence[Prediction]) -> list[dict]:
     return rows
 
 
+def model_movement(models: Sequence[Mapping[str, object]]) -> dict:
+    """What changed *where*, model by model, rather than in the headline.
+
+    A headline accuracy is the least useful output of a model comparison here.
+    The 2026-08-09 run put 71% of its errors on two libraries and half of them on
+    17 fragments, so the question a second encoder has to answer is not "is it
+    better on average" but "does it move that short list". A diffuse lift and a
+    fix to contrastive negation are different findings and would lead to
+    different next months; an aggregate cannot tell them apart.
+
+    Both tables are built from the model blocks already in the report rather than
+    from the predictions again, so they cannot disagree with the per-model
+    sections below them. Rows are ordered by the *worst* model's error count, so
+    the fragments the whole comparison is about sort to the top whichever encoder
+    happens to win. Only non-control models appear: a shuffled-label run's error
+    count is not a fact about a fragment.
+
+    ``spread`` is the max-minus-min across models on a row -- the column to read.
+    A library or fragment where every model lands within a point is one that
+    model choice does not touch, whatever the headline does.
+    """
+    named = [model for model in models if model.get("kind") != "negative_control"]
+    names = [str(model["name"]) for model in named]
+    if len(named) < 2:
+        return {"models": names, "by_library": [], "by_fragment": []}
+
+    library_accuracy: dict[str, dict[str, float]] = {}
+    library_support: dict[str, int] = {}
+    for model in named:
+        for entry in model["pooled"]["ruled"]["by_library"]:
+            library = str(entry["name"])
+            point = (entry.get("accuracy") or {}).get("point")
+            if point is None:
+                continue
+            library_accuracy.setdefault(library, {})[str(model["name"])] = float(point)
+            library_support[library] = int(entry["n_examples"])
+
+    by_library = [
+        {
+            "library": library,
+            "n_examples": library_support[library],
+            "accuracy": scores,
+            "spread": max(scores.values()) - min(scores.values()),
+        }
+        for library, scores in library_accuracy.items()
+        if len(scores) == len(names)
+    ]
+    by_library.sort(key=lambda row: (min(row["accuracy"].values()), row["library"]))
+
+    fragment_errors: dict[str, dict[str, int]] = {}
+    fragment_meta: dict[str, dict] = {}
+    for model in named:
+        for row in model["fragments"]:
+            fragment_id = str(row["fragment_id"])
+            errors = int(row["n_examples"]) - int(row["n_correct"])
+            fragment_errors.setdefault(fragment_id, {})[str(model["name"])] = errors
+            fragment_meta.setdefault(
+                fragment_id,
+                {"library": row["library"], "subclass": row["subclass"], "truth": row["truth"]},
+            )
+
+    by_fragment = [
+        {
+            "fragment_id": fragment_id,
+            **fragment_meta[fragment_id],
+            "errors": counts,
+            "spread": max(counts.values()) - min(counts.values()),
+        }
+        for fragment_id, counts in fragment_errors.items()
+        if len(counts) == len(names) and max(counts.values()) > 0
+    ]
+    by_fragment.sort(key=lambda row: (-max(row["errors"].values()), row["fragment_id"]))
+
+    return {"models": names, "by_library": by_library, "by_fragment": by_fragment}
+
+
 def _mcnemar_dict(left: ModelRun, right: ModelRun, slice_name: str, result: McNemarResult) -> dict:
     return {
         "a": left.name,
@@ -740,14 +821,16 @@ def build_report(
     checks: Mapping[str, object] | None = None,
 ) -> dict:
     """Assemble the whole report as one JSON-serialisable dict."""
+    models = [_model_block(run, boot=boot) for run in runs]
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "header": dict(header),
         "bootstrap": boot.to_dict(),
         "checks": dict(checks or {}),
-        "models": [_model_block(run, boot=boot) for run in runs],
+        "models": models,
         "comparisons": compare_models(runs),
+        "model_movement": model_movement(models),
         "expectations": list(EXPECTATIONS),
         "limitations": list(LIMITATIONS),
         "data_limits": list(DATA_LIMITS),
@@ -1444,6 +1527,82 @@ def _render_data_limits(report: Mapping[str, object]) -> list[str]:
     return lines
 
 
+def _render_model_movement(report: Mapping[str, object], *, fragment_rows: int) -> list[str]:
+    """Where a model comparison actually gets decided.
+
+    Omitted entirely from a single-model report rather than printed empty: a
+    section headed "what moved" under one model is an invitation to read a column
+    of absolute error counts as a comparison.
+    """
+    movement = report.get("model_movement") or {}
+    libraries = movement.get("by_library") or []
+    fragments = movement.get("by_fragment") or []
+    if not libraries and not fragments:
+        return []
+
+    names = list(movement["models"])
+    lines = [
+        "## What moved, and where",
+        "",
+        "The headline is the least useful output of a model comparison. These two tables are the",
+        "useful one: a diffuse lift and a fix to one error family are different findings, and an",
+        "aggregate accuracy cannot tell them apart. `spread` is max minus min across the models --",
+        "a row where every encoder lands together is a row model choice does not touch.",
+        "",
+        "### By library, accuracy after the decision rule",
+        "",
+        "Worst-performing library first. For a single-class library -- `fever_false` holds only",
+        "`false` examples -- accuracy here *is* that class's recall on that library.",
+        "",
+    ]
+    lines.extend(
+        _table(
+            ["library", "n", *(f"`{name}`" for name in names), "spread"],
+            [
+                [
+                    f"`{row['library']}`",
+                    str(row["n_examples"]),
+                    *(_pct(row["accuracy"][name]) for name in names),
+                    f"{100 * row['spread']:.1f}pp",
+                ]
+                for row in libraries
+            ],
+        )
+    )
+    lines.append("### By fragment, errors")
+    lines.append("")
+    lines.append(
+        "Ordered by the worst model's error count, so the fragments the comparison is about sort"
+    )
+    lines.append(
+        "to the top whichever encoder wins. Counts, not rates: these are the sentences a month of"
+    )
+    lines.append("library work would be spent on. The JSON holds every fragment.")
+    lines.append("")
+    lines.extend(
+        _table(
+            ["fragment", "library", "truth", *(f"`{name}`" for name in names), "spread"],
+            [
+                [
+                    f"`{row['fragment_id']}`",
+                    f"`{row['library']}`",
+                    str(row["truth"]),
+                    *(str(row["errors"][name]) for name in names),
+                    str(row["spread"]),
+                ]
+                for row in fragments[:fragment_rows]
+            ],
+        )
+    )
+    if len(fragments) > fragment_rows:
+        lines.append(
+            f"*{len(fragments) - fragment_rows} further fragments erred on at least one model; "
+            "the JSON holds them all.*"
+        )
+        lines.append("")
+    return lines
+
+
 def _render_bullets(title: str, bullets: Sequence[str]) -> list[str]:
     lines = [f"## {title}", ""]
     lines.extend(f"* {bullet}" for bullet in bullets)
@@ -1463,6 +1622,7 @@ def render_markdown(
     lines.extend(_render_expectations(report))
     lines.extend(_render_checks(report))
     lines.extend(_render_comparisons(report))
+    lines.extend(_render_model_movement(report, fragment_rows=fragment_rows))
     for model in report["models"]:
         lines.extend(_render_model(model, fragment_rows=fragment_rows))
     lines.extend(_render_appendix(report))

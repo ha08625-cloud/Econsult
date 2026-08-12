@@ -35,6 +35,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.encoder_training.__main__ import _resolve_comparison_models, build_parser
 from scripts.encoder_training.baselines import (
     LengthBaseline,
     MajorityBaseline,
@@ -83,9 +84,11 @@ from scripts.encoder_training.report import (
     _error_concentration,
     build_report,
     compare_models,
+    model_movement,
     render_markdown,
     write_report,
 )
+from scripts.encoder_training.train import ARM_B_NAME, TrainError, arm_run_name, display_model
 from scripts.synthetic_data.manifest import library_clusters, load_fragments
 
 FIXTURES = Path(__file__).parent / "fixtures" / "encoder_training"
@@ -521,6 +524,170 @@ def _rows(*pairs):
         {"fragment_id": f"lib:{index:02d}", "n_examples": total, "n_correct": correct}
         for index, (total, correct) in enumerate(pairs)
     ]
+
+
+def _run_with_predictions(name: str, predictions) -> ModelRun:
+    """One model over one fold, from predictions written out by hand."""
+    return ModelRun(
+        name=name,
+        kind="finetune",
+        description=f"{name}, for the movement tables",
+        folds=(
+            FoldRun.build(
+                fold_index=0,
+                n_train=1,
+                n_val=1,
+                n_test=len(predictions),
+                rule=DecisionRule(margin=0.0),
+                raw=predictions,
+                ruled=predictions,
+            ),
+        ),
+    )
+
+
+def _movement_predictions(*outcomes):
+    """``(truth, predicted, fragment, library)`` tuples as scored predictions."""
+    return tuple(
+        _prediction(
+            f"test-{index:04d}",
+            truth,
+            predicted,
+            fragment,
+            fragment_id=fragment,
+            library=library,
+            label_mode="null_ambiguous" if truth == CLASS_NULL else "clear_true",
+            scores=(0.2, 0.3, 0.5),
+        )
+        for index, (truth, predicted, fragment, library) in enumerate(outcomes)
+    )
+
+
+def _movement_report():
+    """Two encoders that disagree about exactly one fragment each."""
+    incumbent = _run_with_predictions(
+        "arm_b_finetune@Bio_ClinicalBERT",
+        _movement_predictions(
+            (CLASS_FALSE, CLASS_TRUE, "neg:01", "fever_false"),
+            (CLASS_TRUE, CLASS_TRUE, "pos:01", "fever_true"),
+        ),
+    )
+    contender = _run_with_predictions(
+        "arm_b_finetune@roberta-base",
+        _movement_predictions(
+            (CLASS_FALSE, CLASS_FALSE, "neg:01", "fever_false"),
+            (CLASS_TRUE, CLASS_FALSE, "pos:01", "fever_true"),
+        ),
+    )
+    return build_report(
+        [incumbent, contender],
+        header={"signal": SIGNAL, "folds": 1},
+        boot=BootstrapConfig(resamples=RESAMPLES, seed=0),
+    )
+
+
+def test_model_movement_reports_each_encoder_against_the_same_fragment():
+    """The comparison's actual output: which fragments moved, and by how much.
+
+    A headline cannot separate "better everywhere by a little" from "fixed one
+    error family", and those two findings lead to different next months.
+    """
+    movement = _movement_report()["model_movement"]
+    assert movement["models"] == [
+        "arm_b_finetune@Bio_ClinicalBERT",
+        "arm_b_finetune@roberta-base",
+    ]
+    by_fragment = {row["fragment_id"]: row for row in movement["by_fragment"]}
+    assert by_fragment["neg:01"]["errors"] == {
+        "arm_b_finetune@Bio_ClinicalBERT": 1,
+        "arm_b_finetune@roberta-base": 0,
+    }
+    assert by_fragment["pos:01"]["errors"] == {
+        "arm_b_finetune@Bio_ClinicalBERT": 0,
+        "arm_b_finetune@roberta-base": 1,
+    }
+    assert all(row["spread"] == 1 for row in movement["by_fragment"])
+
+
+def test_model_movement_reports_library_accuracy_worst_first():
+    """`fever_false` accuracy is that class's recall on it, which is the number
+    the largest error family on file is read from."""
+    movement = _movement_report()["model_movement"]
+    libraries = movement["by_library"]
+    assert {row["library"] for row in libraries} == {"fever_false", "fever_true"}
+    assert libraries == sorted(
+        libraries, key=lambda row: (min(row["accuracy"].values()), row["library"])
+    )
+    assert all(len(row["accuracy"]) == 2 for row in libraries)
+
+
+def test_model_movement_is_empty_for_a_single_model_report():
+    """A column of absolute error counts under one model is not a comparison."""
+    movement = _report()["model_movement"]
+    assert movement["by_library"] == []
+    assert movement["by_fragment"] == []
+    assert "What moved, and where" not in render_markdown(_report())
+
+
+def test_model_movement_excludes_negative_controls():
+    """A shuffled-label run's error count is not a fact about a fragment."""
+    predictions = _movement_predictions((CLASS_FALSE, CLASS_TRUE, "neg:01", "fever_false"))
+    control = _run_with_predictions("arm_b_finetune__shuffled", predictions)
+    movement = model_movement(
+        [
+            {"name": "arm_b_finetune", "kind": "finetune", "pooled": {}, "fragments": []},
+            {"name": control.name, "kind": "negative_control", "pooled": {}, "fragments": []},
+        ]
+    )
+    assert movement["models"] == ["arm_b_finetune"]
+
+
+def test_markdown_renders_the_movement_tables_when_models_are_compared():
+    markdown = render_markdown(_movement_report())
+    assert "What moved, and where" in markdown
+    assert "By library, accuracy after the decision rule" in markdown
+    assert "By fragment, errors" in markdown
+    assert "`arm_b_finetune@roberta-base`" in markdown
+
+
+# --------------------------------------------------------------------------
+# The multi-encoder comparison command
+# --------------------------------------------------------------------------
+
+
+def test_comparison_defaults_name_each_encoder_after_its_short_name():
+    args = build_parser().parse_args(["compare-models"])
+    resolved = _resolve_comparison_models(args)
+    assert [label for _, _, label in resolved] == [
+        "Bio_ClinicalBERT",
+        "bert-base-uncased",
+        "roberta-base",
+    ]
+    assert all(revision is None for _, revision, _ in resolved)
+
+
+def test_comparison_rejects_two_runs_that_would_share_a_name():
+    """Two runs with one name are McNemar-compared against themselves."""
+    args = build_parser().parse_args(["compare-models", "--base-models", "one/Model", "two/Model"])
+    with pytest.raises(TrainError, match="must be distinct"):
+        _resolve_comparison_models(args)
+
+
+def test_comparison_rejects_a_partial_revision_list():
+    """Positional pinning: all of them or none, never some."""
+    args = build_parser().parse_args(
+        ["compare-models", "--base-models", "a/A", "b/B", "--revisions", "deadbeef"]
+    )
+    with pytest.raises(TrainError, match="one entry per --base-models"):
+        _resolve_comparison_models(args)
+
+
+def test_arm_run_names_stay_unchanged_without_a_label():
+    """The single-encoder commands must keep writing the names already on disk."""
+    assert arm_run_name(ARM_B_NAME, None) == ARM_B_NAME
+    assert arm_run_name(ARM_B_NAME, "roberta-base") == "arm_b_finetune@roberta-base"
+    assert display_model("emilyalsentzer/Bio_ClinicalBERT") == "Bio_ClinicalBERT"
+    assert display_model("roberta-base") == "roberta-base"
 
 
 def test_error_concentration_finds_the_fragments_carrying_half_the_errors():

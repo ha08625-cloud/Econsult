@@ -161,6 +161,65 @@ Three implementation points that are easy to get wrong and invisible when you do
   full of plausible numbers with no warning anywhere, so every input that changes
   what an embedding *is* changes the name of the file holding it.
 
+### 4a. Comparing base encoders
+
+`compare-models` runs Arm B over several base models against **the same folds**
+and writes them into **one** report. The single report is the whole design: the
+paired McNemar tests in `report.compare_models` run between the runs found in one
+report, and two separately-written reports leave only overlapping confidence
+intervals to compare — which the 2026-08-09 numbers say cannot separate anything
+this comparison could plausibly produce (decisive CI [79.1, 88.0], per-fold sd
+4.4%). Paired, the same five folds detect roughly 2–3 points.
+
+Each encoder's run is named `arm_b_finetune@<label>` and its artefacts go to
+`models/encoder/<signal>/arm_b_finetune__<slug>/`. Without a distinct label two
+runs would both be called `arm_b_finetune` and every paired test would compare a
+model against itself, so the labels are required to be distinct.
+
+**The headline is not the output.** `model_movement` in the report is: per-library
+accuracy and per-fragment error counts, side by side across encoders, with a
+`spread` column. A diffuse lift and a fix to one error family are different
+findings that lead to different next months, and an aggregate accuracy cannot
+tell them apart. For a single-class library — `fever_false` holds only `false`
+examples — that table's accuracy *is* that class's recall on it.
+
+The default three, and why:
+
+| encoder | role | what it isolates |
+|---|---|---|
+| `emilyalsentzer/Bio_ClinicalBERT` | incumbent | every number on file was produced with it |
+| `bert-base-uncased` | control | pretraining corpus, and the tokeniser question below |
+| `roberta-base` | contender | negation scope, not register |
+
+The contender is on a different axis than clinical-vs-lay register, deliberately.
+The largest error family on file is contrastive negation — "my mum had a fever,
+I never got one myself" — which is negation scope and attribution rather than
+vocabulary. BERT-base is weak there whatever it was pretrained on.
+`microsoft/deberta-v3-base` is the stronger choice again on that axis and is a
+valid `--base-models` value, but it needs `sentencepiece` and `protobuf`, which
+`requirements-ml.txt` does not install.
+
+Two constraints on what can go in: `EXPECTED_HIDDEN_SIZE` is 768 and is asserted
+at load, so a `-large` model is rejected rather than silently reshaping the head;
+and the embedding cache keys on the resolved revision, so encoders never share
+cached vectors.
+
+**The tokeniser fact this surfaced.** `TokeniserFacts.discards_casing` is true
+when a tokeniser lowercases its input *and* holds a vocabulary built for cased
+text — the cased entries then become unreachable and every capitalised word is
+fragmented into subwords the vocabulary was not organised around. Bio_ClinicalBERT
+is exactly that: `do_lower_case: true` over 28,996 entries inherited from
+`bert-base-cased` via BioBERT. So the patient casing section 5 of
+`arch_training.md` preserves reaches that encoder as noise, not signal.
+
+This is recorded rather than corrected. Overriding `do_lower_case` would make
+fine-tuning disagree with whatever the checkpoint was pretrained under, and the
+shipped config is the only evidence of what that was. The honest response is the
+comparison above, where `bert-base-uncased`'s vocabulary and casing agree by
+construction — which also means part of any gain it shows is the tokeniser rather
+than the register, and the report header carries `tokeniser_discards_casing` so
+that reading is available rather than reconstructed.
+
 ---
 
 ## 5. How the numbers are made honest
@@ -340,6 +399,7 @@ python -m scripts.encoder_training smoke-cuda                 # can this GPU lau
 python -m scripts.encoder_training smoke                      # ... and can it load the encoder
 python -m scripts.encoder_training probe --folds 5            # Arm A, the frozen probe
 python -m scripts.encoder_training finetune --folds 5         # Arm B, every layer unfrozen
+python -m scripts.encoder_training compare-models --folds 5   # Arm B over several base encoders
 ```
 
 **Python 3.12 or later, in an environment of its own.** Every subcommand imports
@@ -365,6 +425,13 @@ passes by doing **two** things at once: driving training loss towards zero,
 because 110M parameters can memorise a permutation, *and* scoring at chance on the
 unpermuted test split. Either half alone means nothing, which is why the sidecar
 keeps the loss curve.
+
+`compare-models` is the one command whose negative control is **off** by default.
+It is per-encoder work that would triple an already 3x sweep, and it answers a
+question the run that motivated the comparison already answered; `--control`
+turns it back on and the report header says which was done. Arm A is off by
+default there too, since the frozen-vs-fine-tuned question is settled and every
+extra run adds a row to each paired-comparison table.
 
 `--folds` must match how the datasets were generated; the loader refuses a
 directory whose sidecars disagree with the flag, whose filename lies about its

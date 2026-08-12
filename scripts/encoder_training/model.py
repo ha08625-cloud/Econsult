@@ -78,22 +78,63 @@ class TokeniserFacts:
     ``lowercases_input`` is therefore a behavioural probe -- tokenise ``Fever``
     and ``fever`` and compare the ids -- and ``reported_do_lower_case`` is
     whatever the object claims, which may be ``None``. Both go in the sidecar.
+
+    ``cased_vocab`` is the second half of the same question, and it is the half
+    that turns a curiosity into a defect. A tokeniser that lowercases every input
+    while holding a vocabulary built for cased text can never emit the cased
+    entries in it: ``Fever`` is looked up as ``fever``, and every capitalised
+    word the patient wrote is fragmented into subwords that the cased vocabulary
+    was not organised around. Bio_ClinicalBERT is exactly this combination --
+    ``do_lower_case: true`` in the shipped config over a 28,996-entry vocabulary
+    inherited from ``bert-base-cased`` via BioBERT -- so
+    :attr:`discards_casing` is ``True`` for it, and `arch_training.md` section 5's
+    deliberate preservation of patient casing buys nothing on that encoder.
+
+    This is recorded rather than corrected. Overriding ``do_lower_case`` would
+    make fine-tuning disagree with whatever the checkpoint was pretrained under,
+    and the shipped config is the only evidence of what that was. The honest fix
+    is to compare against an encoder whose vocabulary and casing agree, which is
+    what the ``compare-models`` command exists for.
     """
 
     reported_do_lower_case: bool | None
     lowercases_input: bool
+    cased_vocab: bool
     vocab_size: int
     model_max_length: int
     tokenizer_class: str
+
+    @property
+    def discards_casing(self) -> bool:
+        """Whether patient casing is thrown away before the model ever sees it."""
+        return self.lowercases_input and self.cased_vocab
 
     def to_dict(self) -> dict:
         return {
             "reported_do_lower_case": self.reported_do_lower_case,
             "lowercases_input": self.lowercases_input,
+            "cased_vocab": self.cased_vocab,
+            "discards_casing": self.discards_casing,
             "vocab_size": self.vocab_size,
             "model_max_length": self.model_max_length,
             "tokenizer_class": self.tokenizer_class,
         }
+
+
+def vocabulary_is_cased(tokenizer) -> bool:
+    """Whether the vocabulary holds entries only cased input could ever match.
+
+    Asked of the vocabulary itself rather than inferred from its size, because
+    28,996 identifies ``bert-base-cased``'s vocabulary by coincidence of arithmetic
+    and nothing else -- a fine-tuned checkpoint with a handful of added tokens
+    would not match the magic number and would still be cased. Special tokens are
+    excluded: ``[CLS]`` is upper-case in every vocabulary there is, cased or not.
+    """
+    special = set(getattr(tokenizer, "all_special_tokens", ()) or ())
+    return any(
+        token not in special and any(character.isupper() for character in token)
+        for token in tokenizer.get_vocab()
+    )
 
 
 def probe_tokeniser(tokenizer) -> TokeniserFacts:
@@ -107,6 +148,7 @@ def probe_tokeniser(tokenizer) -> TokeniserFacts:
     return TokeniserFacts(
         reported_do_lower_case=None if reported is None else bool(reported),
         lowercases_input=upper == lower,
+        cased_vocab=vocabulary_is_cased(tokenizer),
         vocab_size=int(tokenizer.vocab_size),
         model_max_length=int(tokenizer.model_max_length),
         tokenizer_class=type(tokenizer).__name__,
@@ -385,4 +427,5 @@ __all__ = [
     "masked_cross_entropy",
     "pool",
     "probe_tokeniser",
+    "vocabulary_is_cased",
 ]
