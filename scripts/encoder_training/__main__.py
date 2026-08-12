@@ -1,6 +1,6 @@
 """Command-line entry point for encoder training and evaluation.
 
-Six subcommands.
+Seven subcommands.
 
     python -m scripts.encoder_training generate-folds --folds 5
 
@@ -54,6 +54,16 @@ Each arm writes its artefacts under ``models/encoder/<signal>/<arm>/``. Arm B's
 ~440MB of fine-tuned encoder per fold goes there too and is **not** committed;
 ``models/.gitignore`` covers it and the metadata sidecar records where it went.
 
+    python -m scripts.encoder_training compare-models --folds 5
+
+Arm B over several base models against the *same* folds, in **one** report. One
+report is the point: the paired McNemar tests are between the runs in a single
+report, and two separately-written reports would leave only overlapping
+confidence intervals -- which the 2026-08-09 numbers say could not separate
+anything this comparison might find. Defaults to the incumbent
+(Bio_ClinicalBERT), ``bert-base-uncased`` as the pretraining-corpus control, and
+``roberta-base`` as the contender on negation scope.
+
 No command touches ``app/``, and nothing in ``app/`` imports this. The dependency
 runs one way, and ``tests/test_wiring.py`` asserts it.
 """
@@ -89,10 +99,38 @@ from .train import (
     ProbeConfig,
     TrainError,
     build_metadata,
+    display_model,
     resolve_device,
     run_finetune,
     run_probe,
     write_artefacts,
+)
+
+#: The default three-encoder comparison, and why each one is in it.
+#:
+#: ``Bio_ClinicalBERT`` is the incumbent -- the encoder every number on file was
+#: produced with, so it is the thing the other two have to beat.
+#:
+#: ``bert-base-uncased`` is the **control**, not a contender. It isolates the
+#: pretraining corpus: same architecture, same size, general English instead of
+#: MIMIC-III discharge summaries. It also settles the casing question by
+#: construction, because its vocabulary is built for lowercased text, where
+#: Bio_ClinicalBERT lowercases input into a vocabulary inherited from
+#: ``bert-base-cased`` (28,996 entries -- see :class:`model.TokeniserFacts`). If
+#: it wins, part of the gain is the tokeniser rather than the register.
+#:
+#: ``roberta-base`` is the actual contender, and on a different axis than
+#: clinical-vs-lay. The largest error family on file is contrastive negation --
+#: "my mum had a fever, I never got one" -- which is negation scope and
+#: attribution, not vocabulary. BERT-base of any pretraining corpus is weak
+#: there; RoBERTa is meaningfully better. ``deberta-v3-base`` is the stronger
+#: choice again on that axis and is a supported ``--base-models`` value, but it
+#: is not in the default set because its tokeniser needs ``sentencepiece`` and
+#: ``protobuf``, which ``requirements-ml.txt`` does not install.
+DEFAULT_COMPARISON_MODELS = (
+    "emilyalsentzer/Bio_ClinicalBERT",
+    "bert-base-uncased",
+    "roberta-base",
 )
 
 DEFAULT_SIGNAL = "fever_present"
@@ -329,6 +367,45 @@ def _artefact_dir(args: argparse.Namespace, arm: str) -> Path:
     return Path(args.models_dir) / args.signal / arm
 
 
+def _model_slug(label: str) -> str:
+    """A label reduced to something safe to name a directory after."""
+    return "".join(character if character.isalnum() else "-" for character in label).strip("-")
+
+
+def _resolve_comparison_models(args: argparse.Namespace) -> list[tuple[str, str | None, str]]:
+    """The ``(base_model, revision, label)`` triples one comparison run covers.
+
+    Revisions are positional against the model list, and an empty list means
+    "unpinned everywhere" -- the same unpinned-run warning the single-model
+    commands print then applies to each. Labels default to the model's short
+    name and must come out distinct, because the label is what separates two runs
+    in one report; two runs sharing a name would be silently McNemar-compared
+    against themselves.
+    """
+    revisions = list(args.revisions or [])
+    if revisions and len(revisions) != len(args.base_models):
+        raise TrainError(
+            f"--revisions takes one entry per --base-models ({len(args.base_models)}) or none at "
+            f"all; got {len(revisions)}"
+        )
+    if not revisions:
+        revisions = [None] * len(args.base_models)
+
+    labels = list(args.labels or []) or [display_model(model) for model in args.base_models]
+    if len(labels) != len(args.base_models):
+        raise TrainError(
+            f"--labels takes one entry per --base-models ({len(args.base_models)}); "
+            f"got {len(labels)}"
+        )
+    if len(set(labels)) != len(labels):
+        raise TrainError(
+            f"the run labels must be distinct, and these are not: {labels}. Two runs with one name "
+            "cannot be told apart in a report, and the paired comparisons would compare a model "
+            "against itself. Pass --labels explicitly"
+        )
+    return list(zip(args.base_models, revisions, labels, strict=True))
+
+
 def _encoder_factory(args: argparse.Namespace, device: str):
     """A callable that loads a **fresh** encoder on ``device``.
 
@@ -506,6 +583,8 @@ def run_arm_a(args: argparse.Namespace) -> int:
             "pooling": args.pooling,
             "max_seq_len": args.max_seq_len,
             "tokeniser_lowercases": encoder.facts.lowercases_input,
+            "tokeniser_vocab_size": encoder.facts.vocab_size,
+            "tokeniser_discards_casing": encoder.facts.discards_casing,
             "device": device,
             "probe_epochs": args.epochs,
             "train_seed": args.train_seed,
@@ -557,6 +636,12 @@ def run_arm_b(args: argparse.Namespace) -> int:
         "model_revision": reference.revision,
         "revision_pinned": reference.revision_pinned,
         "tokeniser_lowercases": reference.facts.lowercases_input,
+        "tokeniser_vocab_size": reference.facts.vocab_size,
+        # A cased vocabulary behind a lowercasing tokeniser means patient casing
+        # never reaches the model, whatever `arch_training.md` section 5 preserves
+        # upstream. True for Bio_ClinicalBERT. Surfaced in the header because it
+        # changes how any comparison against another encoder should be read.
+        "tokeniser_discards_casing": reference.facts.discards_casing,
     }
     if not args.no_probe:
         probe_run, _ = run_probe(
@@ -666,6 +751,173 @@ def run_arm_b(args: argparse.Namespace) -> int:
                 else f"{weights_dir} -- ~440MB per fold, not committed"
             ),
             **probe_header,
+        },
+    )
+
+
+def run_compare_models(args: argparse.Namespace) -> int:
+    """Arm B over several encoders, against the same folds, in one report.
+
+    One report rather than one per encoder, and that is the whole point of the
+    command. ``compare_models`` runs its paired McNemar tests between the runs it
+    finds in a single report, and the 2026-08-09 decisive interval was
+    [79.1, 88.0] with a per-fold sd of 4.4% -- two independently-written reports
+    would have overlapping intervals at any difference this comparison could
+    plausibly produce, and nothing paired to fall back on. Same folds, same
+    seeds, same decision-rule procedure, compared on the examples the models
+    disagree about.
+
+    The negative control is **off** by default here, unlike every other command.
+    It is per-encoder work, it would triple the cost of an already 3x sweep, and
+    the question it answers -- can this pipeline learn from permuted labels --
+    was answered by the run that motivated this one. ``--control`` turns it back
+    on; the report says which was done either way.
+    """
+    models = _resolve_comparison_models(args)
+    folds = load_folds(args.data_dir, args.signal, folds=args.folds)
+    cuda_required = not args.allow_cpu and args.device != "cpu"
+    device_facts = check_device(args.device, cuda_required=cuda_required)
+    device = device_facts["device"]
+    for line in format_report(device_facts):
+        print(line)
+
+    runs: list = []
+    encoders: list[dict] = []
+
+    for base_model, revision, label in models:
+        print(f"\n=== {label} ({base_model}) ===", flush=True)
+        # A per-model copy of the parsed arguments, so every config builder below
+        # stays the one the single-model commands use. Rebuilding the configs by
+        # hand here is how the two paths drift into disagreeing about a default.
+        model_args = argparse.Namespace(**vars(args))
+        model_args.base_model = base_model
+        model_args.revision = revision
+
+        factory = _encoder_factory(model_args, device)
+        reference = factory()
+        _warn_if_unpinned(reference)
+        facts = reference.to_dict()
+        encoders.append({"label": label, **facts})
+        tokeniser = facts.get("tokeniser") or {}
+        if tokeniser.get("discards_casing"):
+            print(
+                f"note: {label} lowercases its input into a cased vocabulary "
+                f"({tokeniser['vocab_size']} entries), so patient casing reaches the model as "
+                "subword fragmentation rather than as signal.",
+                file=sys.stderr,
+            )
+
+        if args.with_probe:
+            probe_run, _ = run_probe(
+                folds,
+                reference,
+                signal=args.signal,
+                config=_probe_config_for_arm_b(model_args),
+                cache_dir=args.cache_dir,
+                device=device,
+                label=label,
+                progress=args.progress,
+            )
+            runs.append(probe_run)
+        del reference
+
+        arm = f"{ARM_B_NAME}__{_model_slug(label)}"
+        weights_dir = None if args.no_weights else Path(args.models_dir) / args.signal / arm
+        config = _finetune_config(model_args)
+        run, results = run_finetune(
+            folds,
+            factory,
+            signal=args.signal,
+            config=config,
+            weights_dir=None if weights_dir is None else weights_dir / "weights",
+            label=label,
+            progress=args.progress,
+        )
+        runs.append(run)
+
+        if args.control:
+            control_run, _ = run_finetune(
+                folds,
+                factory,
+                signal=args.signal,
+                config=config,
+                weights_dir=None,
+                shuffle_seed=args.shuffle_seed,
+                label=label,
+                progress=args.progress,
+            )
+            runs.append(control_run)
+
+        metadata = build_metadata(
+            signal=args.signal,
+            arm=arm,
+            encoder_facts=facts,
+            config=config,
+            device=device_facts,
+            dataset={
+                "dir": str(args.data_dir),
+                "folds": args.folds,
+                "generator_version": folds[0].train.generator_version,
+                "generator_base_seed": args.seed,
+                "split_salt": folds[0].train.split_salt,
+                "dataset_seeds": [fold.train.stats.get("seed") for fold in folds],
+                "examples_per_fold": {
+                    "train": len(folds[0].train),
+                    "val": len(folds[0].val),
+                    "test": len(folds[0].test),
+                },
+            },
+            ruleset=str(args.ruleset),
+            ruleset_hash=hash_ruleset_file(args.ruleset),
+            results=results,
+            control=None,
+        )
+        for path in write_artefacts(
+            Path(args.models_dir) / args.signal / arm,
+            signal=args.signal,
+            arm=arm,
+            metadata=metadata,
+            results=results,
+        ):
+            print(f"wrote {path}")
+
+    if not args.no_baselines:
+        # Once, not once per encoder: the baselines do not depend on which
+        # transformer is being compared, and three identical `tfidf_logreg` rows
+        # would add nine meaningless McNemar comparisons to the report.
+        runs[0:0] = run_all(folds, signal=args.signal, shuffle_seed=args.shuffle_seed)
+
+    return _emit_report(
+        runs,
+        args,
+        folds,
+        stem=f"{args.signal}.model_comparison",
+        extra={
+            "arm": ARM_B_NAME,
+            "comparison": [
+                {
+                    "label": label,
+                    "base_model": encoder["base_model"],
+                    "revision": encoder["revision"],
+                    "revision_pinned": encoder["revision_pinned"],
+                    "vocab_size": (encoder.get("tokeniser") or {}).get("vocab_size"),
+                    "lowercases_input": (encoder.get("tokeniser") or {}).get("lowercases_input"),
+                    "discards_casing": (encoder.get("tokeniser") or {}).get("discards_casing"),
+                }
+                for (_, _, label), encoder in zip(models, encoders, strict=True)
+            ],
+            "pooling": args.pooling,
+            "max_seq_len": args.max_seq_len,
+            "device": device,
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "lr": args.lr,
+            "warmup_ratio": args.warmup_ratio,
+            "determinism": args.determinism,
+            "train_seed": args.train_seed,
+            "arm_a_included": args.with_probe,
+            "negative_control": "run per encoder" if args.control else "not run (--control is off)",
+            "artefacts": str(Path(args.models_dir) / args.signal),
         },
     )
 
@@ -862,6 +1114,79 @@ def build_parser() -> argparse.ArgumentParser:
         "--progress", action="store_true", help="print per-epoch training loss and validation score"
     )
     finetune.set_defaults(handler=run_arm_b)
+
+    compare = subparsers.add_parser(
+        "compare-models",
+        help="Arm B over several base models, against the same folds, in one report",
+    )
+    _add_report_args(compare)
+    compare.add_argument(
+        "--base-models",
+        nargs="+",
+        default=list(DEFAULT_COMPARISON_MODELS),
+        help="the encoders to compare. Each must be a BERT-base-sized model (hidden size 768); "
+        "anything else is rejected at load time rather than silently reshaping the head",
+    )
+    compare.add_argument(
+        "--revisions",
+        nargs="*",
+        default=None,
+        help="commit SHAs, one per --base-models entry, or none at all. An unpinned comparison is "
+        "not reproducible and each unpinned model prints the usual warning",
+    )
+    compare.add_argument(
+        "--labels",
+        nargs="*",
+        default=None,
+        help="what each encoder is called in the report and its artefact directory. Defaults to "
+        "the model's short name, and must be distinct",
+    )
+    compare.add_argument("--pooling", choices=POOLING_MODES, default="mean")
+    compare.add_argument("--max-seq-len", type=int, default=256)
+    compare.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    compare.add_argument("--models-dir", type=Path, default=DEFAULT_MODELS_DIR)
+    compare.add_argument("--device", default="auto")
+    compare.add_argument("--epochs", type=int, default=FineTuneConfig.epochs)
+    compare.add_argument("--batch-size", type=int, default=FineTuneConfig.batch_size)
+    compare.add_argument("--lr", type=float, default=FineTuneConfig.lr)
+    compare.add_argument("--weight-decay", type=float, default=FineTuneConfig.weight_decay)
+    compare.add_argument("--warmup-ratio", type=float, default=FineTuneConfig.warmup_ratio)
+    compare.add_argument("--max-grad-norm", type=float, default=FineTuneConfig.max_grad_norm)
+    compare.add_argument("--eval-batch-size", type=int, default=FineTuneConfig.eval_batch_size)
+    compare.add_argument("--embed-batch-size", type=int, default=ProbeConfig.embed_batch_size)
+    compare.add_argument(
+        "--determinism", choices=DETERMINISM_MODES, default=FineTuneConfig.determinism
+    )
+    compare.add_argument("--train-seed", type=int, default=FineTuneConfig.seed)
+    compare.add_argument("--allow-cpu", action="store_true")
+    compare.add_argument(
+        "--no-weights",
+        action="store_true",
+        help="do not write the fine-tuned encoders. ~440MB per fold per model, so a three-model "
+        "sweep writes ~6.6GB; none of it is committed and all of it is regenerable",
+    )
+    compare.add_argument(
+        "--with-probe",
+        action="store_true",
+        help="also run Arm A on each encoder. Off by default: it doubles the number of runs in "
+        "the report and every extra run adds a row to each paired-comparison table, and the "
+        "frozen-vs-fine-tuned question is already settled",
+    )
+    compare.add_argument(
+        "--control",
+        action="store_true",
+        help="run the shuffled-label negative control for each encoder. Off by default here "
+        "alone: it is per-encoder work that would triple an already 3x sweep, and it answers a "
+        "question the run that motivated this comparison already answered",
+    )
+    compare.add_argument(
+        "--no-baselines",
+        action="store_true",
+        help="omit the baselines. They are fitted once rather than once per encoder, since they "
+        "do not depend on which transformer is in the report",
+    )
+    compare.add_argument("--progress", action="store_true")
+    compare.set_defaults(handler=run_compare_models)
 
     return parser
 

@@ -86,8 +86,8 @@ DEFAULT_BASE_MODEL = "emilyalsentzer/Bio_ClinicalBERT"
 #: Report/artefact name of the arm.
 ARM_A_NAME = "arm_a_probe"
 
-ARM_A_DESCRIPTION = (
-    "Frozen Bio_ClinicalBERT, mean-pooled, with a `Linear(768, 3)` probe over the cached "
+ARM_A_DESCRIPTION_TEMPLATE = (
+    "Frozen {model}, mean-pooled, with a `Linear(768, 3)` probe over the cached "
     "embeddings (2,307 parameters). The encoder learns nothing; only the probe is fitted. "
     "Expected to handle clear positives, clear negatives and `null_structural`, and to do badly "
     "on the four hard `null` sub-classes, which turn on compositional scope that a single pooled "
@@ -96,12 +96,14 @@ ARM_A_DESCRIPTION = (
     'method is too weak".'
 )
 
+ARM_A_DESCRIPTION = ARM_A_DESCRIPTION_TEMPLATE.format(model="Bio_ClinicalBERT")
+
 
 #: Report/artefact name of the fine-tune arm.
 ARM_B_NAME = "arm_b_finetune"
 
-ARM_B_DESCRIPTION = (
-    "Bio_ClinicalBERT with **every layer unfrozen**, mean-pooled, with the same `Linear(768, 3)` "
+ARM_B_DESCRIPTION_TEMPLATE = (
+    "{model} with **every layer unfrozen**, mean-pooled, with the same `Linear(768, 3)` "
     "head -- 110M trainable parameters against Arm A's 2,307. Three epochs at batch 32, learning "
     "rate 2e-5, 10% linear warmup, AdamW, fp32. No gradient checkpointing, no 8-bit optimiser, no "
     "LoRA, no gradient accumulation: the full model fits in 12GB with room to spare, so anything "
@@ -111,6 +113,25 @@ ARM_B_DESCRIPTION = (
     "metaphor, the limit is in the ideas the libraries contain and the fix is library work, not "
     "model work."
 )
+
+ARM_B_DESCRIPTION = ARM_B_DESCRIPTION_TEMPLATE.format(model="Bio_ClinicalBERT")
+
+
+def display_model(base_model: str) -> str:
+    """The short name an encoder goes by in a report: ``org/Name`` -> ``Name``."""
+    return base_model.rsplit("/", 1)[-1]
+
+
+def arm_run_name(arm: str, label: str | None) -> str:
+    """The name one arm's run carries in a report.
+
+    A label is what makes several encoders comparable in a single report: every
+    run in one report needs a distinct name, because :func:`report.compare_models`
+    keys the paired McNemar tests on it and two runs called ``arm_b_finetune``
+    would be reported as a model compared against itself.
+    """
+    return arm if label is None else f"{arm}@{label}"
+
 
 #: The complete list of decisions this ticket permits the validation split to
 #: make (task 5 instruction 5). Everything else -- warmup, weight decay, batch
@@ -658,9 +679,15 @@ def run_probe(
     cache_dir: Path | str,
     device: str,
     shuffle_seed: int | None = None,
+    label: str | None = None,
     progress: bool = False,
 ) -> tuple[ModelRun, tuple[ProbeFoldResult, ...]]:
-    """Run Arm A across every fold, as one reportable model plus its artefacts."""
+    """Run Arm A across every fold, as one reportable model plus its artefacts.
+
+    ``label`` distinguishes this run from other encoders' runs of the same arm in
+    one report; it is ``None`` for the single-encoder commands, which keeps their
+    run names, artefact paths and reports byte-identical to before.
+    """
     results = tuple(
         run_probe_fold(
             fold,
@@ -675,15 +702,17 @@ def run_probe(
         for fold in folds
     )
     control = shuffle_seed is not None
+    base = arm_run_name(ARM_A_NAME, label)
+    described = ARM_A_DESCRIPTION_TEMPLATE.format(model=f"`{display_model(config.base_model)}`")
     run = ModelRun(
-        name=f"{ARM_A_NAME}__shuffled" if control else ARM_A_NAME,
+        name=f"{base}__shuffled" if control else base,
         kind="negative_control" if control else "probe",
         description=(
-            f"{ARM_A_DESCRIPTION} **Negative control:** fitted on permuted training labels "
+            f"{described} **Negative control:** fitted on permuted training labels "
             f"(seed {shuffle_seed}) and evaluated on the unpermuted test split, where it must "
             "land at chance."
             if control
-            else ARM_A_DESCRIPTION
+            else described
         ),
         folds=tuple(result.fold_run for result in results),
     )
@@ -1040,9 +1069,15 @@ def run_finetune(
     config: FineTuneConfig,
     weights_dir: Path | str | None = None,
     shuffle_seed: int | None = None,
+    label: str | None = None,
     progress: bool = False,
 ) -> tuple[ModelRun, tuple[FineTuneFoldResult, ...]]:
-    """Run Arm B across every fold, as one reportable model plus its artefacts."""
+    """Run Arm B across every fold, as one reportable model plus its artefacts.
+
+    ``label`` distinguishes this run from other encoders' runs of the same arm in
+    one report; it is ``None`` for the single-encoder commands, which keeps their
+    run names, artefact paths and reports byte-identical to before.
+    """
     results: list[FineTuneFoldResult] = []
     for fold in folds:
         if progress:
@@ -1060,17 +1095,19 @@ def run_finetune(
         )
 
     control = shuffle_seed is not None
+    base = arm_run_name(ARM_B_NAME, label)
+    described = ARM_B_DESCRIPTION_TEMPLATE.format(model=f"`{display_model(config.base_model)}`")
     run = ModelRun(
-        name=f"{ARM_B_NAME}__shuffled" if control else ARM_B_NAME,
+        name=f"{base}__shuffled" if control else base,
         kind="negative_control" if control else "finetune",
         description=(
-            f"{ARM_B_DESCRIPTION} **Negative control:** fine-tuned on permuted training labels "
+            f"{described} **Negative control:** fine-tuned on permuted training labels "
             f"(seed {shuffle_seed}) and evaluated on the unpermuted test split. A 110M-parameter "
             "model is expected to drive train loss towards zero by memorising the permutation "
             "while landing at chance on test; that combination is the control passing, and the "
             "per-fold train-loss curve in the sidecar is where the first half of it is read."
             if control
-            else ARM_B_DESCRIPTION
+            else described
         ),
         folds=tuple(result.fold_run for result in results),
     )
@@ -1237,8 +1274,10 @@ def spec_from_metadata(metadata: Mapping[str, object]) -> EmbeddingSpec:
 
 __all__ = [
     "ARM_A_DESCRIPTION",
+    "ARM_A_DESCRIPTION_TEMPLATE",
     "ARM_A_NAME",
     "ARM_B_DESCRIPTION",
+    "ARM_B_DESCRIPTION_TEMPLATE",
     "ARM_B_NAME",
     "CUBLAS_ENV_VALUE",
     "CUBLAS_ENV_VAR",
@@ -1253,9 +1292,11 @@ __all__ = [
     "ProbeConfig",
     "ProbeFoldResult",
     "TrainError",
+    "arm_run_name",
     "build_metadata",
     "check_device",
     "derive_fold_seed",
+    "display_model",
     "device_report",
     "ensure_deterministic_env",
     "finetune_fold_model",

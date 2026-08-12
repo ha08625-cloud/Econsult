@@ -931,6 +931,18 @@ def test_tokeniser_casing_is_probed_rather_than_assumed(transformers_module, tmp
     assert cased.facts.reported_do_lower_case is False
     assert cased.to_dict()["tokeniser"]["lowercases_input"] is False
 
+    # Both fixtures carry `Fever` in the vocabulary, so both vocabularies are
+    # cased. Only the lowercasing one throws the casing away: it looks `Fever` up
+    # as `fever` and the cased entry becomes unreachable. That combination is
+    # Bio_ClinicalBERT's -- `do_lower_case: true` over a vocabulary inherited
+    # from `bert-base-cased` -- and it is the reason the fact is recorded rather
+    # than the pair of booleans left for a reader to combine.
+    assert cased.facts.cased_vocab is True
+    assert lowered.facts.cased_vocab is True
+    assert cased.facts.discards_casing is False
+    assert lowered.facts.discards_casing is True
+    assert lowered.to_dict()["tokeniser"]["discards_casing"] is True
+
 
 def test_encoder_without_a_resolvable_revision_refuses_to_be_cached(transformers_module, tmp_path):
     """A local directory has no commit, and an unkeyed cache is worse than an error.
