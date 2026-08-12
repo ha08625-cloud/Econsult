@@ -89,7 +89,7 @@ data/synthetic/
   symptoms/urinary_frequency/ seven libraries, all about urinary_frequency_present
   symptoms/nocturia/          seven libraries, all about nocturia_present
   symptoms/flank_pain/        five libraries, all about flank_pain_present
-  symptoms/haematuria/        two libraries, all about haematuria_present
+  symptoms/haematuria/        five libraries, all about haematuria_present
   filler/                     five libraries, verified silent on fever only (section 9)
   drafts/                     scratch files, deliberately not libraries (section 4)
   generated/                  output, git-ignored
@@ -143,6 +143,9 @@ claim can be made per-signal.
 | `symptoms/flank_pain/flank_pain_null_historical.txt` | 40 | Flank pain, but in the past |
 | `symptoms/haematuria/haematuria_true.txt` | 45 | Says there is visible blood in the urine |
 | `symptoms/haematuria/haematuria_false.txt` | 45 | Says there is not |
+| `symptoms/haematuria/haematuria_null_hedged.txt` | 45 | Genuinely uncertain ("looked a bit pink but I ate beetroot yesterday") |
+| `symptoms/haematuria/haematuria_null_thirdparty.txt` | 45 | *Someone else* is passing blood |
+| `symptoms/haematuria/haematuria_null_historical.txt` | 45 | Blood in the urine, but in the past |
 | `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
 | `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
 | `filler/emotional.txt` | 60 | Filler: worry and feelings |
@@ -199,12 +202,26 @@ oversights.**
   plausibly uses about their own body) and no `attribution` library, which is a
   real gap: musculoskeletal flank pain with a named cause is common and has
   nowhere to live.
-* **haematuria** has `true` and `false` only, and is the least complete signal
-  in the repository. Its boundary rule is that **red or pink urine is `true`,
-  dark/brown/tea-coloured urine is not** (concentrated urine, bilirubin and
-  rifampicin all look like that, and the text does not say the patient saw
-  blood), and that **blood in the urine is `true`, blood on the toilet paper is
-  not** (paper blood may be vaginal, rectal or perineal in origin).
+* **haematuria** covers `hedged`, `thirdparty` and `historical`. Its boundary
+  rule is that **red or pink urine is `true`, dark/brown/tea-coloured urine is
+  not** (concentrated urine, bilirubin and rifampicin all look like that, and
+  the text does not say the patient saw blood), and that **blood in the urine is
+  `true`, blood on the toilet paper is not** (paper blood may be vaginal, rectal
+  or perineal in origin). It has no `metaphor` library and no `attribution`
+  library. **`attribution` is the gap that matters, and unlike for
+  urinary_frequency the axis genuinely transfers**: beetroot, rifampicin, a red
+  toilet block or blood from a period all leave the surface facts intact while
+  making the answer something other than `true`, exactly as fever's named causes
+  do. Its raw material is the confidently-attributed half of `hedged` plus the
+  colour lines the boundary rule keeps out of `true`.
+
+  Two rules follow from the boundary rule and apply to the null libraries. A
+  `thirdparty` or `historical` fragment must read as decisively `true` if the
+  person or the tense is changed and nothing else — "my sister's lad had tea
+  coloured pee" is `null` twice over and so measures nothing. And a fragment
+  that never mentions blood or urine is not a haematuria fragment under any
+  label: seventeen `hedged` drafts were flank pain with no urinary content, and
+  are parked in `drafts/` rather than labelled.
 
 A signal covering fewer axes measures a model against a narrower set of
 confounders, so its numbers are not comparable sub-class for sub-class with
@@ -277,8 +294,10 @@ which sub-class).
 
 The generator reads this list and **only** this list. It never scans the folder
 for `.txt` files. This matters because `data/synthetic/drafts/` contains scratch
-notes and an unfinished template spec that a folder scan would feed straight
-into the training text. They sit in their own directory to make the distinction
+notes, an unfinished template spec, and fragments written for the wrong signal
+(`flank_pain_cause_hedged.txt`), all of which a folder scan would feed straight
+into the training text — and the last of those would look entirely plausible on
+the way past. They sit in their own directory to make the distinction
 obvious, but the manifest, not the directory, is what keeps them out.
 
 Files on disk but missing from the manifest are ignored. Files in the manifest
@@ -545,6 +564,14 @@ a perfect shortcut separating `null` from `true` and `false`. A clinical term
 that lives in one library is a label, not vocabulary — it has to be seeded
 across the true, false and null libraries together or not used at all.
 
+The same fault has a **stylistic** form the report cannot see either, and it is
+easier to introduce by accident: the first draft of `haematuria_null_hedged` was
+written entirely in lowercase with no terminal punctuation, against a `true` and
+`false` set that were uniformly capitalised. Nothing normalises emitted text —
+`normalise.py` is used for keys only, deliberately — so casing alone separated
+the ambiguous class perfectly. Writing style is vocabulary: if one library is
+written in a register, all of them have to be.
+
 **Hedge markers** — lines in the positive and negative libraries that sound
 uncertain, as a prompt to re-read them by hand. Its precision is poor by design
 (about 25%), because many fragments deliberately open with uncertainty and then
@@ -750,12 +777,13 @@ fragment count — 40 to 55 apiece.
 **Nothing has been trained on anything but `fever_present`.** The training
 tooling (`arch_encoder_training.md`) is single-signal and wired to
 `fever_present`, so the other five signals' libraries are input that nothing yet
-consumes. A `haematuria_present` run does not start at all: `_check_pools`
-requires a non-empty ambiguous/confounder pool, and haematuria has no confounder
-library. That is the guard working — every `null` example would otherwise be a
-structural one, and those all share a single resampling unit, so the run would
-produce a dataset whose entire `null` class is a handful of ideas seen thousands
-of times. The fix is one confounder library, not a change to the guard.
+consumes. A `haematuria_present` run does now start, and its three null
+libraries are what made it possible: `_check_pools` requires a non-empty
+ambiguous/confounder pool, so with only `true` and `false` it exited whatever
+`--null-ambiguous-ratio` was set to. That guard was right — every `null` example
+would otherwise have been a structural one, and those all share a single
+resampling unit, so the run would have produced a dataset whose entire `null`
+class was a handful of ideas seen thousands of times.
 
 ### The proof-of-concept run
 

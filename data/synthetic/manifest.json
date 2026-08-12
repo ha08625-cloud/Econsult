@@ -228,6 +228,27 @@
       "fragment_type": "negative"
     },
     {
+      "name": "haematuria_null_hedged",
+      "file": "symptoms/haematuria/haematuria_null_hedged.txt",
+      "signal_key": "haematuria_present",
+      "fragment_type": "ambiguous",
+      "subclass": "hedged"
+    },
+    {
+      "name": "haematuria_null_thirdparty",
+      "file": "symptoms/haematuria/haematuria_null_thirdparty.txt",
+      "signal_key": "haematuria_present",
+      "fragment_type": "confounder",
+      "subclass": "third_party"
+    },
+    {
+      "name": "haematuria_null_historical",
+      "file": "symptoms/haematuria/haematuria_null_historical.txt",
+      "signal_key": "haematuria_present",
+      "fragment_type": "confounder",
+      "subclass": "historical"
+    },
+    {
       "name": "tangents",
       "file": "filler/tangents.txt",
       "signal_key": null,
