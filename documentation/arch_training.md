@@ -1132,14 +1132,25 @@ flag inside the generator would make awkward. And deduplication (`generate`'s
 `seen` set) keeps operating on clean text, so damage can never be what makes two
 otherwise-identical examples look distinct.
 
-Command shape, mirroring the existing tool:
+**It works on a directory and preserves filenames**, which is not an arbitrary
+choice. `scripts/encoder_training/` locates its data by `--data-dir` plus the
+fixed pattern `{signal}.fold{i}.{split}.jsonl` (`dataset.FOLD_FILENAME`), so a
+noisy dataset written as `...train.noisy.jsonl` beside the clean one would be
+invisible to it, while a noisy *tree* with unchanged filenames is reachable by
+pointing `--data-dir` at it and changing nothing else. That is the whole
+integration, and it is what makes the 2×2 below cheap to run.
 
 ```
 python -m scripts.synthetic_data.noise \
-    --in  data/synthetic/generated/fever_present.train.jsonl \
-    --out data/synthetic/generated/fever_present.train.noisy.jsonl \
+    --in-dir  data/synthetic/generated/folds \
+    --out-dir data/synthetic/generated/folds-noisy-r02 \
     --rate 0.02 --seed 42
 ```
+
+Every file in the input directory is copied through, damaged, and written with
+its name intact, sidecar included — `dataset._read_stats` refuses to load a
+dataset with no sidecar beside it, so emitting the JSONL alone would produce a
+tree that fails at training time rather than at noising time.
 
 **Reproducibility on the generator's terms.** Per-example RNG seeded from
 `"{noise_seed}|{example_id}"` — keyed on the ID, not the line number — so
@@ -1165,31 +1176,54 @@ subword model. A few are not:
   third-party, but any hit on `my`, `his`, `had` or `was` is a coin flip on
   whether the axis the fragment exists to teach survives at all.
 
-Three ways to handle this, and the recommendation is the third.
+**The decision is a declared protected lexicon, enforced in both directions.**
+Never edit a token that is in the protected list, and never *produce* a
+protected token from an unprotected one — an edit that would is discarded and
+redrawn. The list is negation, person, tense and modality words plus the signal
+vocabulary, and half of it already exists as `lint.FEVER_LEXICON` for the
+filler-purity check. This is what keeps section 2's argument intact in spirit:
+the edits that could change the answer are excluded by construction rather than
+judged to be rare after the fact.
 
-1. **Accept it and quantify it.** At a 2% per-word rate the damage lands in a
-   two-character negation rarely, and roughly uniformly across labels. This is
-   defensible, but it leaves permanently wrong labels in the data with nothing
-   recording which ones — the exact failure mode section 2 exists to make
-   impossible.
-2. **Only edit words of five characters or more.** Simple and it protects almost
-   everything that matters. It is also unrealistic in a *directional* way: real
-   typists hit short words too, so the model would learn that short words are
-   always spelled correctly, which is a new artefact traded for an old one.
-3. **Declare a protected lexicon and enforce it both ways.** Never edit a token
-   in the protected list, and never *produce* a protected token from an
-   unprotected one — redraw if an edit would. The list is negation, person,
-   tense and modality words plus the signal vocabulary, and half of it already
-   exists as `lint.FEVER_LEXICON` for the filler-purity check. This keeps
-   section 2's argument intact in spirit: the edits that could change the answer
-   are excluded by construction rather than judged to be rare after the fact.
+Two alternatives were considered and rejected, recorded because both look
+cheaper and one of them keeps coming back. **Accepting the label noise and
+quantifying it** — at a 2% per-word rate the damage lands inside a two-character
+negation rarely, and roughly uniformly across labels — is defensible arithmetic,
+but it leaves permanently wrong labels in the data with nothing recording which
+ones, which is the exact failure mode section 2 exists to make impossible.
+**Editing only words of five characters or more** protects almost everything
+that matters with no lexicon at all, but it is unrealistic in a *directional*
+way: real typists hit short words too, so the model would learn that short words
+are always spelled correctly. That is a new artefact traded for an old one.
 
-Option 3 has a cost worth naming rather than discovering. The protected list is
-**per signal**, and only fever's exists today. A missing or thin list for another
-signal fails silently — the pass runs, the output looks fine, and the label noise
-is invisible. That is the same shape of problem as 12.5's declared silence, and
-the two want the same home: a lexicon field in the manifest, next to the silence
-declaration, rather than two lists drifting apart in two modules.
+**The redraw must not be able to skew anything.** An edit is rejected only on the
+protected-token test, which does not know the label, so rejection rates can vary
+by *word*, never by class. Where an example's draw is rejected repeatedly the
+pass moves on rather than looping — the word simply goes unedited, and the
+realised edit rate reported in the sidecar drops slightly below the requested
+one. That gap is telemetry, not a bug, and is worth printing.
+
+#### The protected list is per signal, and the pass is fever-only until 12.5
+
+Only fever's vocabulary exists today. A missing or thin list for another signal
+fails **silently** — the pass runs, the output looks fine, and the label noise is
+invisible in exactly the way section 2 is built to prevent. So the pass ships
+with a hand-written fever list now, and:
+
+**It refuses to run on any dataset whose signal is not `fever_present`.** The
+signal comes from the dataset's own `.stats.json` sidecar, and a mismatch is a
+startup error, not a warning. This is the same fail-fast posture as the
+generator's check that the signal exists in the ruleset as a `send_to_encoder`
+Boolean (section 11): a dataset that is quietly under-protected is worse than no
+dataset, because nothing downstream would ever show it.
+
+The hand-written list is therefore explicitly a **stopgap with a migration
+target**. It has the same shape as 12.5's declared silence — a per-library
+guarantee that currently lives in the author's head — and wants the same home: a
+lexicon field in the manifest, added by step 3 of the sequencing, at which point
+the hard-coded list and the signal guard both come out. Two lists in two modules
+drifting apart is the outcome to avoid, and the guard is what stops that
+happening by accident in the meantime.
 
 #### The rate must not vary by label, and the sidecar must prove it
 
@@ -1207,13 +1241,17 @@ already describes. And **a share of examples should be left completely clean**:
 real submissions run from immaculate to unreadable, and a dataset where every
 example carries the same error density is its own kind of unrealistic.
 
-#### Which splits get noised is an experimental decision
+#### The 2×2 is part of the work, not a follow-up
 
 This is the part most easily got wrong. Noising all three splits and reading one
 number cannot answer whether the pass helped: noise makes the test set harder at
 the same time as it makes the training set richer, and those move the number in
-opposite directions. What answers it is a 2×2 — train on clean and on noisy,
-evaluate each against a clean test set and a noisy one:
+opposite directions. A single post-noise score is uninterpretable, so **shipping
+the script without the experiment would produce a knob nobody can decide whether
+to turn.** The experiment is therefore in scope for the same ticket.
+
+What answers it is a 2×2 — train on clean and on noisy, evaluate each against a
+clean test set and a noisy one:
 
 * noisy-trained vs clean-trained on the **noisy** test set — does training on
   damaged text buy robustness to damaged text? This is the claim being made.
@@ -1221,10 +1259,33 @@ evaluate each against a clean test set and a noisy one:
   anything on text that is fine?
 
 Four training runs against one fold configuration, all four sharing the same
-generated data, which is the practical reason the pass is post-processing. How
-that is run and reported is `arch_encoder_training.md`'s territory; it is noted
-here so the script is built in a shape that permits it rather than one that
-forces noise on every split at generation time.
+generated data, which is the practical reason the pass is post-processing rather
+than a generator flag.
+
+Three constraints on reading the result, all of which follow from things already
+in this document.
+
+**It must be the same fold configuration across all four cells**, and fold mode
+(section 6) rather than the default bands, or the per-sub-class numbers are the
+2-to-6-cluster slices section 10 says cannot separate two models. Twenty
+training runs, then, not four — five folds × four cells — which is the real cost
+of this and should be understood before starting.
+
+**The comparison is at fixed effective n, and that is what makes it readable.**
+Noise creates no new clusters (section 10), so all four cells rest on exactly
+the same ideas. That is unusually clean as experiments here go: the only thing
+that varies is surface form. It also caps what a win can mean — a gain is
+robustness to damaged surface, never better coverage of the clinical space.
+
+**A rate sweep, not a single rate.** There is a rate above which this actively
+hurts (see below), and one run cannot find it. Two or three rates — say 1%, 2%
+and 5% — is the minimum that distinguishes "noise helps" from "a little noise
+helps and more does not", and those are different findings.
+
+How the runs are driven and reported is `arch_encoder_training.md`'s territory
+and that document is where the numbers get written up; what belongs here is that
+the script must be shaped to allow it, which means never forcing noise on every
+split and always leaving the clean dataset on disk beside the noisy one.
 
 #### What it is worth
 
@@ -1296,14 +1357,19 @@ where the numbers it produces can be trusted:
 7. Template the clinical libraries, once there are enough distinct templates per
    library for the split arithmetic to work.
 
-**The random-error pass (12.6) is independent of all of the above** — it is
-post-processing over finished text and touches no other module — so it can slot
-in anywhere after step 1. Two things pull on where it actually goes. If the
-protected-lexicon option is taken, it wants the manifest field that step 3
-introduces, so it either follows step 3 or ships fever-only against a
-hand-written list and stays fever-only until step 3 lands. And its apostrophe
-and casing operations are cheap, safe and independent of the lexicon question
-entirely, so they can go first and on their own.
+**The random-error pass (12.6) is independent of everything above it** — it is
+post-processing over finished text and imports nothing from the generator — so
+it can slot in anywhere after step 1, and it deliberately does not wait for step
+3. It ships with a hand-written fever lexicon and a hard refusal to run on any
+other signal, and step 3 is where that hard-coded list moves into the manifest
+and the refusal comes out. Sequencing it that way is a decision to pay for the
+guard rather than to wait.
+
+Nor does it depend on the training tooling growing anything: `--data-dir`
+already points the runs at an arbitrary tree, which is why 12.6 writes whole
+directories with filenames preserved. The 2×2 is twenty runs against tooling
+that exists, so the constraint on when to start is compute and attention, not a
+missing capability anywhere on this list.
 
 **Writing down the `true`/`null` labelling policy (section 9) belongs with step
 3.** Both are the same kind of work — turning a guarantee that currently lives
