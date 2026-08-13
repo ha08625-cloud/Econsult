@@ -37,7 +37,8 @@ disappointing number is when they get broken.
 | file | what it is |
 |---|---|
 | `uti1_holdout.source.txt` | **The source of truth.** One submission per line, verbatim. |
-| `uti1_holdout.labels.tsv` | The hand-labelling worksheet. One row per submission, one column per `send_to_encoder` signal in `data/uti1.json`. |
+| `uti1_holdout.labels.tsv` | The labels. One row per submission, one column per `send_to_encoder` signal in `data/uti1.json`. |
+| `uti1_holdout.arbitrate.md` | The 13 cells where the call is genuinely arguable, with the text and the reasoning. Read this first when reviewing. |
 
 `submission_id` is `holdout-NNNN`, assigned by line order in the source file.
 **Do not reorder or insert lines in the source file** — the ids would shift and
@@ -66,28 +67,54 @@ The distinction that matters most and is easiest to get wrong: **silence is not
 `fever_present`, not `false`. `false` is reserved for "no fever", "no back pain
 or fever", "No blood, no fever" — an explicit denial the patient made.
 
+## Provenance of the labels
+
+**The labels were proposed by Claude and reviewed by the maintainer.** They were
+not produced independently of the models being scored. This is a real limitation
+and it belongs in every report that uses this set: the labeller and the model
+share an architecture and could in principle share a blind spot, which would
+inflate the score in a way no amount of resampling would reveal. It is not fatal
+— every arguable cell was surfaced for arbitration in `uti1_holdout.arbitrate.md`
+and the plain readings are plain — but the set is weaker evidence than one
+labelled by a clinician who had never seen the fragment libraries.
+
 ## What this set can and cannot support
 
-Signal coverage is uneven, because it was written as realistic submissions rather
-than balanced per signal. Roughly how many submissions contain language relevant
-to each signal at all (keyword estimate, not labels):
+Labelled distribution, from `uti1_holdout.labels.tsv`. **The decisive column is
+the one that bounds anything** — `null` examples are the ones a model scores by
+answering "no information", which the majority-class baseline does perfectly.
 
-| signal | submissions touching it |
-|---|---|
-| `dysuria_present` | ~52 / 67 |
-| `urinary_frequency_present` | ~26 / 67 |
-| `haematuria_present` | ~16 / 67 |
-| `flank_pain_present` | ~14 / 67 |
-| `nocturia_present` | ~12 / 67 |
-| `fever_present` | ~18 / 67 |
-| `recent_uti_present` | ~9 / 67 |
+| signal | true | false | null | decisive |
+|---|---|---|---|---|
+| `dysuria_present` | 56 | 0 | 11 | **56** |
+| `urinary_frequency_present` | 27 | 0 | 40 | **27** |
+| `fever_present` | 9 | 9 | 49 | **18** |
+| `flank_pain_present` | 7 | 7 | 53 | **14** |
+| `haematuria_present` | 9 | 2 | 56 | **11** |
+| `nocturia_present` | 9 | 0 | 58 | **9** |
+| `recent_uti_present` | 2 | 5 | 60 | **7** |
 
-So this set can carry a reasonable statement about `dysuria_present` and only a
-weak one about `recent_uti_present`. Note especially that **`fever_present` — the
-only head trained so far — is one of the thinner slices.** With the resampling
-unit at one submission, 67 observations gives roughly ±9 points at 80% on a
-signal every submission speaks to, and considerably worse than that on a slice of
-18. Read the per-signal `n` in any report before reading its accuracy.
+Two things follow, and both are more limiting than the raw count of 67 suggests.
+
+**Three signals have no `false` examples at all.** `dysuria_present`,
+`urinary_frequency_present` and `nocturia_present` are all-`true` where they are
+decisive. A model that never predicts `false` on those signals is not penalised
+anywhere in this set, so a high score on them says only that positives are
+recognised. Nothing here measures whether an explicit denial is read correctly —
+which was the single largest error family in the synthetic evaluation.
+
+**`fever_present` is the best-balanced slice and still the smallest useful one.**
+9 `true` against 9 `false` is exactly the shape needed to catch the failure mode
+that matters, and 18 observations gives roughly ±20 points. That is enough to
+detect a catastrophe — a model that scored 92.9% on recombinations landing near
+chance on real text would be unmissable — and nowhere near enough to separate two
+models, or to justify a decimal place. Any report that puts a fever number from
+this set next to a recombination number must print both `n`s beside them.
+
+Writing more submissions is the fix, and the shortage is specific rather than
+general: what is missing is **explicit denials** ("no burning", "I'm not going
+more often than usual", "no waking at night") and submissions where the patient
+is describing something that turns out not to be a UTI at all.
 
 ## The limitation to state in every report that uses this
 
