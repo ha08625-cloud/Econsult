@@ -2,7 +2,7 @@ submission_id	dysuria_present	urinary_frequency_present	nocturia_present	fever_p
 holdout-0001	null	null	null	null	null	null	null	Im hoping to get some antibiotics, Im almost certain i have cystitis
 holdout-0002	null	null	null	null	null	null	null	I started  with symptoms of a UTI on Friday. I tried to sort it myself by going to the pharmacy and getting some cranberry sachets but it just hasn't gone and I'm desperate
 holdout-0003	null	null	true	null	null	null	null	I have a severe pain in my lower abdomen and ive been up all night peeing, I suspect I've got a bladder infection.
-holdout-0004	null	true	null	true	null	null	false	I would like to have a course if atrong antibiotics. Last year i was hospitalised with a severe kidney infection and ended up on a drip with a raging fever and im pretty sure ive got a fever now, and im peeing every ten minutes
+holdout-0004	null	true	null	true	null	null	null	I would like to have a course if atrong antibiotics. Last year i was hospitalised with a severe kidney infection and ended up on a drip with a raging fever and im pretty sure ive got a fever now, and im peeing every ten minutes
 holdout-0005	true	true	null	null	null	null	null	Id like to bring in a sample of urine - i have a terrible stingign sensation when im urinating and im having to rush to the toilet constantly
 holdout-0006	null	null	null	true	true	null	null	I wonder if i could see a doctor for this bladder issue ive been having. Ive felt absolutely awful the last three weeks with a pain in my lower abdomen and a high temperature and pains in my kidneys
 holdout-0007	true	true	null	null	null	true	null	Two days of pain peeing, peeing continuously, peeing blood
