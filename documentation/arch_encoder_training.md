@@ -378,6 +378,26 @@ rule is tunable, versioned and documented.
   towards the null class" — is written and unit-tested against synthetic
   fixtures, because with one signal it gets no coverage from real data and
   conflating the two after multi-head training starts is expensive.
+
+  `planned_updates/multi_symptom_training_expansion.md` is the plan for lifting
+  this, and `arch_training.md` 12.8 is the summary. Two things it establishes
+  that are easy to get wrong from here. **Six single-signal runs need no code
+  change** — `--signal` is already a flag on every subcommand and has only ever
+  been passed one value — so the reason nothing but fever has been trained is
+  that nobody ran it, not that anything blocks it. And **joint training on
+  merged single-signal datasets is nearer than it looks**: `LinearHeads` is
+  already per-signal, `masked_cross_entropy` already normalises over labelled
+  positions across all heads together, and fold assignment is a signal-blind
+  hash so cluster disjointness survives concatenation. What is genuinely missing
+  is a merge step, per-head margin selection (`select_margin` returns one scalar
+  and `run_finetune` filters to one signal via `_labelled`), and a report shape
+  that can hold six signals or pair a joint run against a single-signal one.
+
+  Whatever is built there must control for gradient steps. Merging six 10k
+  datasets gives the encoder six times the updates, so a fever movement would
+  confound cross-symptom exposure with step count. The control is a fever-only
+  run at the merged example count — same clusters, same steps, more of them —
+  and it is the arm that makes the comparison mean anything.
 * **No hyperparameter search.** The recipe was fixed before any run. Four
   quantities may be chosen against validation and they are enumerated in code.
 * **No realistic held-out evaluation set.** This is the next ticket, and it is

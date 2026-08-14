@@ -284,6 +284,36 @@ loop on this, so a library that contributes to it is worth re-reading by hand
 rather than re-tagging by eye. Growing a library means new *ideas*, not new
 twins.
 
+**The "written as independent ideas" claim is load-bearing and has not been
+tested.** It is what licenses reading the `urinary_frequency`, `nocturia`,
+`flank_pain` and `haematuria` numbers at face value, and the near-duplicate
+report (fold 0, ratio ≥ 0.6, which its own docstring calls a lower bound) gives
+some evidence against it:
+
+| signal | cross-split near-dup pairs | lines | rate |
+|---|---|---|---|
+| `flank_pain` | 17 | 243 | 7.0% |
+| `nocturia` | 8 | 351 | 2.3% |
+| `fever` | 8 | 463 | 1.7% |
+| `dysuria` | 6 | 256 | 2.3% |
+| `urinary_frequency` | 6 | 302 | 2.0% |
+| `haematuria` | 5 | 225 | 2.2% |
+
+`fever` and `dysuria` are *residuals* — their hand-tagged twins are forced into
+the same split and cannot appear here at all — while the four untagged signals
+are raw, so the comparison flatters the untagged ones. `flank_pain` at 7% most
+deserves a re-read. By inspection some untagged libraries do carry families that
+read as one idea: `haematuria_true` describes urine colour by comparison to a
+drink five times (rosé, ribena, cranberry, plum, red wine).
+
+Until that is fixed, **the four untagged signals will post better numbers than
+fever partly for reasons that have nothing to do with the symptom, and `dysuria`
+will post worse ones because it is the only library set honestly clustered
+throughout.** Tagging them is a ticket
+(`planned_updates/multi_symptom_training_expansion.md`, "what comes next"),
+prioritised by this table. It changes no code and invalidates no design; it only
+means those four signals' absolute numbers are upper bounds until it lands.
+
 ---
 
 ## 4. The manifest
@@ -1504,3 +1534,53 @@ scored.** Every step here buys more or better generated data, and no number
 produced so far says whether generated data is where the limit is. Ticket A in
 `planned_updates/encoder_next_steps.md` is what makes this list either an
 investment or an expensive way to improve a score that does not transfer.
+
+### 12.8 The multi-symptom expansion, and what it is waiting on
+
+`planned_updates/multi_symptom_training_expansion.md` is the plan of record for
+getting from one trained signal to six. It splits into three unblocked tasks and
+four that are not, and the split is worth knowing because it is not where it
+first appears.
+
+**Unblocked today, no dependency on 12.5:**
+
+1. **Folder restructure.** A condition layer under `data/synthetic/`:
+   condition-agnostic filler at the top, `conditions/uti/{symptoms,filler}/`
+   below it. Verified dataset-neutral — nothing in the generator keys off a
+   path, only off a library's manifest `name`.
+2. **Generalise the filler lint to every signal.** This is 12.5's *lint* half
+   and nothing else: no manifest schema change, no label vectors. It is
+   separable because it checks a guarantee we already rely on rather than
+   declaring a new one, and everything after it depends on filler being silent
+   about all six signals rather than only about fever.
+3. **Six single-signal runs.** No code change at all — `--signal` is already a
+   flag on every subcommand and has only ever been passed one value.
+
+**Blocked, in this order:** merge and joint multi-head training; realistic
+held-out evaluation; multi-symptom recombinations (12.2–12.5); cluster-tagging
+the four untagged library sets.
+
+**The one thing that surprises people about the merge.** Joint training on
+merged single-signal datasets needs *no* part of 12.5. `fold_bucket` is a pure
+hash of the cluster key and salt with no knowledge of signals, so cluster
+disjointness survives concatenation; and because each example still carries only
+its own signal's key, the other five heads see a *missing* key, which section 7
+already defines as "no claim, mask the loss" rather than as a `null` assertion.
+No silence is declared, so none needs checking.
+
+The exception is the structural nulls, and it is the reason task 2 above comes
+first. Because `run_seed` does not depend on the signal, six per-signal runs emit
+**byte-identical structural nulls, example-for-example** — the only text they
+share. Merging them means either keeping six copies of each, or keeping one and
+labelling it `null` for all six signals. The second is strictly better (same
+gradients, 25% fewer forward passes, and each head keeps exactly the 15/25/60
+mix it trained on alone), but labelling one filler-only example `null` six times
+*is* a silence assertion about the filler libraries — which today are checked
+against a fever lexicon and nothing else.
+
+**Structural nulls should shrink as 12.2 and 12.3 grow.** They are the least
+realistic example type in the dataset: patients rarely submit free text with no
+clinical content at all. A dysuria sentence labelled `fever_present: null` is a
+better structural null than any filler-only recombination, because it is a null
+*with clinical language in it* — which is the case section 9's real submissions
+are full of and the current filler mostly is not.
