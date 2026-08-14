@@ -108,6 +108,7 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Domain Doc:** `docs/arch_encoder_training.md`
 * **Key Files:** `scripts/encoder_training/*.py`, `requirements-ml.txt`, `.dockerignore`, `models/encoder/<signal>/<arm>/` (head artefacts and metadata sidecars; Arm B's ~440MB weights are git-ignored), `reports/encoder_training/`
 * **Note before swapping in a real encoder:** a single head cannot satisfy `EncoderOutput.validate_against`, which requires output keys to match the ruleset's `send_to_encoder` signals exactly — `data/uti1.json` declares seven. See 3.3 and `arch_encoder_training.md` section 9.
+* **Note on expanding past one signal:** libraries exist for six of the seven signals and nothing but `fever_present` has been trained. The plan of record is `planned_updates/multi_symptom_training_expansion.md`, summarised in `arch_training.md` 12.8. Six single-signal runs need no code change; joint multi-head training needs a merge step, per-head margin selection and a report shape that can hold several signals.
 
 ## 4. Other reference files
 
