@@ -76,16 +76,32 @@ from .metrics import (
 #: several encoders in one report. Additive again, and empty on a report holding
 #: fewer than two non-control models, which is every report written before the
 #: `compare-models` command existed.
-SCHEMA_VERSION = 3
+#:
+#: 4 added `cluster_tag_coverage`: per-library cluster-marker coverage, and the
+#: warning that goes with it. Additive, and empty on any report built without a
+#: `fragments` argument, which is every report written before six signals were
+#: trainable and the question "is this library's eff n real" started to have
+#: different answers for different signals.
+SCHEMA_VERSION = 4
 
-#: Sub-classes the hard `fever_null` libraries carry. Listed so that a sub-class
-#: the manifest declares but no test fold happened to draw shows up as an empty
-#: row rather than vanishing from the table -- and, more importantly, so that a
-#: sub-class added to the manifest and forgotten here cannot vanish from the one
-#: table the whole exercise exists for. `tests/test_encoder_training_baselines.py`
-#: asserts this tuple covers every sub-class the real manifest declares for this
-#: signal.
-NULL_SUBCLASSES = ("attribution", "hedged", "historical", "metaphor", "third_party")
+#: Sub-classes the hard `null` libraries carry, across every signal rather than
+#: fever alone. Listed so that a sub-class the manifest declares but no test fold
+#: happened to draw shows up as an empty row rather than vanishing from the table
+#: -- and, more importantly, so that a sub-class added to the manifest and
+#: forgotten here cannot vanish from the one table the whole exercise exists for.
+#: `tests/test_encoder_training_baselines.py` asserts this tuple covers every
+#: sub-class the real manifest declares for **every** signal with libraries: the
+#: check used to be fever-only, and `adjacent` -- which only
+#: `urinary_frequency_null_adjacent` carries -- was missing here for exactly as
+#: long as nothing but fever was ever trained.
+NULL_SUBCLASSES = (
+    "adjacent",
+    "attribution",
+    "hedged",
+    "historical",
+    "metaphor",
+    "third_party",
+)
 
 #: Rows of the per-fragment error table (DD7) the markdown prints inline. The
 #: JSON always holds every fragment; this only bounds what a reader scrolls
@@ -512,6 +528,94 @@ def model_movement(models: Sequence[Mapping[str, object]]) -> dict:
     return {"models": names, "by_library": by_library, "by_fragment": by_fragment}
 
 
+def _is_cluster_tagged(library: str, cluster_key: str) -> bool:
+    """Did this fragment's line carry a ``[cNN]`` marker?
+
+    The sidecar records the *key the splitter hashed*, not the marker, and the
+    generator's rule (``manifest.cluster_key``) is: a tagged line hashes
+    ``{library}:{tag}``, an untagged one hashes its own normalised text. So the
+    namespace prefix is the tag's fingerprint, and reading it back this way is
+    what lets the coverage table be built from the sidecar rather than by
+    re-opening the libraries -- which the report must never do, for the reason
+    :data:`FEVER_LIBRARY_CLUSTERS` gives: the libraries may have been edited
+    since the dataset was generated, and a table that silently re-read them
+    would describe a different library than the numbers above it came from.
+    """
+    return cluster_key.startswith(f"{library}:")
+
+
+def cluster_tag_coverage(fragments: Sequence, *, signal: str | None = None) -> dict:
+    """Per-library share of lines carrying a cluster marker, for this signal.
+
+    This exists because ``eff n`` -- the number that bounds every interval in
+    this report -- is computed over *clusters*, and a library with no cluster
+    markers contributes one cluster per line by default. That default is a
+    claim, not a measurement: it says every line in the library is an
+    independent idea. Where it is true the eff n is right; where it is not, the
+    library's eff n is an **upper bound** and every interval on a slice drawn
+    from it is narrower than the truth.
+
+    The claim is currently made for four of the six trainable signals. Only the
+    `fever_*` and `dysuria_*` confounder libraries were hand-tagged, so
+    `urinary_frequency`, `nocturia`, `flank_pain` and `haematuria` post their
+    numbers on the untested assumption -- and `dysuria`, the only signal
+    clustered throughout, posts *worse* numbers than it should for the same
+    reason, because tagging is the thing that stops one idea being counted
+    twice. A reader comparing signals without that in front of them is reading
+    a ranking that is substantially an artefact of which libraries were tagged.
+
+    Restricted to the run's own signal. Filler libraries carry no signal and are
+    never a decisive fragment, so they never appear in the ``by_library`` slice
+    this annotates; listing them here would put five permanently-0% rows above
+    a warning that is about something else.
+    """
+    tagged: dict[str, int] = {}
+    total: dict[str, int] = {}
+    for fragment in fragments:
+        if signal is not None and fragment.signal_key != signal:
+            continue
+        if fragment.is_filler:
+            continue
+        library = fragment.library
+        total[library] = total.get(library, 0) + 1
+        if _is_cluster_tagged(library, fragment.cluster_key):
+            tagged[library] = tagged.get(library, 0) + 1
+
+    libraries = [
+        {
+            "library": library,
+            "fragments": count,
+            "tagged": tagged.get(library, 0),
+            "coverage": tagged.get(library, 0) / count,
+        }
+        for library, count in sorted(total.items())
+    ]
+    libraries.sort(key=lambda row: (row["coverage"], row["library"]))
+    untagged = [row["library"] for row in libraries if not row["tagged"]]
+    return {
+        "signal": signal,
+        "libraries": libraries,
+        "untagged_libraries": untagged,
+        "fragments_in_untagged_libraries": sum(
+            row["fragments"] for row in libraries if not row["tagged"]
+        ),
+        "total_fragments": sum(row["fragments"] for row in libraries),
+    }
+
+
+def _coverage_summary(coverage: Mapping[str, object]) -> str:
+    """The coverage block as one line, for the header table."""
+    libraries = coverage.get("libraries") or []
+    if not libraries:
+        return "not recorded"
+    untagged = coverage.get("untagged_libraries") or []
+    return (
+        f"{len(libraries) - len(untagged)} of {len(libraries)} libraries carry cluster markers; "
+        f"{coverage['fragments_in_untagged_libraries']} of {coverage['total_fragments']} "
+        "fragments are in libraries with none"
+    )
+
+
 def _mcnemar_dict(left: ModelRun, right: ModelRun, slice_name: str, result: McNemarResult) -> dict:
     return {
         "a": left.name,
@@ -764,11 +868,20 @@ DATA_LIMITS = (
     "still carries exactly one supervised claim, just buried in more noise. The proof-of-concept "
     "run's median example is 36 tokens against a `max_seq_len` of 256, so sequence length is not "
     "the constraint and raising it would fix nothing.",
-    "**Only `fever_present` is covered.** Nothing here produces labels for dysuria, flank pain or "
-    "the other urinary signals, and `null` is deliberately not emitted for them: the filler "
-    "libraries are verified silent about *fever* and nothing else -- `uti_speculation` mentions "
-    'cystitis and kidney infection -- so claiming "no dysuria mentioned" would be inventing a '
-    "label.",
+    "**One signal per dataset, and six signals have libraries.** A generated example carries a "
+    "label for the run's signal and no other, so nothing here is multi-label. What changed is "
+    "that the filler libraries are now lint-verified silent about all six signals with libraries "
+    "-- fever, dysuria, urinary frequency, nocturia, flank pain, haematuria -- rather than about "
+    "fever alone. They are *not* silent about `recent_uti_present`, the seventh "
+    "`send_to_encoder` signal, which has no libraries and so no lexicon: `uti_speculation` "
+    "asserts it outright.",
+    "**The six signals' numbers are not comparable to each other at face value.** Only the "
+    "`fever_*` and `dysuria_*` confounder libraries are hand-tagged into clusters. The other four "
+    "signals' libraries treat every line as an independent idea, which flatters their `eff n` and "
+    "narrows their intervals; `dysuria`, tagged throughout, is penalised for it. The "
+    "cluster-tag coverage table at the top of this report is the per-run statement of how far "
+    "that applies here. It does not touch a fever-versus-fever comparison, which is scored on "
+    "identical, already-tagged fever clusters.",
 )
 
 #: The "Effective sample size" subsection of `arch_training.md` section 10,
@@ -819,13 +932,29 @@ def build_report(
     header: Mapping[str, object],
     boot: BootstrapConfig = BootstrapConfig(),
     checks: Mapping[str, object] | None = None,
+    fragments: Sequence | None = None,
 ) -> dict:
-    """Assemble the whole report as one JSON-serialisable dict."""
+    """Assemble the whole report as one JSON-serialisable dict.
+
+    ``fragments`` is the run's :class:`~.dataset.FragmentInfo` provenance, from
+    the sidecars the folds were loaded with. Optional so that a caller with only
+    predictions still gets a report; omitting it costs the cluster-tag coverage
+    block and the warning that goes with it, and nothing else.
+    """
     models = [_model_block(run, boot=boot) for run in runs]
+    coverage = cluster_tag_coverage(
+        fragments or (), signal=header.get("signal") if fragments else None
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "header": dict(header),
+        # The full coverage block lives at the top level with every other
+        # structured block; the header carries the one-line version of it,
+        # because `_render_header` renders each header value as a single table
+        # cell and a list of dicts there would be unreadable in exactly the
+        # place a reader looks first.
+        "header": {**header, "cluster_tag_coverage": _coverage_summary(coverage)},
+        "cluster_tag_coverage": coverage,
         "bootstrap": boot.to_dict(),
         "checks": dict(checks or {}),
         "models": models,
@@ -956,6 +1085,77 @@ def _render_how_to_read() -> list[str]:
         "than something to trade against F1.",
         "",
     ]
+
+
+def _render_cluster_tag_coverage(report: Mapping[str, object]) -> list[str]:
+    """The coverage table, and the warning it exists to carry.
+
+    Sits immediately above the headline because it is a statement about how wide
+    every interval in that table should have been, and a caveat printed after the
+    number it qualifies is a caveat nobody reads.
+
+    Omitted entirely when no library is behind the run -- a report built without
+    fragment provenance -- rather than printed empty, on the same principle as
+    :func:`_render_model_movement`: a heading with nothing under it invites a
+    reader to conclude the check ran and found nothing.
+    """
+    coverage = report.get("cluster_tag_coverage") or {}
+    libraries = coverage.get("libraries") or []
+    if not libraries:
+        return []
+
+    lines = ["## Cluster-tag coverage, and what it does to the intervals below", ""]
+    untagged = coverage.get("untagged_libraries") or []
+    if untagged:
+        total = len(libraries)
+        if len(untagged) == 1:
+            subject = "1 library"
+        elif len(untagged) == total:
+            subject = f"all {total} libraries"
+        else:
+            subject = f"{len(untagged)} of the {total} libraries"
+        verb = "carries" if len(untagged) == 1 else "carry"
+        them = "it" if len(untagged) == 1 else "them"
+        lines.append(
+            f"> **Warning: {subject} behind this run {verb} no cluster markers at "
+            f"all, so every line in {them} counts as an independent idea.** Where that is not "
+            "true -- where several lines are one idea written several ways -- the `eff n` of "
+            "every slice drawn from those libraries is an **upper bound**, and the confidence "
+            "intervals below are correspondingly **narrower than the truth**."
+        )
+        lines.append(">")
+        lines.append("> Untagged: " + ", ".join(f"`{name}`" for name in untagged) + ".")
+        lines.append("")
+
+    lines.append(
+        "Tagging cannot inflate a number -- `[c01]` siblings are forced into one cluster and one"
+    )
+    lines.append(
+        "split, so it only ever *reduces* `eff n`, correctly, by stopping the same idea being"
+    )
+    lines.append(
+        "counted twice. The asymmetry is what makes cross-signal comparison unsafe: a fully"
+    )
+    lines.append(
+        "tagged signal is penalised for being honest and an untagged one is flattered by default,"
+    )
+    lines.append("so a ranking across signals is partly an artefact of this column.")
+    lines.append("")
+    lines.extend(
+        _table(
+            ["library", "fragments", "tagged", "coverage"],
+            [
+                [
+                    f"`{row['library']}`",
+                    str(row["fragments"]),
+                    str(row["tagged"]),
+                    _pct(row["coverage"]),
+                ]
+                for row in libraries
+            ],
+        )
+    )
+    return lines
 
 
 def _render_headline(report: Mapping[str, object]) -> list[str]:
@@ -1617,6 +1817,7 @@ def render_markdown(
     lines: list[str] = []
     lines.extend(_render_header(report))
     lines.extend(_render_how_to_read())
+    lines.extend(_render_cluster_tag_coverage(report))
     lines.extend(_render_headline(report))
     lines.extend(_render_ticket_question(report))
     lines.extend(_render_expectations(report))

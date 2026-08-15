@@ -51,6 +51,7 @@ from scripts.encoder_training.dataset import (
     CLASS_NULL,
     CLASS_TRUE,
     DatasetError,
+    FragmentInfo,
     fold_dataset_path,
     load_fold,
     load_folds,
@@ -83,13 +84,14 @@ from scripts.encoder_training.report import (
     ModelRun,
     _error_concentration,
     build_report,
+    cluster_tag_coverage,
     compare_models,
     model_movement,
     render_markdown,
     write_report,
 )
 from scripts.encoder_training.train import ARM_B_NAME, TrainError, arm_run_name, display_model
-from scripts.synthetic_data.manifest import library_clusters, load_fragments
+from scripts.synthetic_data.manifest import cluster_key, library_clusters, load_fragments
 
 FIXTURES = Path(__file__).parent / "fixtures" / "encoder_training"
 TRAIN = FIXTURES / "mini.fold0.train.jsonl"
@@ -755,7 +757,8 @@ def test_markdown_reproduces_the_data_limits_in_full_rather_than_citing_them():
         "Length may still leak",
         "Urgency language leaks",
         "The examples are short",
-        "Only `fever_present` is covered",
+        "One signal per dataset",
+        "not comparable to each other at face value",
         "Effective sample size",
     ):
         assert phrase in markdown
@@ -809,11 +812,130 @@ def test_null_subclasses_cover_every_subclass_the_manifest_declares():
     `_view` filters the sub-class rows to `NULL_SUBCLASSES`, so a confounder
     library added to the manifest and forgotten here is not reported as zero or
     as an empty row -- it is not reported at all, and the report looks complete.
+
+    Every signal, not just fever. This check was fever-only for as long as fever
+    was the only signal ever trained, and `adjacent` -- which only
+    `urinary_frequency_null_adjacent` carries -- was missing from
+    `NULL_SUBCLASSES` for exactly that long. The first
+    `--signal urinary_frequency_present` run would have written a sub-class
+    table silently missing a whole confounder family.
     """
     declared = {
-        fragment.subclass for fragment in _fever_fragments() if fragment.subclass is not None
+        fragment.subclass
+        for fragment in load_fragments(Path("data/synthetic/manifest.json"), check_cells=False)
+        if fragment.subclass is not None
     }
     assert declared <= set(NULL_SUBCLASSES)
+
+
+# --------------------------------------------------------------------------
+# Cluster-tag coverage
+# --------------------------------------------------------------------------
+
+
+def _coverage_fragment(library, cluster_key, *, signal=SIGNAL, fragment_type="confounder"):
+    return FragmentInfo(
+        fragment_id=f"{library}:{abs(hash(cluster_key)) % 10**8:08x}",
+        library=library,
+        cluster_key=cluster_key,
+        fragment_type=fragment_type,
+        split="train",
+        signal_key=signal,
+    )
+
+
+def test_cluster_tag_coverage_reads_the_tag_off_the_namespaced_cluster_key():
+    """A tagged line hashes `{library}:{tag}`; an untagged one hashes its text.
+
+    That prefix is the only record of the marker that survives into the sidecar,
+    and reading it back is what lets coverage be computed without re-opening the
+    libraries -- which may have been edited since generation.
+    """
+    coverage = cluster_tag_coverage(
+        [
+            _coverage_fragment("fever_null_hedged", "fever_null_hedged:c01"),
+            _coverage_fragment("fever_null_hedged", "fever_null_hedged:c01"),
+            _coverage_fragment("fever_null_hedged", "i might have a temperature"),
+            _coverage_fragment("fever_true", "burning up since tuesday"),
+        ]
+    )
+    by_library = {row["library"]: row for row in coverage["libraries"]}
+    assert by_library["fever_null_hedged"]["tagged"] == 2
+    assert by_library["fever_null_hedged"]["fragments"] == 3
+    assert by_library["fever_true"]["coverage"] == 0.0
+    assert coverage["untagged_libraries"] == ["fever_true"]
+    assert coverage["fragments_in_untagged_libraries"] == 1
+    assert coverage["total_fragments"] == 4
+
+
+def test_cluster_tag_coverage_drops_filler_and_other_signals():
+    """Filler is never a decisive fragment, so it never reaches `by_library`.
+
+    Listing it would put permanently-0% rows above a warning that is about
+    something else entirely, and another signal's libraries are not behind this
+    run's numbers at all even though its sidecar records them.
+    """
+    coverage = cluster_tag_coverage(
+        [
+            _coverage_fragment("fever_true", "burning up"),
+            _coverage_fragment(
+                "tangents", "the car broke down", signal=None, fragment_type="filler"
+            ),
+            _coverage_fragment("dysuria_true", "stings to wee", signal="dysuria_present"),
+        ],
+        signal=SIGNAL,
+    )
+    assert [row["library"] for row in coverage["libraries"]] == ["fever_true"]
+
+
+def test_report_warns_above_the_headline_when_a_library_is_untagged():
+    """The caveat has to precede the number it qualifies, or nobody reads it."""
+    report = build_report(
+        [_run_with_predictions("m", [_prediction("e1", 2, 2, "u1")])],
+        header={"signal": SIGNAL},
+        boot=BootstrapConfig(resamples=10),
+        fragments=[_coverage_fragment("fever_true", "burning up")],
+    )
+    assert report["cluster_tag_coverage"]["untagged_libraries"] == ["fever_true"]
+    assert "libraries carry cluster markers" in report["header"]["cluster_tag_coverage"]
+
+    markdown = render_markdown(report)
+    assert markdown.index("Cluster-tag coverage") < markdown.index("## Headline")
+    assert "upper bound" in markdown
+    assert "`fever_true`" in markdown
+
+
+def test_report_omits_the_coverage_section_when_no_fragments_are_given():
+    """An empty section headed with a check invites "it ran and found nothing"."""
+    report = build_report(
+        [_run_with_predictions("m", [_prediction("e1", 2, 2, "u1")])],
+        header={"signal": SIGNAL},
+        boot=BootstrapConfig(resamples=10),
+    )
+    assert report["cluster_tag_coverage"]["libraries"] == []
+    assert "Cluster-tag coverage" not in render_markdown(report)
+
+
+def test_cluster_tag_coverage_matches_the_hand_written_fever_table():
+    """The computed fragment counts must agree with `FEVER_LIBRARY_CLUSTERS`.
+
+    Two independent statements about the same libraries -- one hard-coded, one
+    derived from the sidecar's cluster keys -- and a report that printed both
+    while they disagreed would be worse than one that printed neither.
+    """
+    coverage = cluster_tag_coverage(
+        [
+            _coverage_fragment(
+                fragment.library,
+                cluster_key(fragment.cluster_id, fragment.text),
+                fragment_type=fragment.fragment_type,
+            )
+            for fragment in _fever_fragments()
+        ],
+        signal=SIGNAL,
+    )
+    counted = {row["library"]: row["fragments"] for row in coverage["libraries"]}
+    assert counted == {library: fragments for library, fragments, _ in FEVER_LIBRARY_CLUSTERS}
 
 
 # --------------------------------------------------------------------------

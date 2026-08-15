@@ -1022,17 +1022,50 @@ rather than one idea. `dysuria_null_metaphor` had the identical fault and was
 fixed the same way, by replacing clusters rather than adding fragments.
 
 **Fragment count and cluster count come apart, and cluster count is what
-matters.** The four twin-tagged `dysuria_null` libraries have roughly half their
-fragment count in clusters (19–28 apiece). Every fever library except `true` and
-`false` is partly tagged. The urinary_frequency, nocturia, flank_pain and
-haematuria libraries carry no markers at all, so their effective n equals their
-fragment count — 40 to 55 apiece.
+matters.** Measured coverage, per signal, over the whole library:
 
-**Nothing has been trained on anything but `fever_present`.** The training
-tooling (`arch_encoder_training.md`) is single-signal and wired to
-`fever_present`, so the other five signals' libraries are input that nothing yet
-consumes. A `haematuria_present` run does now start, and its three null
-libraries are what made it possible: `_check_pools` requires a non-empty
+| signal | libraries | tagged lines / total | untagged libraries |
+|---|---|---|---|
+| `dysuria` | 6 | 148 / 256 (58%) | `true`, `false` |
+| `fever` | 7 | 89 / 463 (19%) | `true`, `false` |
+| `urinary_frequency` | 7 | 0 / 302 | all 7 |
+| `nocturia` | 7 | 0 / 351 | all 7 |
+| `flank_pain` | 5 | 0 / 243 | all 5 |
+| `haematuria` | 5 | 0 / 225 | all 5 |
+
+The four `dysuria_null` libraries are tagged throughout (three at 100%,
+`metaphor` at 60%); every fever library except `true` and `false` is partly
+tagged, 27–48%. The other four signals carry no markers at all, so their
+effective n equals their fragment count by default.
+
+**That default is a claim, not a measurement, and it is asymmetric.** Tagging
+only ever *reduces* effective n — correctly, by stopping one idea being counted
+twice — so an untagged library's eff n is an **upper bound** and every interval
+computed on it is narrower than the truth. A signal tagged throughout is
+therefore penalised for being honest, and one with no markers is flattered by
+default. See section 12.8 for why this makes a cross-signal ranking unsafe to
+read at face value and why it does not touch a fever-versus-fever comparison.
+The evaluation report computes this table per run and prints the warning above
+its own headline (`arch_encoder_training.md` section 8).
+
+**All six signals now generate a full five-fold dataset at fever's recipe.**
+10,000/2,000/2,000, `15/25/60`, `--null-ambiguous-ratio 0.5`, base seed 42, salt
+0 — 15 files each, no `PoolExhaustedError` anywhere, including the two the
+expansion plan expected to be awkward. Dysuria and haematuria both reach 10,000
+comfortably; haematuria's three null sub-classes are enough to keep the
+ambiguous pool populated at that size. Duplicate rejections run higher on the
+thinner libraries (roughly 160–200 per 10,000 train examples against fever's
+~100), which is the pool doing its job rather than a problem.
+
+**Nothing has been *trained* on anything but `fever_present`.** Generation is
+seconds of CPU; the six Arm B fine-tunes are about an hour of GPU that has not
+been spent yet. Until it is, the per-symptom baselines the joint-training
+comparison needs do not exist, and no claim about how any signal other than
+fever scores is supported by anything. The tooling needs no change to produce
+them — `--signal` is already a flag on every command.
+
+The `haematuria_present` run starts at all only because of its three null
+libraries: `_check_pools` requires a non-empty
 ambiguous/confounder pool, so with only `true` and `false` it exited whatever
 `--null-ambiguous-ratio` was set to. That guard was right — every `null` example
 would otherwise have been a structural one, and those all share a single
