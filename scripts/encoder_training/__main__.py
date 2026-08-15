@@ -269,6 +269,26 @@ def _checks(folds) -> dict:
     }
 
 
+def _fragment_provenance(folds) -> list:
+    """Every fragment behind the run, once, from the sidecars the folds carry.
+
+    Deduplicated by fragment id because the same library is read by all three
+    splits of all five folds, and a coverage figure that counted a fragment
+    fifteen times would still be *right* -- the ratio is unchanged -- while its
+    fragment counts would be nonsense next to the cluster table beside them.
+
+    Read from the folds rather than from the manifest on purpose. The libraries
+    may have been edited since these datasets were generated, and the coverage
+    reported has to describe the libraries the numbers above it came from.
+    """
+    seen: dict[str, object] = {}
+    for fold in folds:
+        for split in (fold.train, fold.val, fold.test):
+            for fragment_id, info in split.fragments.items():
+                seen.setdefault(fragment_id, info)
+    return list(seen.values())
+
+
 def _emit_report(
     runs: Sequence,
     args: argparse.Namespace,
@@ -280,7 +300,11 @@ def _emit_report(
     """Build and write the evaluation report every command ends with."""
     boot = BootstrapConfig(resamples=args.resamples, seed=args.bootstrap_seed, alpha=args.alpha)
     report = build_report(
-        list(runs), header=_header(args, folds, extra), boot=boot, checks=_checks(folds)
+        list(runs),
+        header=_header(args, folds, extra),
+        boot=boot,
+        checks=_checks(folds),
+        fragments=_fragment_provenance(folds),
     )
     json_path, markdown_path = write_report(
         report,

@@ -331,8 +331,17 @@ The report is written to be read standalone, by someone who has not read these
 documents. That is why it reproduces `arch_training.md` sections 9 and 10 in
 full rather than citing them — the one place duplication is deliberate.
 
-Four sections carry the weight:
+Five sections carry the weight:
 
+* **Cluster-tag coverage** — printed above the headline, because it says how
+  wide every interval below it should have been. A library with no `[cNN]`
+  markers contributes one cluster per line by default, which is a claim that
+  every line in it is an independent idea. Where that is false the library's
+  `eff n` is an **upper bound** and its intervals are narrower than the truth.
+  The warning fires whenever any library behind the run has zero coverage,
+  which today is every run: `fever_true` and `fever_false` are untagged too.
+  `arch_training.md` section 10 has the measured per-signal table and the
+  reason this makes cross-signal rankings unsafe.
 * **The ticket's question** — accuracy on `null_ambiguous`, the paired McNemar
   on the same slice, and where the errors fall. The report lays these out and
   explicitly declines to conclude: a renderer that concluded would be concluding
@@ -382,9 +391,13 @@ rule is tunable, versioned and documented.
   `planned_updates/multi_symptom_training_expansion.md` is the plan for lifting
   this, and `arch_training.md` 12.8 is the summary. Two things it establishes
   that are easy to get wrong from here. **Six single-signal runs need no code
-  change** — `--signal` is already a flag on every subcommand and has only ever
-  been passed one value — so the reason nothing but fever has been trained is
-  that nobody ran it, not that anything blocks it. And **joint training on
+  change** — `--signal` is already a flag on every subcommand — so the reason
+  nothing but fever has been trained is that nobody has spent the GPU hour, not
+  that anything blocks it. All six five-fold datasets now generate cleanly at
+  fever's recipe (`arch_training.md` section 10); the six Arm B fine-tunes that
+  turn them into per-symptom baselines have **not** been run, so no number
+  exists for any signal but fever and `reports/encoder_training/` holds
+  `fever_present.*` only. And **joint training on
   merged single-signal datasets is nearer than it looks**: `LinearHeads` is
   already per-signal, `masked_cross_entropy` already normalises over labelled
   positions across all heads together, and fold assignment is a signal-blind
