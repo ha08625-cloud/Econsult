@@ -79,26 +79,48 @@ there is no point in the process where the text could influence the label.
 single clause or sentence a patient might write.
 
 The folder is laid out by what a library says rather than by filename
-convention:
+convention, and by which condition it belongs to:
 
 ```
 data/synthetic/
   manifest.json
-  symptoms/fever/             seven libraries, all about fever_present
-  symptoms/dysuria/           six libraries, all about dysuria_present
-  symptoms/urinary_frequency/ seven libraries, all about urinary_frequency_present
-  symptoms/nocturia/          seven libraries, all about nocturia_present
-  symptoms/flank_pain/        five libraries, all about flank_pain_present
-  symptoms/haematuria/        five libraries, all about haematuria_present
-  filler/                     five libraries, verified silent on fever only (section 9)
-  drafts/                     scratch files, deliberately not libraries (section 4)
-  generated/                  output, git-ignored
+  filler/                       condition-agnostic, reusable by any condition
+                                four libraries, verified silent on fever only (section 9)
+  conditions/uti/
+    symptoms/fever/             seven libraries, all about fever_present
+    symptoms/dysuria/           six libraries, all about dysuria_present
+    symptoms/urinary_frequency/ seven libraries, all about urinary_frequency_present
+    symptoms/nocturia/          seven libraries, all about nocturia_present
+    symptoms/flank_pain/        five libraries, all about flank_pain_present
+    symptoms/haematuria/        five libraries, all about haematuria_present
+    filler/                     one library, UTI-specific filler
+  drafts/                       scratch files, deliberately not libraries (section 4)
+  generated/                    output, git-ignored
 ```
 
 Nothing in the code keys off the directory — the manifest gives every library's
 path explicitly, so the layout is for humans. It matters as more signals arrive:
 "which files carry a dysuria label" should be answerable by looking, not by
-reading forty manifest entries.
+reading forty manifest entries. The condition layer answers the same question
+one level up: a second ruleset gets `conditions/<name>/` and inherits the
+top-level filler unchanged, rather than having its symptom libraries land in the
+same flat pile as UTI's.
+
+The split between the two filler folders is about language, not about which
+condition happens to use a library. `tangents`, `justifiers` and `emotional`
+contain no condition-specific vocabulary at all (checked: zero lexicon hits
+across their 270 lines), so they sit at the top level. `uti_speculation` is
+UTI-specific in 36 of its 40 lines and sits under the condition.
+
+`expectations.txt` is the awkward one. Twenty-six of its 100 lines are
+UTI-specific (urine culture, cystoscopy, trimethoprim, PSA), so by the same
+rule it ought to be split in two. It is not, and it stays whole in the shared
+filler for now, because splitting it is **not** dataset-neutral: `_draw_filler`
+picks a filler library uniformly and then a fragment within it, so going from
+five filler libraries to six changes every generated example and makes every
+number on file incomparable. The split belongs with the next change that bumps
+`GENERATOR_VERSION` and regenerates everything anyway. Until then, treat the
+shared filler as "condition-agnostic apart from a quarter of `expectations`".
 
 Note the filler annotation carefully. The filler libraries are verified silent
 about **fever** and nothing else — that check is the lint's, and its lexicon is
@@ -109,48 +131,48 @@ claim can be made per-signal.
 
 | Library | Fragments | What it contains |
 |---|---|---|
-| `symptoms/fever/fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
-| `symptoms/fever/fever_false.txt` | 98 | Says the patient does not ("no temperature, I checked") |
-| `symptoms/fever/fever_null_hedged.txt` | 73 | Genuinely uncertain ("I feel a bit off, hard to say") |
-| `symptoms/fever/fever_null_metaphor.txt` | 55 | Fever words used non-clinically ("burning up with embarrassment") |
-| `symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
-| `symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
-| `symptoms/fever/fever_null_attribution.txt` | 50 | Hot now, confidently blamed on something that is not a fever ("I get hot flushes with the menopause") |
-| `symptoms/dysuria/dysuria_true.txt` | 45 | Says it hurts to pass urine ("it burns when I pee") |
-| `symptoms/dysuria/dysuria_false.txt` | 47 | Says it does not ("weeing itself is fine, no stinging") |
-| `symptoms/dysuria/dysuria_null_hedged.txt` | 40 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
-| `symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past |
-| `symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burn/sting words that are not about passing urine ("my eyes have been stinging with all the pollen") |
-| `symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
-| `symptoms/urinary_frequency/urinary_frequency_true.txt` | 46 | Says they are passing urine more often than usual ("I'm going every twenty minutes or so") |
-| `symptoms/urinary_frequency/urinary_frequency_false.txt` | 46 | Says they are not ("I go about five times a day and that's exactly what I've always done") |
-| `symptoms/urinary_frequency/urinary_frequency_null_hedged.txt` | 42 | Genuinely uncertain ("I might be going more often but I've never counted") |
-| `symptoms/urinary_frequency/urinary_frequency_null_historical.txt` | 40 | More often, but in the past |
-| `symptoms/urinary_frequency/urinary_frequency_null_metaphor.txt` | 44 | Frequency/flow/urinary words used non-clinically ("a wee bit of a worry", "sales have slowed to a trickle") |
-| `symptoms/urinary_frequency/urinary_frequency_null_thirdparty.txt` | 44 | *Someone else* is going more often |
-| `symptoms/urinary_frequency/urinary_frequency_null_adjacent.txt` | 40 | A different urinary complaint, silent on how often ("the stream is much weaker than it used to be") |
-| `symptoms/nocturia/nocturia_true.txt` | 54 | Says they wake in the night to pass urine |
-| `symptoms/nocturia/nocturia_false.txt` | 54 | Says they do not ("I sleep right through") |
-| `symptoms/nocturia/nocturia_null_hedged.txt` | 47 | Genuinely uncertain |
-| `symptoms/nocturia/nocturia_null_metaphor.txt` | 52 | Night, sleep, toilet and "wee" words used non-urinary ("up all night worrying") |
-| `symptoms/nocturia/nocturia_null_thirdparty.txt` | 47 | *Someone else* is up at night |
-| `symptoms/nocturia/nocturia_null_historical.txt` | 46 | Night voiding, but in the past |
-| `symptoms/nocturia/nocturia_null_attribution.txt` | 51 | Woken by something that is not a need to void, and voids incidentally |
-| `symptoms/flank_pain/flank_pain_true.txt` | 48 | Says there is pain in the side/back below the ribs |
-| `symptoms/flank_pain/flank_pain_false.txt` | 55 | Says there is not |
-| `symptoms/flank_pain/flank_pain_null_hedged.txt` | 53 | Genuinely uncertain |
-| `symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 47 | *Someone else* has flank pain |
-| `symptoms/flank_pain/flank_pain_null_historical.txt` | 40 | Flank pain, but in the past |
-| `symptoms/haematuria/haematuria_true.txt` | 45 | Says there is visible blood in the urine |
-| `symptoms/haematuria/haematuria_false.txt` | 45 | Says there is not |
-| `symptoms/haematuria/haematuria_null_hedged.txt` | 45 | Genuinely uncertain ("looked a bit pink but I ate beetroot yesterday") |
-| `symptoms/haematuria/haematuria_null_thirdparty.txt` | 45 | *Someone else* is passing blood |
-| `symptoms/haematuria/haematuria_null_historical.txt` | 45 | Blood in the urine, but in the past |
+| `conditions/uti/symptoms/fever/fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
+| `conditions/uti/symptoms/fever/fever_false.txt` | 98 | Says the patient does not ("no temperature, I checked") |
+| `conditions/uti/symptoms/fever/fever_null_hedged.txt` | 73 | Genuinely uncertain ("I feel a bit off, hard to say") |
+| `conditions/uti/symptoms/fever/fever_null_metaphor.txt` | 55 | Fever words used non-clinically ("burning up with embarrassment") |
+| `conditions/uti/symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
+| `conditions/uti/symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
+| `conditions/uti/symptoms/fever/fever_null_attribution.txt` | 50 | Hot now, confidently blamed on something that is not a fever ("I get hot flushes with the menopause") |
+| `conditions/uti/symptoms/dysuria/dysuria_true.txt` | 45 | Says it hurts to pass urine ("it burns when I pee") |
+| `conditions/uti/symptoms/dysuria/dysuria_false.txt` | 47 | Says it does not ("weeing itself is fine, no stinging") |
+| `conditions/uti/symptoms/dysuria/dysuria_null_hedged.txt` | 40 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
+| `conditions/uti/symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past |
+| `conditions/uti/symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burn/sting words that are not about passing urine ("my eyes have been stinging with all the pollen") |
+| `conditions/uti/symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
+| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_true.txt` | 46 | Says they are passing urine more often than usual ("I'm going every twenty minutes or so") |
+| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_false.txt` | 46 | Says they are not ("I go about five times a day and that's exactly what I've always done") |
+| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_hedged.txt` | 42 | Genuinely uncertain ("I might be going more often but I've never counted") |
+| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_historical.txt` | 40 | More often, but in the past |
+| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_metaphor.txt` | 44 | Frequency/flow/urinary words used non-clinically ("a wee bit of a worry", "sales have slowed to a trickle") |
+| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_thirdparty.txt` | 44 | *Someone else* is going more often |
+| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_adjacent.txt` | 40 | A different urinary complaint, silent on how often ("the stream is much weaker than it used to be") |
+| `conditions/uti/symptoms/nocturia/nocturia_true.txt` | 54 | Says they wake in the night to pass urine |
+| `conditions/uti/symptoms/nocturia/nocturia_false.txt` | 54 | Says they do not ("I sleep right through") |
+| `conditions/uti/symptoms/nocturia/nocturia_null_hedged.txt` | 47 | Genuinely uncertain |
+| `conditions/uti/symptoms/nocturia/nocturia_null_metaphor.txt` | 52 | Night, sleep, toilet and "wee" words used non-urinary ("up all night worrying") |
+| `conditions/uti/symptoms/nocturia/nocturia_null_thirdparty.txt` | 47 | *Someone else* is up at night |
+| `conditions/uti/symptoms/nocturia/nocturia_null_historical.txt` | 46 | Night voiding, but in the past |
+| `conditions/uti/symptoms/nocturia/nocturia_null_attribution.txt` | 51 | Woken by something that is not a need to void, and voids incidentally |
+| `conditions/uti/symptoms/flank_pain/flank_pain_true.txt` | 48 | Says there is pain in the side/back below the ribs |
+| `conditions/uti/symptoms/flank_pain/flank_pain_false.txt` | 55 | Says there is not |
+| `conditions/uti/symptoms/flank_pain/flank_pain_null_hedged.txt` | 53 | Genuinely uncertain |
+| `conditions/uti/symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 47 | *Someone else* has flank pain |
+| `conditions/uti/symptoms/flank_pain/flank_pain_null_historical.txt` | 40 | Flank pain, but in the past |
+| `conditions/uti/symptoms/haematuria/haematuria_true.txt` | 45 | Says there is visible blood in the urine |
+| `conditions/uti/symptoms/haematuria/haematuria_false.txt` | 45 | Says there is not |
+| `conditions/uti/symptoms/haematuria/haematuria_null_hedged.txt` | 45 | Genuinely uncertain ("looked a bit pink but I ate beetroot yesterday") |
+| `conditions/uti/symptoms/haematuria/haematuria_null_thirdparty.txt` | 45 | *Someone else* is passing blood |
+| `conditions/uti/symptoms/haematuria/haematuria_null_historical.txt` | 45 | Blood in the urine, but in the past |
 | `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
 | `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
 | `filler/emotional.txt` | 60 | Filler: worry and feelings |
 | `filler/expectations.txt` | 100 | Filler: what they want to happen — both *what* (tests, drugs, referrals) and *who, how and when* (a named regular GP, phone vs face to face, timing) |
-| `filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
+| `conditions/uti/filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
 
 Every symptom is sized now; none is still a seed batch. All the decisive and
 confounder libraries sit at or above the 40–50 band.
@@ -1544,10 +1566,14 @@ first appears.
 
 **Unblocked today, no dependency on 12.5:**
 
-1. **Folder restructure.** A condition layer under `data/synthetic/`:
+1. **Folder restructure — landed.** A condition layer under `data/synthetic/`:
    condition-agnostic filler at the top, `conditions/uti/{symptoms,filler}/`
-   below it. Verified dataset-neutral — nothing in the generator keys off a
-   path, only off a library's manifest `name`.
+   below it. See the section 3 tree. It was dataset-neutral in fact, not only in
+   principle: `fever_present` and `haematuria_present` train splits regenerated
+   at the same flags after the move came out byte-identical, sidecars included.
+   Nothing in the generator keys off a path, only off a library's manifest
+   `name`. The one thing it did *not* do is split `expectations.txt` — see
+   section 3 for why that waits for a `GENERATOR_VERSION` bump.
 2. **Generalise the filler lint to every signal.** This is 12.5's *lint* half
    and nothing else: no manifest schema change, no label vectors. It is
    separable because it checks a guarantee we already rely on rather than

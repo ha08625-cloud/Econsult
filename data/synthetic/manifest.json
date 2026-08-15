@@ -3,247 +3,247 @@
   "libraries": [
     {
       "name": "fever_true",
-      "file": "symptoms/fever/fever_true.txt",
+      "file": "conditions/uti/symptoms/fever/fever_true.txt",
       "signal_key": "fever_present",
       "fragment_type": "positive"
     },
     {
       "name": "fever_false",
-      "file": "symptoms/fever/fever_false.txt",
+      "file": "conditions/uti/symptoms/fever/fever_false.txt",
       "signal_key": "fever_present",
       "fragment_type": "negative"
     },
     {
       "name": "fever_null_hedged",
-      "file": "symptoms/fever/fever_null_hedged.txt",
+      "file": "conditions/uti/symptoms/fever/fever_null_hedged.txt",
       "signal_key": "fever_present",
       "fragment_type": "ambiguous",
       "subclass": "hedged"
     },
     {
       "name": "fever_null_metaphor",
-      "file": "symptoms/fever/fever_null_metaphor.txt",
+      "file": "conditions/uti/symptoms/fever/fever_null_metaphor.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
       "subclass": "metaphor"
     },
     {
       "name": "fever_null_thirdparty",
-      "file": "symptoms/fever/fever_null_thirdparty.txt",
+      "file": "conditions/uti/symptoms/fever/fever_null_thirdparty.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
       "subclass": "third_party"
     },
     {
       "name": "fever_null_historical",
-      "file": "symptoms/fever/fever_null_historical.txt",
+      "file": "conditions/uti/symptoms/fever/fever_null_historical.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
       "subclass": "historical"
     },
     {
       "name": "fever_null_attribution",
-      "file": "symptoms/fever/fever_null_attribution.txt",
+      "file": "conditions/uti/symptoms/fever/fever_null_attribution.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
       "subclass": "attribution"
     },
     {
       "name": "dysuria_true",
-      "file": "symptoms/dysuria/dysuria_true.txt",
+      "file": "conditions/uti/symptoms/dysuria/dysuria_true.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "positive"
     },
     {
       "name": "dysuria_false",
-      "file": "symptoms/dysuria/dysuria_false.txt",
+      "file": "conditions/uti/symptoms/dysuria/dysuria_false.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "negative"
     },
     {
       "name": "dysuria_null_hedged",
-      "file": "symptoms/dysuria/dysuria_null_hedged.txt",
+      "file": "conditions/uti/symptoms/dysuria/dysuria_null_hedged.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "ambiguous",
       "subclass": "hedged"
     },
     {
       "name": "dysuria_null_thirdparty",
-      "file": "symptoms/dysuria/dysuria_null_thirdparty.txt",
+      "file": "conditions/uti/symptoms/dysuria/dysuria_null_thirdparty.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "confounder",
       "subclass": "third_party"
     },
     {
       "name": "dysuria_null_metaphor",
-      "file": "symptoms/dysuria/dysuria_null_metaphor.txt",
+      "file": "conditions/uti/symptoms/dysuria/dysuria_null_metaphor.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "confounder",
       "subclass": "metaphor"
     },
     {
       "name": "dysuria_null_historical",
-      "file": "symptoms/dysuria/dysuria_null_historical.txt",
+      "file": "conditions/uti/symptoms/dysuria/dysuria_null_historical.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "confounder",
       "subclass": "historical"
     },
     {
       "name": "urinary_frequency_true",
-      "file": "symptoms/urinary_frequency/urinary_frequency_true.txt",
+      "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_true.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "positive"
     },
     {
       "name": "urinary_frequency_false",
-      "file": "symptoms/urinary_frequency/urinary_frequency_false.txt",
+      "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_false.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "negative"
     },
     {
       "name": "urinary_frequency_null_hedged",
-      "file": "symptoms/urinary_frequency/urinary_frequency_null_hedged.txt",
+      "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_hedged.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "ambiguous",
       "subclass": "hedged"
     },
     {
       "name": "urinary_frequency_null_thirdparty",
-      "file": "symptoms/urinary_frequency/urinary_frequency_null_thirdparty.txt",
+      "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_thirdparty.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "confounder",
       "subclass": "third_party"
     },
     {
       "name": "urinary_frequency_null_historical",
-      "file": "symptoms/urinary_frequency/urinary_frequency_null_historical.txt",
+      "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_historical.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "confounder",
       "subclass": "historical"
     },
     {
       "name": "urinary_frequency_null_metaphor",
-      "file": "symptoms/urinary_frequency/urinary_frequency_null_metaphor.txt",
+      "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_metaphor.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "confounder",
       "subclass": "metaphor"
     },
     {
       "name": "urinary_frequency_null_adjacent",
-      "file": "symptoms/urinary_frequency/urinary_frequency_null_adjacent.txt",
+      "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_adjacent.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "confounder",
       "subclass": "adjacent"
     },
     {
       "name": "nocturia_true",
-      "file": "symptoms/nocturia/nocturia_true.txt",
+      "file": "conditions/uti/symptoms/nocturia/nocturia_true.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "positive"
     },
     {
       "name": "nocturia_false",
-      "file": "symptoms/nocturia/nocturia_false.txt",
+      "file": "conditions/uti/symptoms/nocturia/nocturia_false.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "negative"
     },
     {
       "name": "nocturia_null_hedged",
-      "file": "symptoms/nocturia/nocturia_null_hedged.txt",
+      "file": "conditions/uti/symptoms/nocturia/nocturia_null_hedged.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "ambiguous",
       "subclass": "hedged"
     },
     {
       "name": "nocturia_null_thirdparty",
-      "file": "symptoms/nocturia/nocturia_null_thirdparty.txt",
+      "file": "conditions/uti/symptoms/nocturia/nocturia_null_thirdparty.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "confounder",
       "subclass": "third_party"
     },
     {
       "name": "nocturia_null_historical",
-      "file": "symptoms/nocturia/nocturia_null_historical.txt",
+      "file": "conditions/uti/symptoms/nocturia/nocturia_null_historical.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "confounder",
       "subclass": "historical"
     },
     {
       "name": "nocturia_null_metaphor",
-      "file": "symptoms/nocturia/nocturia_null_metaphor.txt",
+      "file": "conditions/uti/symptoms/nocturia/nocturia_null_metaphor.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "confounder",
       "subclass": "metaphor"
     },
     {
       "name": "nocturia_null_attribution",
-      "file": "symptoms/nocturia/nocturia_null_attribution.txt",
+      "file": "conditions/uti/symptoms/nocturia/nocturia_null_attribution.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "confounder",
       "subclass": "attribution"
     },
     {
       "name": "flank_pain_true",
-      "file": "symptoms/flank_pain/flank_pain_true.txt",
+      "file": "conditions/uti/symptoms/flank_pain/flank_pain_true.txt",
       "signal_key": "flank_pain_present",
       "fragment_type": "positive"
     },
     {
       "name": "flank_pain_false",
-      "file": "symptoms/flank_pain/flank_pain_false.txt",
+      "file": "conditions/uti/symptoms/flank_pain/flank_pain_false.txt",
       "signal_key": "flank_pain_present",
       "fragment_type": "negative"
     },
     {
       "name": "flank_pain_null_hedged",
-      "file": "symptoms/flank_pain/flank_pain_null_hedged.txt",
+      "file": "conditions/uti/symptoms/flank_pain/flank_pain_null_hedged.txt",
       "signal_key": "flank_pain_present",
       "fragment_type": "ambiguous",
       "subclass": "hedged"
     },
     {
       "name": "flank_pain_null_thirdparty",
-      "file": "symptoms/flank_pain/flank_pain_null_thirdparty.txt",
+      "file": "conditions/uti/symptoms/flank_pain/flank_pain_null_thirdparty.txt",
       "signal_key": "flank_pain_present",
       "fragment_type": "confounder",
       "subclass": "third_party"
     },
     {
       "name": "flank_pain_null_historical",
-      "file": "symptoms/flank_pain/flank_pain_null_historical.txt",
+      "file": "conditions/uti/symptoms/flank_pain/flank_pain_null_historical.txt",
       "signal_key": "flank_pain_present",
       "fragment_type": "confounder",
       "subclass": "historical"
     },
     {
       "name": "haematuria_true",
-      "file": "symptoms/haematuria/haematuria_true.txt",
+      "file": "conditions/uti/symptoms/haematuria/haematuria_true.txt",
       "signal_key": "haematuria_present",
       "fragment_type": "positive"
     },
     {
       "name": "haematuria_false",
-      "file": "symptoms/haematuria/haematuria_false.txt",
+      "file": "conditions/uti/symptoms/haematuria/haematuria_false.txt",
       "signal_key": "haematuria_present",
       "fragment_type": "negative"
     },
     {
       "name": "haematuria_null_hedged",
-      "file": "symptoms/haematuria/haematuria_null_hedged.txt",
+      "file": "conditions/uti/symptoms/haematuria/haematuria_null_hedged.txt",
       "signal_key": "haematuria_present",
       "fragment_type": "ambiguous",
       "subclass": "hedged"
     },
     {
       "name": "haematuria_null_thirdparty",
-      "file": "symptoms/haematuria/haematuria_null_thirdparty.txt",
+      "file": "conditions/uti/symptoms/haematuria/haematuria_null_thirdparty.txt",
       "signal_key": "haematuria_present",
       "fragment_type": "confounder",
       "subclass": "third_party"
     },
     {
       "name": "haematuria_null_historical",
-      "file": "symptoms/haematuria/haematuria_null_historical.txt",
+      "file": "conditions/uti/symptoms/haematuria/haematuria_null_historical.txt",
       "signal_key": "haematuria_present",
       "fragment_type": "confounder",
       "subclass": "historical"
@@ -278,7 +278,7 @@
     },
     {
       "name": "uti_speculation",
-      "file": "filler/uti_speculation.txt",
+      "file": "conditions/uti/filler/uti_speculation.txt",
       "signal_key": null,
       "fragment_type": "filler",
       "category": "self_diagnosis"
