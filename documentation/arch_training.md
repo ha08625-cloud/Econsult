@@ -85,7 +85,8 @@ convention, and by which condition it belongs to:
 data/synthetic/
   manifest.json
   filler/                       condition-agnostic, reusable by any condition
-                                four libraries, verified silent on fever only (section 9)
+                                four libraries, verified silent on all six
+                                signals that have libraries (section 8)
   conditions/uti/
     symptoms/fever/             seven libraries, all about fever_present
     symptoms/dysuria/           six libraries, all about dysuria_present
@@ -122,12 +123,21 @@ number on file incomparable. The split belongs with the next change that bumps
 `GENERATOR_VERSION` and regenerates everything anyway. Until then, treat the
 shared filler as "condition-agnostic apart from a quarter of `expectations`".
 
-Note the filler annotation carefully. The filler libraries are verified silent
-about **fever** and nothing else — that check is the lint's, and its lexicon is
-a fever lexicon. `uti_speculation` mentions cystitis and kidney infection, so
-filler is demonstrably *not* silent on every signal. Section 9 explains what
-that costs us today and section 12.5 explains what has to exist before the
-claim can be made per-signal.
+Note the filler annotation carefully, because it has a sharp edge. The filler
+libraries are verified silent about the **six signals that have libraries** —
+that check is the lint's (section 8), it runs in CI, and it currently passes
+with no baselined exceptions. It says nothing about the seventh.
+
+`recent_uti_present` is the seventh `send_to_encoder` signal, it has no
+libraries, and so it has no lexicon and nothing checks it. `uti_speculation` is
+full of lines that assert it outright — "I've had them before and this feels
+similar", "I reckon it's another UTI, I'm prone to them", "I had one last year".
+That is not a bug in the lint; it is the gap the lint cannot see, because a
+lexicon is only written for a signal we have decided to train. Whoever closes
+the `recent_uti_present` gap inherits a filler library that is *not* silent on
+it, and `uti_speculation` will need rewriting or relabelling at that point.
+Section 12.5 is what makes silence declarable per signal rather than argued
+paragraph by paragraph.
 
 | Library | Fragments | What it contains |
 |---|---|---|
@@ -266,16 +276,27 @@ recorded here so they are not rediscovered as mysteries:
   against a urinary one ("it's just uncomfortable when I wee"), which asserts
   `dysuria_present: true` in a library that will eventually be declared silent
   on dysuria. Left in place because rewriting them is a labelling decision.
+  **The lint does not catch this and cannot**: it reads filler, and these are
+  signal-library lines. It is 12.5's label vectors that would make the claim
+  checkable, and the joint-training ticket
+  (`planned_updates/multi_symptom_training_expansion.md`, "what comes next")
+  that has to resolve it, because that is the first run in which one example
+  carries a dysuria label and a flank_pain label at the same time.
 * `filler` carries "blood test" and "blood pressure tablets", and `tangents`
   carries sleep-disturbance lines. Neither is a wrong label under the structural
-  null rules, but both show that the filler libraries are only checked against a
-  *fever* lexicon.
+  null rules. Both were flagged as candidate leaks when the lint was generalised
+  and both were resolved as *lexicon too broad* rather than as leaks: blood in a
+  vein is not blood in urine, and a bad night's sleep is not nocturia. They are
+  in the lint's trap test now, so a future lexicon cannot quietly re-flag them.
 
-**The filler libraries must contain no fever language whatsoever.** A filler
-fragment can be paired with anything, including examples labelled "no fever
-mentioned", so fever language in filler would make that example's label a lie.
-There is an automated check for this — see section 8. Section 12.5 is what would
-generalise it to every signal.
+**The filler libraries must contain no signal language whatsoever, for any of
+the six signals with libraries.** A filler fragment can be paired with anything,
+including examples labelled "no fever mentioned", so fever language in filler
+would make that example's label a lie — and the same holds for each urinary
+signal. There is an automated check for all six — see section 8. What is still
+missing is 12.5: the lint proves filler is silent, but nothing lets a *signal*
+library declare what it says about the other five, which is what a joint
+multi-head run needs.
 
 ### Cluster markers
 
@@ -588,11 +609,64 @@ generating 20,000 examples instead of 10,000 does not reshuffle the first
 `python -m scripts.synthetic_data --lint` reports on library health without
 generating anything. It never edits a fragment. Four reports:
 
-**Fever language in filler** — the one with real teeth. Any filler fragment
-containing a fever word is flagged. This is enforced by a test that runs against
-the real libraries in CI, so it fails if someone edits a filler library and
-introduces fever language. Currently zero hits. Matching is on whole words only:
-without that, "hot" matches inside `lithotripsy`, `photos` and `shot`.
+**Signal language in filler** — the one with real teeth. Any filler fragment
+that reads as an assertion about one of the six signals with libraries is
+flagged, grouped by the signal whose `null` label it would falsify. This is
+enforced by a test that runs against the real libraries in CI, so it fails if
+someone edits a filler library and introduces symptom language. Matching is on
+whole words only: without that, "hot" matches inside `lithotripsy`, `photos` and
+`shot`.
+
+**Currently zero hits, on a per-signal baseline** (`FILLER_PURITY_BASELINE` in
+`tests/test_synthetic_recombination.py` is a dict of six empty sets). An entry
+in that baseline is a claim that a line reads as signal language, is staying in
+filler anyway, and that somebody decided that on purpose.
+
+The six lexicons come in two shapes, and the split is not cosmetic. Fever is a
+state with a name, so a **term list** does it: "feverish" in filler is a leak
+whatever surrounds it. None of the five urinary signals can be named in one word
+without over- or under-reaching, so each is an **anchor plus modifier** pair and
+a fragment must match one of each:
+
+| signal | anchor | modifier |
+|---|---|---|
+| `dysuria` | named urination | pain / burning / stinging |
+| `urinary_frequency` | named urination | frequency language |
+| `nocturia` | named urination | night and getting-up language |
+| `flank_pain` | loin / side / back / kidney / ribs | pain |
+| `haematuria` | named urination, bowl, pan, sample | blood and urine colours |
+
+That shape is what lets the check stay quiet about filler's entirely legitimate
+talk of urine cultures, kidney scans and broken sleep while still firing the
+moment a line puts the two halves together. "Blood" is a blood test until it is
+in urine; "kidney" is a kidney scan until something hurts; "night" is a bad
+night's sleep until someone gets up to wee. All three of those are real filler
+lines and all three are in the trap test.
+
+The cost is recall against euphemism. The anchors are *named* urination only —
+a bare "go" is excluded, because "going on", "go to work" and "get back to
+normal" are ordinary filler English, and pairing "go" with a pain word made a
+draft of the lint fire on "family issues that have been dragging on". So a line
+that says "I'm going every twenty minutes" names no anchor and is not matched.
+What each lexicon catches in its own `positive` library, on the committed tree:
+
+| signal | matched | rate |
+|---|---|---|
+| `dysuria` | 41/45 | 91% |
+| `fever` | 86/96 | 90% |
+| `haematuria` | 39/45 | 87% |
+| `flank_pain` | 40/48 | 83% |
+| `nocturia` | 38/54 | 70% |
+| `urinary_frequency` | 27/46 | 59% |
+
+`urinary_frequency` is low because that library leans hardest on euphemism, not
+because its lexicon is weaker. The `negative` libraries run 25 to 45 points
+lower across the board, because negating a symptom drops the words that name it
+("no blood at all" keeps neither half). `test_every_lexicon_reaches_most_of_its_own_library`
+holds these above 45%, which is a guard against a lexicon quietly narrowed until
+it matches nothing — the easy way to make a filler-purity failure go away, and
+the one that leaves the check dead. It is a floor, not a target: a library that
+grows in a new register will move these numbers and that is normal.
 
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
 different splits, i.e. the leakage described in section 6. This is the report
@@ -703,10 +777,15 @@ asked for and nothing else. `fever_present` and `nocturia_present` both have
 libraries complete enough to generate from, and `dysuria_present` and
 `urinary_frequency_present` too, but a fever dataset carries no dysuria or
 nocturia key and vice versa — we deliberately do not emit `null` for the signals
-a run did not cover. Doing so would require knowing the filler is silent about
-them, and we do not (section 3). Claiming "no dysuria mentioned" on that basis
-would be inventing a label. Section 12.5 is the mechanism that would let one
-example carry several keys honestly, and it is not built.
+a run did not cover. Doing so needs *every* fragment in an example to be known
+silent about the signals being claimed, and we are only half way there: section
+8's lint now establishes it for the filler libraries, but a `true` or `false`
+example also carries a signal fragment, and no signal library declares what it
+says about the other five (section 3's `flank_pain_false` lines are a live
+counter-example). Claiming "no dysuria mentioned" on that basis would still be
+inventing a label. Section 12.5 is the mechanism that would let one example
+carry several keys honestly, and it is not built. The one case that does not
+need it is the structural nulls, which are filler and nothing else — see 12.8.
 
 ### The accuracy ceiling is not the same for every library
 
@@ -862,12 +941,15 @@ risk factors* — pregnancy, diabetes, kidney stones, recurrent UTIs, male sex,
 age, a previous admission — appears in about a quarter; there are two such lines
 across all five filler libraries.
 
-Neither can simply be written as filler, and the reason is section 8's check
-working correctly: "I finished a course of nitrofurantoin ten days ago for a
-urine infection" and "last year I was hospitalised with a kidney infection" carry
-signal language, so as filler they would make every label they were paired with a
-lie. They belong either in the `_null_historical` libraries or behind section
-12.5's declared silence. Two new filler libraries would also raise the
+Neither can simply be written as filler: "I finished a course of nitrofurantoin
+ten days ago for a urine infection" and "last year I was hospitalised with a
+kidney infection" carry signal language, so as filler they would make every label
+they were paired with a lie. They belong either in the `_null_historical`
+libraries or behind section 12.5's declared silence. Note that section 8's lint
+would *not* stop either line: both are historical claims about an infection
+rather than about a symptom, so they match no anchor-modifier pair. The lint is a
+guard against drift in libraries already judged clean, not a substitute for
+judging a new one. Two new filler libraries would also raise the
 fragment-count ceiling of section 5 from four to six, which is the only way that
 ceiling moves.
 
@@ -1574,11 +1656,13 @@ first appears.
    Nothing in the generator keys off a path, only off a library's manifest
    `name`. The one thing it did *not* do is split `expectations.txt` — see
    section 3 for why that waits for a `GENERATOR_VERSION` bump.
-2. **Generalise the filler lint to every signal.** This is 12.5's *lint* half
-   and nothing else: no manifest schema change, no label vectors. It is
-   separable because it checks a guarantee we already rely on rather than
+2. **Generalise the filler lint to every signal — landed.** This is 12.5's
+   *lint* half and nothing else: no manifest schema change, no label vectors.
+   It is separable because it checks a guarantee we already rely on rather than
    declaring a new one, and everything after it depends on filler being silent
-   about all six signals rather than only about fever.
+   about all six signals rather than only about fever. Section 8 has the
+   lexicon shapes and the measured recall; the answer on the committed tree is
+   that filler is clean for all six, with no baselined exceptions.
 3. **Six single-signal runs.** No code change at all — `--signal` is already a
    flag on every subcommand and has only ever been passed one value.
 
@@ -1601,8 +1685,13 @@ share. Merging them means either keeping six copies of each, or keeping one and
 labelling it `null` for all six signals. The second is strictly better (same
 gradients, 25% fewer forward passes, and each head keeps exactly the 15/25/60
 mix it trained on alone), but labelling one filler-only example `null` six times
-*is* a silence assertion about the filler libraries — which today are checked
-against a fever lexicon and nothing else.
+*is* a silence assertion about the filler libraries. Task 2 above is what makes
+that assertion checkable, and it now holds: zero hits across all six signals.
+Note what it does and does not license — it says the filler *libraries* are
+silent, which is exactly the guarantee the structural-null union needs, and says
+nothing about whether a *signal* library is silent about the other five. That
+second question is 12.5's, and the `flank_pain_false` lines in section 3 are the
+known counter-example waiting for it.
 
 **Structural nulls should shrink as 12.2 and 12.3 grow.** They are the least
 realistic example type in the dataset: patients rarely submit free text with no

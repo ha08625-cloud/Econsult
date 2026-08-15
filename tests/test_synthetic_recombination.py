@@ -16,10 +16,11 @@ import pytest
 from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
 from scripts.synthetic_data.__main__ import main as cli_main
 from scripts.synthetic_data.lint import (
-    FEVER_LEXICON,
+    SIGNAL_LEXICONS,
     cross_split_near_duplicates,
     filler_lexicon_hits,
     hedge_marker_hits,
+    lexicon_matches,
     render_report,
 )
 from scripts.synthetic_data.manifest import (
@@ -1191,20 +1192,80 @@ def test_cli_honours_a_fragment_count_override(tmp_path, libraries):
 # --------------------------------------------------------------------------
 # 17. Lint reports (C1, C2, C3)
 #
-# Everything except the filler-purity test below runs against synthetic
-# fragments. The filler-purity test deliberately reads the real
-# data/synthetic/ tree: its entire purpose is to fail when someone edits a
-# filler library and reintroduces fever language, which no fixture can catch.
+# Everything except the filler-purity tests below runs against synthetic
+# fragments. The filler-purity tests deliberately read the real
+# data/synthetic/ tree: their entire purpose is to fail when someone edits a
+# filler library and introduces symptom language, which no fixture can catch.
 # --------------------------------------------------------------------------
 
 REAL_MANIFEST = Path(__file__).resolve().parents[1] / "data" / "synthetic" / "manifest.json"
 
-#: Filler fragments permitted to match the fever lexicon. Empty, because the
-#: current filler libraries are clean under word-boundary matching. The three
-#: known incidental hits ("lithotripsy", "photos", "months" all containing the
-#: substring "hot") are excluded by \b, not by an allowlist -- see
-#: test_the_known_substring_traps_are_not_flagged.
-FILLER_PURITY_BASELINE: set[str] = set()
+#: Filler fragments permitted to match a signal's lexicon, per signal. All six
+#: are empty: the filler libraries are silent about every signal that has
+#: libraries, and the near misses are excluded by the lexicons themselves
+#: rather than by an allowlist -- see test_the_known_lexicon_traps_are_not_flagged.
+#:
+#: An entry here is a claim that a line reads as signal language, is staying in
+#: filler anyway, and that somebody decided that on purpose. Adding one to make
+#: a failure go away is the failure.
+FILLER_PURITY_BASELINE: dict[str, set[str]] = {signal: set() for signal in SIGNAL_LEXICONS}
+
+#: Hand-written text that each lexicon must match. This is the guard against
+#: the empty baseline above passing against a lexicon narrowed into matching
+#: nothing at all -- which is the easy way to "fix" a filler-purity failure and
+#: the one that leaves the check dead.
+LEXICON_SELF_TEST: dict[str, tuple[str, ...]] = {
+    "fever_present": (
+        "I've had a fever since Monday",
+        "my temperature was 38.5 this morning",
+        "I keep getting chills and sweats",
+    ),
+    "dysuria_present": (
+        "it burns when I pee",
+        "passing urine is really painful",
+        "there's a stinging feeling every time I go for a wee",
+    ),
+    "urinary_frequency_present": (
+        "I'm weeing far more often than normal",
+        "I need the toilet constantly",
+        "I'm up and down to the loo all day",
+    ),
+    "nocturia_present": (
+        "I'm getting up two or three times a night for a wee",
+        "I woke up needing the toilet twice last night",
+        "my sleep is broken because I keep needing to empty my bladder",
+    ),
+    "flank_pain_present": (
+        "I've got a dull ache in my left side, just under my ribs",
+        "there's a sharp pain in my back on the right side",
+        "my kidneys feel really tender",
+    ),
+    "haematuria_present": (
+        "there is bright red blood in my wee",
+        "my urine has turned red today",
+        "the toilet bowl was dark red when I went earlier",
+    ),
+}
+
+#: The floor each lexicon must clear against its own ``positive`` library, and
+#: what it actually clears today. Well below the measured figures because the
+#: point is to catch a lexicon that has been gutted, not to freeze recall: a
+#: library that grows in a new register will move these, and moving them is
+#: normal. Measured on the committed tree: fever 90%, dysuria 91%,
+#: urinary_frequency 59%, nocturia 70%, flank_pain 83%, haematuria 87%.
+#:
+#: Positive libraries only. The negatives run 25 to 45 points lower across
+#: every signal, because negating a symptom drops the detail that names it
+#: ("no change in how often I'm weeing" keeps the anchor and loses nothing
+#: else; "no blood at all" keeps neither half). That asymmetry is real and
+#: worth knowing about, but averaging it in would leave the floor too low to
+#: catch anything.
+#:
+#: urinary_frequency is the low one by a distance, and it is a property of the
+#: library rather than of the lexicon: "I'm going every twenty minutes" names
+#: no urinary word at all, and the lexicon deliberately does not treat a bare
+#: "go" as one. See the Lexicon docstring.
+LEXICON_RECALL_FLOOR = 0.45
 
 
 def _real_fragments():
@@ -1214,44 +1275,86 @@ def _real_fragments():
     return load_fragments(REAL_MANIFEST, check_cells=False)
 
 
-def test_no_filler_fragment_contains_fever_language():
+def test_no_filler_fragment_contains_signal_language():
     hits = filler_lexicon_hits(_real_fragments())
-    assert {hit.fragment_id for hit in hits} == FILLER_PURITY_BASELINE, (
-        "a filler library has acquired fever language, so examples labelled null "
-        "on the strength of their structure would contain fever text: "
-        + "; ".join(f"{hit.fragment_id} {hit.terms} {hit.text}" for hit in hits)
+    found: dict[str, set[str]] = {signal: set() for signal in SIGNAL_LEXICONS}
+    for hit in hits:
+        found[hit.signal].add(hit.fragment_id)
+    assert found == FILLER_PURITY_BASELINE, (
+        "a filler library has acquired symptom language, so examples labelled "
+        "null on the strength of their structure would contain text asserting "
+        "that symptom: "
+        + "; ".join(f"{hit.signal} {hit.fragment_id} {hit.terms} {hit.text}" for hit in hits)
     )
 
 
-def test_the_fever_lexicon_actually_matches_fever_text():
-    # Without this, the empty baseline above would pass just as happily against
-    # a lexicon that had been broken into matching nothing at all.
-    fragments = [
-        _fragment("I've had a fever since Monday", fragment_type="filler"),
-        _fragment("my temperature was 38.5 this morning", fragment_type="filler"),
-        _fragment("I keep getting chills and sweats", fragment_type="filler"),
+@pytest.mark.parametrize("signal", sorted(SIGNAL_LEXICONS))
+def test_every_lexicon_actually_matches_its_own_signal_text(signal):
+    fragments = [_fragment(t, fragment_type="filler") for t in LEXICON_SELF_TEST[signal]]
+    matched = {hit.fragment_id for hit in filler_lexicon_hits(fragments) if hit.signal == signal}
+    assert len(matched) == len(fragments), (
+        f"the {signal} lexicon no longer matches text that plainly asserts it, "
+        "so its empty filler-purity baseline is meaningless"
+    )
+
+
+@pytest.mark.parametrize("signal", sorted(SIGNAL_LEXICONS))
+def test_every_lexicon_reaches_most_of_its_own_library(signal):
+    # The hand-written sentences above are written to match. This runs the same
+    # question against the real positive library, where nobody was aiming.
+    library = [
+        f for f in _real_fragments() if f.signal_key == signal and f.fragment_type == "positive"
     ]
-    assert len(filler_lexicon_hits(fragments)) == 3
+    matched = sum(1 for f in library if lexicon_matches(f.text, signal))
+    assert matched / len(library) >= LEXICON_RECALL_FLOOR, (
+        f"the {signal} lexicon matches only {matched}/{len(library)} of its own "
+        "positive fragments, which is too few for its filler-purity baseline to "
+        "mean anything"
+    )
 
 
-def test_the_known_substring_traps_are_not_flagged():
-    # These are the three real filler lines that naive substring matching
-    # flags, all on "hot" inside lithotripsy / photos / shot. Word boundaries
-    # are the only thing standing between them and a check that fails on day
-    # one against clean data.
+def test_the_known_lexicon_traps_are_not_flagged():
+    # Real filler lines, each one half of a signal's language and no more.
+    # Every one of them was flagged by a draft of these lexicons, and each is
+    # why the lexicon it tripped is shaped the way it is. Substring matching or
+    # a one-sided lexicon puts all of them back.
     traps = [
+        # "hot" inside lithotripsy / photos / shot: word boundaries only.
         "could I be referred for lithotripsy to break it up",
         "My sister texted saying she's worried about me from the photos I sent",
         "I've been unemployed for 8 months and this is my best shot at getting back to work",
+        # Blood, but not in urine.
+        "I think a blood test would help figure out what's wrong",
+        "My dad's been on those blood pressure tablets for about two years now",
+        # Urine, but no symptom attached to it.
+        "I think I should get a urine culture done to identify the bug",
+        "could I get an urgent ultrasound of my bladder to check if it's emptying properly",
+        # Kidneys and backs, but nothing hurting.
+        "I'm worried I might need a scan to check my kidneys aren't damaged",
+        "I need to get back to normal because I've got loads on at the moment",
+        "My mum's been complaining about her back again, says the physio isn't helping much",
+        # Broken sleep with nothing urinary in it.
+        "I've been sleeping badly the last few weeks because my neighbour's dog barks all night",
+        "The stress from my mortgage application has been keeping me up at night",
+        "My wife's working nights all next week so I need to be able to look after the kids",
+        # Frequency and pain words about something other than the body.
+        "I've got stress going on at the moment with family issues that have been dragging on",
+        "I've been drinking a lot more water than usual because I'm trying to cut back on coffee",
+        "Probably just another water infection, happens quite often",
     ]
-    assert "hot" in FEVER_LEXICON
-    assert all("hot" in trap.lower() for trap in traps)
     assert filler_lexicon_hits([_fragment(t, fragment_type="filler") for t in traps]) == []
 
 
-def test_fever_language_in_a_signal_library_is_not_a_filler_leak():
-    fragment = _fragment("I've had a fever", fragment_type="positive", signal_key=SIGNAL)
-    assert filler_lexicon_hits([fragment]) == []
+def test_signal_language_in_a_signal_library_is_not_a_filler_leak():
+    fragments = [
+        _fragment("I've had a fever", fragment_type="positive", signal_key=SIGNAL),
+        _fragment(
+            "it stings when I wee",
+            fragment_type="positive",
+            signal_key="dysuria_present",
+        ),
+    ]
+    assert filler_lexicon_hits(fragments) == []
 
 
 # --------------------------------------------------------------------------
@@ -1468,7 +1571,10 @@ def test_cli_lint_needs_no_split_count_or_out(capsys):
     out = capsys.readouterr().out
     assert "Hedge markers in decisive libraries:" in out
     assert "Cross-split near-duplicates" in out
-    assert "Fever language in filler libraries:" in out
+    assert "Signal language in filler libraries:" in out
+    # Grouped by signal: a bare total would not say which label a hit falsifies.
+    for signal in SIGNAL_LEXICONS:
+        assert f"  {signal}: " in out
 
 
 def test_cli_still_requires_the_generation_flags_without_lint(tmp_path, libraries):

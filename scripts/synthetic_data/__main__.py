@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--lint",
         action="store_true",
         help="report library health instead of generating: hedge markers, "
-        "cross-split near-duplicates and fever language in filler",
+        "cross-split near-duplicates and every signal's language in filler",
     )
     parser.add_argument(
         "--find-fold-salt",
