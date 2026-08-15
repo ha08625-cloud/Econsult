@@ -100,7 +100,7 @@ When modifying or adding features, locate the relevant capability below to ident
 ### 3.15 Encoder Training Data (Synthetic Generation)
 * **Scope:** Building the encoder's training dataset by recombining hand-written sentence fragments. Offline only — nothing here runs in the live application and `app/` never imports it (`tests/test_wiring.py` enforces that). Covers the fragment libraries, label-first generation, train/val/test splitting and five-fold cross-validation over fragment clusters, the library lint, and the `.stats.json` provenance sidecar. The training strategy itself and the full design rationale stay in `documentation/encoder/`.
 * **Domain Doc:** `docs/arch_training.md`
-* **Key Files:** `scripts/synthetic_data/*.py`, `data/synthetic/manifest.json`, `data/synthetic/*.txt`
+* **Key Files:** `scripts/synthetic_data/*.py`, `data/synthetic/manifest.json`, `data/synthetic/conditions/<condition>/**/*.txt` (signal-bearing and condition-specific filler libraries), `data/synthetic/filler/*.txt` (condition-agnostic filler)
 * **Note on sample size:** every evaluation number is bounded by the number of distinct fragment *clusters* behind a slice, not the number of examples. See `arch_training.md` section 10 before reading any figure this pipeline produces.
 
 ### 3.16 Encoder Training & Evaluation (Offline Tooling)

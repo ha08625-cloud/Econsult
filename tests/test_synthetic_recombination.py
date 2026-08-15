@@ -1275,7 +1275,7 @@ DOC = Path(__file__).resolve().parents[1] / "documentation" / "arch_training.md"
 #: Directories under data/synthetic/ whose .txt files are not libraries.
 _NON_LIBRARY_DIRS = ("drafts", "generated")
 
-#: A section 3 table row: ``| `symptoms/fever/fever_true.txt` | 96 | ... |``
+#: A section 3 table row: ``| `conditions/uti/symptoms/fever/fever_true.txt` | 96 | ... |``
 _DOC_ROW = re.compile(r"^\| `([^`]+\.txt)` \| (\d+) \|", re.M)
 
 
