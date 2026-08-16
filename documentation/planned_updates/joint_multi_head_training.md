@@ -1,8 +1,25 @@
 # Provisional plan: the combined training dataset run
 
-**Status: provisional and not agreed.** This is stage-1 output — the discussion
-and the design decisions, written down so they can be reviewed and expanded into
-an implementation plan. Nothing here has been built.
+**Status: SUPERSEDED by `joint_multi_head_training_implementation.md`.** This is
+stage-1 output — the discussion and the design decisions. It is kept for its
+verification record ("What was verified while writing this") and its cost model,
+both of which carry over unchanged. **Where the two documents disagree, the
+implementation plan is right.**
+
+Two things in here were found wrong on review against the code, and both changed
+the ticket's shape:
+
+* **DD3's headline comparison, "A3 vs A2, paired McNemar", does not run and does
+  not isolate what it claims.** `metrics.mcnemar` raises when the two sides'
+  example sets differ, and A2 gives the head under test 4.47× the supervision A3
+  does. The paired comparison is **A1 vs A3**. See the implementation plan's DD1.
+* **Task 5's generation recipe is wrong.** Merging six 45k trees gives ~268k, not
+  44,680. The merge's inputs are the six **10k** trees. See Task 5 item 1 there.
+
+Also missing here and added there: joint epoch selection across six heads (DD6),
+the fragments-block conflict check and cross-signal cluster-key collisions (DD3),
+and the fact that the holdout labels' provenance is already answered in
+`data/realistic/README.md` (DD10).
 
 **Related:** `arch_training.md` (sections 7, 10 and 12.8 are prerequisites),
 `arch_encoder_training.md` (sections 3, 5, 8 and 9),
