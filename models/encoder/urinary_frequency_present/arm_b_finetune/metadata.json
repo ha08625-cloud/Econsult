@@ -1,6 +1,6 @@
 {
   "arm": "arm_b_finetune",
-  "signal": "fever_present",
+  "signal": "urinary_frequency_present",
   "classes": [
     "false",
     "true",
@@ -95,55 +95,55 @@
       "fold": 0,
       "n_parameters": 124647939,
       "n_trainable": 124647939,
-      "best_epoch": 1,
+      "best_epoch": 3,
       "val_macro_f1_by_epoch": [
-        0.9376215427381718,
-        0.8990896831254546,
-        0.9258900539799685
+        0.8108204283994569,
+        0.8068996737754719,
+        0.8264707680645977
       ],
       "train_loss_by_epoch": [
-        0.25681223395783453,
-        0.0006522724693990312,
-        9.611212426098063e-05
+        0.2525009108003462,
+        0.00016465914170839824,
+        4.748993561370298e-05
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 85,
-        "accuracy": 0.959,
-        "macro_f1": 0.9376215427381718,
+        "effective_n": 56,
+        "accuracy": 0.886,
+        "macro_f1": 0.8271003493049549,
         "confusion": [
           [
-            522,
+            451,
             0,
-            2
+            73
           ],
           [
-            2,
-            225,
-            58
+            7,
+            143,
+            135
           ],
           [
-            1,
-            19,
-            1171
+            0,
+            13,
+            1178
           ]
         ],
         "per_class_recall": {
-          "false": 0.9961832061068703,
-          "true": 0.7894736842105263,
-          "null": 0.9832073887489504
+          "false": 0.8606870229007634,
+          "true": 0.5017543859649123,
+          "null": 0.9890848026868178
         }
       },
       "decision_rule": {
-        "margin": 0.0,
+        "margin": 0.05,
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.01595298068849706,
-        "null_to_true_rate": 0.01595298068849706,
-        "macro_f1": 0.9376215427381718,
+        "argmax_null_to_true_rate": 0.011754827875734676,
+        "null_to_true_rate": 0.0109151973131822,
+        "macro_f1": 0.8271003493049549,
         "margins_considered": [
           0.0,
           0.05,
@@ -167,7 +167,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt",
+        "path": "models/encoder/urinary_frequency_present/arm_b_finetune/weights/fold0.encoder.pt",
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -176,55 +176,55 @@
       "fold": 1,
       "n_parameters": 124647939,
       "n_trainable": 124647939,
-      "best_epoch": 2,
+      "best_epoch": 1,
       "val_macro_f1_by_epoch": [
-        0.8961097199718498,
-        0.9078770839525996,
-        0.897609260621883
+        0.8468704298707723,
+        0.7970764868478217,
+        0.8341407841962781
       ],
       "train_loss_by_epoch": [
-        0.21514414852573535,
-        6.424982795724645e-05,
-        3.939033957431093e-05
+        0.23034748056996615,
+        0.0005485605255817063,
+        4.740469652460888e-05
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 93,
-        "accuracy": 0.9335,
-        "macro_f1": 0.9089604501131481,
+        "effective_n": 65,
+        "accuracy": 0.88,
+        "macro_f1": 0.8468704298707723,
         "confusion": [
           [
-            434,
-            55,
-            20
-          ],
-          [
-            1,
-            297,
-            18
+            400,
+            52,
+            57
           ],
           [
             0,
-            39,
-            1136
+            257,
+            59
+          ],
+          [
+            13,
+            59,
+            1103
           ]
         ],
         "per_class_recall": {
-          "false": 0.8526522593320236,
-          "true": 0.939873417721519,
-          "null": 0.9668085106382979
+          "false": 0.7858546168958742,
+          "true": 0.8132911392405063,
+          "null": 0.9387234042553192
         }
       },
       "decision_rule": {
-        "margin": 0.1,
+        "margin": 0.0,
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.03489361702127659,
-        "null_to_true_rate": 0.033191489361702124,
-        "macro_f1": 0.9089604501131481,
+        "argmax_null_to_true_rate": 0.05021276595744681,
+        "null_to_true_rate": 0.05021276595744681,
+        "macro_f1": 0.8468704298707723,
         "margins_considered": [
           0.0,
           0.05,
@@ -248,7 +248,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold1.encoder.pt",
+        "path": "models/encoder/urinary_frequency_present/arm_b_finetune/weights/fold1.encoder.pt",
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -257,55 +257,55 @@
       "fold": 2,
       "n_parameters": 124647939,
       "n_trainable": 124647939,
-      "best_epoch": 2,
+      "best_epoch": 3,
       "val_macro_f1_by_epoch": [
-        0.9402624904469038,
-        0.9417629604850027,
-        0.9361441415459929
+        0.7978075744450847,
+        0.8155456419562311,
+        0.8222748134519776
       ],
       "train_loss_by_epoch": [
-        0.22591616780306212,
-        0.0004430603515007533,
-        5.689284853870049e-05
+        0.21086693579177374,
+        6.0114064224762845e-05,
+        3.417957817728166e-05
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 93,
-        "accuracy": 0.958,
-        "macro_f1": 0.9435558091116439,
+        "effective_n": 66,
+        "accuracy": 0.8885,
+        "macro_f1": 0.8227875754393686,
         "confusion": [
           [
-            490,
-            24,
-            0
+            445,
+            59,
+            10
           ],
           [
-            0,
-            296,
-            22
-          ],
-          [
-            13,
             25,
-            1130
+            174,
+            119
+          ],
+          [
+            1,
+            9,
+            1158
           ]
         ],
         "per_class_recall": {
-          "false": 0.953307392996109,
-          "true": 0.9308176100628931,
-          "null": 0.9674657534246576
+          "false": 0.8657587548638133,
+          "true": 0.5471698113207547,
+          "null": 0.9914383561643836
         }
       },
       "decision_rule": {
-        "margin": 0.75,
+        "margin": 0.05,
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.026541095890410957,
-        "null_to_true_rate": 0.021404109589041095,
-        "macro_f1": 0.9435558091116439,
+        "argmax_null_to_true_rate": 0.008561643835616438,
+        "null_to_true_rate": 0.007705479452054794,
+        "macro_f1": 0.8227875754393686,
         "margins_considered": [
           0.0,
           0.05,
@@ -329,7 +329,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold2.encoder.pt",
+        "path": "models/encoder/urinary_frequency_present/arm_b_finetune/weights/fold2.encoder.pt",
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -338,55 +338,55 @@
       "fold": 3,
       "n_parameters": 124647939,
       "n_trainable": 124647939,
-      "best_epoch": 1,
+      "best_epoch": 2,
       "val_macro_f1_by_epoch": [
-        0.93866894226035,
-        0.8995573360101675,
-        0.9260031893178885
+        0.8910371923667654,
+        0.8965352860700707,
+        0.8919349292355122
       ],
       "train_loss_by_epoch": [
-        0.23478535386155128,
-        0.0017586841260723305,
-        0.00043787868451909163
+        0.22786988745429554,
+        0.00017462053770432248,
+        4.01417892309837e-05
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 70,
-        "accuracy": 0.968,
-        "macro_f1": 0.9543744758103053,
+        "effective_n": 54,
+        "accuracy": 0.921,
+        "macro_f1": 0.9002150216808338,
         "confusion": [
           [
-            494,
-            5,
-            3
+            495,
+            7,
+            0
           ],
           [
             2,
-            265,
-            32
+            236,
+            61
           ],
           [
-            0,
-            22,
-            1177
+            61,
+            27,
+            1111
           ]
         ],
         "per_class_recall": {
-          "false": 0.9840637450199203,
-          "true": 0.8862876254180602,
-          "null": 0.981651376146789
+          "false": 0.9860557768924303,
+          "true": 0.7892976588628763,
+          "null": 0.926605504587156
         }
       },
       "decision_rule": {
-        "margin": 0.9,
+        "margin": 0.75,
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.03252710592160134,
-        "null_to_true_rate": 0.01834862385321101,
-        "macro_f1": 0.9543744758103053,
+        "argmax_null_to_true_rate": 0.02835696413678065,
+        "null_to_true_rate": 0.022518765638031693,
+        "macro_f1": 0.9002150216808338,
         "margins_considered": [
           0.0,
           0.05,
@@ -410,7 +410,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold3.encoder.pt",
+        "path": "models/encoder/urinary_frequency_present/arm_b_finetune/weights/fold3.encoder.pt",
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -419,55 +419,55 @@
       "fold": 4,
       "n_parameters": 124647939,
       "n_trainable": 124647939,
-      "best_epoch": 3,
+      "best_epoch": 2,
       "val_macro_f1_by_epoch": [
-        0.9809112416652394,
-        0.9834470590648756,
-        0.9846216833975322
+        0.9141000075647296,
+        0.9219580801807314,
+        0.912600729971072
       ],
       "train_loss_by_epoch": [
-        0.2531505787188653,
-        0.0018878602883894927,
-        4.423425540444441e-05
+        0.23799686022400857,
+        0.0023268494309391825,
+        8.185180914588273e-05
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
-        "effective_n": 82,
-        "accuracy": 0.9875,
-        "macro_f1": 0.9846216833975322,
+        "effective_n": 66,
+        "accuracy": 0.9575,
+        "macro_f1": 0.927345608876597,
         "confusion": [
           [
-            512,
-            3,
-            9
+            489,
+            32,
+            3
+          ],
+          [
+            47,
+            256,
+            1
           ],
           [
             0,
-            293,
-            11
-          ],
-          [
             2,
-            0,
             1170
           ]
         ],
         "per_class_recall": {
-          "false": 0.9770992366412213,
-          "true": 0.9638157894736842,
+          "false": 0.933206106870229,
+          "true": 0.8421052631578947,
           "null": 0.9982935153583617
         }
       },
       "decision_rule": {
-        "margin": 0.0,
+        "margin": 0.9,
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.0,
-        "null_to_true_rate": 0.0,
-        "macro_f1": 0.9846216833975322,
+        "argmax_null_to_true_rate": 0.006825938566552901,
+        "null_to_true_rate": 0.0017064846416382253,
+        "macro_f1": 0.927345608876597,
         "margins_considered": [
           0.0,
           0.05,
@@ -491,7 +491,7 @@
         ]
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold4.encoder.pt",
+        "path": "models/encoder/urinary_frequency_present/arm_b_finetune/weights/fold4.encoder.pt",
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -501,11 +501,11 @@
     "objective": "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9)",
     "selected_on": "each fold's own validation split, never test and never pooled",
     "by_fold": {
-      "0": 0.0,
-      "1": 0.1,
-      "2": 0.75,
-      "3": 0.9,
-      "4": 0.0
+      "0": 0.05,
+      "1": 0.0,
+      "2": 0.05,
+      "3": 0.75,
+      "4": 0.9
     }
   },
   "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it.",
