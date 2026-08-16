@@ -1048,6 +1048,16 @@ read at face value and why it does not touch a fever-versus-fever comparison.
 The evaluation report computes this table per run and prints the warning above
 its own headline (`arch_encoder_training.md` section 8).
 
+**The prediction that followed from this was wrong, and the record says so.**
+The expansion plan predicted the four untagged signals would post *better*
+numbers than fever for reasons unrelated to the symptom, and that `dysuria`
+would post *worse* because it is the only honestly-clustered set. The
+2026-08-16 runs came out the other way: `dysuria` placed second of six, and the
+two weakest signals — `nocturia` and `urinary_frequency` — are both 0% tagged.
+The asymmetry above is real and still means an untagged interval is narrower
+than the truth; what it is not is the thing that separates these six signals.
+Differences in what the `_true` libraries contain swamp it.
+
 **All six signals now generate a full five-fold dataset at fever's recipe.**
 10,000/2,000/2,000, `15/25/60`, `--null-ambiguous-ratio 0.5`, base seed 42, salt
 0 — 15 files each, no `PoolExhaustedError` anywhere, including the two the
@@ -1057,12 +1067,42 @@ ambiguous pool populated at that size. Duplicate rejections run higher on the
 thinner libraries (roughly 160–200 per 10,000 train examples against fever's
 ~100), which is the pool doing its job rather than a problem.
 
-**Nothing has been *trained* on anything but `fever_present`.** Generation is
-seconds of CPU; the six Arm B fine-tunes are about an hour of GPU that has not
-been spent yet. Until it is, the per-symptom baselines the joint-training
-comparison needs do not exist, and no claim about how any signal other than
-fever scores is supported by anything. The tooling needs no change to produce
-them — `--signal` is already a flag on every command.
+**All six signals have now been trained**, one head each, Arm B at
+`roberta-base` on the datasets above (2026-08-16). No code change was needed;
+`--signal` was already a flag on every command. Decisive accuracy, pooled over
+five folds:
+
+| signal | eff n | Arm B | Arm A | TF-IDF | `null→true` | errors on `_true`/`_false` |
+|---|---|---|---|---|---|---|
+| `flank_pain` | 243 | 96.0% | 80.7% | 72.8% | 1.51% | 59% |
+| `dysuria` | 182 | 94.9% | 82.4% | 70.5% | 3.49% | 39% |
+| `fever` | 418 | 92.9% | 79.0% | 73.6% | 1.34% | 73% |
+| `haematuria` | 225 | 91.5% | 82.8% | 74.7% | 2.33% | 66% |
+| `urinary_frequency` | 302 | 85.3% | 67.8% | 59.9% | 1.94% | 87% |
+| `nocturia` | 351 | 83.0% | 70.4% | 64.9% | 4.04% | 72% |
+
+`reports/encoder_training/2026-08-16-plain-english.md` is the write-up. Three
+things from it belong here because they are facts about *the data*, not about
+the models:
+
+**The 2026-08-09 fever finding replicates across five more symptoms.** Errors
+land on the clear `_true`/`_false` libraries, not on the deliberately-hard
+`null` confounders that were written to be the difficult part. The confounder
+libraries mostly sit at 0.90–1.00 recall. The last column above is the statement
+of it, and `urinary_frequency_true` at 65.8% and `nocturia_true` at 71.1% are
+the two worst libraries in the sweep.
+
+**Section 10's own cluster-tagging prediction did not hold** — see the note
+below the coverage table. Dysuria, the only fully-tagged signal, came second;
+the two weakest signals are both fully untagged. Tagging is not what separates
+these six.
+
+**`nocturia` and `urinary_frequency` are genuinely the hard pair, and it is not
+a model problem.** TF-IDF is also worst on exactly those two, so the difficulty
+is in the signals rather than in the encoder. The working hypothesis is that the
+two are near-synonyms of each other — "going a lot" against "going a lot at
+night" — which is also why `urinary_frequency` is the only library set that
+needed an `adjacent` confounder class. Untested.
 
 The `haematuria_present` run starts at all only because of its three null
 libraries: `_check_pools` requires a non-empty

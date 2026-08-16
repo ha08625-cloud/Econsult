@@ -18,20 +18,38 @@ can only make it when both models are in one report.
 
 ## Current state
 
-**Both arms have run.** `fever_present.arm_b_finetune` carries Arm B, Arm A and
-the three baselines with their negative controls, five folds, on an RTX 5070.
-`2026-08-09.md` is the write-up: what the numbers mean, whether the recorded
-prediction held, and the conclusion in the ticket's terms.
+**Six signals have been trained, one head each** (2026-08-16): fever, dysuria,
+urinary frequency, nocturia, flank pain, haematuria. Every
+`<signal>.arm_b_finetune` report carries Arm B, Arm A and the three baselines
+with their negative controls, five folds, `roberta-base`, on an RTX 5070. Six
+separate single-signal heads — nothing here is a model that answers six
+questions at once.
 
-The short version: unfreezing the encoder was worth ~12 points of decisive
-accuracy over the frozen probe, so the representation *was* a constraint — but
-what remains is concentrated on 17 fragments and sits in `fever_true` and
-`fever_false`, not in the confounder libraries. Next month is library work on the
-clear classes. Read `2026-08-09.md` before quoting any figure from it.
+`2026-08-16-plain-english.md` is the write-up for that sweep, and it discharges
+the six obligations below. It is written in plain language throughout rather
+than as a translation of a separate technical document, because there is no
+separate technical document for this sweep: it sources directly from the six
+`<signal>.arm_b_finetune.json` files. **Those JSONs are authoritative** — if the
+write-up and a JSON ever disagree, the JSON is right.
 
-`2026-08-09-plain-english.md` is a jargon-free translation of that write-up for
-readers who do not work with ML terminology daily. It explains the same run and
-the same conclusion, and adds nothing — quote figures from `2026-08-09.md`.
+The short version: unfreezing the encoder beat the frozen probe on
+`null_ambiguous` in all six signals, so the representation was a constraint
+everywhere, not just for fever. What remains is concentrated on the *clear*
+`_true`/`_false` libraries rather than on the confounder libraries written to be
+the hard part — 39% to 87% of each signal's errors, and the confounder libraries
+mostly sit at 0.90–1.00 recall. That is the 2026-08-09 fever finding replicating
+across five more symptoms. Next month is library work on the clear classes,
+starting with `urinary_frequency_true` (65.8%) and `nocturia_true` (71.1%).
+
+**A caveat on one filename.** `fever_present.arm_b_finetune.*` was regenerated in
+this sweep and its base model changed from `Bio_ClinicalBERT` to `roberta-base`,
+so all six are now comparable. Nothing unique was lost: the version it replaced
+was Bio_ClinicalBERT at 84.1% decisive, which is exactly the Bio_ClinicalBERT arm
+still held in `fever_present.model_comparison.*`. `2026-08-09.md` and its
+plain-English translation describe a **Bio_ClinicalBERT** run and are kept
+unedited as the record of it — read their figures against `model_comparison`,
+not against the current `fever_present.arm_b_finetune.*`, which is a different
+encoder.
 
 `fever_present.baselines` is the baselines-only report from the same folds, kept
 because it is what a model has to beat and it runs without a GPU.

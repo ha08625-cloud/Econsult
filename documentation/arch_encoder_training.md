@@ -32,8 +32,10 @@ One question, and every design decision below is arranged to make it legible:
 
 > **Is the bottleneck the model, or the fragment libraries?**
 
-The work covers exactly one signal, `fever_present`, as a three-way
-classification: `true`, `false`, `null`. If a fully fine-tuned encoder still
+The work covers six signals — fever, dysuria, urinary frequency, nocturia, flank
+pain, haematuria — each as an independent three-way classification (`true`,
+`false`, `null`) trained by its own run. One head per run, not one model
+answering six questions. If a fully fine-tuned encoder still
 cannot tell whose fever it is or when it happened, the limit is in the ideas the
 libraries contain and the next month is library work. If unfreezing the encoder
 lifts the hard `null` sub-classes clear of a frozen probe, the representation was
@@ -390,14 +392,16 @@ rule is tunable, versioned and documented.
 
   `planned_updates/multi_symptom_training_expansion.md` is the plan for lifting
   this, and `arch_training.md` 12.8 is the summary. Two things it establishes
-  that are easy to get wrong from here. **Six single-signal runs need no code
-  change** — `--signal` is already a flag on every subcommand — so the reason
-  nothing but fever has been trained is that nobody has spent the GPU hour, not
-  that anything blocks it. All six five-fold datasets now generate cleanly at
-  fever's recipe (`arch_training.md` section 10); the six Arm B fine-tunes that
-  turn them into per-symptom baselines have **not** been run, so no number
-  exists for any signal but fever and `reports/encoder_training/` holds
-  `fever_present.*` only. And **joint training on
+  that are easy to get wrong from here. **The six single-signal runs are done**
+  (2026-08-16) and needed no code change, because `--signal` was already a flag
+  on every subcommand. Six Arm B heads at `roberta-base`, one per signal, with
+  Arm A and the baselines in each report; `arch_training.md` section 10 has the
+  results table and `reports/encoder_training/2026-08-16-plain-english.md` is
+  the write-up. Every shuffled-label control passed on all six. **Arm B beat Arm
+  A on `null_ambiguous` in every signal**, p between 3e-05 and 2e-39 — the fever
+  finding, replicated six times over. What those runs do *not* give you is a
+  joint model: they are six separate heads, and nothing here has yet trained one
+  encoder to answer several questions at once. And **joint training on
   merged single-signal datasets is nearer than it looks**: `LinearHeads` is
   already per-signal, `masked_cross_entropy` already normalises over labelled
   positions across all heads together, and fold assignment is a signal-blind
@@ -447,6 +451,13 @@ so `requirements.txt` is not required for a training run.
 fifteen runs must agree on the fold count, the salt and the seed derivation, and a
 loop that gets one of those wrong produces a directory that loads cleanly and
 evaluates nonsense.
+
+**`--base-model roberta-base` is not optional on a run meant to be comparable.**
+`DEFAULT_BASE_MODEL` is `Bio_ClinicalBERT`, which `fever_present.model_comparison`
+put nine points below roberta-base on decisive accuracy (84.1% against 92.9%).
+Omit the flag and the run succeeds, reports nothing unusual, and produces numbers
+that cannot be read beside any of the six committed reports. The base model is in
+every report header; check it there before comparing anything.
 
 By default `finetune` reports Arm B **and** Arm A **and** the baselines in one
 report. That is not padding: the ticket's question is a paired comparison on the
