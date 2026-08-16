@@ -5,6 +5,17 @@ reading of the text. Everything not listed here is unambiguous. Change the value
 in `uti1_holdout.labels.tsv` if you disagree -- these are proposed labels, and
 the proposal is the part that needs checking.
 
+**Two of the proposals below were overruled and the TSV is the record of that,
+not this file.** The maintainer revised `holdout-0004` `recent_uti_present` from
+`false` to `null` and `holdout-0003` `urinary_frequency_present` from `true` to
+`null`. The `holdout-0004` entry further down still states the original
+proposal and its reasoning; it is kept as written, because the reasoning is what
+was being checked and rewriting it after the fact would erase the check. **The
+TSV is the labels. This file is the argument that produced them.**
+
+Arguable is not the same as unjudgeable, and a cell listed here is still a
+judged cell. See `README.md` on why no cell in this set is blank.
+
 Two of the recurring judgements are worth settling once rather than row by row:
 
 * **Blood seen on paper when wiping, not in the urine or the bowl.** Rows 11, 39

@@ -765,9 +765,18 @@ def test_markdown_reproduces_the_data_limits_in_full_rather_than_citing_them():
 
 
 def test_markdown_names_the_next_ticket():
+    """The named next ticket has to be the one that is actually next.
+
+    It used to be "write 60-100 realistic submissions and hold them out". They
+    exist, `holdout.py` scores them, and every Arm B report now carries the
+    result -- so the section names what is next *after* that: the denials the
+    set is missing, and the multi-symptom recombinations that would stop every
+    `null` example pairing an absent signal with bland non-clinical filler.
+    """
     markdown = render_markdown(_report())
     assert "## The next ticket" in markdown
-    assert "60-100 realistic full submissions" in markdown
+    assert "explicit denials" in markdown
+    assert "Multi-symptom recombinations" in markdown
 
 
 def _fever_fragments():

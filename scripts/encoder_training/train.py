@@ -55,8 +55,9 @@ from typing import TYPE_CHECKING
 
 from .baselines import permute_classes
 from .dataset import CLASS_NAMES, MASKED_CLASS, Example, Fold, Split
-from .decision import select_margin
+from .decision import DecisionRule, select_margin
 from .embed import EmbeddingSpec, load_or_build
+from .holdout import HoldoutSet, score_holdout
 from .metrics import Prediction, apply_margin, confusion_matrix, macro_f1, repredict, summarise
 from .report import FoldRun, ModelRun
 
@@ -360,6 +361,11 @@ class FineTuneFoldResult:
     steps_per_epoch: int
     warmup_steps: int
     weights_path: str | None = None
+    #: This fold's score against the real-text holdout, or ``None`` where the
+    #: run was made with ``--no-holdout``. Recorded in the sidecar as well as in
+    #: the report because README rule 3 asks for it to be recorded per candidate
+    #: model, bad ones included, and the sidecar is what identifies the model.
+    holdout: Mapping[str, object] | None = None
 
     def to_dict(self) -> dict:
         """The per-fold block of the metadata sidecar."""
@@ -374,6 +380,7 @@ class FineTuneFoldResult:
             "warmup_steps": self.warmup_steps,
             "validation": dict(self.val_summary),
             "decision_rule": self.fold_run.rule.to_dict(),
+            "holdout": None if self.holdout is None else dict(self.holdout),
             "weights": {
                 "path": self.weights_path,
                 "committed": False,
@@ -772,6 +779,146 @@ def predict_finetuned(
     ]
 
 
+def encoder_scorer(
+    encoder: PooledEncoder,
+    heads,
+    *,
+    signals: Sequence[str],
+    batch_size: int = 64,
+) -> Callable[[Sequence[str]], dict[str, list[list[float]]]]:
+    """The forward pass :func:`holdout.score_holdout` asks for, as a closure.
+
+    ``holdout.py`` is standard-library only and takes the forward pass as a
+    callable rather than importing one, so every line of the logic that decides
+    what a holdout number *means* is coverable by CI's unit job. This is the
+    torch half of that boundary: raw text in, softmax probabilities per head
+    out, in the order the texts arrived.
+
+    Probabilities rather than logits, for the same reason
+    :func:`predict_finetuned` keeps them: the margin grid in :mod:`.decision` is
+    a probability gap, and the margin applied to the holdout is the one already
+    selected on the fold's own validation split.
+
+    Every head is scored in one pass rather than one head at a time. For a
+    single-signal run that is a set of one; for a joint model it is what stops
+    the six heads costing six encoder passes over the same 67 submissions.
+    """
+
+    def score(texts: Sequence[str]) -> dict[str, list[list[float]]]:
+        import torch
+
+        encoder.model.eval()
+        heads.eval()
+        collected: dict[str, list[list[float]]] = {signal: [] for signal in signals}
+        with torch.no_grad():
+            for start in range(0, len(texts), batch_size):
+                chunk = list(texts[start : start + batch_size])
+                logits = heads(encoder.forward_pooled(encoder.tokenise(chunk)))
+                for signal in signals:
+                    collected[signal].extend(torch.softmax(logits[signal], dim=-1).cpu().tolist())
+        return collected
+
+    return score
+
+
+def _fold_scorers(
+    encoder: PooledEncoder,
+    heads,
+    *,
+    signal: str,
+    signals: Sequence[str],
+    test_examples: Sequence[Example],
+    holdout: HoldoutSet | None,
+    batch_size: int,
+) -> tuple[Callable[[DecisionRule], list[Prediction]], Callable[[DecisionRule], dict | None]]:
+    """The two things :func:`select_then_score` calls, bound to one fold's model.
+
+    A function rather than two closures written inline in
+    :func:`run_finetune_fold`, so that the encoder and heads reach them as
+    arguments. Written inline they would capture the caller's locals, which that
+    function deletes before ``torch.cuda.empty_cache()`` -- and a closure holding
+    a live reference to 440MB of encoder past the point the memory was supposed
+    to be released is exactly the kind of leak the five-fold sweep cannot afford.
+    """
+
+    def score_test(rule: DecisionRule) -> list[Prediction]:
+        # Argmax, deliberately -- the rule is not applied here. `raw` is the
+        # unruled view and the ruled one is `repredict`ed from the same scores,
+        # so the two confusion matrices the report prints differ only by the
+        # rule. The rule is still passed in, because the *order* is what this
+        # signature exists to express.
+        return predict_finetuned(
+            test_examples, encoder, heads, signal=signal, batch_size=batch_size
+        )
+
+    def score_realistic(rule: DecisionRule) -> dict | None:
+        if holdout is None:
+            return None
+        return score_holdout(
+            holdout,
+            encoder_scorer(encoder, heads, signals=signals, batch_size=batch_size),
+            # One head per fine-tune run today, so this is a list of one. It is
+            # the model's head set rather than the holdout's column set: a
+            # ruleset signal with no head is listed as unscored, not guessed at.
+            signals=[signal],
+            margin=rule.margin,
+            gated_class=rule.gated_class,
+        )
+
+    return score_test, score_realistic
+
+
+def describe_holdout(block: Mapping[str, object], signal: str) -> str:
+    """One fold's real-text result as a line for the terminal.
+
+    Printed as the run goes rather than left to the report, because a sweep is
+    watched and this is the number the whole exercise is anxious about. The
+    decisive count travels with it: 18 real cells is not 2,000 recombinations
+    and a bare percentage invites the reader to forget that.
+    """
+    by_signal: Sequence[Mapping[str, object]] = block["by_signal"]  # type: ignore[assignment]
+    entry = next((item for item in by_signal if item["signal"] == signal), None)
+    if entry is None:
+        return f"  holdout: {signal} not scored"
+    decisive = entry["decisive"]
+    point = decisive["accuracy"]["point"]
+    rendered = "--" if point is None else f"{100 * point:.1f}%"
+    half = decisive["worst_case_half_width"]
+    band = "" if half is None else f" (worst-case +/-{100 * half:.0f})"
+    return (
+        f"  holdout: {signal} decisive {rendered}{band} on {decisive['n_cells']} cells "
+        f"of {block['n_submissions']} real submissions, at margin {block['margin']}"
+    )
+
+
+def select_then_score(
+    val_predictions: Sequence[Prediction],
+    *,
+    score_test: Callable[[DecisionRule], list[Prediction]],
+    score_realistic: Callable[[DecisionRule], dict | None],
+) -> tuple[DecisionRule, list[Prediction], dict | None]:
+    """The order is the procedure, in one place that can be tested without a GPU.
+
+    Margin from validation, then the synthetic test split, then the real-text
+    holdout -- in that order and no other. The holdout's rules
+    (``data/realistic/README.md``) say it selects nothing and is scored once per
+    candidate model with the number recorded, and running it last is what makes
+    "it selected nothing" a structural property rather than a promise: by the
+    time it is called, the margin is fixed and test has already been opened, so
+    there is nothing left for it to influence.
+
+    Extracted from :func:`run_finetune_fold` deliberately. Inlined there it
+    would only be checkable by reading the source or by a test that needs torch,
+    a GPU-shaped fixture and a real encoder; here a recording fake asserts the
+    call sequence on every commit. ``tests/test_encoder_training_holdout.py``
+    is that test, and it is the reason this function exists.
+    """
+    rule = select_margin(val_predictions)
+    test_predictions = score_test(rule)
+    realistic = score_realistic(rule)
+    return rule, test_predictions, realistic
+
+
 def _snapshot(encoder: PooledEncoder) -> dict:
     """A CPU copy of the encoder's weights, for restoring the best epoch.
 
@@ -933,6 +1080,7 @@ def run_finetune_fold(
     config: FineTuneConfig,
     weights_dir: Path | str | None = None,
     shuffle_seed: int | None = None,
+    holdout: HoldoutSet | None = None,
     progress: bool = False,
 ) -> FineTuneFoldResult:
     """Fine-tune on one fold, select on validation, then score test exactly once.
@@ -946,7 +1094,13 @@ def run_finetune_fold(
 
     The order is the procedure: fit on train, select the epoch on validation,
     select the margin on validation, and only then open test -- once, under a rule
-    fixed before it was opened.
+    fixed before it was opened. The real-text holdout comes last of all, under
+    the margin test was scored with; :func:`select_then_score` is where that
+    order lives so it can be asserted without a GPU.
+
+    ``holdout`` is the 67 real submissions in ``data/realistic/``, already
+    loaded and validated. ``None`` skips the check, and the report says so
+    rather than reporting nothing.
     """
     import torch
 
@@ -995,10 +1149,24 @@ def run_finetune_fold(
     val_predictions = predict_finetuned(
         val_examples, encoder, heads, signal=signal, batch_size=config.eval_batch_size
     )
-    rule = select_margin(val_predictions)
-    raw = predict_finetuned(
-        test_examples, encoder, heads, signal=signal, batch_size=config.eval_batch_size
+    score_test, score_realistic = _fold_scorers(
+        encoder,
+        heads,
+        signal=signal,
+        signals=signals,
+        test_examples=test_examples,
+        holdout=holdout,
+        batch_size=config.eval_batch_size,
     )
+    rule, raw, realistic = select_then_score(
+        val_predictions, score_test=score_test, score_realistic=score_realistic
+    )
+    # The two closures hold the only other references to the encoder, so they go
+    # before it does; see the note beside the `del` at the end of this function.
+    del score_test, score_realistic
+
+    if realistic is not None:
+        print(describe_holdout(realistic, signal), flush=True)
 
     weights_path = None
     if weights_dir is not None:
@@ -1024,6 +1192,7 @@ def run_finetune_fold(
             rule=rule,
             raw=raw,
             ruled=repredict(raw, rule.margin, gated_class=rule.gated_class),
+            holdout=realistic,
         ),
         head_state=heads.state_lists(),
         n_parameters=sum(
@@ -1051,6 +1220,7 @@ def run_finetune_fold(
         steps_per_epoch=steps_per_epoch,
         warmup_steps=warmup_steps,
         weights_path=weights_path,
+        holdout=realistic,
     )
 
     # Five folds is five 440MB models plus their optimiser state. Dropping each
@@ -1069,6 +1239,7 @@ def run_finetune(
     config: FineTuneConfig,
     weights_dir: Path | str | None = None,
     shuffle_seed: int | None = None,
+    holdout: HoldoutSet | None = None,
     label: str | None = None,
     progress: bool = False,
 ) -> tuple[ModelRun, tuple[FineTuneFoldResult, ...]]:
@@ -1090,6 +1261,7 @@ def run_finetune(
                 config=config,
                 weights_dir=weights_dir,
                 shuffle_seed=shuffle_seed,
+                holdout=holdout,
                 progress=progress,
             )
         )
@@ -1296,8 +1468,10 @@ __all__ = [
     "build_metadata",
     "check_device",
     "derive_fold_seed",
+    "describe_holdout",
     "display_model",
     "device_report",
+    "encoder_scorer",
     "ensure_deterministic_env",
     "finetune_fold_model",
     "head_artefact",
@@ -1311,6 +1485,7 @@ __all__ = [
     "run_probe",
     "run_probe_fold",
     "seed_everything",
+    "select_then_score",
     "spec_from_metadata",
     "target_matrix",
     "train_probe",

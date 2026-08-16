@@ -78,6 +78,15 @@ jobs:
       - name: Validate synthetic fragment libraries
         run: python -m pytest tests/test_synthetic_recombination.py -v
 
+      # Same reasoning for the realistic held-out set. Its guards are about the
+      # committed data/realistic/ files -- that every submission id still lines
+      # up with its line in the source file, that no cell is blank, and that the
+      # README's distribution table matches the labels -- so an edit to those
+      # files is exactly the change they exist to catch, and exactly the change
+      # that skips the unit job. Stdlib-only, like the guard above.
+      - name: Validate the realistic held-out set
+        run: python -m pytest tests/test_encoder_training_holdout.py -v
+
   # ---------------------------------------------------------------------------
   # Unit tests: Python (no database) + frontend Vitest
   # Mirrors: make test

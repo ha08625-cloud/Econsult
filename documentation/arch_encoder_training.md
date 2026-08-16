@@ -417,13 +417,11 @@ rule is tunable, versioned and documented.
   and it is the arm that makes the comparison mean anything.
 * **No hyperparameter search.** The recipe was fixed before any run. Four
   quantities may be chosen against validation and they are enumerated in code.
-* **No realistic held-out evaluation set.** This is the next ticket, and it is
-  the one that decides whether anything here is evidence about real patient text:
-  **60–100 hand-written realistic full submissions, deliberately unlike the
-  recombinations, labelled by hand, held out and never touched by a training
-  decision.** Held-out clusters remove memorisation and nothing else; the test
-  examples are still short, still one supervised claim plus filler, still
-  assembled by the same generator from the same libraries in the same register.
+* ~~**No realistic held-out evaluation set.**~~ **Done.** `data/realistic/`
+  holds 67 hand-written submissions and their labels, and every Arm B run since
+  2026-08-16 scores them. Section 11 is the design and what the numbers are
+  worth. What it does *not* close: the set is small, it is one person's voice,
+  and it has no explicit denials on three of the six signals — see section 11.
 
 ---
 
@@ -480,3 +478,111 @@ extra run adds a row to each paired-comparison table.
 `--folds` must match how the datasets were generated; the loader refuses a
 directory whose sidecars disagree with the flag, whose filename lies about its
 fold, or in which any cluster is a test cluster in two folds.
+
+`finetune` and `compare-models` also score the real-text holdout by default —
+see section 11. `--no-holdout` skips it and the report header says so; a
+missing or mismatched labels file is a hard error rather than a silent skip,
+raised before the encoder is loaded so it costs a second rather than an hour.
+
+---
+
+## 11. The real-text holdout
+
+`data/realistic/` holds 67 free-text UTI submissions written to read like real
+patients, their labels for all seven `send_to_encoder` signals, and the
+arbitration notes for the 13 cells where the call was arguable. Its README is
+the authority on the rules; this section is what the tooling does with them and
+how to read the number.
+
+**Why it exists.** Every other number this package produces is scored on
+recombinations of the same fragment libraries the models were trained on. Held-out
+*clusters* remove memorisation and nothing else: the test examples are still two
+or three fragments, still exactly one supervised claim plus filler, still in the
+generator's register. 92.9% there could be 55% here and no report written before
+2026-08-16 would have shown it. This is the only measurement in the project that
+speaks to text a patient actually wrote.
+
+**Where it sits in the code.** `holdout.py` is standard library only and takes
+the forward pass as an injected callable — the same tier boundary `dataset.py`
+and `metrics.py` sit on, and for the same reason: everything deciding what the
+number *means* is covered by CI's unit job on a runner with no ML wheels.
+`train.encoder_scorer` is the torch half.
+
+**Two of the README's rules are enforced by construction rather than by memory.**
+
+* *It selects nothing.* Each fold model is scored here after its margin has been
+  chosen on validation and after the synthetic test split has been scored. The
+  order lives in one function, `train.select_then_score`, so a recording-fake
+  unit test asserts the sequence instead of a reader trusting it. By the time
+  the holdout is opened there is nothing left for it to influence.
+* *The resampling unit is the submission.* There is no cluster structure here, so
+  a submission's six or seven cells carry one unit id and resample together.
+  Treating cells as independent would report an interval about √6 too narrow on
+  the one set whose entire limitation is its size.
+
+**Scored in-process, at the end of each fold, not as a later pass over saved
+weights.** Three arms across six signals and five folds is 65 fine-tuned encoders
+at ~440MB — roughly 28GB to retain and score later. Scoring 67 submissions while
+the encoder is still in memory costs seconds and retains nothing.
+
+**The folds are averaged, never pooled.** Five folds are five different models
+scored on the *same* 67 submissions. Concatenating their predictions would count
+each submission five times and claim an effective n of 335 for a sample of 67.
+The report prints mean and across-fold spread, and the spread is a stability
+check on four degrees of freedom rather than a confidence interval.
+
+### What it can and cannot decide
+
+**It cannot rank two models, and no report should use it to.** 67 submissions
+give roughly ±12 points on one overall figure. Per signal it is worse: the
+decisive slice — the cells where the patient actually said something, which is
+the only slice that bounds anything — is 18 cells for `fever_present` and 6 for
+`recent_uti_present`, so ±23 and ±40. The report prints that worst-case
+half-width in the table beside each number rather than in a footnote, because
+the failure mode here is a reader taking a per-signal figure at face value.
+
+**It is a validity instrument, and it works in one direction.** A model in the
+nineties on recombinations landing near chance on real text is unmissable at this
+sample size. A three-point difference between two arms is not a finding.
+
+Four limitations belong in every report that quotes it, and the report prints
+all four rather than citing them:
+
+* **The labels were proposed by Claude and reviewed by the maintainer.** The
+  labeller and the model share an architecture and could share a blind spot,
+  which would inflate the score in a way no resampling would reveal.
+* **One person's voice.** Real submissions vary by age, first language, literacy,
+  how ill the person feels while typing, and what they think a GP wants to hear.
+* **Three signals have no `false` example at all** — `dysuria_present`,
+  `urinary_frequency_present`, `nocturia_present`. A model that never predicts
+  `false` is not penalised on them, so their numbers are very nearly recall-only,
+  and explicit denial was the largest error family in the synthetic evaluation.
+* **`dysuria_present` is 56 `true` against 11 `null` and 0 `false`**, so its
+  figure is a recall measurement and is reported as one.
+
+### Blank is not `null`
+
+README rule 4: a signal the labeller *cannot judge* has its key omitted, and a
+blank cell is that omission. `null` is a claim — the text raises the territory
+and does not settle it, or is silent about it — and a model is scored on getting
+it right. `holdout.py` refuses to merge the two and excludes an omitted cell from
+numerator and denominator alike, exactly as `dataset.py` excludes a masked signal.
+
+**No cell in today's file is blank, and that is correct rather than suspicious.**
+Every submission is a UTI-context text, so every signal is either plainly raised
+or plainly silent, and silence is `null` by the README's own definition. Arguable
+is not the same as unjudgeable: the 13 arguable cells were judged, and the
+arbitration file exists so a person can overturn them — two already were. A blank
+becomes likely once the set gains the submissions it is missing, which is why the
+loader implements the distinction whether or not the current file uses it.
+
+### What is not scored here
+
+Negative controls. A model fitted on permuted labels is not a candidate model,
+and 67 submissions are too few to spend confirming that it is bad. Arm A and the
+baselines are not scored either: Arm A reads a cached embedding matrix keyed to
+the synthetic splits and the baselines are fitted on tokens, so neither has a
+forward pass to hand these submissions without new machinery — and a
+bag-of-words number on real text is not what the set is for. Arm B carries the
+encoder that would eventually be deployed, so it is where the question is worth
+asking.

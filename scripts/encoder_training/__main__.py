@@ -50,6 +50,13 @@ baselines -- for the same reason, since "does fine-tuning beat the frozen probe
 on ``null_ambiguous``" is the paired comparison the whole ticket turns on and
 Arm A costs seconds once its embedding cache exists.
 
+Every fold of Arm B is also scored against ``data/realistic/`` -- 67 real-text
+submissions, held out permanently -- immediately **after** its margin has been
+selected and its test split scored, so the set cannot influence anything. That
+is the only number this package produces that speaks to text a patient actually
+wrote, and it is a validity check rather than a comparison: 67 submissions
+cannot rank two models. ``--no-holdout`` skips it and the report says so.
+
 Each arm writes its artefacts under ``models/encoder/<signal>/<arm>/``. Arm B's
 ~440MB of fine-tuned encoder per fold goes there too and is **not** committed;
 ``models/.gitignore`` covers it and the metadata sidecar records where it went.
@@ -81,6 +88,7 @@ from scripts.synthetic_data.__main__ import main as generate_main
 from .baselines import run_all
 from .dataset import SPLITS, DatasetError, fold_dataset_path, load_folds
 from .embed import POOLING_MODES, EmbedError
+from .holdout import DEFAULT_HOLDOUT_PATH, HoldoutError, HoldoutSet, encoder_signals, load_holdout
 from .report import BootstrapConfig, build_report, write_report
 from .ruleset_hash import hash_ruleset_file
 from .smoke_cuda import CudaSmokeError, check_device, format_report
@@ -381,6 +389,30 @@ def _probe_config_for_arm_b(args: argparse.Namespace) -> ProbeConfig:
     )
 
 
+def _load_holdout(args: argparse.Namespace) -> HoldoutSet | None:
+    """The 67 real submissions, or ``None`` when the run opted out.
+
+    A missing file is a hard error rather than a silent skip. The holdout is the
+    only measurement in this project that speaks to real patient text, and a run
+    that quietly produced no real-text number because a path was wrong would
+    look identical to one that produced a good one. ``--no-holdout`` is how a
+    run says it meant to skip it, and the report records which happened.
+
+    Validated against the ruleset's own ``send_to_encoder`` set, not against the
+    signal being trained: a labels file that has lost a column is a labels file
+    whose distribution table no longer describes it, whichever head is running.
+    """
+    if args.no_holdout:
+        return None
+    return load_holdout(args.holdout, signals=encoder_signals(args.ruleset))
+
+
+def _holdout_header(holdout: HoldoutSet | None) -> str:
+    if holdout is None:
+        return "not scored (--no-holdout)"
+    return f"{holdout.path} -- {len(holdout)} real submissions, scored after test, selects nothing"
+
+
 def _artefact_dir(args: argparse.Namespace, arm: str) -> Path:
     """Where one arm's artefacts live: ``models/encoder/<signal>/<arm>/``.
 
@@ -634,6 +666,10 @@ def run_arm_b(args: argparse.Namespace) -> int:
     in one report. Arm A costs seconds once its embedding cache exists.
     """
     folds = load_folds(args.data_dir, args.signal, folds=args.folds)
+    # Loaded before the encoder and before the first fold, so a bad path or a
+    # labels file that no longer matches the ruleset costs a second rather than
+    # an hour of GPU followed by a report with a hole in it.
+    holdout = _load_holdout(args)
     # A CPU fine-tune is hours rather than the two minutes per fold the plan
     # budgets, so falling back to it silently would be a worse outcome than
     # stopping. Asking for it explicitly still works, either way round.
@@ -686,6 +722,7 @@ def run_arm_b(args: argparse.Namespace) -> int:
         signal=args.signal,
         config=config,
         weights_dir=weights_dir,
+        holdout=holdout,
         progress=args.progress,
     )
     runs.append(run)
@@ -701,6 +738,11 @@ def run_arm_b(args: argparse.Namespace) -> int:
             # written: 2.2GB to record a model whose labels were nonsense.
             weights_dir=None,
             shuffle_seed=args.shuffle_seed,
+            # Nor is the control scored on the holdout. README rule 3 asks for
+            # the number of every *candidate* model to be recorded; a model
+            # fitted on permuted labels is not a candidate, and 67 real
+            # submissions are too few to spend on confirming that it is bad.
+            holdout=None,
             progress=args.progress,
         )
         runs.append(control_run)
@@ -767,6 +809,7 @@ def run_arm_b(args: argparse.Namespace) -> int:
             "determinism": args.determinism,
             "train_seed": args.train_seed,
             "trainable": "all layers unfrozen",
+            "holdout": _holdout_header(holdout),
             "validation_guided_decisions": list(VALIDATION_GUIDED_DECISIONS),
             "artefacts": str(artefact_dir),
             "weights": (
@@ -799,6 +842,7 @@ def run_compare_models(args: argparse.Namespace) -> int:
     """
     models = _resolve_comparison_models(args)
     folds = load_folds(args.data_dir, args.signal, folds=args.folds)
+    holdout = _load_holdout(args)
     cuda_required = not args.allow_cpu and args.device != "cpu"
     device_facts = check_device(args.device, cuda_required=cuda_required)
     device = device_facts["device"]
@@ -854,6 +898,7 @@ def run_compare_models(args: argparse.Namespace) -> int:
             signal=args.signal,
             config=config,
             weights_dir=None if weights_dir is None else weights_dir / "weights",
+            holdout=holdout,
             label=label,
             progress=args.progress,
         )
@@ -867,6 +912,7 @@ def run_compare_models(args: argparse.Namespace) -> int:
                 config=config,
                 weights_dir=None,
                 shuffle_seed=args.shuffle_seed,
+                holdout=None,
                 label=label,
                 progress=args.progress,
             )
@@ -940,6 +986,7 @@ def run_compare_models(args: argparse.Namespace) -> int:
             "determinism": args.determinism,
             "train_seed": args.train_seed,
             "arm_a_included": args.with_probe,
+            "holdout": _holdout_header(holdout),
             "negative_control": "run per encoder" if args.control else "not run (--control is off)",
             "artefacts": str(Path(args.models_dir) / args.signal),
         },
@@ -971,6 +1018,33 @@ def _add_report_args(parser: argparse.ArgumentParser) -> None:
         "the JSON always holds every fragment",
     )
     parser.add_argument("--no-markdown", action="store_true")
+
+
+def _add_holdout_args(parser: argparse.ArgumentParser) -> None:
+    """The real-text holdout, for the commands that fine-tune an encoder.
+
+    Not on ``baselines`` or ``probe``. Arm A scores from a cached embedding
+    matrix keyed to the synthetic splits, and the baselines are fitted on
+    tokens, so neither has a forward pass to hand these 67 submissions without
+    new machinery -- and a bag-of-words number on real text is not what the set
+    is for. Arm B carries the encoder that would eventually be deployed, so it
+    is where the question is worth asking.
+    """
+    parser.add_argument(
+        "--holdout",
+        type=Path,
+        default=DEFAULT_HOLDOUT_PATH,
+        help="the realistic held-out labels TSV. Scored once per fold model, after the margin "
+        "has been selected on validation and after the synthetic test split has been scored, so "
+        "that it cannot select anything. A missing file is an error, not a silent skip",
+    )
+    parser.add_argument(
+        "--no-holdout",
+        action="store_true",
+        help="skip the real-text holdout. The report then says the check was skipped rather "
+        "than reporting nothing, which is the difference between a run that meant to skip it and "
+        "one whose path was wrong",
+    )
 
 
 def _add_encoder_args(parser: argparse.ArgumentParser) -> None:
@@ -1072,6 +1146,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_report_args(finetune)
     _add_encoder_args(finetune)
+    _add_holdout_args(finetune)
     finetune.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     finetune.add_argument("--models-dir", type=Path, default=DEFAULT_MODELS_DIR)
     finetune.add_argument("--device", default="auto")
@@ -1144,6 +1219,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Arm B over several base models, against the same folds, in one report",
     )
     _add_report_args(compare)
+    _add_holdout_args(compare)
     compare.add_argument(
         "--base-models",
         nargs="+",
@@ -1219,10 +1295,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.handler(args)
-    except (CudaSmokeError, DatasetError, EmbedError, TrainError) as error:
-        # The three failures a caller can actually fix: an untrustworthy dataset,
-        # an encoder that cannot be identified well enough to key a cache, and a
-        # misconfigured run. A one-line message beats a traceback for all three.
+    except (CudaSmokeError, DatasetError, EmbedError, HoldoutError, TrainError) as error:
+        # The failures a caller can actually fix: an untrustworthy dataset, an
+        # encoder that cannot be identified well enough to key a cache, a
+        # holdout file that does not match the ruleset, and a misconfigured run.
+        # A one-line message beats a traceback for all of them.
         # Torch's own errors are deliberately left to propagate: a kernel-launch
         # failure is diagnosed from the stack, not from a summary.
         print(f"error: {error}", file=sys.stderr)
