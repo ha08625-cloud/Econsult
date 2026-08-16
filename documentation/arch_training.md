@@ -602,6 +602,74 @@ file. Each example gets its own seed derived from the run seed and its index, so
 generating 20,000 examples instead of 10,000 does not reshuffle the first
 10,000 — it appends to them.
 
+### The merged multi-signal tree
+
+`python -m scripts.encoder_training merge-folds` reads the six per-signal fold
+trees and writes a seventh beside them, for joint multi-head training.
+`scripts/encoder_training/merge.py` is where it lives — not in
+`scripts/synthetic_data/`, because it is built on the fold-tree convention in
+`dataset.py`, and `encoder_training` already imports from `synthetic_data`
+rather than the other way round.
+
+**Nothing is regenerated.** The merge is a concatenation, and that is what makes
+the comparison it exists for readable: the merged tree's `fever_present` slice
+*is* the fever tree's own slice, example for example, so a joint model and a
+single-signal model can be compared pairwise on it. Filenames follow the same
+`{signal}.fold{i}.{split}.jsonl` convention with the merged name (`joint6` by
+default) in the signal position, so `load_folds(dir, "joint6", folds=5)` reads it
+with every existing check applying and no special case anywhere. That is the
+contract: if the merged output ever needed a new escape hatch in `dataset.py`,
+the merge would be wrong, not the loader.
+
+**No head gains supervision.** A merged dysuria example carries a dysuria label
+and no `fever_present` key at all — which is a *mask*, not a `null` assertion,
+exactly as above. The fever head sees the same 10,000 labelled positions in the
+same 15/25/60 mix it saw alone; what changes is that the shared encoder is also
+pulled by five other heads on text the fever head gets no gradient from. Filling
+those absent keys with `null` would be a different and much larger ticket — 12.5,
+and then 12.2–12.4.
+
+**The structural nulls are kept once.** Because `run_seed` does not depend on the
+signal, all six trees emit byte-identical filler-only examples; one copy is kept
+and labelled `null` for all six. Same gradients, 25% fewer forward passes, and
+each head keeps its own mix. That identity is the load-bearing assumption, so the
+merge asserts it position for position on `example_id`, `text` and
+`meta.fragment_ids` rather than trusting it — if a signal term ever entered the
+seed derivation, six *divergent* null sets would collapse into whichever arrived
+first, every head's class prior would shift, and nothing downstream would notice.
+The union is only *sound* because the generalised filler lint (section 8) holds
+the filler libraries silent about all six signals; see 12.8.
+
+**Every merged example keeps the id it had in its own tree.** Six trees all
+number from `train-000000`, so the merged record gets a fresh `example_id` —
+`{signal}:{original}`, or `shared:{original}` for a deduplicated structural null —
+and a `meta.source_ids` map from signal to the id that example had in that
+signal's own tree. A structural null carries all six; a fever example carries
+one. **When a joint model reports predictions for signal S it reports them under
+`meta.source_ids[S]`**, which is what keeps paired McNemar against that signal's
+single-signal run working untouched. The rejected alternative was teaching the
+report layer that two ids are the same example, which would put that knowledge in
+the one module with no way to check it.
+
+Three things the merge refuses outright, each because the failure would otherwise
+be silent: sources that disagree on `generator_version` or on the
+`(folds, fold_index, split_salt)` triple; two sources describing one
+`fragment_id` with a different `cluster_key`, `fragment_type` or `split` (a dict
+union would first-win that); and divergent structural nulls. One thing it reports
+without refusing: a `cluster_key` shared by fragments from more than one library.
+Tagged clusters are namespaced `{library}:{tag}` and cannot collide, but untagged
+ones fall back to the normalised text, which is not library-qualified — so
+identical text in two libraries becomes one resampling unit. That *deflates*
+effective sample size rather than inflating it, which is the safe direction, so
+it is counted, listed in the merged sidecar's `merged_from` block and warned about
+on stderr rather than treated as an error.
+
+The merged sidecar carries everything `REQUIRED_STATS_KEYS` asks for, plus a
+`signals` list, a `realised.labelled_by_signal` block (which should match each
+source tree's own realised counts exactly, since the merge adds no supervision),
+and `merged_from` — the sources with their signals, example counts and seeds, the
+structural-null tally, and the collision list.
+
 ---
 
 ## 8. The lint
@@ -1739,9 +1807,14 @@ first appears.
 3. **Six single-signal runs.** No code change at all — `--signal` is already a
    flag on every subcommand and has only ever been passed one value.
 
-**Blocked, in this order:** merge and joint multi-head training; realistic
-held-out evaluation; multi-symptom recombinations (12.2–12.5); cluster-tagging
-the four untagged library sets.
+**Landed since:** the realistic held-out evaluation (section 9, scored on every
+Arm B fold) and the **merge tool** — `merge-folds`, described at the end of
+section 7. Joint multi-head *training* is the piece still outstanding: separating
+"which dataset" from "which heads" in `train.py`, per-head margin selection, and
+one shared epoch-selection criterion across six heads.
+
+**Blocked, in this order:** joint multi-head training; multi-symptom
+recombinations (12.2–12.5); cluster-tagging the four untagged library sets.
 
 **The one thing that surprises people about the merge.** Joint training on
 merged single-signal datasets needs *no* part of 12.5. `fold_bucket` is a pure
@@ -1760,9 +1833,11 @@ gradients, 25% fewer forward passes, and each head keeps exactly the 15/25/60
 mix it trained on alone), but labelling one filler-only example `null` six times
 *is* a silence assertion about the filler libraries. Task 2 above is what makes
 that assertion checkable, and it now holds: zero hits across all six signals.
-Note what it does and does not license — it says the filler *libraries* are
-silent, which is exactly the guarantee the structural-null union needs, and says
-nothing about whether a *signal* library is silent about the other five. That
+The merge tool takes the second option and asserts the byte-identity rather than
+trusting it; the end of section 7 has the shape it writes. Note what the lint
+does and does not license — it says the filler *libraries* are silent, which is
+exactly the guarantee the structural-null union needs, and says nothing about
+whether a *signal* library is silent about the other five. That
 second question is 12.5's, and the `flank_pain_false` lines in section 3 are the
 known counter-example waiting for it.
 

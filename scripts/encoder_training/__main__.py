@@ -1,6 +1,6 @@
 """Command-line entry point for encoder training and evaluation.
 
-Seven subcommands.
+Eight subcommands.
 
     python -m scripts.encoder_training generate-folds --folds 5
 
@@ -9,6 +9,16 @@ under one directory by the naming convention :mod:`.dataset` reads back. Scripte
 rather than documented because the fifteen runs have to agree on the fold count,
 the salt and the seed derivation, and a shell loop that gets one of those wrong
 produces a directory that loads cleanly and evaluates nonsense.
+
+    python -m scripts.encoder_training merge-folds --folds 5
+
+Reads the six per-signal fold trees and writes one merged tree beside them, ready
+for joint multi-head training. Nothing is regenerated: the merged tree's
+``fever_present`` slice *is* the fever tree's own slice, example for example,
+which is what lets a joint model be compared pairwise against the single-signal
+one. Stdlib only, and every property the concatenation relies on -- one fold
+configuration, byte-identical structural nulls, no first-won fragment conflict --
+is asserted rather than trusted. See :mod:`.merge`.
 
     python -m scripts.encoder_training baselines --folds 5
 
@@ -89,6 +99,7 @@ from .baselines import run_all
 from .dataset import SPLITS, DatasetError, fold_dataset_path, load_folds
 from .embed import POOLING_MODES, EmbedError
 from .holdout import DEFAULT_HOLDOUT_PATH, HoldoutError, HoldoutSet, encoder_signals, load_holdout
+from .merge import DEFAULT_SIGNALS, MergeError, merge_folds
 from .report import BootstrapConfig, build_report, write_report
 from .ruleset_hash import hash_ruleset_file
 from .smoke_cuda import CudaSmokeError, check_device, format_report
@@ -224,6 +235,31 @@ def generate_folds(args: argparse.Namespace) -> int:
             written += 1
 
     print(f"wrote {written} datasets to {args.out_dir}")
+    return 0
+
+
+def run_merge_folds(args: argparse.Namespace) -> int:
+    """Merge the per-signal fold trees into one, and say what was noticed.
+
+    The cluster-key collision warning goes to stderr rather than into the
+    sidecar alone: it is not an error -- it deflates effective sample size
+    rather than inflating it -- but a merge that quietly folded two libraries'
+    fragments into one resampling unit is exactly the kind of invisible change
+    this package exists to make visible.
+    """
+    result = merge_folds(
+        args.data_dir,
+        signals=args.signals,
+        out_dir=args.out_dir,
+        name=args.name,
+        folds=args.folds,
+    )
+    for warning in result.warnings:
+        print(warning, file=sys.stderr)
+    print(
+        f"wrote {len(result.paths)} datasets holding {result.examples} examples to "
+        f"{args.out_dir or args.data_dir} as signal {result.name!r}"
+    )
     return 0
 
 
@@ -1080,6 +1116,34 @@ def build_parser() -> argparse.ArgumentParser:
         generate.add_argument(f"--{split}-count", type=int, default=default)
     generate.set_defaults(handler=generate_folds)
 
+    merge = subparsers.add_parser(
+        "merge-folds",
+        help="merge the per-signal fold trees into one multi-head tree",
+    )
+    merge.add_argument(
+        "--signals",
+        nargs="+",
+        default=list(DEFAULT_SIGNALS),
+        help="the signals to merge. Defaults to the six with fragment libraries; the ruleset's "
+        "seventh send_to_encoder signal, recent_uti_present, has none and therefore no head",
+    )
+    merge.add_argument("--folds", type=int, default=DEFAULT_FOLDS)
+    merge.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    merge.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="where the merged tree goes. Defaults to --data-dir, so the merged files sit beside "
+        "the trees they came from under the same naming convention",
+    )
+    merge.add_argument(
+        "--name",
+        default=None,
+        help="the merged tree's name, used in the signal position of the fold filename so that "
+        "load_folds reads it with no special case. Defaults to joint<N>",
+    )
+    merge.set_defaults(handler=run_merge_folds)
+
     baselines = subparsers.add_parser(
         "baselines", help="fit the baselines and controls, and write the report"
     )
@@ -1295,10 +1359,18 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.handler(args)
-    except (CudaSmokeError, DatasetError, EmbedError, HoldoutError, TrainError) as error:
+    except (
+        CudaSmokeError,
+        DatasetError,
+        EmbedError,
+        HoldoutError,
+        MergeError,
+        TrainError,
+    ) as error:
         # The failures a caller can actually fix: an untrustworthy dataset, an
         # encoder that cannot be identified well enough to key a cache, a
-        # holdout file that does not match the ruleset, and a misconfigured run.
+        # holdout file that does not match the ruleset, per-signal trees that
+        # cannot honestly be merged, and a misconfigured run.
         # A one-line message beats a traceback for all of them.
         # Torch's own errors are deliberately left to propagate: a kernel-launch
         # failure is diagnosed from the stack, not from a summary.
