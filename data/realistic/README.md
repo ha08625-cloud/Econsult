@@ -38,7 +38,7 @@ disappointing number is when they get broken.
 |---|---|
 | `uti1_holdout.source.txt` | **The source of truth.** One submission per line, verbatim. |
 | `uti1_holdout.labels.tsv` | The labels. One row per submission, one column per `send_to_encoder` signal in `data/uti1.json`. |
-| `uti1_holdout.arbitrate.md` | The 13 cells where the call is genuinely arguable, with the text and the reasoning. Read this first when reviewing. |
+| `uti1_holdout.arbitrate.md` | The 13 cells where the call is genuinely arguable, with the text and the reasoning. Read this first when reviewing. Two of its proposals were overruled and it says which; the TSV is the labels. |
 
 `submission_id` is `holdout-NNNN`, assigned by line order in the source file.
 **Do not reorder or insert lines in the source file** — the ids would shift and
@@ -67,6 +67,66 @@ The distinction that matters most and is easiest to get wrong: **silence is not
 `fever_present`, not `false`. `false` is reserved for "no fever", "no back pain
 or fever", "No blood, no fever" — an explicit denial the patient made.
 
+### Why there are no blanks, and when there should be one
+
+**Every one of the 469 cells has a value, and that is the correct state of this
+file rather than a sign that `null` quietly absorbed "cannot say".** The
+question was left open when the scoring code was planned and was settled by
+review on 2026-08-16; the answer is recorded here rather than in a plan because
+the plan is not what a future labeller reads.
+
+Three states get confused with each other, and only the third is a blank:
+
+* **Silent.** The text never raises the signal at all. That is `null` — the
+  paragraph above says so explicitly, and it is the majority of the file.
+* **Raised and unsettled.** The text is about the territory and does not decide
+  it: "it doesn't hurt too badly to pee", "blood on the toilet paper". That is
+  also `null`, and where the call is *arguable* it is listed in
+  `uti1_holdout.arbitrate.md` with the reasoning. Arguable is not the same as
+  unjudgeable — an arguable cell was judged, and the arbitration file exists so
+  the judgement can be overturned by a person rather than hidden.
+* **Unjudgeable.** The labeller cannot decide *and* cannot say the text is
+  silent or unsettled either — the sentence is garbled, contradicts itself, or
+  turns on clinical knowledge the labeller does not have. That is the blank, and
+  no submission here produced one.
+
+Every submission in this set is a UTI-context text written by one person, so
+every signal is either plainly raised or plainly silent. A blank becomes likely
+the moment that stops being true: a submission that turns out not to be a UTI at
+all, or one written by someone whose meaning genuinely cannot be recovered — both
+of which are things the "what to write next" section below asks for. The loader
+(`scripts/encoder_training/holdout.py`) implements the distinction whether or not
+today's file uses it, and refuses to merge a blank into a `null`;
+`tests/test_encoder_training_holdout.py::test_no_cell_in_the_real_file_is_omitted`
+fails if one appears, so it will be a decision someone makes rather than one that
+happens.
+
+## How it is scored, and where the rules are enforced
+
+`scripts/encoder_training/holdout.py` loads this file and computes the numbers;
+`arch_encoder_training.md` section 11 is the design. Two of the rules above are
+enforced by construction rather than by anyone remembering them:
+
+* **Rule 2 (selects nothing)** is enforced by the call order. Each fold model is
+  scored here *after* its decision margin has been chosen on the synthetic
+  validation split and *after* the synthetic test split has been scored, so by
+  the time this set is opened there is nothing left for it to influence. The
+  order lives in one function, `train.select_then_score`, so that a unit test
+  can assert the sequence rather than a reader having to trust it.
+* **Rule 5 (the submission is the resampling unit)** is enforced by the
+  bootstrap: a submission's six or seven cells carry one unit id and resample
+  together.
+
+**Rule 3 (scored once per candidate model, and the number is recorded, including
+the bad ones)** is not something code can enforce. What the code does is make
+skipping visible: the run either scores the set or is told `--no-holdout`, and
+the report prints which. A number is recorded per fold in the model's metadata
+sidecar and per model in the evaluation report.
+
+The negative controls are deliberately *not* scored here. A model fitted on
+permuted labels is not a candidate model, and 67 submissions are too few to
+spend confirming that it is bad.
+
 ## Provenance of the labels
 
 **The labels were proposed by Claude and reviewed by the maintainer.** They were
@@ -87,12 +147,21 @@ answering "no information", which the majority-class baseline does perfectly.
 | signal | true | false | null | decisive |
 |---|---|---|---|---|
 | `dysuria_present` | 56 | 0 | 11 | **56** |
-| `urinary_frequency_present` | 27 | 0 | 40 | **27** |
+| `urinary_frequency_present` | 26 | 0 | 41 | **26** |
 | `fever_present` | 9 | 9 | 49 | **18** |
 | `flank_pain_present` | 7 | 7 | 53 | **14** |
 | `haematuria_present` | 9 | 2 | 56 | **11** |
 | `nocturia_present` | 9 | 0 | 58 | **9** |
-| `recent_uti_present` | 2 | 5 | 60 | **7** |
+| `recent_uti_present` | 2 | 4 | 61 | **6** |
+
+*Two cells of this table were stale until 2026-08-16 and are corrected above.
+The `urinary_frequency_present` and `recent_uti_present` rows were written from
+the labels as first proposed; the maintainer then revised two of them --
+`holdout-0003` urinary frequency `true` -> `null`, and `holdout-0004` recent UTI
+`false` -> `null` -- and the summary was not recounted. The TSV is the labels,
+so the TSV was right and the table was wrong.
+`tests/test_encoder_training_holdout.py::test_the_readme_distribution_table_matches_the_labels_file`
+now recounts it on every commit, because this table is quoted in reports.*
 
 Two things follow, and both are more limiting than the raw count of 67 suggests.
 

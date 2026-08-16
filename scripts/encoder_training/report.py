@@ -82,7 +82,13 @@ from .metrics import (
 #: `fragments` argument, which is every report written before six signals were
 #: trainable and the question "is this library's eff n real" started to have
 #: different answers for different signals.
-SCHEMA_VERSION = 4
+#:
+#: 5 added `holdout`: each model's score against the 67 real-text submissions in
+#: `data/realistic/`, per signal, aggregated across the folds. Additive, and
+#: `null` on any report whose runs did not score it -- which is every report
+#: written before the set was readable by any code, and any run made with
+#: `--no-holdout`.
+SCHEMA_VERSION = 5
 
 #: Sub-classes the hard `null` libraries carry, across every signal rather than
 #: fever alone. Listed so that a sub-class the manifest declares but no test fold
@@ -143,6 +149,10 @@ class FoldRun:
     rule: DecisionRule
     raw: tuple[Prediction, ...]
     ruled: tuple[Prediction, ...]
+    #: This fold's score against the real-text holdout, as
+    #: :func:`holdout.score_holdout` returned it, or ``None`` where the run was
+    #: made with ``--no-holdout`` or by an arm that does not score it.
+    holdout: Mapping[str, object] | None = None
 
     @classmethod
     def build(
@@ -155,6 +165,7 @@ class FoldRun:
         rule: DecisionRule,
         raw: Sequence[Prediction],
         ruled: Sequence[Prediction],
+        holdout: Mapping[str, object] | None = None,
     ) -> FoldRun:
         """Build a fold's result, qualifying every example id with its fold.
 
@@ -173,6 +184,11 @@ class FoldRun:
             rule=rule,
             raw=tuple(_qualify(prediction, fold_index) for prediction in raw),
             ruled=tuple(_qualify(prediction, fold_index) for prediction in ruled),
+            # Deliberately *not* qualified. The holdout's 67 submissions are the
+            # same 67 in every fold -- that is the whole point of a held-out set
+            # -- so a fold prefix here would suggest five independent samples
+            # where there is one, scored five times.
+            holdout=None if holdout is None else dict(holdout),
         )
 
 
@@ -657,6 +673,136 @@ def compare_models(
     return comparisons
 
 
+def _holdout_spread(values: Sequence[float | None]) -> dict:
+    """Mean and sd of one holdout statistic across the folds.
+
+    Folds whose statistic is undefined -- an empty slice -- are dropped rather
+    than scored zero, and how many contributed is recorded beside the mean.
+    """
+    present = [value for value in values if value is not None]
+    if not present:
+        return {"mean": None, "sd": None, "n_folds": 0, "values": list(values)}
+    spread = fold_spread(present)
+    return {
+        "mean": spread.mean,
+        "sd": spread.sd,
+        "n_folds": spread.n_folds,
+        "values": list(values),
+    }
+
+
+def _holdout_slice(blocks: Sequence[Mapping[str, object]], key: str) -> dict:
+    """One holdout slice across the folds: fixed counts, spread accuracy.
+
+    ``n_cells`` and ``n_submissions`` are properties of the *set*, not of a
+    model, so they are asserted identical across folds rather than averaged --
+    five folds scoring different numbers of cells would mean the label file
+    changed under the run.
+    """
+    slices = [block[key] for block in blocks]
+    counts = {(entry["n_cells"], entry["n_submissions"]) for entry in slices}
+    if len(counts) > 1:
+        raise ValueError(
+            f"the folds disagree about the size of the holdout {key!r} slice: {sorted(counts)}. "
+            "The held-out set is the same 67 submissions in every fold, so this means the labels "
+            "file changed mid-run and no number from it is interpretable"
+        )
+    n_cells, n_submissions = counts.pop()
+    return {
+        "n_cells": n_cells,
+        "n_submissions": n_submissions,
+        "worst_case_half_width": slices[0]["worst_case_half_width"],
+        "accuracy": _holdout_spread([entry["accuracy"]["point"] for entry in slices]),
+        "per_fold": [
+            {
+                "point": entry["accuracy"]["point"],
+                "low": entry["accuracy"]["low"],
+                "high": entry["accuracy"]["high"],
+            }
+            for entry in slices
+        ],
+    }
+
+
+def holdout_summary(run: ModelRun) -> dict | None:
+    """One model's real-text holdout numbers, aggregated across its folds.
+
+    ``None`` when no fold scored it, so a report built before this existed --
+    or with ``--no-holdout`` -- carries no empty section pretending the check
+    ran.
+
+    **The folds are not pooled, and that is the whole design of this block.**
+    Five folds are five different models scored on the *same* 67 submissions,
+    so concatenating their predictions would count each submission five times
+    and report an effective n of 335 for a set that holds 67 observations. Mean
+    and spread across folds is what five models on one sample supports; the
+    spread is a stability check on the same four degrees of freedom the
+    synthetic fold spread has, not a confidence interval.
+    """
+    blocks = [fold.holdout for fold in run.folds if fold.holdout is not None]
+    if not blocks:
+        return None
+    if len(blocks) != len(run.folds):
+        raise ValueError(
+            f"{run.name}: {len(blocks)} of {len(run.folds)} folds carry a holdout score. A "
+            "partially-scored holdout would make the mean below an average over a different set "
+            "of models than the report's other numbers describe"
+        )
+
+    paths = {str(block["path"]) for block in blocks}
+    if len(paths) > 1:
+        raise ValueError(f"{run.name}: the folds scored different holdout files: {sorted(paths)}")
+
+    signals = list(blocks[0]["signals_scored"])
+    by_signal: list[dict] = []
+    for position, signal in enumerate(signals):
+        entries = [block["by_signal"][position] for block in blocks]
+        if {entry["signal"] for entry in entries} != {signal}:
+            raise ValueError(f"{run.name}: the folds' holdout signals are in different orders")
+        entry = {
+            "signal": signal,
+            "distribution": entries[0]["distribution"],
+            "all": _holdout_slice(entries, "all"),
+            "decisive": _holdout_slice(entries, "decisive"),
+            "per_class_recall": {
+                name: _holdout_spread([entry["per_class"][name]["recall"] for entry in entries])
+                for name in CLASS_NAMES
+            },
+            "null_to_true": {
+                "null_support": entries[0]["null_to_true"]["null_support"],
+                "counts": [entry["null_to_true"]["count"] for entry in entries],
+            },
+        }
+        caveats = {entry.get("caveat") for entry in entries if entry.get("caveat")}
+        if caveats:
+            entry["caveat"] = sorted(caveats)[0]
+        by_signal.append(entry)
+
+    return {
+        "path": paths.pop(),
+        "n_submissions": blocks[0]["n_submissions"],
+        "n_folds": len(blocks),
+        "signals_scored": signals,
+        "signals_not_scored": list(blocks[0]["signals_not_scored"]),
+        "margins": [block["margin"] for block in blocks],
+        "bootstrap": blocks[0]["bootstrap"],
+        "resampling_unit": blocks[0]["resampling_unit"],
+        "selected_nothing": blocks[0]["selected_nothing"],
+        "not_pooled": (
+            "the folds are not pooled. Five folds are five models scored on the same 67 "
+            "submissions, so pooling would count each submission five times; the figures below "
+            "are the mean and spread across folds, and the spread is a stability check rather "
+            "than a confidence interval"
+        ),
+        "overall": _holdout_slice(blocks, "overall"),
+        "decisive": _holdout_slice(blocks, "decisive"),
+        "by_signal": by_signal,
+        "provenance": blocks[0]["provenance"],
+        "voice": blocks[0]["voice"],
+        "power": blocks[0]["power"],
+    }
+
+
 def _model_block(run: ModelRun, *, boot: BootstrapConfig) -> dict:
     ruled = run.pooled("ruled")
     raw = run.pooled("raw")
@@ -700,6 +846,9 @@ def _model_block(run: ModelRun, *, boot: BootstrapConfig) -> dict:
         },
         "fragments": fragments,
         "error_concentration": _error_concentration(fragments),
+        # `None` where the run did not score it, so a report built before the
+        # holdout existed carries no section claiming the check ran.
+        "holdout": holdout_summary(run),
     }
 
 
@@ -763,6 +912,12 @@ LIMITATIONS = (
     "thousands of observations. The cost is that the pooled overall accuracy swings widely under "
     "resampling for reasons that have nothing to do with the model. The `decisive` slice, which "
     "drops them, is the one to read.",
+    "**The real-text holdout cannot rank two models, and is not a smaller version of the tables "
+    "above.** 67 submissions with no cluster structure give roughly +/-12 points on one overall "
+    "figure and +/-20 or worse on a per-signal decisive slice. It answers a different question -- "
+    "does any of this transfer to text a patient actually wrote -- and it answers it in one "
+    "direction only: a large drop there is conclusive, a small difference between two models "
+    "there is noise.",
     "**Fragment libraries, not sample size, are the ceiling.** Forty-seven metaphor clusters is "
     "forty-seven ideas however many examples are drawn from them. Everything section 9 of "
     "`arch_training.md` says about what this data is and is not worth continues to apply in "
@@ -911,18 +1066,26 @@ EFFECTIVE_SAMPLE_SIZE = (
 #: expensive in careful thought, and it is the one that decides whether anything
 #: in this report is evidence about real patient text.
 NEXT_TICKET = (
-    "**Write 60-100 realistic full submissions by hand, deliberately unlike the recombinations, "
-    "label them by hand, and hold them out permanently.** Never touched by a training decision, "
-    "never used to select a margin, never used to choose a pooling mode.",
-    "Everything scored in this report is a recombination of the same few hundred fragments the "
-    "models were trained on. Held-out *clusters* remove memorisation, and that is all they remove: "
-    "the test examples are still short, still one supervised claim plus filler, still assembled by "
-    "the same generator from the same libraries in the same register. No number here measures what "
-    "happens when a real patient writes three paragraphs in their own voice.",
-    "This is cheap in code -- it is a JSONL file and a scoring run against the existing report "
-    "writer -- and expensive in careful thought, which is why it is its own ticket rather than a "
-    "task at the end of this one. Until it exists, nothing here resembles evidence about real "
-    "patient text, however wide or narrow the intervals above are.",
+    "**Write more held-out submissions, and write the ones that are missing.** The 67 in "
+    "`data/realistic/` exist and are scored above, which closes the previous next-ticket: "
+    "everything else in this report is a recombination of the same few hundred fragments the "
+    "models were trained on, and held-out *clusters* remove memorisation and nothing else -- the "
+    "test examples are still short, still one supervised claim plus filler, still assembled by "
+    "the same generator in the same register.",
+    "The shortage in the held-out set is **specific rather than general**, and writing another 67 "
+    "of the same shape would not fix it. What is missing is **explicit denials** -- "
+    '"no burning", '
+    '"I\'m not going more often than usual", "no waking at night" -- and submissions where the '
+    "patient turns out not to have a UTI at all. Three signals have no `false` example anywhere "
+    "in the set, so a model that never predicts `false` is not penalised on them, and explicit "
+    "denial was the largest error family in the synthetic evaluation.",
+    "**Multi-symptom recombinations** (`arch_training.md` 12.5 and 12.6) are the other half. A "
+    "generated example carries a label for one signal and no other, so every `null` example for a "
+    "signal pairs an absence of that signal's language with *bland non-clinical* filler -- and "
+    "real submissions are dense with clinical language about other symptoms. If "
+    '"clinical-sounding text implies not-null" is a shortcut the models have taken, the holdout '
+    "numbers above are where it shows, and joint multi-head training does not fix it because each "
+    "head is masked on the other signals' examples.",
 )
 
 
@@ -1262,6 +1425,146 @@ def _render_headline(report: Mapping[str, object]) -> list[str]:
                 row.append(f"{_ci(entry['null_recall'])} (eff n {entry['effective_n']})")
         rows.append(row)
     lines.extend(_table(["model", *subclass_names], rows))
+    return lines
+
+
+def _sentence(text: str) -> str:
+    """Capitalise the first letter and end the sentence, leaving the rest alone.
+
+    ``str.capitalize`` would lowercase everything after it, which turns
+    "README rule 2" into "readme rule 2" in the one place a reader is being
+    pointed at a file to go and read.
+    """
+    return text[:1].upper() + text[1:] + "."
+
+
+def _spread_cell(spread: Mapping[str, object]) -> str:
+    """``mean +/- sd`` across folds, or just the mean where there is one fold."""
+    mean = spread.get("mean")
+    if mean is None:
+        return DASH
+    sd = spread.get("sd")
+    if sd is None:
+        return _pct(mean)
+    return f"{_pct(mean)} +/- {_pct(sd)}"
+
+
+def _render_holdout(report: Mapping[str, object]) -> list[str]:
+    """The only numbers in this report that speak to real patient text.
+
+    Placed immediately below the headline rather than in an appendix, because
+    the question it answers -- is any of the above evidence about real
+    submissions at all -- comes before every question the tables above it
+    settle. Omitted entirely when no model scored it, rather than printed
+    empty: a heading with nothing under it invites a reader to conclude the
+    check ran and found nothing.
+    """
+    scored = [model for model in report["models"] if model.get("holdout")]
+    if not scored:
+        return []
+
+    first = scored[0]["holdout"]
+    lines = [
+        "## The real-text holdout",
+        "",
+        f"Scored against `{first['path']}` -- {first['n_submissions']} free-text submissions",
+        "written to read like real patients, labelled once and used to select nothing. **Every",
+        "other number in this report is a recombination of the same fragment libraries the models",
+        "were trained on.** This section is the only measurement here that speaks to real patient",
+        "text, and it is a validity check rather than a comparison.",
+        "",
+        f"> {first['power']}",
+        "",
+        f"> {first['provenance']}",
+        "",
+        f"> {first['voice']}",
+        "",
+        f"*{_sentence(first['selected_nothing'])}*",
+        "",
+        f"*{_sentence(first['not_pooled'])}*",
+        "",
+        '**Read the `decisive` columns.** A `null` cell is one a model scores by answering "no',
+        'information", which the majority-class baseline does perfectly; the decisive cells are',
+        "the ones where the patient said something the model has to read. Where a signal has no",
+        "`false` examples at all, its decisive figure is very nearly recall on `true` and nothing",
+        "here tests whether an explicit denial is read correctly.",
+        "",
+    ]
+    if first["signals_not_scored"]:
+        lines.append(
+            "Not scored, because no head exists for them: "
+            + ", ".join(f"`{signal}`" for signal in first["signals_not_scored"])
+            + "."
+        )
+        lines.append("")
+
+    for model in scored:
+        holdout = model["holdout"]
+        synthetic = model["pooled"]["ruled"]["decisive"]
+        lines.append(f"### `{model['name']}`")
+        lines.append("")
+        lines.append(
+            f"Recombination test slice: **n {synthetic['n_examples']}**, "
+            f"**eff n {synthetic['effective_n']}** clusters, accuracy "
+            f"{_ci(synthetic['accuracy'])}. Holdout: **n {holdout['n_submissions']}** "
+            f"submissions, one observation each, scored by "
+            f"{holdout['n_folds']} fold models at margins "
+            f"{', '.join(str(margin) for margin in holdout['margins'])}. "
+            "The two `n`s are printed together because they are not the same kind of number and "
+            "the second is far the smaller."
+        )
+        lines.append("")
+        rows = []
+        for entry in holdout["by_signal"]:
+            distribution = entry["distribution"]
+            decisive = entry["decisive"]
+            everything = entry["all"]
+            rows.append(
+                [
+                    f"`{entry['signal']}`",
+                    f"{distribution['true']}/{distribution['false']}/{distribution['null']}",
+                    str(distribution["omitted"]),
+                    str(decisive["n_cells"]),
+                    _spread_cell(decisive["accuracy"]),
+                    "+/-" + _pct(decisive["worst_case_half_width"]),
+                    str(everything["n_cells"]),
+                    _spread_cell(everything["accuracy"]),
+                    _spread_cell(entry["per_class_recall"]["null"]),
+                ]
+            )
+        lines.extend(
+            _table(
+                [
+                    "signal",
+                    "true/false/null",
+                    "omitted",
+                    "decisive n",
+                    "decisive acc (mean +/- sd)",
+                    "worst-case half-width",
+                    "all n",
+                    "all acc (mean +/- sd)",
+                    "null recall",
+                ],
+                rows,
+            )
+        )
+        caveats = [entry for entry in holdout["by_signal"] if entry.get("caveat")]
+        for entry in caveats:
+            lines.append(f"* `{entry['signal']}`: {entry['caveat']}.")
+        if caveats:
+            lines.append("")
+        lines.append(
+            "`null -> true` on real text, per fold: "
+            + "; ".join(
+                f"`{entry['signal']}` "
+                + ", ".join(str(count) for count in entry["null_to_true"]["counts"])
+                + f" of {entry['null_to_true']['null_support']}"
+                for entry in holdout["by_signal"]
+            )
+            + ". This is the cell that invents a symptom into a patient's pre-filled form, "
+            "counted here on submissions rather than on recombinations."
+        )
+        lines.append("")
     return lines
 
 
@@ -1819,6 +2122,7 @@ def render_markdown(
     lines.extend(_render_how_to_read())
     lines.extend(_render_cluster_tag_coverage(report))
     lines.extend(_render_headline(report))
+    lines.extend(_render_holdout(report))
     lines.extend(_render_ticket_question(report))
     lines.extend(_render_expectations(report))
     lines.extend(_render_checks(report))
