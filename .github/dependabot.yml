@@ -5,7 +5,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "thursday"
+      time: "22:00"
+      timezone: "Europe/London"
     ignore:
       - dependency-name: "pydantic"
         update-types: ["version-update:semver-major"]
@@ -21,7 +23,9 @@ updates:
     directory: "/frontend"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "thursday"
+      time: "22:00"
+      timezone: "Europe/London"
     ignore:
       - dependency-name: "dompurify"
         update-types: ["version-update:semver-major"]
@@ -38,11 +42,15 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "thursday"
+      time: "22:00"
+      timezone: "Europe/London"
 
   # Maintain CI/CD Pipeline (GitHub Actions runners/steps)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-      day: "monday"
+      day: "thursday"
+      time: "22:00"
+      timezone: "Europe/London"

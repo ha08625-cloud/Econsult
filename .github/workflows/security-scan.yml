@@ -8,8 +8,8 @@ on:
   schedule:
     # Weekly re-scan so newly disclosed CVEs in unchanged dependencies or the
     # base image are still caught, independent of commit activity.
-    # Matches Dependabot's weekly (Monday) cadence.
-    - cron: '0 3 * * 1'
+    # Matches Dependabot's weekly (Thursday night, Europe/London) cadence.
+    - cron: '0 22 * * 4'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
