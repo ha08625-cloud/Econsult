@@ -393,6 +393,117 @@ class FineTuneFoldResult:
         }
 
 
+@dataclass(frozen=True)
+class JointFineTuneFoldResult:
+    """One fold of a joint multi-head fine-tune: several heads, one shared encoder.
+
+    Where :class:`FineTuneFoldResult` is one signal's view of one fold,
+    this is the physical training run behind several signals' views of it at
+    once: one encoder, ``len(signals)`` heads sharing it, one epoch chosen by
+    DD6's unweighted mean of every head's own validation macro-F1, and one
+    margin per head chosen independently on that head's own validation split
+    (task 3 instruction 3 -- no cross-head trade).
+
+    :meth:`for_signal` fans this out into the single-signal shape the existing
+    report machinery already knows how to read (task 3 instruction 5), so
+    ``head_artefact``, ``build_metadata`` and the report builder need no change
+    at all for the per-signal reports this produces.
+    """
+
+    fold_index: object
+    signals: tuple[str, ...]
+    #: signal -> that head's FoldRun: its own rule, its own raw/ruled test
+    #: predictions (keyed by that signal's own ids via ``Example.id_for``), and
+    #: its own holdout block (identical across signals -- see ``holdout`` below).
+    fold_runs: Mapping[str, FoldRun]
+    #: Every head's weights, keyed by signal -- already the shape
+    #: ``LinearHeads.state_lists()`` returns, so nothing here reshapes it.
+    head_state: Mapping[str, Mapping[str, list]]
+    n_parameters: int
+    n_trainable: int
+    #: The epoch chosen by DD6's shared criterion -- the same epoch for every
+    #: head, because there is one shared encoder and therefore one set of
+    #: weights to stop at.
+    best_epoch: int
+    #: signal -> that head's own validation macro-F1 at every epoch, recorded in
+    #: full (not just the mean) so a report can show where a head's own best
+    #: epoch differed from the one DD6 actually selected.
+    val_macro_f1_by_epoch: Mapping[str, tuple[float, ...]]
+    #: The unweighted mean across heads at every epoch -- the DD6 selection
+    #: criterion itself, over the same epochs ``val_macro_f1_by_epoch`` covers.
+    mean_val_macro_f1_by_epoch: tuple[float, ...]
+    train_loss_by_epoch: tuple[float, ...]
+    #: signal -> that head's own validation summary (n, eff n, accuracy, ...).
+    val_summary: Mapping[str, Mapping[str, object]]
+    steps_per_epoch: int
+    warmup_steps: int
+    weights_path: str | None = None
+    #: One holdout block covering every trained signal, scored once per fold
+    #: under each head's own selected margin (DD9's per-fold, in-process rule,
+    #: unchanged). Identical across every signal's fanned-out result, because it
+    #: is one scoring of one shared encoder against the same 67 submissions.
+    holdout: Mapping[str, object] | None = None
+
+    def for_signal(self, signal: str) -> FineTuneFoldResult:
+        """This fold's result, in the single-signal shape a report already reads.
+
+        The weights recorded are every head's, not just ``signal``'s -- a joint
+        model's ``.pt`` holds every head sharing the encoder, so a single-signal
+        slice of ``head_state`` would be a head artefact pointing at weights it
+        cannot reconstruct predictions from on its own.
+        """
+        return FineTuneFoldResult(
+            fold_index=self.fold_index,
+            fold_run=self.fold_runs[signal],
+            head_state=self.head_state,
+            n_parameters=self.n_parameters,
+            n_trainable=self.n_trainable,
+            best_epoch=self.best_epoch,
+            val_macro_f1_by_epoch=self.val_macro_f1_by_epoch[signal],
+            train_loss_by_epoch=self.train_loss_by_epoch,
+            val_summary=self.val_summary[signal],
+            steps_per_epoch=self.steps_per_epoch,
+            warmup_steps=self.warmup_steps,
+            weights_path=self.weights_path,
+            holdout=self.holdout,
+        )
+
+    def to_dict(self) -> dict:
+        """The per-fold block of the joint metadata sidecar (task 3 instruction 5)."""
+        return {
+            "fold": self.fold_index,
+            "signals": list(self.signals),
+            "n_parameters": self.n_parameters,
+            "n_trainable": self.n_trainable,
+            "best_epoch": self.best_epoch,
+            "epoch_selection": (
+                "the unweighted mean of every head's own validation macro-F1 (DD6): fever and "
+                "dysuria do not get to decide nocturia's stopping point"
+            ),
+            "val_macro_f1_by_epoch": {
+                signal: list(values) for signal, values in self.val_macro_f1_by_epoch.items()
+            },
+            "mean_val_macro_f1_by_epoch": list(self.mean_val_macro_f1_by_epoch),
+            "train_loss_by_epoch": list(self.train_loss_by_epoch),
+            "steps_per_epoch": self.steps_per_epoch,
+            "warmup_steps": self.warmup_steps,
+            "validation": {signal: dict(summary) for signal, summary in self.val_summary.items()},
+            "decision_rules": {
+                signal: fold_run.rule.to_dict() for signal, fold_run in self.fold_runs.items()
+            },
+            "holdout": None if self.holdout is None else dict(self.holdout),
+            "weights": {
+                "path": self.weights_path,
+                "committed": False,
+                "note": (
+                    "~440MB of fine-tuned encoder, shared by every head listed above. Regenerable "
+                    "in about two minutes from the pinned dataset seed and base-model revision "
+                    "recorded above, which is why durable storage is deferred rather than punted"
+                ),
+            },
+        }
+
+
 # ---------------------------------------------------------------------------
 # Determinism and devices (DD11)
 # ---------------------------------------------------------------------------
@@ -500,6 +611,18 @@ def predict(
 
 def _labelled(split: Split, signal: str) -> list[Example]:
     return [example for example in split.examples if example.is_labelled(signal)]
+
+
+def _labelled_any(split: Split, signals: Sequence[str]) -> list[Example]:
+    """Every example labelled for *at least one* of ``signals`` (task 3 instruction 2).
+
+    The joint train split: a dysuria example belongs in it because it carries a
+    dysuria label, even though it carries no key at all for the other five heads
+    being trained. For a single-signal call (``signals`` of length one) this is
+    exactly :func:`_labelled`, which is what keeps a single-signal joint run
+    identical to today's.
+    """
+    return [example for example in split.examples if any(example.is_labelled(s) for s in signals)]
 
 
 def _rows_for(split: Split, embeddings: torch.Tensor, signal: str) -> tuple[list[Example], object]:
@@ -779,6 +902,59 @@ def predict_finetuned(
     ]
 
 
+def predict_finetuned_multi(
+    examples: Sequence[Example],
+    encoder: PooledEncoder,
+    heads,
+    *,
+    signals: Sequence[str],
+    batch_size: int = 64,
+) -> dict[str, list[Prediction]]:
+    """:func:`predict_finetuned` for every trained head at once, from one forward pass.
+
+    The whole reason this exists rather than calling :func:`predict_finetuned`
+    once per signal: the encoder forward pass is the expensive part, and a joint
+    model's heads all sit on top of the same pooled vector, so batching over
+    ``examples`` once and reading every head's logits off it costs one pass
+    instead of ``len(signals)``.
+
+    Each example is scored for a signal only where it is labelled for that
+    signal (``dataset.py``'s mask), exactly as :func:`predict_finetuned` would if
+    called on that signal's own pre-filtered example list -- so for a
+    single-signal call (``signals`` of length one, over examples every one of
+    which is labelled for it) this reproduces :func:`predict_finetuned` batch for
+    batch, which is what the single-signal parity test in
+    ``tests/test_encoder_training_arm_b.py`` pins.
+
+    Always argmax (``margin=0.0``): the raw view is what :func:`decision.select_margin`
+    needs and what the ``raw`` confusion matrix is built from; a ruled view is
+    produced afterwards with :func:`metrics.repredict` under whichever margin was
+    chosen, exactly as the single-signal path does.
+    """
+    import torch
+
+    encoder.model.eval()
+    heads.eval()
+    per_signal: dict[str, list[Prediction]] = {signal: [] for signal in signals}
+    with torch.no_grad():
+        for start in range(0, len(examples), batch_size):
+            chunk = examples[start : start + batch_size]
+            batch = encoder.tokenise([example.text for example in chunk])
+            logits = heads(encoder.forward_pooled(batch))
+            scores_by_signal = {
+                signal: torch.softmax(logits[signal], dim=-1).cpu().tolist() for signal in signals
+            }
+            for signal in signals:
+                rows = scores_by_signal[signal]
+                for example, row in zip(chunk, rows, strict=True):
+                    if not example.is_labelled(signal):
+                        continue
+                    per_signal[signal].append(
+                        Prediction.from_example(example, signal, apply_margin(row, 0.0), scores=row)
+                    )
+    return per_signal
+
+
 def encoder_scorer(
     encoder: PooledEncoder,
     heads,
@@ -868,6 +1044,59 @@ def _fold_scorers(
     return score_test, score_realistic
 
 
+def _joint_fold_scorers(
+    encoder: PooledEncoder,
+    heads,
+    *,
+    signals: Sequence[str],
+    test_examples: Sequence[Example],
+    holdout: HoldoutSet | None,
+    batch_size: int,
+) -> tuple[
+    Callable[[Mapping[str, DecisionRule]], dict[str, list[Prediction]]],
+    Callable[[Mapping[str, DecisionRule]], dict | None],
+]:
+    """:func:`_fold_scorers`, generalised to one rule per head (task 3 instruction 3).
+
+    ``test_examples`` is the union of examples labelled for any trained signal
+    (:func:`_labelled_any`); :func:`predict_finetuned_multi` filters each one to
+    the heads it is actually labelled for, so passing the union costs nothing --
+    a head simply gets no prediction for an example that was never reachable
+    for it.
+    """
+
+    def score_test(rules: Mapping[str, DecisionRule]) -> dict[str, list[Prediction]]:
+        # Argmax, deliberately, exactly as `_fold_scorers.score_test` is -- the
+        # rules are not applied here; `repredict` builds the ruled view from the
+        # same scores afterwards, per head.
+        return predict_finetuned_multi(
+            test_examples, encoder, heads, signals=signals, batch_size=batch_size
+        )
+
+    def score_realistic(rules: Mapping[str, DecisionRule]) -> dict | None:
+        if holdout is None:
+            return None
+        # gated_class is not part of the per-head trade DD9 asks about -- every
+        # rule in this codebase selects it as CLASS_TRUE (decision.py's own
+        # default), so there is one to quote rather than a mapping of six
+        # identical values.
+        gated_classes = {rule.gated_class for rule in rules.values()}
+        if len(gated_classes) > 1:
+            raise TrainError(
+                f"the heads disagree on gated_class: {sorted(gated_classes)}; the holdout scorer "
+                "does not support scoring different heads against different gated classes"
+            )
+        return score_holdout(
+            holdout,
+            encoder_scorer(encoder, heads, signals=signals, batch_size=batch_size),
+            signals=list(signals),
+            margin={signal: rules[signal].margin for signal in signals},
+            gated_class=next(iter(gated_classes)),
+        )
+
+    return score_test, score_realistic
+
+
 def describe_holdout(block: Mapping[str, object], signal: str) -> str:
     """One fold's real-text result as a line for the terminal.
 
@@ -917,6 +1146,30 @@ def select_then_score(
     test_predictions = score_test(rule)
     realistic = score_realistic(rule)
     return rule, test_predictions, realistic
+
+
+def select_then_score_multi(
+    val_predictions_by_signal: Mapping[str, Sequence[Prediction]],
+    *,
+    score_test: Callable[[Mapping[str, DecisionRule]], dict[str, list[Prediction]]],
+    score_realistic: Callable[[Mapping[str, DecisionRule]], dict | None],
+) -> tuple[dict[str, DecisionRule], dict[str, list[Prediction]], dict | None]:
+    """:func:`select_then_score`, generalised to one rule per head.
+
+    Every head's margin is selected on its own validation predictions,
+    independently -- no cross-head trade (task 3 instruction 3) -- and only once
+    every rule is fixed is anything scored: the synthetic test split per head,
+    then the real-text holdout last of all, under every head's own rule at once.
+    The order is what DD9's "the holdout selects nothing" rests on, generalised
+    the same way :func:`select_then_score` states it.
+    """
+    rules = {
+        signal: select_margin(predictions)
+        for signal, predictions in val_predictions_by_signal.items()
+    }
+    test_predictions = score_test(rules)
+    realistic = score_realistic(rules)
+    return rules, test_predictions, realistic
 
 
 def _snapshot(encoder: PooledEncoder) -> dict:
@@ -1033,6 +1286,131 @@ def finetune_fold_model(
     return best_epoch, tuple(val_history), tuple(loss_history), steps_per_epoch, warmup_steps
 
 
+def finetune_joint_fold_model(
+    train_examples: Sequence[Example],
+    train_targets: torch.Tensor,
+    *,
+    encoder: PooledEncoder,
+    heads,
+    signals: Sequence[str],
+    val_examples: Sequence[Example],
+    config: FineTuneConfig,
+    seed: int,
+    progress: bool = False,
+) -> tuple[int, dict[str, tuple[float, ...]], tuple[float, ...], tuple[float, ...], int, int]:
+    """:func:`finetune_fold_model`, generalised to DD6's shared epoch criterion.
+
+    One shared encoder and ``len(signals)`` heads means one set of weights to
+    stop at, so per-head early stopping is impossible. The criterion is the
+    **unweighted** mean of every head's own validation macro-F1 (DD6) -- not any
+    one head's own score, and not weighted by how many labelled examples each
+    head has, because that would let fever and dysuria decide nocturia's
+    stopping point. For a single-signal call the mean has one term and equals
+    that head's own score, which is what keeps a single-signal joint run
+    numerically identical to :func:`finetune_fold_model`.
+
+    Returns the chosen epoch, every head's own per-epoch validation macro-F1
+    (signal -> tuple, recorded in full rather than only the mean, per instruction
+    4), the per-epoch mean that selection actually used, mean training loss per
+    epoch, steps per epoch and warmup steps.
+    """
+    import torch
+    from torch.nn.utils import clip_grad_norm_
+
+    from .model import masked_cross_entropy
+
+    seed_everything(seed, config.determinism)
+
+    parameters = list(encoder.model.parameters()) + list(heads.parameters())
+    optimiser = torch.optim.AdamW(parameters, lr=config.lr, weight_decay=config.weight_decay)
+
+    n_examples = len(train_examples)
+    steps_per_epoch = max(1, -(-n_examples // config.batch_size))  # ceil
+    total_steps = steps_per_epoch * config.epochs
+    warmup_steps = int(round(total_steps * config.warmup_ratio))
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimiser,
+        lambda step: warmup_then_decay(step, total_steps=total_steps, warmup_steps=warmup_steps),
+    )
+
+    device = encoder.device
+    train_targets = train_targets.to(device)
+    generator = torch.Generator(device="cpu").manual_seed(seed)
+
+    val_history: dict[str, list[float]] = {signal: [] for signal in signals}
+    mean_history: list[float] = []
+    loss_history: list[float] = []
+    best_score = float("-inf")
+    best_epoch = 0
+    best_encoder = _snapshot(encoder)
+    best_heads = heads.state_lists()
+
+    for epoch in range(1, config.epochs + 1):
+        encoder.model.train()
+        heads.train()
+        order = torch.randperm(n_examples, generator=generator).tolist()
+        running = 0.0
+        for start in range(0, n_examples, config.batch_size):
+            rows = order[start : start + config.batch_size]
+            batch = encoder.tokenise([train_examples[row].text for row in rows])
+            index = torch.tensor(rows, dtype=torch.long, device=device)
+            batch_targets = train_targets.index_select(0, index)
+            targets = {name: batch_targets[:, position] for position, name in enumerate(signals)}
+
+            logits = heads(encoder.forward_pooled(batch))
+            loss = masked_cross_entropy(logits, targets)
+            optimiser.zero_grad(set_to_none=True)
+            loss.backward()
+            clip_grad_norm_(parameters, config.max_grad_norm)
+            optimiser.step()
+            scheduler.step()
+            running += float(loss.detach().item()) * len(rows)
+
+        mean_loss = running / max(n_examples, 1)
+        loss_history.append(mean_loss)
+
+        predictions_by_signal = predict_finetuned_multi(
+            val_examples, encoder, heads, signals=signals, batch_size=config.eval_batch_size
+        )
+        per_signal_scores: dict[str, float | None] = {}
+        for signal in signals:
+            score = macro_f1(confusion_matrix(predictions_by_signal[signal]))
+            per_signal_scores[signal] = score
+            val_history[signal].append(-1.0 if score is None else score)
+        defined = [score for score in per_signal_scores.values() if score is not None]
+        mean_score = sum(defined) / len(defined) if defined else None
+        mean_history.append(-1.0 if mean_score is None else mean_score)
+        if progress:
+            per_head = ", ".join(
+                f"{signal} {'--' if score is None else f'{score:.4f}'}"
+                for signal, score in per_signal_scores.items()
+            )
+            print(
+                f"  epoch {epoch}/{config.epochs}: train loss {mean_loss:.4f}, "
+                f"val macro-F1 mean {'--' if mean_score is None else f'{mean_score:.4f}'} "
+                f"({per_head})",
+                flush=True,
+            )
+        if mean_score is not None and mean_score > best_score:
+            best_score = mean_score
+            best_epoch = epoch
+            best_encoder = _snapshot(encoder)
+            best_heads = heads.state_lists()
+
+    encoder.model.load_state_dict(best_encoder)
+    heads.load_state_lists(best_heads)
+    encoder.model.eval()
+    heads.eval()
+    return (
+        best_epoch,
+        {signal: tuple(values) for signal, values in val_history.items()},
+        tuple(mean_history),
+        tuple(loss_history),
+        steps_per_epoch,
+        warmup_steps,
+    )
+
+
 def write_finetuned_weights(
     path: Path | str,
     *,
@@ -1066,6 +1444,43 @@ def write_finetuned_weights(
     }
     # Written to a sibling and moved, so an interrupted save leaves no file that
     # looks complete -- the same rule the embedding cache follows.
+    temporary = path.with_suffix(path.suffix + ".partial")
+    torch.save(payload, temporary)
+    temporary.replace(path)
+    return path
+
+
+def write_joint_finetuned_weights(
+    path: Path | str,
+    *,
+    encoder: PooledEncoder,
+    heads,
+    signals: Sequence[str],
+    arm: str,
+    fold_index: object,
+) -> Path:
+    """:func:`write_finetuned_weights`, generalised to every head sharing the encoder.
+
+    Still one ``.pt`` per fold, not one per head: the encoder is the ~440MB part
+    and it is shared, so writing it once per signal would repeat the same
+    payload ``len(signals)`` times for nothing. ``heads.state_lists()`` already
+    holds every trained signal's weights, keyed by signal.
+    """
+    import torch
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "arm": arm,
+        "signals": list(signals),
+        "fold": fold_index,
+        "classes": list(CLASS_NAMES),
+        **encoder.spec.to_dict(),
+        "encoder_state_dict": {
+            key: value.detach().cpu() for key, value in encoder.model.state_dict().items()
+        },
+        "heads": heads.state_lists(),
+    }
     temporary = path.with_suffix(path.suffix + ".partial")
     torch.save(payload, temporary)
     temporary.replace(path)
@@ -1286,6 +1701,256 @@ def run_finetune(
     return run, tuple(results)
 
 
+def run_finetune_joint_fold(
+    fold: Fold,
+    encoder_factory: Callable[[], PooledEncoder],
+    *,
+    signals: Sequence[str],
+    config: FineTuneConfig,
+    weights_dir: Path | str | None = None,
+    shuffle_seed: int | None = None,
+    holdout: HoldoutSet | None = None,
+    progress: bool = False,
+) -> JointFineTuneFoldResult:
+    """:func:`run_finetune_fold`, generalised to several heads sharing one encoder.
+
+    A single-signal call (``signals`` of length one) is designed to be
+    numerically identical to :func:`run_finetune_fold` on the same fold --
+    ``tests/test_encoder_training_arm_b.py`` proves it by running both and
+    diffing the result, rather than assuming it, because the two are
+    independent implementations and that is the point of the test.
+
+    The order is still the procedure DD9 asks for, generalised to several
+    heads: fit on train (every example labelled for *any* trained signal,
+    instruction 2), select the epoch on the DD6 shared criterion, select every
+    head's margin independently on its own validation split (instruction 3,
+    no cross-head trade), then open test once per head, and the real-text
+    holdout last of all, under every head's own already-chosen margin.
+    """
+    import torch
+
+    from .model import LinearHeads
+
+    dataset_signals = tuple(fold.signals)
+    signals = tuple(signals)
+    unknown = [signal for signal in signals if signal not in dataset_signals]
+    if unknown:
+        raise TrainError(f"{unknown!r} are not among this dataset's signals: {dataset_signals}")
+    if not signals:
+        raise TrainError("a joint run needs at least one signal to train a head for")
+
+    seed = config.fold_seed(fold.fold_index)
+    seed_everything(seed, config.determinism)
+
+    encoder = encoder_factory()
+    if getattr(encoder.model, "is_gradient_checkpointing", False):
+        raise TrainError(
+            "gradient checkpointing is enabled on the encoder. Arm B is specified as a "
+            "full-memory run -- no checkpointing, no 8-bit optimiser, no LoRA, no accumulation -- "
+            "because the model fits without them; anything that reads like a compute compromise "
+            "here is a mistake rather than a saving"
+        )
+    heads = LinearHeads(signals, hidden_size=int(encoder.model.config.hidden_size)).to(
+        encoder.device
+    )
+
+    train_examples = _labelled_any(fold.train, signals)
+    val_examples = _labelled_any(fold.val, signals)
+    test_examples = _labelled_any(fold.test, signals)
+
+    # Instruction 9: a head with no labelled validation examples fails loudly
+    # rather than silently taking a default margin -- `select_margin` itself
+    # refuses an empty split, but that error would be unreadable this far from
+    # which head caused it.
+    for signal in signals:
+        if not any(example.is_labelled(signal) for example in val_examples):
+            raise TrainError(
+                f"{signal!r} has no labelled validation examples in fold {fold.fold_index}; a "
+                "margin cannot be honestly selected for a head with nothing to select it on"
+            )
+
+    targets = target_matrix(train_examples, signals)
+    if shuffle_seed is not None:
+        targets = permute_targets(targets, seed=shuffle_seed + seed)
+
+    best_epoch, val_history, mean_history, loss_history, steps_per_epoch, warmup_steps = (
+        finetune_joint_fold_model(
+            train_examples,
+            targets,
+            encoder=encoder,
+            heads=heads,
+            signals=signals,
+            val_examples=val_examples,
+            config=config,
+            seed=seed,
+            progress=progress,
+        )
+    )
+
+    val_predictions_by_signal = predict_finetuned_multi(
+        val_examples, encoder, heads, signals=signals, batch_size=config.eval_batch_size
+    )
+    score_test, score_realistic = _joint_fold_scorers(
+        encoder,
+        heads,
+        signals=signals,
+        test_examples=test_examples,
+        holdout=holdout,
+        batch_size=config.eval_batch_size,
+    )
+    rules, raw_by_signal, realistic = select_then_score_multi(
+        val_predictions_by_signal, score_test=score_test, score_realistic=score_realistic
+    )
+    # The two closures hold the only other references to the encoder, so they go
+    # before it does; see the note beside the `del` at the end of this function.
+    del score_test, score_realistic
+
+    if realistic is not None:
+        for signal in signals:
+            print(describe_holdout(realistic, signal), flush=True)
+
+    weights_path = None
+    if weights_dir is not None:
+        weights_path = str(
+            write_joint_finetuned_weights(
+                Path(weights_dir) / f"fold{fold.fold_index}.encoder.pt",
+                encoder=encoder,
+                heads=heads,
+                signals=signals,
+                arm=ARM_B_NAME,
+                fold_index=fold.fold_index,
+            )
+        )
+
+    fold_runs: dict[str, FoldRun] = {}
+    val_summary: dict[str, dict] = {}
+    for signal in signals:
+        rule = rules[signal]
+        raw = raw_by_signal[signal]
+        val_scored = summarise(
+            repredict(val_predictions_by_signal[signal], rule.margin, gated_class=rule.gated_class)
+        )
+        val_summary[signal] = {
+            "n_examples": val_scored.n_examples,
+            "effective_n": val_scored.effective_n,
+            "accuracy": val_scored.accuracy,
+            "macro_f1": val_scored.macro_f1,
+            "confusion": [list(row) for row in val_scored.confusion],
+            "per_class_recall": {
+                name: metrics.recall for name, metrics in val_scored.per_class.items()
+            },
+        }
+        fold_runs[signal] = FoldRun.build(
+            fold_index=fold.fold_index,
+            n_train=len(train_examples),
+            n_val=len(val_predictions_by_signal[signal]),
+            n_test=len(raw),
+            rule=rule,
+            raw=raw,
+            ruled=repredict(raw, rule.margin, gated_class=rule.gated_class),
+            holdout=realistic,
+        )
+
+    result = JointFineTuneFoldResult(
+        fold_index=fold.fold_index,
+        signals=signals,
+        fold_runs=fold_runs,
+        head_state=heads.state_lists(),
+        n_parameters=sum(
+            parameter.numel()
+            for parameter in list(encoder.model.parameters()) + list(heads.parameters())
+        ),
+        n_trainable=sum(
+            parameter.numel()
+            for parameter in list(encoder.model.parameters()) + list(heads.parameters())
+            if parameter.requires_grad
+        ),
+        best_epoch=best_epoch,
+        val_macro_f1_by_epoch=val_history,
+        mean_val_macro_f1_by_epoch=mean_history,
+        train_loss_by_epoch=loss_history,
+        val_summary=val_summary,
+        steps_per_epoch=steps_per_epoch,
+        warmup_steps=warmup_steps,
+        weights_path=weights_path,
+        holdout=realistic,
+    )
+
+    # Five folds is five 440MB models plus their optimiser state. Dropping each
+    # one before the next is loaded is what keeps the sweep inside 12GB.
+    del encoder, heads
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return result
+
+
+def run_finetune_joint(
+    folds: Sequence[Fold],
+    encoder_factory: Callable[[], PooledEncoder],
+    *,
+    signals: Sequence[str],
+    config: FineTuneConfig,
+    weights_dir: Path | str | None = None,
+    shuffle_seed: int | None = None,
+    holdout: HoldoutSet | None = None,
+    label: str | None = None,
+    progress: bool = False,
+) -> tuple[dict[str, ModelRun], tuple[JointFineTuneFoldResult, ...]]:
+    """Run the joint fine-tune across every fold, fanned out into one ModelRun per head.
+
+    Returns a signal -> ModelRun mapping rather than one ModelRun, because DD5's
+    report shape is one report per signal: each entry is that signal's own view
+    of the *same* physical training run (one encoder, every head sharing it),
+    shaped exactly as a single-signal Arm B run's ``ModelRun`` so it drops into
+    that signal's report unchanged (task 3 instruction 5).
+    """
+    results: list[JointFineTuneFoldResult] = []
+    for fold in folds:
+        if progress:
+            print(f"fold {fold.fold_index}:", flush=True)
+        results.append(
+            run_finetune_joint_fold(
+                fold,
+                encoder_factory,
+                signals=signals,
+                config=config,
+                weights_dir=weights_dir,
+                shuffle_seed=shuffle_seed,
+                holdout=holdout,
+                progress=progress,
+            )
+        )
+
+    control = shuffle_seed is not None
+    base = arm_run_name(ARM_B_NAME, label)
+    described = ARM_B_DESCRIPTION_TEMPLATE.format(model=f"`{display_model(config.base_model)}`")
+    joint_note = (
+        f"**Joint multi-head training**: {len(signals)} heads sharing one encoder "
+        f"({', '.join(signals)}). Epoch selection uses DD6's unweighted mean of every head's own "
+        "validation macro-F1, so this signal's stopping point may differ from a single-signal "
+        "run's own best epoch. Each head's margin is chosen independently on its own validation "
+        "split -- no cross-head trade."
+    )
+    name = f"{base}__shuffled" if control else base
+    kind = "negative_control" if control else "finetune"
+    description = (
+        f"{described} {joint_note} **Negative control:** fine-tuned on permuted training labels "
+        f"(seed {shuffle_seed}) and evaluated on the unpermuted test split."
+        if control
+        else f"{described} {joint_note}"
+    )
+    runs = {
+        signal: ModelRun(
+            name=name,
+            kind=kind,
+            description=description,
+            folds=tuple(result.for_signal(signal).fold_run for result in results),
+        )
+        for signal in signals
+    }
+    return runs, tuple(results)
+
+
 # ---------------------------------------------------------------------------
 # Artefacts (provisional plan section 4.2)
 # ---------------------------------------------------------------------------
@@ -1428,6 +2093,153 @@ def write_artefacts(
     return written
 
 
+#: The joint metadata sidecar's own required fields (task 3 instruction 5):
+#: ``signals`` (plural, a list) in place of ``signal``, everything else shared
+#: with :data:`REQUIRED_METADATA`.
+REQUIRED_JOINT_METADATA = tuple(
+    "signals" if field_name == "signal" else field_name for field_name in REQUIRED_METADATA
+)
+
+
+def build_joint_metadata(
+    *,
+    signals: Sequence[str],
+    arm: str,
+    encoder_facts: Mapping[str, object],
+    config: ProbeConfig | FineTuneConfig,
+    device: Mapping[str, object],
+    dataset: Mapping[str, object],
+    ruleset: str,
+    ruleset_hash: str,
+    results: Sequence[JointFineTuneFoldResult],
+    control: Mapping[str, object] | None = None,
+) -> dict:
+    """:func:`build_metadata`, generalised to a signal list (task 3 instruction 5).
+
+    Kept as its own function rather than a branch inside :func:`build_metadata`:
+    the per-fold blocks are shaped entirely differently (per-signal margins and
+    per-signal validation summaries rather than one of each), and a single
+    function silently switching shape on the type of ``signal`` would be a worse
+    read than two functions that each say what they build.
+    """
+    metadata = {
+        "arm": arm,
+        "signals": list(signals),
+        "classes": list(CLASS_NAMES),
+        "encoder": dict(encoder_facts),
+        "config": config.to_dict(),
+        "device": dict(device),
+        "dataset": dict(dataset),
+        "ruleset": ruleset,
+        "ruleset_hash": ruleset_hash,
+        "folds": [result.to_dict() for result in results],
+        "margins": {
+            "objective": (
+                "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9), "
+                "per head, independently -- no cross-head trade (task 3 instruction 3)"
+            ),
+            "selected_on": "each fold's own validation split, never test and never pooled",
+            "by_fold": {
+                str(result.fold_index): {
+                    signal: result.fold_runs[signal].rule.margin for signal in signals
+                }
+                for result in results
+            },
+        },
+        "epoch_selection": (
+            "one shared epoch across every head (DD6): the unweighted mean of every head's own "
+            "validation macro-F1. Per-head early stopping is impossible with one shared encoder"
+        ),
+        "encoder_contract": (
+            "This joint model cannot satisfy EncoderOutput.validate_against: data/uti1.json "
+            "declares seven send_to_encoder signals and recent_uti_present has no fragment "
+            "library and therefore no head here, so at most six of seven keys can ever be "
+            "produced and the contract requires an exact match. Out of scope for this ticket, "
+            "and recorded so nobody plans around a swap that is not available (DD8)."
+        ),
+    }
+    if control is not None:
+        metadata["negative_control"] = dict(control)
+
+    missing = [field_name for field_name in REQUIRED_JOINT_METADATA if field_name not in metadata]
+    if missing:
+        raise TrainError(f"joint metadata sidecar is missing {', '.join(missing)}")
+    return metadata
+
+
+def joint_head_artefact(result: JointFineTuneFoldResult, *, arm: str) -> dict:
+    """:func:`head_artefact`, generalised to every head sharing one encoder.
+
+    One file per fold holding every trained signal's head, because that is what
+    one fine-tune run over a merged tree actually produces -- there is no
+    per-signal encoder to point six separate artefacts at.
+    """
+    artefact = {
+        "arm": arm,
+        "signals": list(result.signals),
+        "fold": result.fold_index,
+        "classes": list(CLASS_NAMES),
+        "n_parameters": result.n_parameters,
+        "best_epoch": result.best_epoch,
+        "heads": {signal: dict(state) for signal, state in result.head_state.items()},
+    }
+    if result.weights_path is not None:
+        artefact["encoder_weights"] = result.weights_path
+        artefact["encoder_weights_committed"] = False
+    return artefact
+
+
+def write_joint_artefacts(
+    directory: Path | str,
+    *,
+    arm: str,
+    metadata: Mapping[str, object],
+    results: Sequence[JointFineTuneFoldResult],
+) -> list[Path]:
+    """:func:`write_artefacts`, generalised to one joint model (task 3 instruction 7).
+
+    ``models/encoder/joint<N>/<arm>/`` rather than ``<signal>/<arm>/``: there is
+    no single signal this model belongs under, and a directory per trained
+    signal would either duplicate the shared ~440MB encoder N times or leave
+    five of six directories pointing at weights that live in a sixth.
+
+    ``foldN.decision.json`` is written in mapping form -- ``{signal: rule}`` --
+    always, per instruction 3, which is new: the existing single-signal
+    ``write_artefacts`` still writes one flat rule and is unchanged by this.
+    """
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    written = [directory / "metadata.json"]
+    written[0].write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+
+    for result in results:
+        stem = f"fold{result.fold_index}"
+        head_path = directory / f"{stem}.head.json"
+        head_path.write_text(
+            json.dumps(joint_head_artefact(result, arm=arm), indent=2) + "\n", encoding="utf-8"
+        )
+        written.append(head_path)
+
+        decision_path = directory / f"{stem}.decision.json"
+        decision_payload = {
+            signal: fold_run.rule.to_dict() for signal, fold_run in result.fold_runs.items()
+        }
+        decision_path.write_text(json.dumps(decision_payload, indent=2) + "\n", encoding="utf-8")
+        written.append(decision_path)
+    return written
+
+
+def read_joint_decision(path: Path | str) -> dict[str, DecisionRule]:
+    """Read a joint ``foldN.decision.json`` back: signal -> its own rule.
+
+    The reader instruction 3 asks for, migrated to the mapping form
+    :func:`write_joint_artefacts` always writes -- including for a single-signal
+    joint run, so the shape does not depend on how many heads were trained.
+    """
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {signal: DecisionRule.from_dict(rule) for signal, rule in payload.items()}
+
+
 def load_head_artefact(path: Path | str) -> dict:
     """Read a head artefact back. No torch needed, which is half the point."""
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -1459,12 +2271,15 @@ __all__ = [
     "FINETUNE_LR",
     "FINETUNE_WARMUP_RATIO",
     "VALIDATION_GUIDED_DECISIONS",
+    "REQUIRED_JOINT_METADATA",
     "FineTuneConfig",
     "FineTuneFoldResult",
+    "JointFineTuneFoldResult",
     "ProbeConfig",
     "ProbeFoldResult",
     "TrainError",
     "arm_run_name",
+    "build_joint_metadata",
     "build_metadata",
     "check_device",
     "derive_fold_seed",
@@ -1474,22 +2289,31 @@ __all__ = [
     "encoder_scorer",
     "ensure_deterministic_env",
     "finetune_fold_model",
+    "finetune_joint_fold_model",
     "head_artefact",
+    "joint_head_artefact",
     "load_head_artefact",
     "permute_targets",
     "predict",
     "predict_finetuned",
+    "predict_finetuned_multi",
+    "read_joint_decision",
     "resolve_device",
     "run_finetune",
     "run_finetune_fold",
+    "run_finetune_joint",
+    "run_finetune_joint_fold",
     "run_probe",
     "run_probe_fold",
     "seed_everything",
     "select_then_score",
+    "select_then_score_multi",
     "spec_from_metadata",
     "target_matrix",
     "train_probe",
     "warmup_then_decay",
     "write_artefacts",
     "write_finetuned_weights",
+    "write_joint_artefacts",
+    "write_joint_finetuned_weights",
 ]
