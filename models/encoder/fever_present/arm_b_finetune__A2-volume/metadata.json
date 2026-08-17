@@ -1,0 +1,1428 @@
+{
+  "arm": "arm_b_finetune__A2-volume",
+  "signal": "fever_present",
+  "classes": [
+    "false",
+    "true",
+    "null"
+  ],
+  "encoder": {
+    "base_model": "roberta-base",
+    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "requested_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "revision_pinned": true,
+    "hidden_size": 768,
+    "tokeniser": {
+      "reported_do_lower_case": null,
+      "lowercases_input": false,
+      "cased_vocab": true,
+      "discards_casing": false,
+      "vocab_size": 50265,
+      "model_max_length": 512,
+      "tokenizer_class": "RobertaTokenizer"
+    }
+  },
+  "config": {
+    "base_model": "roberta-base",
+    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "epochs": 3,
+    "batch_size": 32,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "seed": 1234,
+    "fold_seed_rule": "seed + 1000 * fold_index",
+    "device": "auto",
+    "eval_batch_size": 64,
+    "determinism": "strict",
+    "trainable": "all layers; the encoder is unfrozen and trained with the head",
+    "loss": "cross_entropy, unweighted (DD8), masked on missing signals (DD10)",
+    "optimiser": "AdamW with linear warmup then linear decay",
+    "epoch_selection": "highest macro-F1 on the fold's own validation split",
+    "dtype": "float32",
+    "memory_strategy": "none. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation -- BERT-base at batch 32 / seq 256 fits in 12GB with room to spare",
+    "hyperparameter_provenance": "learning rate, epochs, warmup and optimiser are the published BERT-base recipe, fixed before any run. Hyperparameter search is out of scope",
+    "validation_guided_decisions": [
+      "pooling mode (DD3) -- mean vs CLS, compared once",
+      "learning rate",
+      "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+      "decision margin (DD9)"
+    ]
+  },
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "cuda_available": true,
+    "deterministic_env": ":4096:8",
+    "device_name": "NVIDIA GeForce RTX 5070",
+    "compute_capability": [
+      12,
+      0
+    ],
+    "capability_matches_expected": true,
+    "wheel_covers_blackwell": true,
+    "kernel_launch_ok": true
+  },
+  "dataset": {
+    "dir": "data/synthetic/generated/folds-volume",
+    "name": "fever_present",
+    "folds": 5,
+    "generator_version": 2,
+    "generator_base_seed": 42,
+    "split_salt": "0",
+    "dataset_seeds": [
+      4200,
+      4300,
+      4400,
+      4500,
+      4600
+    ],
+    "examples_per_fold": {
+      "train": 44680,
+      "val": 2000,
+      "test": 2000
+    }
+  },
+  "ruleset": "data/uti1.json",
+  "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+  "folds": [
+    {
+      "fold": 0,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 2,
+      "val_macro_f1_by_epoch": [
+        0.9332098232002181,
+        0.9429393872323067,
+        0.9404097708195128
+      ],
+      "train_loss_by_epoch": [
+        0.10401200972041859,
+        0.0003756449429791787,
+        7.395865017048306e-06
+      ],
+      "steps_per_epoch": 1397,
+      "warmup_steps": 419,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 85,
+        "accuracy": 0.9555,
+        "macro_f1": 0.9429393872323067,
+        "confusion": [
+          [
+            498,
+            0,
+            8
+          ],
+          [
+            1,
+            275,
+            46
+          ],
+          [
+            8,
+            26,
+            1138
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9841897233201581,
+          "true": 0.8540372670807453,
+          "null": 0.9709897610921502
+        }
+      },
+      "decision_rule": {
+        "margin": 0.0,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.02218430034129693,
+        "null_to_true_rate": 0.02218430034129693,
+        "macro_f1": 0.9429393872323067,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "fever_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.0,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              9,
+              0,
+              0
+            ],
+            [
+              0,
+              4,
+              5
+            ],
+            [
+              3,
+              6,
+              40
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7910447761194029,
+            "low": 0.6865671641791045,
+            "high": 0.8805970149253731,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.7097531061696795,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 18,
+          "n_submissions": 18,
+          "confusion": [
+            [
+              9,
+              0,
+              0
+            ],
+            [
+              0,
+              4,
+              5
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7222222222222222,
+            "low": 0.5,
+            "high": 0.8888888888888888,
+            "effective_n": 18,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.5384615384615384,
+          "worst_case_half_width": 0.2309839707249463
+        },
+        "by_signal": [
+          {
+            "signal": "fever_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  4,
+                  5
+                ],
+                [
+                  3,
+                  6,
+                  40
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7910447761194029,
+                "low": 0.6865671641791045,
+                "high": 0.8805970149253731,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.7097531061696795,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  4,
+                  5
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7222222222222222,
+                "low": 0.5,
+                "high": 0.8888888888888888,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.5384615384615384,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 12,
+                "recall": 1.0,
+                "precision": 0.75
+              },
+              "true": {
+                "support": 9,
+                "predicted": 10,
+                "recall": 0.4444444444444444,
+                "precision": 0.4
+              },
+              "null": {
+                "support": 49,
+                "predicted": 45,
+                "recall": 0.8163265306122449,
+                "precision": 0.8888888888888888
+              }
+            },
+            "null_to_true": {
+              "count": 6,
+              "null_support": 49
+            }
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 1,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 2,
+      "val_macro_f1_by_epoch": [
+        0.8674437582497291,
+        0.8889900681942761,
+        0.8833870001354902
+      ],
+      "train_loss_by_epoch": [
+        0.09064012094716165,
+        0.0017215015391777804,
+        1.5992553009576275e-05
+      ],
+      "steps_per_epoch": 1397,
+      "warmup_steps": 419,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 93,
+        "accuracy": 0.923,
+        "macro_f1": 0.891039936385996,
+        "confusion": [
+          [
+            401,
+            56,
+            15
+          ],
+          [
+            12,
+            281,
+            20
+          ],
+          [
+            6,
+            45,
+            1164
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.8495762711864406,
+          "true": 0.8977635782747604,
+          "null": 0.9580246913580247
+        }
+      },
+      "decision_rule": {
+        "margin": 0.9,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.04197530864197531,
+        "null_to_true_rate": 0.037037037037037035,
+        "macro_f1": 0.891039936385996,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "fever_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.9,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              7,
+              0,
+              2
+            ],
+            [
+              1,
+              6,
+              2
+            ],
+            [
+              0,
+              8,
+              41
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8059701492537313,
+            "low": 0.7014925373134329,
+            "high": 0.8955223880597015,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.7392029892438011,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 18,
+          "n_submissions": 18,
+          "confusion": [
+            [
+              7,
+              0,
+              2
+            ],
+            [
+              1,
+              6,
+              2
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7222222222222222,
+            "low": 0.5,
+            "high": 0.8888888888888888,
+            "effective_n": 18,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.5411764705882353,
+          "worst_case_half_width": 0.2309839707249463
+        },
+        "by_signal": [
+          {
+            "signal": "fever_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  7,
+                  0,
+                  2
+                ],
+                [
+                  1,
+                  6,
+                  2
+                ],
+                [
+                  0,
+                  8,
+                  41
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8059701492537313,
+                "low": 0.7014925373134329,
+                "high": 0.8955223880597015,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.7392029892438011,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  7,
+                  0,
+                  2
+                ],
+                [
+                  1,
+                  6,
+                  2
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7222222222222222,
+                "low": 0.5,
+                "high": 0.8888888888888888,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.5411764705882353,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 8,
+                "recall": 0.7777777777777778,
+                "precision": 0.875
+              },
+              "true": {
+                "support": 9,
+                "predicted": 14,
+                "recall": 0.6666666666666666,
+                "precision": 0.42857142857142855
+              },
+              "null": {
+                "support": 49,
+                "predicted": 45,
+                "recall": 0.8367346938775511,
+                "precision": 0.9111111111111111
+              }
+            },
+            "null_to_true": {
+              "count": 8,
+              "null_support": 49
+            }
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 2,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.8979969695881662,
+        0.8615139985412291,
+        0.925827752770176
+      ],
+      "train_loss_by_epoch": [
+        0.09029415838366915,
+        0.0017706343690600144,
+        8.821391034202042e-05
+      ],
+      "steps_per_epoch": 1397,
+      "warmup_steps": 419,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 93,
+        "accuracy": 0.9475,
+        "macro_f1": 0.9305950746805243,
+        "confusion": [
+          [
+            471,
+            27,
+            0
+          ],
+          [
+            0,
+            288,
+            16
+          ],
+          [
+            23,
+            39,
+            1136
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9457831325301205,
+          "true": 0.9473684210526315,
+          "null": 0.9482470784641068
+        }
+      },
+      "decision_rule": {
+        "margin": 0.85,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.0325542570951586,
+        "null_to_true_rate": 0.0325542570951586,
+        "macro_f1": 0.9305950746805243,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "fever_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.85,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              9,
+              0,
+              0
+            ],
+            [
+              0,
+              7,
+              2
+            ],
+            [
+              4,
+              2,
+              43
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8805970149253731,
+            "low": 0.8059701492537313,
+            "high": 0.9552238805970149,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8369510709936242,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 18,
+          "n_submissions": 18,
+          "confusion": [
+            [
+              9,
+              0,
+              0
+            ],
+            [
+              0,
+              7,
+              2
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8888888888888888,
+            "low": 0.7222222222222222,
+            "high": 1.0,
+            "effective_n": 18,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.625,
+          "worst_case_half_width": 0.2309839707249463
+        },
+        "by_signal": [
+          {
+            "signal": "fever_present",
+            "margin": 0.85,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  2
+                ],
+                [
+                  4,
+                  2,
+                  43
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8805970149253731,
+                "low": 0.8059701492537313,
+                "high": 0.9552238805970149,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8369510709936242,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  2
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8888888888888888,
+                "low": 0.7222222222222222,
+                "high": 1.0,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.625,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 13,
+                "recall": 1.0,
+                "precision": 0.6923076923076923
+              },
+              "true": {
+                "support": 9,
+                "predicted": 9,
+                "recall": 0.7777777777777778,
+                "precision": 0.7777777777777778
+              },
+              "null": {
+                "support": 49,
+                "predicted": 45,
+                "recall": 0.8775510204081632,
+                "precision": 0.9555555555555556
+              }
+            },
+            "null_to_true": {
+              "count": 2,
+              "null_support": 49
+            }
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 3,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 2,
+      "val_macro_f1_by_epoch": [
+        0.9441760203054379,
+        0.968402261346574,
+        0.9399963928513385
+      ],
+      "train_loss_by_epoch": [
+        0.09676465297975585,
+        0.001310677391548855,
+        0.00013964806258377535
+      ],
+      "steps_per_epoch": 1397,
+      "warmup_steps": 419,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 70,
+        "accuracy": 0.9785,
+        "macro_f1": 0.968402261346574,
+        "confusion": [
+          [
+            518,
+            5,
+            0
+          ],
+          [
+            0,
+            269,
+            37
+          ],
+          [
+            0,
+            1,
+            1170
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9904397705544933,
+          "true": 0.8790849673202614,
+          "null": 0.9991460290350128
+        }
+      },
+      "decision_rule": {
+        "margin": 0.0,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.0008539709649871904,
+        "null_to_true_rate": 0.0008539709649871904,
+        "macro_f1": 0.968402261346574,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "fever_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.0,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              8,
+              0,
+              1
+            ],
+            [
+              1,
+              4,
+              4
+            ],
+            [
+              2,
+              13,
+              34
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6865671641791045,
+            "low": 0.582089552238806,
+            "high": 0.7910447761194029,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6268065268065268,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 18,
+          "n_submissions": 18,
+          "confusion": [
+            [
+              8,
+              0,
+              1
+            ],
+            [
+              1,
+              4,
+              4
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6666666666666666,
+            "low": 0.4444444444444444,
+            "high": 0.8888888888888888,
+            "effective_n": 18,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.5014245014245015,
+          "worst_case_half_width": 0.2309839707249463
+        },
+        "by_signal": [
+          {
+            "signal": "fever_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  8,
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  4,
+                  4
+                ],
+                [
+                  2,
+                  13,
+                  34
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6865671641791045,
+                "low": 0.582089552238806,
+                "high": 0.7910447761194029,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6268065268065268,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  8,
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  4,
+                  4
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6666666666666666,
+                "low": 0.4444444444444444,
+                "high": 0.8888888888888888,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.5014245014245015,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 11,
+                "recall": 0.8888888888888888,
+                "precision": 0.7272727272727273
+              },
+              "true": {
+                "support": 9,
+                "predicted": 17,
+                "recall": 0.4444444444444444,
+                "precision": 0.23529411764705882
+              },
+              "null": {
+                "support": 49,
+                "predicted": 39,
+                "recall": 0.6938775510204082,
+                "precision": 0.8717948717948718
+              }
+            },
+            "null_to_true": {
+              "count": 13,
+              "null_support": 49
+            }
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 4,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.970826519114254,
+        0.9780758081428716,
+        0.9810503218926253
+      ],
+      "train_loss_by_epoch": [
+        0.10106536337154634,
+        0.0005495372563112914,
+        0.00025797294972532137
+      ],
+      "steps_per_epoch": 1397,
+      "warmup_steps": 419,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 82,
+        "accuracy": 0.9855,
+        "macro_f1": 0.9823964464107124,
+        "confusion": [
+          [
+            495,
+            0,
+            0
+          ],
+          [
+            0,
+            294,
+            11
+          ],
+          [
+            11,
+            7,
+            1182
+          ]
+        ],
+        "per_class_recall": {
+          "false": 1.0,
+          "true": 0.9639344262295082,
+          "null": 0.985
+        }
+      },
+      "decision_rule": {
+        "margin": 0.45,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.0075,
+        "null_to_true_rate": 0.005833333333333334,
+        "macro_f1": 0.9823964464107124,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "fever_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.45,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              9,
+              0,
+              0
+            ],
+            [
+              1,
+              5,
+              3
+            ],
+            [
+              1,
+              9,
+              39
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7910447761194029,
+            "low": 0.6865671641791045,
+            "high": 0.8805970149253731,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.7306418219461698,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 18,
+          "n_submissions": 18,
+          "confusion": [
+            [
+              9,
+              0,
+              0
+            ],
+            [
+              1,
+              5,
+              3
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7777777777777778,
+            "low": 0.5555555555555556,
+            "high": 0.9444444444444444,
+            "effective_n": 18,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.5538847117794486,
+          "worst_case_half_width": 0.2309839707249463
+        },
+        "by_signal": [
+          {
+            "signal": "fever_present",
+            "margin": 0.45,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  5,
+                  3
+                ],
+                [
+                  1,
+                  9,
+                  39
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7910447761194029,
+                "low": 0.6865671641791045,
+                "high": 0.8805970149253731,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.7306418219461698,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  5,
+                  3
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7777777777777778,
+                "low": 0.5555555555555556,
+                "high": 0.9444444444444444,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.5538847117794486,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 11,
+                "recall": 1.0,
+                "precision": 0.8181818181818182
+              },
+              "true": {
+                "support": 9,
+                "predicted": 14,
+                "recall": 0.5555555555555556,
+                "precision": 0.35714285714285715
+              },
+              "null": {
+                "support": 49,
+                "predicted": 42,
+                "recall": 0.7959183673469388,
+                "precision": 0.9285714285714286
+              }
+            },
+            "null_to_true": {
+              "count": 9,
+              "null_support": 49
+            }
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    }
+  ],
+  "margins": {
+    "objective": "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9)",
+    "selected_on": "each fold's own validation split, never test and never pooled",
+    "by_fold": {
+      "0": 0.0,
+      "1": 0.9,
+      "2": 0.85,
+      "3": 0.0,
+      "4": 0.45
+    }
+  },
+  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it."
+}

@@ -1,0 +1,5571 @@
+{
+  "arm": "arm_b_finetune__A3-joint",
+  "signals": [
+    "dysuria_present",
+    "fever_present",
+    "flank_pain_present",
+    "haematuria_present",
+    "nocturia_present",
+    "urinary_frequency_present"
+  ],
+  "classes": [
+    "false",
+    "true",
+    "null"
+  ],
+  "encoder": {
+    "base_model": "roberta-base",
+    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "requested_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "revision_pinned": true,
+    "hidden_size": 768,
+    "tokeniser": {
+      "reported_do_lower_case": null,
+      "lowercases_input": false,
+      "cased_vocab": true,
+      "discards_casing": false,
+      "vocab_size": 50265,
+      "model_max_length": 512,
+      "tokenizer_class": "RobertaTokenizer"
+    }
+  },
+  "config": {
+    "base_model": "roberta-base",
+    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "epochs": 3,
+    "batch_size": 32,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "seed": 1234,
+    "fold_seed_rule": "seed + 1000 * fold_index",
+    "device": "auto",
+    "eval_batch_size": 64,
+    "determinism": "strict",
+    "trainable": "all layers; the encoder is unfrozen and trained with the head",
+    "loss": "cross_entropy, unweighted (DD8), masked on missing signals (DD10)",
+    "optimiser": "AdamW with linear warmup then linear decay",
+    "epoch_selection": "highest macro-F1 on the fold's own validation split",
+    "dtype": "float32",
+    "memory_strategy": "none. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation -- BERT-base at batch 32 / seq 256 fits in 12GB with room to spare",
+    "hyperparameter_provenance": "learning rate, epochs, warmup and optimiser are the published BERT-base recipe, fixed before any run. Hyperparameter search is out of scope",
+    "validation_guided_decisions": [
+      "pooling mode (DD3) -- mean vs CLS, compared once",
+      "learning rate",
+      "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+      "decision margin (DD9)"
+    ]
+  },
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "cuda_available": true,
+    "deterministic_env": ":4096:8",
+    "device_name": "NVIDIA GeForce RTX 5070",
+    "compute_capability": [
+      12,
+      0
+    ],
+    "capability_matches_expected": true,
+    "wheel_covers_blackwell": true,
+    "kernel_launch_ok": true
+  },
+  "dataset": {
+    "dir": "data/synthetic/generated/folds",
+    "name": "joint6",
+    "folds": 5,
+    "generator_version": 2,
+    "generator_base_seed": 42,
+    "split_salt": "0",
+    "dataset_seeds": [
+      42,
+      142,
+      242,
+      342,
+      442
+    ],
+    "examples_per_fold": {
+      "train": 44680,
+      "val": 9030,
+      "test": 9100
+    }
+  },
+  "ruleset": "data/uti1.json",
+  "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+  "folds": [
+    {
+      "fold": 0,
+      "signals": [
+        "dysuria_present",
+        "fever_present",
+        "flank_pain_present",
+        "haematuria_present",
+        "nocturia_present",
+        "urinary_frequency_present"
+      ],
+      "n_parameters": 124659474,
+      "n_trainable": 124659474,
+      "best_epoch": 3,
+      "epoch_selection": "the unweighted mean of every head's own validation macro-F1 (DD6): fever and dysuria do not get to decide nocturia's stopping point",
+      "val_macro_f1_by_epoch": {
+        "dysuria_present": [
+          0.9584027377255823,
+          0.9635351680518957,
+          0.9753480246056537
+        ],
+        "fever_present": [
+          0.9511283867492879,
+          0.9625280973058543,
+          0.9659005584627339
+        ],
+        "flank_pain_present": [
+          0.9809978440257007,
+          0.9922831326696379,
+          0.9945386513812595
+        ],
+        "haematuria_present": [
+          0.9129745296200706,
+          0.9034755645780491,
+          0.9151633498851949
+        ],
+        "nocturia_present": [
+          0.9505403955171209,
+          0.9310506648193173,
+          0.9305087669477924
+        ],
+        "urinary_frequency_present": [
+          0.7488475999889307,
+          0.7512706935950035,
+          0.7615512402491093
+        ]
+      },
+      "mean_val_macro_f1_by_epoch": [
+        0.9171485822711155,
+        0.9173572201699596,
+        0.9238350985886239
+      ],
+      "train_loss_by_epoch": [
+        0.15227444389639688,
+        0.0010684119289712363,
+        0.00024207135569523093
+      ],
+      "steps_per_epoch": 1397,
+      "warmup_steps": 419,
+      "validation": {
+        "dysuria_present": {
+          "n_examples": 2000,
+          "effective_n": 39,
+          "accuracy": 0.982,
+          "macro_f1": 0.9759923175416133,
+          "confusion": [
+            [
+              524,
+              0,
+              0
+            ],
+            [
+              0,
+              270,
+              15
+            ],
+            [
+              8,
+              13,
+              1170
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.9473684210526315,
+            "null": 0.982367758186398
+          }
+        },
+        "fever_present": {
+          "n_examples": 2000,
+          "effective_n": 85,
+          "accuracy": 0.974,
+          "macro_f1": 0.9659005584627339,
+          "confusion": [
+            [
+              524,
+              0,
+              0
+            ],
+            [
+              1,
+              252,
+              32
+            ],
+            [
+              18,
+              1,
+              1172
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.8842105263157894,
+            "null": 0.984047019311503
+          }
+        },
+        "flank_pain_present": {
+          "n_examples": 2000,
+          "effective_n": 50,
+          "accuracy": 0.994,
+          "macro_f1": 0.9945386513812595,
+          "confusion": [
+            [
+              524,
+              0,
+              0
+            ],
+            [
+              0,
+              285,
+              0
+            ],
+            [
+              12,
+              0,
+              1179
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 1.0,
+            "null": 0.9899244332493703
+          }
+        },
+        "haematuria_present": {
+          "n_examples": 2000,
+          "effective_n": 50,
+          "accuracy": 0.9235,
+          "macro_f1": 0.9156170697760172,
+          "confusion": [
+            [
+              524,
+              0,
+              0
+            ],
+            [
+              0,
+              266,
+              19
+            ],
+            [
+              89,
+              45,
+              1057
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.9333333333333333,
+            "null": 0.887489504617968
+          }
+        },
+        "nocturia_present": {
+          "n_examples": 2000,
+          "effective_n": 70,
+          "accuracy": 0.9435,
+          "macro_f1": 0.9305087669477924,
+          "confusion": [
+            [
+              487,
+              0,
+              37
+            ],
+            [
+              0,
+              251,
+              34
+            ],
+            [
+              11,
+              31,
+              1149
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9293893129770993,
+            "true": 0.8807017543859649,
+            "null": 0.964735516372796
+          }
+        },
+        "urinary_frequency_present": {
+          "n_examples": 2000,
+          "effective_n": 56,
+          "accuracy": 0.8575,
+          "macro_f1": 0.7615512402491093,
+          "confusion": [
+            [
+              415,
+              51,
+              58
+            ],
+            [
+              43,
+              119,
+              123
+            ],
+            [
+              9,
+              1,
+              1181
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.7919847328244275,
+            "true": 0.41754385964912283,
+            "null": 0.9916036943744753
+          }
+        }
+      },
+      "decision_rules": {
+        "dysuria_present": {
+          "margin": 0.55,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.012594458438287154,
+          "null_to_true_rate": 0.0109151973131822,
+          "macro_f1": 0.9759923175416133,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "fever_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0008396305625524769,
+          "null_to_true_rate": 0.0008396305625524769,
+          "macro_f1": 0.9659005584627339,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "flank_pain_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0,
+          "null_to_true_rate": 0.0,
+          "macro_f1": 0.9945386513812595,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "haematuria_present": {
+          "margin": 0.6,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.03946263643996641,
+          "null_to_true_rate": 0.037783375314861464,
+          "macro_f1": 0.9156170697760172,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "nocturia_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.026028547439126783,
+          "null_to_true_rate": 0.026028547439126783,
+          "macro_f1": 0.9305087669477924,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "urinary_frequency_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0008396305625524769,
+          "null_to_true_rate": 0.0008396305625524769,
+          "macro_f1": 0.7615512402491093,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        }
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "dysuria_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "nocturia_present",
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "recent_uti_present"
+        ],
+        "margin": {
+          "dysuria_present": 0.55,
+          "fever_present": 0.0,
+          "flank_pain_present": 0.0,
+          "haematuria_present": 0.6,
+          "nocturia_present": 0.0,
+          "urinary_frequency_present": 0.0
+        },
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 402,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              15,
+              3,
+              0
+            ],
+            [
+              15,
+              99,
+              2
+            ],
+            [
+              38,
+              191,
+              39
+            ]
+          ],
+          "accuracy": {
+            "point": 0.3805970149253731,
+            "low": 0.3358208955223881,
+            "high": 0.43283582089552236,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.36179065774348257,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 134,
+          "n_submissions": 62,
+          "confusion": [
+            [
+              15,
+              3,
+              0
+            ],
+            [
+              15,
+              99,
+              2
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8507462686567164,
+            "low": 0.7769230769230769,
+            "high": 0.9212598425196851,
+            "effective_n": 62,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.511085626911315,
+          "worst_case_half_width": 0.12445783747619314
+        },
+        "by_signal": [
+          {
+            "signal": "dysuria_present",
+            "margin": 0.55,
+            "distribution": {
+              "false": 0,
+              "true": 56,
+              "null": 11,
+              "omitted": 0,
+              "decisive": 56
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  8,
+                  47,
+                  1
+                ],
+                [
+                  2,
+                  7,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7313432835820896,
+                "low": 0.6268656716417911,
+                "high": 0.835820895522388,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3800865800865801,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 56,
+              "n_submissions": 56,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  8,
+                  47,
+                  1
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8392857142857143,
+                "low": 0.7321428571428571,
+                "high": 0.9285714285714286,
+                "effective_n": 56,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3042071197411003,
+              "worst_case_half_width": 0.13095560215294966
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 10,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 56,
+                "predicted": 54,
+                "recall": 0.8392857142857143,
+                "precision": 0.8703703703703703
+              },
+              "null": {
+                "support": 11,
+                "predicted": 3,
+                "recall": 0.18181818181818182,
+                "precision": 0.6666666666666666
+              }
+            },
+            "null_to_true": {
+              "count": 7,
+              "null_support": 11
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "fever_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  7,
+                  2,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  2,
+                  44,
+                  3
+                ]
+              ],
+              "accuracy": {
+                "point": 0.26865671641791045,
+                "low": 0.16417910447761194,
+                "high": 0.373134328358209,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.36873165820534237,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  7,
+                  2,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8333333333333334,
+                "low": 0.6666666666666666,
+                "high": 1.0,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8328173374613004,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 10,
+                "recall": 0.7777777777777778,
+                "precision": 0.7
+              },
+              "true": {
+                "support": 9,
+                "predicted": 54,
+                "recall": 0.8888888888888888,
+                "precision": 0.14814814814814814
+              },
+              "null": {
+                "support": 49,
+                "predicted": 3,
+                "recall": 0.061224489795918366,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 44,
+              "null_support": 49
+            }
+          },
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  6,
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  3,
+                  47,
+                  3
+                ]
+              ],
+              "accuracy": {
+                "point": 0.23880597014925373,
+                "low": 0.13432835820895522,
+                "high": 0.34328358208955223,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3609831029185868,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  6,
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9285714285714286,
+                "low": 0.7857142857142857,
+                "high": 1.0,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.9282051282051282,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 9,
+                "recall": 0.8571428571428571,
+                "precision": 0.6666666666666666
+              },
+              "true": {
+                "support": 7,
+                "predicted": 55,
+                "recall": 1.0,
+                "precision": 0.12727272727272726
+              },
+              "null": {
+                "support": 53,
+                "predicted": 3,
+                "recall": 0.05660377358490566,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 47,
+              "null_support": 53
+            }
+          },
+          {
+            "signal": "haematuria_present",
+            "margin": 0.6,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  16,
+                  34,
+                  6
+                ]
+              ],
+              "accuracy": {
+                "point": 0.2537313432835821,
+                "low": 0.14925373134328357,
+                "high": 0.3582089552238806,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.2465674110835401,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 1.0,
+                "low": 1.0,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 1.0,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 18,
+                "recall": 1.0,
+                "precision": 0.1111111111111111
+              },
+              "true": {
+                "support": 9,
+                "predicted": 43,
+                "recall": 1.0,
+                "precision": 0.20930232558139536
+              },
+              "null": {
+                "support": 56,
+                "predicted": 6,
+                "recall": 0.10714285714285714,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 34,
+              "null_support": 56
+            }
+          },
+          {
+            "signal": "nocturia_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  9,
+                  44,
+                  5
+                ]
+              ],
+              "accuracy": {
+                "point": 0.19402985074626866,
+                "low": 0.1044776119402985,
+                "high": 0.2835820895522388,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.14034174689912396,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8888888888888888,
+                "low": 0.6666666666666666,
+                "high": 1.0,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.47058823529411764,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 10,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 52,
+                "recall": 0.8888888888888888,
+                "precision": 0.15384615384615385
+              },
+              "null": {
+                "support": 58,
+                "predicted": 5,
+                "recall": 0.08620689655172414,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 44,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  5,
+                  20,
+                  1
+                ],
+                [
+                  6,
+                  15,
+                  20
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5970149253731343,
+                "low": 0.47761194029850745,
+                "high": 0.7164179104477612,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4336329984135378,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  5,
+                  20,
+                  1
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7692307692307693,
+                "low": 0.5769230769230769,
+                "high": 0.9230769230769231,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.2898550724637681,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 11,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 26,
+                "predicted": 35,
+                "recall": 0.7692307692307693,
+                "precision": 0.5714285714285714
+              },
+              "null": {
+                "support": 41,
+                "predicted": 21,
+                "recall": 0.4878048780487805,
+                "precision": 0.9523809523809523
+              }
+            },
+            "null_to_true": {
+              "count": 15,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder, shared by every head listed above. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 1,
+      "signals": [
+        "dysuria_present",
+        "fever_present",
+        "flank_pain_present",
+        "haematuria_present",
+        "nocturia_present",
+        "urinary_frequency_present"
+      ],
+      "n_parameters": 124659474,
+      "n_trainable": 124659474,
+      "best_epoch": 3,
+      "epoch_selection": "the unweighted mean of every head's own validation macro-F1 (DD6): fever and dysuria do not get to decide nocturia's stopping point",
+      "val_macro_f1_by_epoch": {
+        "dysuria_present": [
+          0.9933833905796523,
+          0.9914274246781636,
+          0.9927299420137409
+        ],
+        "fever_present": [
+          0.8825891923205974,
+          0.8736640901907068,
+          0.8700686364945788
+        ],
+        "flank_pain_present": [
+          0.8856595699567859,
+          0.8898696787939345,
+          0.9101613625916803
+        ],
+        "haematuria_present": [
+          0.9750006609999091,
+          0.9756158653101276,
+          0.9757587440227341
+        ],
+        "nocturia_present": [
+          0.8718182689709869,
+          0.9139002756506235,
+          0.9006328337488508
+        ],
+        "urinary_frequency_present": [
+          0.879422980950353,
+          0.8999477290729555,
+          0.9255792380907143
+        ]
+      },
+      "mean_val_macro_f1_by_epoch": [
+        0.9146456772963808,
+        0.9240708439494186,
+        0.9291551261603832
+      ],
+      "train_loss_by_epoch": [
+        0.14613967702967412,
+        0.0007305478135029013,
+        0.00013553483165283702
+      ],
+      "steps_per_epoch": 1401,
+      "warmup_steps": 420,
+      "validation": {
+        "dysuria_present": {
+          "n_examples": 2000,
+          "effective_n": 35,
+          "accuracy": 0.9955,
+          "macro_f1": 0.9940383091615846,
+          "confusion": [
+            [
+              509,
+              0,
+              0
+            ],
+            [
+              0,
+              316,
+              0
+            ],
+            [
+              0,
+              9,
+              1166
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 1.0,
+            "null": 0.9923404255319149
+          }
+        },
+        "fever_present": {
+          "n_examples": 2000,
+          "effective_n": 93,
+          "accuracy": 0.8985,
+          "macro_f1": 0.875234489636445,
+          "confusion": [
+            [
+              406,
+              38,
+              65
+            ],
+            [
+              0,
+              272,
+              44
+            ],
+            [
+              32,
+              24,
+              1119
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.7976424361493124,
+            "true": 0.8607594936708861,
+            "null": 0.9523404255319149
+          }
+        },
+        "flank_pain_present": {
+          "n_examples": 2000,
+          "effective_n": 53,
+          "accuracy": 0.941,
+          "macro_f1": 0.9101613625916803,
+          "confusion": [
+            [
+              459,
+              50,
+              0
+            ],
+            [
+              13,
+              265,
+              38
+            ],
+            [
+              0,
+              17,
+              1158
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9017681728880157,
+            "true": 0.8386075949367089,
+            "null": 0.985531914893617
+          }
+        },
+        "haematuria_present": {
+          "n_examples": 2000,
+          "effective_n": 37,
+          "accuracy": 0.981,
+          "macro_f1": 0.9759036713194141,
+          "confusion": [
+            [
+              509,
+              0,
+              0
+            ],
+            [
+              0,
+              316,
+              0
+            ],
+            [
+              2,
+              36,
+              1137
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 1.0,
+            "null": 0.9676595744680851
+          }
+        },
+        "nocturia_present": {
+          "n_examples": 2000,
+          "effective_n": 79,
+          "accuracy": 0.9305,
+          "macro_f1": 0.9006328337488508,
+          "confusion": [
+            [
+              509,
+              0,
+              0
+            ],
+            [
+              0,
+              215,
+              101
+            ],
+            [
+              10,
+              28,
+              1137
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.680379746835443,
+            "null": 0.9676595744680851
+          }
+        },
+        "urinary_frequency_present": {
+          "n_examples": 2000,
+          "effective_n": 65,
+          "accuracy": 0.9385,
+          "macro_f1": 0.9255792380907143,
+          "confusion": [
+            [
+              480,
+              3,
+              26
+            ],
+            [
+              0,
+              292,
+              24
+            ],
+            [
+              0,
+              70,
+              1105
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9430255402750491,
+            "true": 0.9240506329113924,
+            "null": 0.9404255319148936
+          }
+        }
+      },
+      "decision_rules": {
+        "dysuria_present": {
+          "margin": 0.65,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.009361702127659575,
+          "null_to_true_rate": 0.007659574468085106,
+          "macro_f1": 0.9940383091615846,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "fever_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.026382978723404255,
+          "null_to_true_rate": 0.020425531914893616,
+          "macro_f1": 0.875234489636445,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "flank_pain_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.01446808510638298,
+          "null_to_true_rate": 0.01446808510638298,
+          "macro_f1": 0.9101613625916803,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "haematuria_present": {
+          "margin": 0.55,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.03148936170212766,
+          "null_to_true_rate": 0.030638297872340424,
+          "macro_f1": 0.9759036713194141,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "nocturia_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.023829787234042554,
+          "null_to_true_rate": 0.023829787234042554,
+          "macro_f1": 0.9006328337488508,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "urinary_frequency_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.059574468085106386,
+          "null_to_true_rate": 0.059574468085106386,
+          "macro_f1": 0.9255792380907143,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        }
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "dysuria_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "nocturia_present",
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "recent_uti_present"
+        ],
+        "margin": {
+          "dysuria_present": 0.65,
+          "fever_present": 0.9,
+          "flank_pain_present": 0.0,
+          "haematuria_present": 0.55,
+          "nocturia_present": 0.0,
+          "urinary_frequency_present": 0.0
+        },
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 402,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              16,
+              2,
+              0
+            ],
+            [
+              15,
+              100,
+              1
+            ],
+            [
+              32,
+              211,
+              25
+            ]
+          ],
+          "accuracy": {
+            "point": 0.35074626865671643,
+            "low": 0.30845771144278605,
+            "high": 0.39800995024875624,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.3437767406021374,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 134,
+          "n_submissions": 62,
+          "confusion": [
+            [
+              16,
+              2,
+              0
+            ],
+            [
+              15,
+              100,
+              1
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8656716417910447,
+            "low": 0.7931034482758621,
+            "high": 0.936,
+            "effective_n": 62,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.5234974723834488,
+          "worst_case_half_width": 0.12445783747619314
+        },
+        "by_signal": [
+          {
+            "signal": "dysuria_present",
+            "margin": 0.65,
+            "distribution": {
+              "false": 0,
+              "true": 56,
+              "null": 11,
+              "omitted": 0,
+              "decisive": 56
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  8,
+                  47,
+                  1
+                ],
+                [
+                  1,
+                  8,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7313432835820896,
+                "low": 0.6268656716417911,
+                "high": 0.835820895522388,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3775203775203775,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 56,
+              "n_submissions": 56,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  8,
+                  47,
+                  1
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8392857142857143,
+                "low": 0.7321428571428571,
+                "high": 0.9285714285714286,
+                "effective_n": 56,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3042071197411003,
+              "worst_case_half_width": 0.13095560215294966
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 9,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 56,
+                "predicted": 55,
+                "recall": 0.8392857142857143,
+                "precision": 0.8545454545454545
+              },
+              "null": {
+                "support": 11,
+                "predicted": 3,
+                "recall": 0.18181818181818182,
+                "precision": 0.6666666666666666
+              }
+            },
+            "null_to_true": {
+              "count": 8,
+              "null_support": 11
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "fever_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  8,
+                  1,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  3,
+                  41,
+                  5
+                ]
+              ],
+              "accuracy": {
+                "point": 0.31343283582089554,
+                "low": 0.208955223880597,
+                "high": 0.417910447761194,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4060921292559711,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  8,
+                  1,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8888888888888888,
+                "low": 0.7222222222222222,
+                "high": 1.0,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8888888888888888,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 12,
+                "recall": 0.8888888888888888,
+                "precision": 0.6666666666666666
+              },
+              "true": {
+                "support": 9,
+                "predicted": 50,
+                "recall": 0.8888888888888888,
+                "precision": 0.16
+              },
+              "null": {
+                "support": 49,
+                "predicted": 5,
+                "recall": 0.10204081632653061,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 41,
+              "null_support": 49
+            }
+          },
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  6,
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  3,
+                  47,
+                  3
+                ]
+              ],
+              "accuracy": {
+                "point": 0.23880597014925373,
+                "low": 0.13432835820895522,
+                "high": 0.34328358208955223,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3609831029185868,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  6,
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9285714285714286,
+                "low": 0.7857142857142857,
+                "high": 1.0,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.9282051282051282,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 9,
+                "recall": 0.8571428571428571,
+                "precision": 0.6666666666666666
+              },
+              "true": {
+                "support": 7,
+                "predicted": 55,
+                "recall": 1.0,
+                "precision": 0.12727272727272726
+              },
+              "null": {
+                "support": 53,
+                "predicted": 3,
+                "recall": 0.05660377358490566,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 47,
+              "null_support": 53
+            }
+          },
+          {
+            "signal": "haematuria_present",
+            "margin": 0.55,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  9,
+                  44,
+                  3
+                ]
+              ],
+              "accuracy": {
+                "point": 0.208955223880597,
+                "low": 0.11940298507462686,
+                "high": 0.29850746268656714,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.23323660119723544,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 1.0,
+                "low": 1.0,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 1.0,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 11,
+                "recall": 1.0,
+                "precision": 0.18181818181818182
+              },
+              "true": {
+                "support": 9,
+                "predicted": 53,
+                "recall": 1.0,
+                "precision": 0.16981132075471697
+              },
+              "null": {
+                "support": 56,
+                "predicted": 3,
+                "recall": 0.05357142857142857,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 44,
+              "null_support": 56
+            }
+          },
+          {
+            "signal": "nocturia_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  10,
+                  44,
+                  4
+                ]
+              ],
+              "accuracy": {
+                "point": 0.1791044776119403,
+                "low": 0.08955223880597014,
+                "high": 0.26865671641791045,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.1304424466772431,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8888888888888888,
+                "low": 0.6666666666666666,
+                "high": 1.0,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.47058823529411764,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 11,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 52,
+                "recall": 0.8888888888888888,
+                "precision": 0.15384615384615385
+              },
+              "null": {
+                "support": 58,
+                "predicted": 4,
+                "recall": 0.06896551724137931,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 44,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  5,
+                  21,
+                  0
+                ],
+                [
+                  6,
+                  27,
+                  8
+                ]
+              ],
+              "accuracy": {
+                "point": 0.43283582089552236,
+                "low": 0.31343283582089554,
+                "high": 0.5522388059701493,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.2980327266041552,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  5,
+                  21,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8076923076923077,
+                "low": 0.6538461538461539,
+                "high": 0.9230769230769231,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.44680851063829785,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 11,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 26,
+                "predicted": 48,
+                "recall": 0.8076923076923077,
+                "precision": 0.4375
+              },
+              "null": {
+                "support": 41,
+                "predicted": 8,
+                "recall": 0.1951219512195122,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 27,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder, shared by every head listed above. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 2,
+      "signals": [
+        "dysuria_present",
+        "fever_present",
+        "flank_pain_present",
+        "haematuria_present",
+        "nocturia_present",
+        "urinary_frequency_present"
+      ],
+      "n_parameters": 124659474,
+      "n_trainable": 124659474,
+      "best_epoch": 2,
+      "epoch_selection": "the unweighted mean of every head's own validation macro-F1 (DD6): fever and dysuria do not get to decide nocturia's stopping point",
+      "val_macro_f1_by_epoch": {
+        "dysuria_present": [
+          0.9844185802663311,
+          0.9863217517941031,
+          0.9850516127861239
+        ],
+        "fever_present": [
+          0.9256781512673308,
+          0.9330272517215942,
+          0.9315915613222993
+        ],
+        "flank_pain_present": [
+          0.9303839983378267,
+          0.9921051633355767,
+          0.9872116180572189
+        ],
+        "haematuria_present": [
+          0.953376160615372,
+          0.9539621576963229,
+          0.9539621576963229
+        ],
+        "nocturia_present": [
+          0.9299879691770814,
+          0.9242723839430207,
+          0.9268845852544528
+        ],
+        "urinary_frequency_present": [
+          0.8580018804491822,
+          0.8623486919161042,
+          0.8671594044799787
+        ]
+      },
+      "mean_val_macro_f1_by_epoch": [
+        0.930307790018854,
+        0.9420062334011203,
+        0.941976823266066
+      ],
+      "train_loss_by_epoch": [
+        0.1410570503975916,
+        0.0010649860080940486,
+        0.00017468628624587776
+      ],
+      "steps_per_epoch": 1414,
+      "warmup_steps": 424,
+      "validation": {
+        "dysuria_present": {
+          "n_examples": 2000,
+          "effective_n": 39,
+          "accuracy": 0.992,
+          "macro_f1": 0.9904205438752096,
+          "confusion": [
+            [
+              514,
+              0,
+              0
+            ],
+            [
+              0,
+              318,
+              0
+            ],
+            [
+              5,
+              11,
+              1152
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 1.0,
+            "null": 0.9863013698630136
+          }
+        },
+        "fever_present": {
+          "n_examples": 2000,
+          "effective_n": 93,
+          "accuracy": 0.955,
+          "macro_f1": 0.9395816453047564,
+          "confusion": [
+            [
+              478,
+              26,
+              10
+            ],
+            [
+              16,
+              298,
+              4
+            ],
+            [
+              22,
+              12,
+              1134
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9299610894941635,
+            "true": 0.9371069182389937,
+            "null": 0.9708904109589042
+          }
+        },
+        "flank_pain_present": {
+          "n_examples": 2000,
+          "effective_n": 42,
+          "accuracy": 0.998,
+          "macro_f1": 0.9973478911369787,
+          "confusion": [
+            [
+              512,
+              1,
+              1
+            ],
+            [
+              0,
+              316,
+              2
+            ],
+            [
+              0,
+              0,
+              1168
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9961089494163424,
+            "true": 0.9937106918238994,
+            "null": 1.0
+          }
+        },
+        "haematuria_present": {
+          "n_examples": 2000,
+          "effective_n": 62,
+          "accuracy": 0.972,
+          "macro_f1": 0.9539621576963229,
+          "confusion": [
+            [
+              459,
+              55,
+              0
+            ],
+            [
+              0,
+              317,
+              1
+            ],
+            [
+              0,
+              0,
+              1168
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.8929961089494164,
+            "true": 0.9968553459119497,
+            "null": 1.0
+          }
+        },
+        "nocturia_present": {
+          "n_examples": 2000,
+          "effective_n": 66,
+          "accuracy": 0.9475,
+          "macro_f1": 0.9242723839430207,
+          "confusion": [
+            [
+              514,
+              0,
+              0
+            ],
+            [
+              30,
+              256,
+              32
+            ],
+            [
+              8,
+              35,
+              1125
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.8050314465408805,
+            "null": 0.9631849315068494
+          }
+        },
+        "urinary_frequency_present": {
+          "n_examples": 2000,
+          "effective_n": 66,
+          "accuracy": 0.9035,
+          "macro_f1": 0.8623486919161042,
+          "confusion": [
+            [
+              403,
+              59,
+              52
+            ],
+            [
+              34,
+              246,
+              38
+            ],
+            [
+              10,
+              0,
+              1158
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.7840466926070039,
+            "true": 0.7735849056603774,
+            "null": 0.9914383561643836
+          }
+        }
+      },
+      "decision_rules": {
+        "dysuria_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.01797945205479452,
+          "null_to_true_rate": 0.009417808219178082,
+          "macro_f1": 0.9904205438752096,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "fever_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.017123287671232876,
+          "null_to_true_rate": 0.010273972602739725,
+          "macro_f1": 0.9395816453047564,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "flank_pain_present": {
+          "margin": 0.75,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0,
+          "null_to_true_rate": 0.0,
+          "macro_f1": 0.9973478911369787,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "haematuria_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0,
+          "null_to_true_rate": 0.0,
+          "macro_f1": 0.9539621576963229,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "nocturia_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.029965753424657533,
+          "null_to_true_rate": 0.029965753424657533,
+          "macro_f1": 0.9242723839430207,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "urinary_frequency_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0,
+          "null_to_true_rate": 0.0,
+          "macro_f1": 0.8623486919161042,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        }
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "dysuria_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "nocturia_present",
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "recent_uti_present"
+        ],
+        "margin": {
+          "dysuria_present": 0.9,
+          "fever_present": 0.9,
+          "flank_pain_present": 0.75,
+          "haematuria_present": 0.0,
+          "nocturia_present": 0.0,
+          "urinary_frequency_present": 0.0
+        },
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 402,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              15,
+              3,
+              0
+            ],
+            [
+              14,
+              102,
+              0
+            ],
+            [
+              23,
+              229,
+              16
+            ]
+          ],
+          "accuracy": {
+            "point": 0.3308457711442786,
+            "low": 0.291044776119403,
+            "high": 0.3756218905472637,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.33152693941426337,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 134,
+          "n_submissions": 62,
+          "confusion": [
+            [
+              15,
+              3,
+              0
+            ],
+            [
+              14,
+              102,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8731343283582089,
+            "low": 0.8014184397163121,
+            "high": 0.944,
+            "effective_n": 62,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.7806873977086743,
+          "worst_case_half_width": 0.12445783747619314
+        },
+        "by_signal": [
+          {
+            "signal": "dysuria_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 0,
+              "true": 56,
+              "null": 11,
+              "omitted": 0,
+              "decisive": 56
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  8,
+                  48,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.746268656716418,
+                "low": 0.6417910447761194,
+                "high": 0.8507462686567164,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.38827838827838823,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 56,
+              "n_submissions": 56,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  8,
+                  48,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8571428571428571,
+                "low": 0.7678571428571429,
+                "high": 0.9285714285714286,
+                "effective_n": 56,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4615384615384615,
+              "worst_case_half_width": 0.13095560215294966
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 9,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 56,
+                "predicted": 56,
+                "recall": 0.8571428571428571,
+                "precision": 0.8571428571428571
+              },
+              "null": {
+                "support": 11,
+                "predicted": 2,
+                "recall": 0.18181818181818182,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 8,
+              "null_support": 11
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "fever_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  8,
+                  1,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  6,
+                  41,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.26865671641791045,
+                "low": 0.16417910447761194,
+                "high": 0.373134328358209,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3387614932978842,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  8,
+                  1,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8888888888888888,
+                "low": 0.7222222222222222,
+                "high": 1.0,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8888888888888888,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 15,
+                "recall": 0.8888888888888888,
+                "precision": 0.5333333333333333
+              },
+              "true": {
+                "support": 9,
+                "predicted": 50,
+                "recall": 0.8888888888888888,
+                "precision": 0.16
+              },
+              "null": {
+                "support": 49,
+                "predicted": 2,
+                "recall": 0.04081632653061224,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 41,
+              "null_support": 49
+            }
+          },
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.75,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  5,
+                  2,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  3,
+                  48,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.208955223880597,
+                "low": 0.11940298507462686,
+                "high": 0.31343283582089554,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3193813131313131,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  5,
+                  2,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8571428571428571,
+                "low": 0.6428571428571429,
+                "high": 1.0,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8541666666666667,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 8,
+                "recall": 0.7142857142857143,
+                "precision": 0.625
+              },
+              "true": {
+                "support": 7,
+                "predicted": 57,
+                "recall": 1.0,
+                "precision": 0.12280701754385964
+              },
+              "null": {
+                "support": 53,
+                "predicted": 2,
+                "recall": 0.03773584905660377,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 48,
+              "null_support": 53
+            }
+          },
+          {
+            "signal": "haematuria_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  1,
+                  53,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.19402985074626866,
+                "low": 0.1044776119402985,
+                "high": 0.29850746268656714,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.37416221466731425,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 1.0,
+                "low": 1.0,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 1.0,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 3,
+                "recall": 1.0,
+                "precision": 0.6666666666666666
+              },
+              "true": {
+                "support": 9,
+                "predicted": 62,
+                "recall": 1.0,
+                "precision": 0.14516129032258066
+              },
+              "null": {
+                "support": 56,
+                "predicted": 2,
+                "recall": 0.03571428571428571,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 53,
+              "null_support": 56
+            }
+          },
+          {
+            "signal": "nocturia_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  5,
+                  51,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.14925373134328357,
+                "low": 0.07462686567164178,
+                "high": 0.23880597014925373,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.10065359477124182,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8888888888888888,
+                "low": 0.6666666666666666,
+                "high": 1.0,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.47058823529411764,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 6,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 59,
+                "recall": 0.8888888888888888,
+                "precision": 0.13559322033898305
+              },
+              "null": {
+                "support": 58,
+                "predicted": 2,
+                "recall": 0.034482758620689655,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 51,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  4,
+                  22,
+                  0
+                ],
+                [
+                  7,
+                  28,
+                  6
+                ]
+              ],
+              "accuracy": {
+                "point": 0.417910447761194,
+                "low": 0.29850746268656714,
+                "high": 0.5373134328358209,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.2780888391190743,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  4,
+                  22,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8461538461538461,
+                "low": 0.6923076923076923,
+                "high": 0.9615384615384616,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4583333333333333,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 11,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 26,
+                "predicted": 50,
+                "recall": 0.8461538461538461,
+                "precision": 0.44
+              },
+              "null": {
+                "support": 41,
+                "predicted": 6,
+                "recall": 0.14634146341463414,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 28,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder, shared by every head listed above. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 3,
+      "signals": [
+        "dysuria_present",
+        "fever_present",
+        "flank_pain_present",
+        "haematuria_present",
+        "nocturia_present",
+        "urinary_frequency_present"
+      ],
+      "n_parameters": 124659474,
+      "n_trainable": 124659474,
+      "best_epoch": 3,
+      "epoch_selection": "the unweighted mean of every head's own validation macro-F1 (DD6): fever and dysuria do not get to decide nocturia's stopping point",
+      "val_macro_f1_by_epoch": {
+        "dysuria_present": [
+          0.9815613009876726,
+          0.98276136553773,
+          0.98276136553773
+        ],
+        "fever_present": [
+          0.9328086671645498,
+          0.9609167069366307,
+          0.9645997463834824
+        ],
+        "flank_pain_present": [
+          0.9845500805903672,
+          0.9765462256590537,
+          0.983817334187712
+        ],
+        "haematuria_present": [
+          0.9464604898287954,
+          0.9585991222428256,
+          0.9546181515064168
+        ],
+        "nocturia_present": [
+          0.9281091889444583,
+          0.9022110720299121,
+          0.9118774756003735
+        ],
+        "urinary_frequency_present": [
+          0.7806674882982287,
+          0.8594353138257658,
+          0.8952015822365161
+        ]
+      },
+      "mean_val_macro_f1_by_epoch": [
+        0.9256928693023454,
+        0.940078301038653,
+        0.9488126092420385
+      ],
+      "train_loss_by_epoch": [
+        0.1534468749898995,
+        0.0017776323377068205,
+        0.0001902897376051418
+      ],
+      "steps_per_epoch": 1420,
+      "warmup_steps": 426,
+      "validation": {
+        "dysuria_present": {
+          "n_examples": 2000,
+          "effective_n": 40,
+          "accuracy": 0.985,
+          "macro_f1": 0.9848522811242448,
+          "confusion": [
+            [
+              502,
+              0,
+              0
+            ],
+            [
+              3,
+              296,
+              0
+            ],
+            [
+              27,
+              0,
+              1172
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.9899665551839465,
+            "null": 0.9774812343619683
+          }
+        },
+        "fever_present": {
+          "n_examples": 2000,
+          "effective_n": 70,
+          "accuracy": 0.9745,
+          "macro_f1": 0.971124228215812,
+          "confusion": [
+            [
+              502,
+              0,
+              0
+            ],
+            [
+              1,
+              297,
+              1
+            ],
+            [
+              28,
+              21,
+              1150
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.9933110367892977,
+            "null": 0.9591326105087573
+          }
+        },
+        "flank_pain_present": {
+          "n_examples": 2000,
+          "effective_n": 48,
+          "accuracy": 0.9855,
+          "macro_f1": 0.9859031298191171,
+          "confusion": [
+            [
+              502,
+              0,
+              0
+            ],
+            [
+              1,
+              298,
+              0
+            ],
+            [
+              27,
+              1,
+              1171
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.9966555183946488,
+            "null": 0.9766472060050042
+          }
+        },
+        "haematuria_present": {
+          "n_examples": 2000,
+          "effective_n": 36,
+          "accuracy": 0.965,
+          "macro_f1": 0.9546181515064168,
+          "confusion": [
+            [
+              502,
+              0,
+              0
+            ],
+            [
+              2,
+              255,
+              42
+            ],
+            [
+              24,
+              2,
+              1173
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.8528428093645485,
+            "null": 0.9783152627189324
+          }
+        },
+        "nocturia_present": {
+          "n_examples": 2000,
+          "effective_n": 67,
+          "accuracy": 0.9375,
+          "macro_f1": 0.9159544668148879,
+          "confusion": [
+            [
+              475,
+              20,
+              7
+            ],
+            [
+              4,
+              255,
+              40
+            ],
+            [
+              25,
+              29,
+              1145
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9462151394422311,
+            "true": 0.8528428093645485,
+            "null": 0.9549624687239366
+          }
+        },
+        "urinary_frequency_present": {
+          "n_examples": 2000,
+          "effective_n": 54,
+          "accuracy": 0.9135,
+          "macro_f1": 0.902600410107227,
+          "confusion": [
+            [
+              399,
+              15,
+              88
+            ],
+            [
+              5,
+              279,
+              15
+            ],
+            [
+              42,
+              8,
+              1149
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.7948207171314741,
+            "true": 0.9331103678929766,
+            "null": 0.9582985821517932
+          }
+        }
+      },
+      "decision_rules": {
+        "dysuria_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0025020850708924102,
+          "null_to_true_rate": 0.0,
+          "macro_f1": 0.9848522811242448,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "fever_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.026688907422852376,
+          "null_to_true_rate": 0.01751459549624687,
+          "macro_f1": 0.971124228215812,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "flank_pain_present": {
+          "margin": 0.75,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.003336113427856547,
+          "null_to_true_rate": 0.0008340283569641367,
+          "macro_f1": 0.9859031298191171,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "haematuria_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0016680567139282735,
+          "null_to_true_rate": 0.0016680567139282735,
+          "macro_f1": 0.9546181515064168,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "nocturia_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.030859049207673062,
+          "null_to_true_rate": 0.02418682235195997,
+          "macro_f1": 0.9159544668148879,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "urinary_frequency_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.013344453711426188,
+          "null_to_true_rate": 0.006672226855713094,
+          "macro_f1": 0.902600410107227,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        }
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "dysuria_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "nocturia_present",
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "recent_uti_present"
+        ],
+        "margin": {
+          "dysuria_present": 0.9,
+          "fever_present": 0.9,
+          "flank_pain_present": 0.75,
+          "haematuria_present": 0.0,
+          "nocturia_present": 0.9,
+          "urinary_frequency_present": 0.9
+        },
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 402,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              18,
+              0,
+              0
+            ],
+            [
+              21,
+              93,
+              2
+            ],
+            [
+              50,
+              154,
+              64
+            ]
+          ],
+          "accuracy": {
+            "point": 0.43532338308457713,
+            "low": 0.3805970149253731,
+            "high": 0.4900497512437811,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.41069294175994964,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 134,
+          "n_submissions": 62,
+          "confusion": [
+            [
+              18,
+              0,
+              0
+            ],
+            [
+              21,
+              93,
+              2
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8283582089552238,
+            "low": 0.7534246575342466,
+            "high": 0.9022556390977443,
+            "effective_n": 62,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.507177033492823,
+          "worst_case_half_width": 0.12445783747619314
+        },
+        "by_signal": [
+          {
+            "signal": "dysuria_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 0,
+              "true": 56,
+              "null": 11,
+              "omitted": 0,
+              "decisive": 56
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  11,
+                  45,
+                  0
+                ],
+                [
+                  2,
+                  7,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7014925373134329,
+                "low": 0.5970149253731343,
+                "high": 0.8059701492537313,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3803418803418803,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 56,
+              "n_submissions": 56,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  11,
+                  45,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8035714285714286,
+                "low": 0.6964285714285714,
+                "high": 0.8928571428571429,
+                "effective_n": 56,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.44554455445544555,
+              "worst_case_half_width": 0.13095560215294966
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 13,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 56,
+                "predicted": 52,
+                "recall": 0.8035714285714286,
+                "precision": 0.8653846153846154
+              },
+              "null": {
+                "support": 11,
+                "predicted": 2,
+                "recall": 0.18181818181818182,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 7,
+              "null_support": 11
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "fever_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  7,
+                  29,
+                  13
+                ]
+              ],
+              "accuracy": {
+                "point": 0.44776119402985076,
+                "low": 0.3283582089552239,
+                "high": 0.5671641791044776,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.48649620599129717,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9444444444444444,
+                "low": 0.8333333333333334,
+                "high": 1.0,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.9442724458204335,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 17,
+                "recall": 1.0,
+                "precision": 0.5294117647058824
+              },
+              "true": {
+                "support": 9,
+                "predicted": 37,
+                "recall": 0.8888888888888888,
+                "precision": 0.21621621621621623
+              },
+              "null": {
+                "support": 49,
+                "predicted": 13,
+                "recall": 0.2653061224489796,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 29,
+              "null_support": 49
+            }
+          },
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.75,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  7,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  6,
+                  0
+                ],
+                [
+                  5,
+                  46,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.22388059701492538,
+                "low": 0.13432835820895522,
+                "high": 0.3283582089552239,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.32537236774524914,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  7,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  6,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9285714285714286,
+                "low": 0.7857142857142857,
+                "high": 1.0,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.9282051282051282,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 13,
+                "recall": 1.0,
+                "precision": 0.5384615384615384
+              },
+              "true": {
+                "support": 7,
+                "predicted": 52,
+                "recall": 0.8571428571428571,
+                "precision": 0.11538461538461539
+              },
+              "null": {
+                "support": 53,
+                "predicted": 2,
+                "recall": 0.03773584905660377,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 46,
+              "null_support": 53
+            }
+          },
+          {
+            "signal": "haematuria_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  11,
+                  43,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.19402985074626866,
+                "low": 0.1044776119402985,
+                "high": 0.29850746268656714,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.21023805037372026,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 1.0,
+                "low": 1.0,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 1.0,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 13,
+                "recall": 1.0,
+                "precision": 0.15384615384615385
+              },
+              "true": {
+                "support": 9,
+                "predicted": 52,
+                "recall": 1.0,
+                "precision": 0.17307692307692307
+              },
+              "null": {
+                "support": 56,
+                "predicted": 2,
+                "recall": 0.03571428571428571,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 43,
+              "null_support": 56
+            }
+          },
+          {
+            "signal": "nocturia_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  2,
+                  5,
+                  2
+                ],
+                [
+                  14,
+                  13,
+                  31
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5373134328358209,
+                "low": 0.417910447761194,
+                "high": 0.6567164179104478,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.35056301722968386,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  2,
+                  5,
+                  2
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5555555555555556,
+                "low": 0.2222222222222222,
+                "high": 0.8888888888888888,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.2380952380952381,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 16,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 18,
+                "recall": 0.5555555555555556,
+                "precision": 0.2777777777777778
+              },
+              "null": {
+                "support": 58,
+                "predicted": 33,
+                "recall": 0.5344827586206896,
+                "precision": 0.9393939393939394
+              }
+            },
+            "null_to_true": {
+              "count": 13,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  6,
+                  20,
+                  0
+                ],
+                [
+                  11,
+                  16,
+                  14
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5074626865671642,
+                "low": 0.3880597014925373,
+                "high": 0.6268656716417911,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3847507331378299,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  6,
+                  20,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7692307692307693,
+                "low": 0.5769230769230769,
+                "high": 0.9230769230769231,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4347826086956522,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 17,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 26,
+                "predicted": 36,
+                "recall": 0.7692307692307693,
+                "precision": 0.5555555555555556
+              },
+              "null": {
+                "support": 41,
+                "predicted": 14,
+                "recall": 0.34146341463414637,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 16,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder, shared by every head listed above. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 4,
+      "signals": [
+        "dysuria_present",
+        "fever_present",
+        "flank_pain_present",
+        "haematuria_present",
+        "nocturia_present",
+        "urinary_frequency_present"
+      ],
+      "n_parameters": 124659474,
+      "n_trainable": 124659474,
+      "best_epoch": 1,
+      "epoch_selection": "the unweighted mean of every head's own validation macro-F1 (DD6): fever and dysuria do not get to decide nocturia's stopping point",
+      "val_macro_f1_by_epoch": {
+        "dysuria_present": [
+          0.9713888960084693,
+          0.9516822216972964,
+          0.9493642406894751
+        ],
+        "fever_present": [
+          0.9620569931388157,
+          0.9504002986080385,
+          0.953238920051704
+        ],
+        "flank_pain_present": [
+          0.9930444617233336,
+          1.0,
+          0.9993103868771668
+        ],
+        "haematuria_present": [
+          0.9375850680485742,
+          0.9578154665093598,
+          0.9501810350852496
+        ],
+        "nocturia_present": [
+          0.9420387518600863,
+          0.9177831483189104,
+          0.9106285262354704
+        ],
+        "urinary_frequency_present": [
+          0.883813068291464,
+          0.871295272676539,
+          0.8834768097142266
+        ]
+      },
+      "mean_val_macro_f1_by_epoch": [
+        0.9483212065117904,
+        0.9414960679683574,
+        0.9410333197755487
+      ],
+      "train_loss_by_epoch": [
+        0.15513246616421503,
+        0.001937709303772996,
+        0.0001710390638741791
+      ],
+      "steps_per_epoch": 1425,
+      "warmup_steps": 428,
+      "validation": {
+        "dysuria_present": {
+          "n_examples": 2000,
+          "effective_n": 34,
+          "accuracy": 0.9805,
+          "macro_f1": 0.9736839963769347,
+          "confusion": [
+            [
+              524,
+              0,
+              0
+            ],
+            [
+              2,
+              300,
+              2
+            ],
+            [
+              0,
+              35,
+              1137
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.9868421052631579,
+            "null": 0.9701365187713311
+          }
+        },
+        "fever_present": {
+          "n_examples": 2000,
+          "effective_n": 82,
+          "accuracy": 0.9715,
+          "macro_f1": 0.9620569931388157,
+          "confusion": [
+            [
+              514,
+              0,
+              10
+            ],
+            [
+              1,
+              264,
+              39
+            ],
+            [
+              3,
+              4,
+              1165
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9809160305343512,
+            "true": 0.868421052631579,
+            "null": 0.9940273037542662
+          }
+        },
+        "flank_pain_present": {
+          "n_examples": 2000,
+          "effective_n": 55,
+          "accuracy": 0.9955,
+          "macro_f1": 0.9937322667240407,
+          "confusion": [
+            [
+              524,
+              0,
+              0
+            ],
+            [
+              0,
+              296,
+              8
+            ],
+            [
+              0,
+              1,
+              1171
+            ]
+          ],
+          "per_class_recall": {
+            "false": 1.0,
+            "true": 0.9736842105263158,
+            "null": 0.9991467576791809
+          }
+        },
+        "haematuria_present": {
+          "n_examples": 2000,
+          "effective_n": 45,
+          "accuracy": 0.948,
+          "macro_f1": 0.9399663795296961,
+          "confusion": [
+            [
+              485,
+              0,
+              39
+            ],
+            [
+              0,
+              304,
+              0
+            ],
+            [
+              0,
+              65,
+              1107
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9255725190839694,
+            "true": 1.0,
+            "null": 0.9445392491467577
+          }
+        },
+        "nocturia_present": {
+          "n_examples": 2000,
+          "effective_n": 74,
+          "accuracy": 0.9615,
+          "macro_f1": 0.9521746452159997,
+          "confusion": [
+            [
+              518,
+              0,
+              6
+            ],
+            [
+              0,
+              268,
+              36
+            ],
+            [
+              21,
+              14,
+              1137
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9885496183206107,
+            "true": 0.881578947368421,
+            "null": 0.9701365187713311
+          }
+        },
+        "urinary_frequency_present": {
+          "n_examples": 2000,
+          "effective_n": 66,
+          "accuracy": 0.9335,
+          "macro_f1": 0.9021481128698694,
+          "confusion": [
+            [
+              495,
+              19,
+              10
+            ],
+            [
+              47,
+              257,
+              0
+            ],
+            [
+              0,
+              57,
+              1115
+            ]
+          ],
+          "per_class_recall": {
+            "false": 0.9446564885496184,
+            "true": 0.8453947368421053,
+            "null": 0.9513651877133106
+          }
+        }
+      },
+      "decision_rules": {
+        "dysuria_present": {
+          "margin": 0.8,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.034129692832764506,
+          "null_to_true_rate": 0.029863481228668942,
+          "macro_f1": 0.9736839963769347,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "fever_present": {
+          "margin": 0.0,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0034129692832764505,
+          "null_to_true_rate": 0.0034129692832764505,
+          "macro_f1": 0.9620569931388157,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "flank_pain_present": {
+          "margin": 0.3,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.0017064846416382253,
+          "null_to_true_rate": 0.0008532423208191126,
+          "macro_f1": 0.9937322667240407,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "haematuria_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.05887372013651877,
+          "null_to_true_rate": 0.05546075085324232,
+          "macro_f1": 0.9399663795296961,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "nocturia_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.028156996587030716,
+          "null_to_true_rate": 0.011945392491467578,
+          "macro_f1": 0.9521746452159997,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        },
+        "urinary_frequency_present": {
+          "margin": 0.9,
+          "gated_class": 1,
+          "gated_class_name": "true",
+          "selected_on": "val",
+          "argmax_null_to_true_rate": 0.07081911262798635,
+          "null_to_true_rate": 0.04863481228668942,
+          "macro_f1": 0.9021481128698694,
+          "margins_considered": [
+            0.0,
+            0.05,
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3,
+            0.35,
+            0.4,
+            0.45,
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7,
+            0.75,
+            0.8,
+            0.85,
+            0.9
+          ]
+        }
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "dysuria_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "nocturia_present",
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "recent_uti_present"
+        ],
+        "margin": {
+          "dysuria_present": 0.8,
+          "fever_present": 0.0,
+          "flank_pain_present": 0.3,
+          "haematuria_present": 0.9,
+          "nocturia_present": 0.9,
+          "urinary_frequency_present": 0.9
+        },
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 402,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              17,
+              1,
+              0
+            ],
+            [
+              14,
+              97,
+              5
+            ],
+            [
+              25,
+              174,
+              69
+            ]
+          ],
+          "accuracy": {
+            "point": 0.4552238805970149,
+            "low": 0.4054726368159204,
+            "high": 0.5049751243781094,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.45432274379642795,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 134,
+          "n_submissions": 62,
+          "confusion": [
+            [
+              17,
+              1,
+              0
+            ],
+            [
+              14,
+              97,
+              5
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8507462686567164,
+            "low": 0.785234899328859,
+            "high": 0.9172932330827067,
+            "effective_n": 62,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.5334732023650581,
+          "worst_case_half_width": 0.12445783747619314
+        },
+        "by_signal": [
+          {
+            "signal": "dysuria_present",
+            "margin": 0.8,
+            "distribution": {
+              "false": 0,
+              "true": 56,
+              "null": 11,
+              "omitted": 0,
+              "decisive": 56
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  8,
+                  48,
+                  0
+                ],
+                [
+                  1,
+                  7,
+                  3
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7611940298507462,
+                "low": 0.6567164179104478,
+                "high": 0.8656716417910447,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4311454311454311,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 56,
+              "n_submissions": 56,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  8,
+                  48,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8571428571428571,
+                "low": 0.75,
+                "high": 0.9464285714285714,
+                "effective_n": 56,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4615384615384615,
+              "worst_case_half_width": 0.13095560215294966
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 9,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 56,
+                "predicted": 55,
+                "recall": 0.8571428571428571,
+                "precision": 0.8727272727272727
+              },
+              "null": {
+                "support": 11,
+                "predicted": 3,
+                "recall": 0.2727272727272727,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 7,
+              "null_support": 11
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "fever_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  8,
+                  1,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  47,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.26865671641791045,
+                "low": 0.16417910447761194,
+                "high": 0.373134328358209,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.40449136919725154,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  8,
+                  1,
+                  0
+                ],
+                [
+                  1,
+                  8,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8888888888888888,
+                "low": 0.7222222222222222,
+                "high": 1.0,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8888888888888888,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 9,
+                "recall": 0.8888888888888888,
+                "precision": 0.8888888888888888
+              },
+              "true": {
+                "support": 9,
+                "predicted": 56,
+                "recall": 0.8888888888888888,
+                "precision": 0.14285714285714285
+              },
+              "null": {
+                "support": 49,
+                "predicted": 2,
+                "recall": 0.04081632653061224,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 47,
+              "null_support": 49
+            }
+          },
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.3,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  7,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  2,
+                  49,
+                  2
+                ]
+              ],
+              "accuracy": {
+                "point": 0.23880597014925373,
+                "low": 0.13432835820895522,
+                "high": 0.34328358208955223,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.38998316498316504,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  7,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 1.0,
+                "low": 1.0,
+                "high": 1.0,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 1.0,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 9,
+                "recall": 1.0,
+                "precision": 0.7777777777777778
+              },
+              "true": {
+                "support": 7,
+                "predicted": 56,
+                "recall": 1.0,
+                "precision": 0.125
+              },
+              "null": {
+                "support": 53,
+                "predicted": 2,
+                "recall": 0.03773584905660377,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 49,
+              "null_support": 53
+            }
+          },
+          {
+            "signal": "haematuria_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  7,
+                  46,
+                  3
+                ]
+              ],
+              "accuracy": {
+                "point": 0.208955223880597,
+                "low": 0.11940298507462686,
+                "high": 0.31343283582089554,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.24886042629686697,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 1.0,
+                "low": 1.0,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 1.0,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 9,
+                "recall": 1.0,
+                "precision": 0.2222222222222222
+              },
+              "true": {
+                "support": 9,
+                "predicted": 55,
+                "recall": 1.0,
+                "precision": 0.16363636363636364
+              },
+              "null": {
+                "support": 56,
+                "predicted": 3,
+                "recall": 0.05357142857142857,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 46,
+              "null_support": 56
+            }
+          },
+          {
+            "signal": "nocturia_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  5,
+                  3
+                ],
+                [
+                  8,
+                  15,
+                  35
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5970149253731343,
+                "low": 0.47761194029850745,
+                "high": 0.7014925373134329,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.3579980842911878,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  5,
+                  3
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5555555555555556,
+                "low": 0.2222222222222222,
+                "high": 0.8888888888888888,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.2380952380952381,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 9,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 20,
+                "recall": 0.5555555555555556,
+                "precision": 0.25
+              },
+              "null": {
+                "support": 58,
+                "predicted": 38,
+                "recall": 0.603448275862069,
+                "precision": 0.9210526315789473
+              }
+            },
+            "null_to_true": {
+              "count": 15,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          },
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  4,
+                  20,
+                  2
+                ],
+                [
+                  7,
+                  10,
+                  24
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6567164179104478,
+                "low": 0.5522388059701493,
+                "high": 0.7611940298507462,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.47690120824449184,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  4,
+                  20,
+                  2
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7692307692307693,
+                "low": 0.6153846153846154,
+                "high": 0.9230769230769231,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.2898550724637681,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 11,
+                "recall": null,
+                "precision": 0.0
+              },
+              "true": {
+                "support": 26,
+                "predicted": 30,
+                "recall": 0.7692307692307693,
+                "precision": 0.6666666666666666
+              },
+              "null": {
+                "support": 41,
+                "predicted": 26,
+                "recall": 0.5853658536585366,
+                "precision": 0.9230769230769231
+              }
+            },
+            "null_to_true": {
+              "count": 10,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder, shared by every head listed above. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    }
+  ],
+  "margins": {
+    "objective": "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9), per head, independently -- no cross-head trade (task 3 instruction 3)",
+    "selected_on": "each fold's own validation split, never test and never pooled",
+    "by_fold": {
+      "0": {
+        "dysuria_present": 0.55,
+        "fever_present": 0.0,
+        "flank_pain_present": 0.0,
+        "haematuria_present": 0.6,
+        "nocturia_present": 0.0,
+        "urinary_frequency_present": 0.0
+      },
+      "1": {
+        "dysuria_present": 0.65,
+        "fever_present": 0.9,
+        "flank_pain_present": 0.0,
+        "haematuria_present": 0.55,
+        "nocturia_present": 0.0,
+        "urinary_frequency_present": 0.0
+      },
+      "2": {
+        "dysuria_present": 0.9,
+        "fever_present": 0.9,
+        "flank_pain_present": 0.75,
+        "haematuria_present": 0.0,
+        "nocturia_present": 0.0,
+        "urinary_frequency_present": 0.0
+      },
+      "3": {
+        "dysuria_present": 0.9,
+        "fever_present": 0.9,
+        "flank_pain_present": 0.75,
+        "haematuria_present": 0.0,
+        "nocturia_present": 0.9,
+        "urinary_frequency_present": 0.9
+      },
+      "4": {
+        "dysuria_present": 0.8,
+        "fever_present": 0.0,
+        "flank_pain_present": 0.3,
+        "haematuria_present": 0.9,
+        "nocturia_present": 0.9,
+        "urinary_frequency_present": 0.9
+      }
+    }
+  },
+  "epoch_selection": "one shared epoch across every head (DD6): the unweighted mean of every head's own validation macro-F1. Per-head early stopping is impossible with one shared encoder",
+  "encoder_contract": "This joint model cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and recent_uti_present has no fragment library and therefore no head here, so at most six of seven keys can ever be produced and the contract requires an exact match. Out of scope for this ticket, and recorded so nobody plans around a swap that is not available (DD8)."
+}
