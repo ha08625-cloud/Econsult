@@ -562,6 +562,31 @@ def test_a_truth_disagreement_on_a_shared_id_still_raises():
         compare_models([left, flipped])
 
 
+def test_a_header_value_too_long_for_a_cell_is_printed_as_prose():
+    """A markdown cell does not wrap, and these are the entries most worth reading."""
+    long_sentence = "No arm is matched on both axes, because no such dataset exists. " * 3
+    report = build_report(
+        [_majority_run()],
+        header={
+            "signal": SIGNAL,
+            "what_no_arm_isolates": long_sentence,
+            "predictions": ["first prediction, " * 12, "second prediction, " * 12],
+            "selected_epochs": {"A1": "1, 2, 1, 1, 2", "A3": "3, 3, 2, 3, 1 " + "and so on " * 12},
+        },
+        boot=BootstrapConfig(resamples=RESAMPLES, seed=0),
+    )
+    markdown = render_markdown(report)
+
+    assert "**what no arm isolates**" in markdown
+    assert long_sentence.strip() in markdown
+    assert "* first prediction," in markdown
+    # A mapping is bulleted by name, never rendered as a Python dict repr.
+    assert "* **A1**: 1, 2, 1, 1, 2" in markdown
+    assert "{'A1'" not in markdown
+    # Short values stay in the table where they are easiest to scan.
+    assert f"| signal | `{SIGNAL}` |" in markdown
+
+
 def test_the_report_prints_the_skipped_pairs_under_the_comparison_table():
     report = build_report(
         [_majority_run(name="A1"), _renamed_run(_majority_run(), name="A2", prefix="volume:")],

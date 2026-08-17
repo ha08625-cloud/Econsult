@@ -1211,21 +1211,31 @@ def _stub_result(best_epoch, history):
 
 
 def test_selected_epochs_prints_the_head_s_own_best_only_when_it_differs():
-    """DD6: where the shared criterion and this head's own best diverge, say so."""
+    """DD6: where the shared criterion and this head's own best diverge, say so.
+
+    ``best_epoch`` counts from one and the history it is compared against is
+    indexed from zero, so the two conventions have to be reconciled before they
+    are compared. Getting that wrong is not a cosmetic slip: it makes **every**
+    single-signal arm report a divergence, which is impossible by construction
+    -- a single-signal run's stopping criterion *is* the argmax of its own
+    history -- and it misstates the joint arm's real divergences by one.
+    """
     from scripts.encoder_training.__main__ import _selected_epochs
 
-    agreeing = [_stub_result(1, (0.1, 0.9, 0.5)), _stub_result(2, (0.1, 0.2, 0.9))]
-    assert _selected_epochs(agreeing, SIGNAL) == "1, 2"
+    # Peaks at index 1 and index 2, i.e. epochs 2 and 3.
+    agreeing = [_stub_result(2, (0.1, 0.9, 0.5)), _stub_result(3, (0.1, 0.2, 0.9))]
+    assert _selected_epochs(agreeing, SIGNAL) == "2, 3"
 
     # A joint fold: one epoch chosen by the mean across heads, and a per-head
-    # history that would have chosen a different one.
+    # history that would have chosen a different one. This head peaks at index
+    # 1, which is epoch 2, while the shared criterion stopped at epoch 3.
     class _Joint:
-        best_epoch = 2
+        best_epoch = 3
         val_macro_f1_by_epoch = {SIGNAL: (0.1, 0.9, 0.4), "dysuria_present": (0.1, 0.2, 0.9)}
 
     line = _selected_epochs([_Joint()], SIGNAL)
-    assert line.startswith("2 (")
-    assert "own best epoch would have been 1" in line
+    assert line.startswith("3 (")
+    assert "own best epoch would have been 2" in line
 
 
 def test_labelled_positions_are_unchanged_by_the_merge(tmp_path):

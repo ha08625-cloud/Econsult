@@ -53,7 +53,9 @@ A1_single vs A3_joint, paired on this signal's test examples. A2_volume pairs wi
 
 **selected epochs**
 
-{'A1_single': "3, 3, 1, 1, 3 (this head's own best epoch would have been 2, 2, 0, 0, 2)", 'A2_volume': "3, 2, 1, 3, 2 (this head's own best epoch would have been 2, 1, 0, 2, 1)", 'A3_joint': "3, 3, 2, 3, 1 (this head's own best epoch would have been 2, 2, 1, 0, 1)"}
+* **A1_single**: 3, 3, 1, 1, 3
+* **A2_volume**: 3, 2, 1, 3, 2
+* **A3_joint**: 3, 3, 2, 3, 1 (this head's own best epoch would have been 3, 3, 2, 1, 2)
 
 **what no arm isolates**
 

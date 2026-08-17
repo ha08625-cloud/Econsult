@@ -1263,9 +1263,16 @@ HEADER_CELL_LIMIT = 120
 
 
 def _header_prose(key: str, value: object) -> list[str]:
-    """One over-long header value, as prose: a paragraph, or a bulleted list."""
+    """One over-long header value, as prose: a paragraph, or a bulleted list.
+
+    A mapping is bulleted by name rather than passed to ``str``, which would
+    print a Python dict repr -- quotes, braces and all -- into the part of the
+    report a reader looks at first.
+    """
     lines = [f"**{key.replace('_', ' ')}**", ""]
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, Mapping):
+        lines.extend(f"* **{name}**: {entry}" for name, entry in value.items())
+    elif isinstance(value, (list, tuple)):
         lines.extend(f"* {item}" for item in value)
     else:
         lines.append(str(value))
