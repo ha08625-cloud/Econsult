@@ -66,6 +66,7 @@ from scripts.encoder_training.train import (
     FineTuneFoldResult,
     ProbeConfig,
     TrainError,
+    arm_run_name,
     build_metadata,
     derive_fold_seed,
     head_artefact,
@@ -1153,3 +1154,291 @@ def test_joint_weights_file_records_every_head(torch_module, transformers_module
     payload = torch_module.load(result.weights_path, map_location="cpu", weights_only=False)
     assert set(payload["signals"]) == set(JOINT_SIGNALS)
     assert set(payload["heads"]) == set(JOINT_SIGNALS)
+
+
+# --------------------------------------------------------------------------
+# The three-arm comparison report (task 4)
+#
+# Stdlib only, and deliberately so: the thing under test is the report shape --
+# which arms end up in which report, which pairs are tested, which are recorded
+# as untestable, and what the header has to say before any of them is read.
+# None of that needs an encoder, and all of it is what the sweep's conclusion
+# will be read off. The arms here are majority-class runs standing in for three
+# fine-tunes; what makes them A1, A2 and A3 is which tree they were scored on.
+# --------------------------------------------------------------------------
+
+
+def _joint_folds(tmp_path, *, signals=JOINT_SIGNALS, name="joint2"):
+    """A source tree and the merged tree beside it, both loaded."""
+    from scripts.encoder_training.merge import merge_folds
+
+    source_dir = tmp_path / "sources"
+    merged_dir = tmp_path / "merged"
+    _write_source_tree(source_dir, signals=signals, folds=_MERGE_FOLDS)
+    merge_folds(source_dir, signals=signals, out_dir=merged_dir, name=name, folds=_MERGE_FOLDS)
+    return (
+        source_dir,
+        {signal: load_folds(source_dir, signal, folds=_MERGE_FOLDS) for signal in signals},
+        load_folds(merged_dir, name, folds=_MERGE_FOLDS),
+    )
+
+
+def _stub_result(best_epoch, history):
+    """The two fields the selected-epoch header line reads off a fold result."""
+    return dataclasses.replace(
+        FineTuneFoldResult(
+            fold_index=0,
+            fold_run=FoldRun(
+                fold_index=0,
+                n_train=1,
+                n_val=1,
+                n_test=1,
+                rule=DecisionRule(margin=0.0, macro_f1=0.5),
+                raw=(),
+                ruled=(),
+            ),
+            head_state={},
+            n_parameters=1,
+            n_trainable=1,
+            best_epoch=best_epoch,
+            val_macro_f1_by_epoch=history,
+            train_loss_by_epoch=(1.0,),
+            val_summary={},
+            steps_per_epoch=1,
+            warmup_steps=0,
+        )
+    )
+
+
+def test_selected_epochs_prints_the_head_s_own_best_only_when_it_differs():
+    """DD6: where the shared criterion and this head's own best diverge, say so."""
+    from scripts.encoder_training.__main__ import _selected_epochs
+
+    agreeing = [_stub_result(1, (0.1, 0.9, 0.5)), _stub_result(2, (0.1, 0.2, 0.9))]
+    assert _selected_epochs(agreeing, SIGNAL) == "1, 2"
+
+    # A joint fold: one epoch chosen by the mean across heads, and a per-head
+    # history that would have chosen a different one.
+    class _Joint:
+        best_epoch = 2
+        val_macro_f1_by_epoch = {SIGNAL: (0.1, 0.9, 0.4), "dysuria_present": (0.1, 0.2, 0.9)}
+
+    line = _selected_epochs([_Joint()], SIGNAL)
+    assert line.startswith("2 (")
+    assert "own best epoch would have been 1" in line
+
+
+def test_labelled_positions_are_unchanged_by_the_merge(tmp_path):
+    """The DD1 row that keeps the arms table honest: A3 adds no supervision.
+
+    A merged tree holds every signal's examples, so its examples-per-epoch is
+    several times A1's -- but each head is masked wherever it has no label, so
+    the number of positions it receives gradient from is the same on both trees.
+    An arms table printing only the first number would say the opposite of what
+    is true.
+    """
+    from scripts.encoder_training.__main__ import _labelled_positions
+
+    _, single, merged = _joint_folds(tmp_path)
+    for signal in JOINT_SIGNALS:
+        assert _labelled_positions(merged, signal) == _labelled_positions(single[signal], signal)
+    assert len(merged[0].train) > len(single[JOINT_SIGNALS[0]][0].train)
+
+
+def _majority_arm(label, dataset, folds_by_signal, *, unpaired=False):
+    """One arm's runs, from the majority baseline rather than from an encoder.
+
+    Named the way :func:`train.run_finetune` names a labelled run, because the
+    run name is what separates two arms in one report -- ``compare_models`` keys
+    its pairs on it, and two arms sharing a name would be compared against
+    themselves.
+    """
+    from scripts.encoder_training.__main__ import _as_unpaired
+    from scripts.encoder_training.baselines import MajorityBaseline, run_baseline
+
+    runs = {}
+    for signal, folds in folds_by_signal.items():
+        run = dataclasses.replace(
+            run_baseline(MajorityBaseline, folds, signal=signal),
+            name=arm_run_name(ARM_B_NAME, label),
+        )
+        runs[signal] = _as_unpaired(run, prefix=label) if unpaired else run
+    return runs
+
+
+def _three_arm_reports(tmp_path, monkeypatch, *, capsys=None):
+    """Run ``_emit_joint_reports`` over three stand-in arms and read the results."""
+    import scripts.encoder_training.__main__ as main_module
+
+    source_dir, single, merged = _joint_folds(tmp_path)
+    volume_dir = tmp_path / "volume"
+    _write_source_tree(volume_dir, signals=JOINT_SIGNALS, folds=_MERGE_FOLDS)
+    volume = {
+        signal: load_folds(volume_dir, signal, folds=_MERGE_FOLDS) for signal in JOINT_SIGNALS
+    }
+
+    arms = [
+        main_module.JointArm(
+            label=main_module.ARM_A1_LABEL,
+            dataset=str(source_dir),
+            folds_by_signal=single,
+            runs=_majority_arm(main_module.ARM_A1_LABEL, source_dir, single),
+            results={signal: [_stub_result(1, (0.1, 0.9))] for signal in JOINT_SIGNALS},
+        ),
+        main_module.JointArm(
+            label=main_module.ARM_A2_LABEL,
+            dataset=str(volume_dir),
+            folds_by_signal=volume,
+            runs=_majority_arm(main_module.ARM_A2_LABEL, volume_dir, volume, unpaired=True),
+            results={signal: [_stub_result(1, (0.1, 0.9))] for signal in JOINT_SIGNALS},
+        ),
+        main_module.JointArm(
+            label=main_module.ARM_A3_LABEL,
+            dataset="joint2",
+            folds_by_signal={signal: merged for signal in JOINT_SIGNALS},
+            runs=_majority_arm(
+                main_module.ARM_A3_LABEL, "joint2", {signal: merged for signal in JOINT_SIGNALS}
+            ),
+            results={signal: [_stub_result(0, (0.9, 0.1))] for signal in JOINT_SIGNALS},
+        ),
+    ]
+
+    report_dir = tmp_path / "reports"
+    args = build_parser().parse_args(
+        [
+            "joint-compare",
+            "--signals",
+            *JOINT_SIGNALS,
+            "--folds",
+            str(_MERGE_FOLDS),
+            "--data-dir",
+            str(source_dir),
+            "--volume-dir",
+            str(volume_dir),
+            "--report-dir",
+            str(report_dir),
+            "--no-baselines",
+        ]
+    )
+    status = main_module._emit_joint_reports(
+        args,
+        arms=arms,
+        signals=JOINT_SIGNALS,
+        baseline_folds=single,
+        joint_dataset="joint2",
+        device="cpu",
+        holdout=None,
+        encoder_header={},
+    )
+    assert status == 0
+    return report_dir
+
+
+def test_joint_compare_writes_one_report_per_signal_holding_every_arm(tmp_path, monkeypatch):
+    report_dir = _three_arm_reports(tmp_path, monkeypatch)
+
+    for signal in JOINT_SIGNALS:
+        report = json.loads((report_dir / f"{signal}.joint_comparison.json").read_text())
+        assert report["header"]["signal"] == signal
+        names = [model["name"] for model in report["models"]]
+        assert len(names) == 3
+        assert len(set(names)) == 3
+        # Every report gets its *own* signal's cluster-tag coverage, not the
+        # first signal's. The union handed to `build_report` spans three trees
+        # and every signal in them; the filter is what makes it per report.
+        libraries = [row["library"] for row in report["cluster_tag_coverage"]["libraries"]]
+        assert libraries == [f"{signal.removesuffix('_present')}_true"]
+
+
+def test_the_paired_arm_is_tested_and_the_volume_arm_is_recorded_as_untestable(
+    tmp_path, monkeypatch
+):
+    """DD1 and DD2 together: A1 vs A3 is the answer, A2 pairs with nothing.
+
+    A3's predictions carry the ids they had in the signal's own tree (DD4), so
+    the pairing works with no help from the report layer; A2's are a different
+    dataset's and must come back as a recorded skip rather than as an absence.
+    """
+    import scripts.encoder_training.__main__ as main_module
+
+    report_dir = _three_arm_reports(tmp_path, monkeypatch)
+    report = json.loads((report_dir / f"{SIGNAL}.joint_comparison.json").read_text())
+
+    tested = {(entry["a"], entry["b"]) for entry in report["comparisons"]}
+    assert tested
+    for a, b in tested:
+        assert main_module.ARM_A2_LABEL not in a
+        assert main_module.ARM_A2_LABEL not in b
+    assert any(main_module.ARM_A1_LABEL in a and main_module.ARM_A3_LABEL in b for a, b in tested)
+
+    skipped = report["skipped_comparisons"]
+    assert skipped
+    assert all(
+        main_module.ARM_A2_LABEL in entry["a"] or main_module.ARM_A2_LABEL in entry["b"]
+        for entry in skipped
+    )
+    assert all(entry["n_common"] == 0 for entry in skipped)
+
+    markdown = (report_dir / f"{SIGNAL}.joint_comparison.md").read_text()
+    assert "Pairs that could not be tested" in markdown
+
+
+def test_the_header_carries_the_arms_the_epochs_and_what_no_arm_isolates(tmp_path, monkeypatch):
+    """Task 4 instructions 7 and 8, in the header rather than in an appendix."""
+    import scripts.encoder_training.__main__ as main_module
+
+    report_dir = _three_arm_reports(tmp_path, monkeypatch)
+    report = json.loads((report_dir / f"{SIGNAL}.joint_comparison.json").read_text())
+    header = report["header"]
+
+    assert len(header["arms"]) == 3
+    for label in (
+        main_module.ARM_A1_LABEL,
+        main_module.ARM_A2_LABEL,
+        main_module.ARM_A3_LABEL,
+    ):
+        assert any(label in line for line in header["arms"])
+        assert label in header["selected_epochs"]
+    # The DD1 table: both numbers, per arm, or the arms table says the joint arm
+    # added supervision it did not add.
+    assert all("examples per epoch" in line for line in header["arms"])
+    assert all("labelled positions" in line for line in header["arms"])
+
+    assert header["predictions"] == list(main_module.JOINT_PREDICTIONS)
+    assert "No arm is matched to A3" in header["what_no_arm_isolates"]
+
+    markdown = (report_dir / f"{SIGNAL}.joint_comparison.md").read_text()
+    assert "what no arm isolates" in markdown
+    assert "examples per epoch" in markdown
+    # The predictions are the thing the write-up is scored against, so they have
+    # to be readable in the markdown, not only in the sidecar.
+    assert "possibly slightly negative" in markdown
+
+
+def test_the_volume_arm_may_not_be_pointed_at_the_paired_arm_s_own_tree(tmp_path):
+    """Two seeds of one dataset reported as a volume effect would be a silent lie."""
+    import scripts.encoder_training.__main__ as main_module
+
+    args = build_parser().parse_args(
+        [
+            "joint-compare",
+            "--data-dir",
+            str(tmp_path),
+            "--volume-dir",
+            str(tmp_path),
+        ]
+    )
+    with pytest.raises(TrainError, match="same tree"):
+        main_module.run_joint_compare(args)
+
+
+def test_cli_exposes_joint_compare_and_its_three_trees():
+    args = build_parser().parse_args(["joint-compare"])
+    assert args.handler.__name__ == "run_joint_compare"
+    assert len(args.signals) == 6
+    assert args.joint_dataset is None
+    # A2 is on by default: it is what separates a movement between A1 and A3
+    # from a difference in encoder gradient steps.
+    assert args.no_volume_arm is False
+    # The negative control is off by default here, as in compare-models.
+    assert args.control is False

@@ -660,3 +660,74 @@ def test_duplicate_signals_are_refused(tmp_path):
 
     with pytest.raises(MergeError, match="must be distinct signals"):
         merge_folds(tmp_path, signals=("fever_present", "fever_present"), folds=FOLDS)
+
+
+# --------------------------------------------------------------------------
+# What the merged provenance does to the report's cluster-tag coverage
+# (implementation plan task 4, instruction 5)
+# --------------------------------------------------------------------------
+
+
+def _untag(library: str):
+    """A ``stats`` edit that makes one library look as though it carries no markers.
+
+    ``manifest.cluster_key`` hashes ``{library}:{tag}`` for a tagged line and the
+    line's own normalised text for an untagged one, so an unqualified key is
+    exactly what an untagged library leaves in the sidecar. Kept unique per
+    fragment, because two lines sharing a cluster key would be one cluster and
+    ``_check_disjoint`` would rightly refuse the tree.
+    """
+
+    def edit(stats):
+        for fragment_id, entry in stats["fragments"].items():
+            if entry["library"] == library:
+                entry["cluster_key"] = f"unnamespaced text {fragment_id.rsplit(':', 1)[-1]}"
+
+    return edit
+
+
+def test_cluster_tag_coverage_reads_one_signal_out_of_a_merged_fragments_block(tmp_path):
+    """A merged tree's provenance spans every merged signal, and coverage must not.
+
+    The coverage percentages are what a reader uses to decide whether to trust
+    the intervals above them, and after the merge the block they are computed
+    from is N times the size it was when a fold tree held one signal. The
+    ``signal=`` filter is therefore doing considerably more work than it was
+    written for, so it is tested against a real merged tree rather than against
+    a hand-built list of fragments.
+    """
+    from scripts.encoder_training.__main__ import _fragment_provenance
+    from scripts.encoder_training.report import cluster_tag_coverage
+
+    write_tree(tmp_path, stats=_untag("dysuria_true"))
+    merged = tmp_path / "merged"
+    merge_folds(tmp_path, signals=SIGNALS, out_dir=merged, name="joint3", folds=FOLDS)
+    fragments = _fragment_provenance(load_folds(merged, "joint3", folds=FOLDS))
+
+    # The merged block really does span every signal's libraries plus the
+    # shared filler, or this test would prove nothing.
+    assert {fragment.library for fragment in fragments} == {
+        *(f"{signal.removesuffix('_present')}_true" for signal in SIGNALS),
+        *FILLER_LIBRARIES,
+    }
+
+    fever = cluster_tag_coverage(fragments, signal="fever_present")
+    assert [row["library"] for row in fever["libraries"]] == ["fever_true"]
+    assert fever["untagged_libraries"] == []
+    assert fever["libraries"][0]["coverage"] == 1.0
+
+    # The one untagged library shows up under its own signal and nowhere else,
+    # so a reader of the fever report is not warned about a dysuria library and
+    # a reader of the dysuria report is.
+    dysuria = cluster_tag_coverage(fragments, signal="dysuria_present")
+    assert dysuria["untagged_libraries"] == ["dysuria_true"]
+    assert dysuria["libraries"][0]["coverage"] == 0.0
+    assert dysuria["total_fragments"] == PER_LIBRARY
+
+    # Filler carries no signal and is never a decisive fragment, so it must not
+    # appear in any signal's coverage table -- five permanently-0% rows above a
+    # warning about something else.
+    for signal in SIGNALS:
+        coverage = cluster_tag_coverage(fragments, signal=signal)
+        libraries = {row["library"] for row in coverage["libraries"]}
+        assert not libraries & set(FILLER_LIBRARIES)

@@ -28,6 +28,7 @@ The load-bearing tests, if you only read a few:
   statistically, and it needs no ML at all.
 """
 
+import dataclasses
 import json
 import random
 from collections import Counter
@@ -65,6 +66,7 @@ from scripts.encoder_training.decision import (
     select_margin,
 )
 from scripts.encoder_training.metrics import (
+    MetricsError,
     Prediction,
     accuracy,
     accuracy_statistic,
@@ -475,10 +477,105 @@ def test_comparisons_exclude_negative_controls():
         _majority_run(name="b"),
         _majority_run(name="c__shuffled", kind="negative_control"),
     ]
-    names = {
-        name for comparison in compare_models(runs) for name in (comparison["a"], comparison["b"])
-    }
+    comparisons, skipped = compare_models(runs)
+    names = {name for comparison in comparisons for name in (comparison["a"], comparison["b"])}
     assert names == {"a", "b"}
+    assert skipped == []
+
+
+def _renamed_run(run: ModelRun, *, name: str, prefix: str) -> ModelRun:
+    """``run`` under a new name, with every example id rewritten.
+
+    Stands in for the A2 arm: the same shape of run, scored on a *different*
+    dataset, so the two sides have nothing to pair on. Rewriting the ids rather
+    than dropping examples is the honest miniature -- A2 is not a subset of A1,
+    it is a differently-generated set of the same size.
+    """
+
+    def rekey(prediction):
+        return dataclasses.replace(prediction, example_id=f"{prefix}{prediction.example_id}")
+
+    return ModelRun(
+        name=name,
+        kind=run.kind,
+        description=run.description,
+        folds=tuple(
+            dataclasses.replace(
+                fold,
+                raw=tuple(rekey(prediction) for prediction in fold.raw),
+                ruled=tuple(rekey(prediction) for prediction in fold.ruled),
+            )
+            for fold in run.folds
+        ),
+    )
+
+
+def test_an_unpairable_arm_is_recorded_as_skipped_rather_than_dropped():
+    """DD2: "could not be tested" and "no difference found" must stay distinguishable."""
+    paired = _majority_run(name="A1")
+    unpairable = _renamed_run(_majority_run(), name="A2", prefix="volume:")
+    comparisons, skipped = compare_models([paired, unpairable])
+
+    assert comparisons == []
+    assert skipped
+    for entry in skipped:
+        assert {entry["a"], entry["b"]} == {"A1", "A2"}
+        assert entry["n_common"] == 0
+        assert entry["n_a"] and entry["n_b"]
+        assert "example sets differ" in entry["reason"]
+    # Every slice the pair would have been tested on is accounted for, so a
+    # reader counting rows cannot find one missing without an explanation.
+    assert {entry["slice"] for entry in skipped} == {"overall", "null_ambiguous"}
+
+
+def test_a_pairable_arm_still_pairs_when_an_unpairable_one_is_in_the_report():
+    """The skip is per pair. One unpairable arm must not cost the paired comparison."""
+    a1 = _majority_run(name="A1")
+    a3 = _majority_run(name="A3")
+    a2 = _renamed_run(_majority_run(), name="A2", prefix="volume:")
+    comparisons, skipped = compare_models([a1, a2, a3])
+
+    assert {(entry["a"], entry["b"]) for entry in comparisons} == {("A1", "A3")}
+    assert {(entry["a"], entry["b"]) for entry in skipped} == {("A1", "A2"), ("A2", "A3")}
+
+
+def test_a_truth_disagreement_on_a_shared_id_still_raises():
+    """Only a differing example *set* is skipped; a real inconsistency is a bug."""
+    left = _majority_run(name="A1")
+    fold = left.folds[0]
+    flipped = dataclasses.replace(
+        left,
+        name="A3",
+        folds=(
+            dataclasses.replace(
+                fold,
+                raw=tuple(
+                    dataclasses.replace(prediction, truth=1 - prediction.truth)
+                    if index == 0
+                    else prediction
+                    for index, prediction in enumerate(fold.raw)
+                ),
+            ),
+        ),
+    )
+    with pytest.raises(MetricsError, match="disagree about the truth"):
+        compare_models([left, flipped])
+
+
+def test_the_report_prints_the_skipped_pairs_under_the_comparison_table():
+    report = build_report(
+        [_majority_run(name="A1"), _renamed_run(_majority_run(), name="A2", prefix="volume:")],
+        header={"signal": SIGNAL, "folds": 1},
+        boot=BootstrapConfig(resamples=RESAMPLES, seed=0),
+    )
+    assert report["comparisons"] == []
+    assert report["skipped_comparisons"]
+
+    markdown = render_markdown(report)
+    assert "Pairs that could not be tested" in markdown
+    assert "example sets differ" in markdown
+    # The misreading the section exists to prevent, named in the section itself.
+    assert "do not read the absence of a row above as agreement" in markdown
 
 
 def test_markdown_is_rendered_from_the_json_and_names_the_caveats():
