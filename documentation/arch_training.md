@@ -1808,13 +1808,19 @@ first appears.
    flag on every subcommand and has only ever been passed one value.
 
 **Landed since:** the realistic held-out evaluation (section 9, scored on every
-Arm B fold) and the **merge tool** — `merge-folds`, described at the end of
-section 7. Joint multi-head *training* is the piece still outstanding: separating
-"which dataset" from "which heads" in `train.py`, per-head margin selection, and
-one shared epoch-selection criterion across six heads.
+Arm B fold), the **merge tool** (`merge-folds`, described at the end of
+section 7), and **joint multi-head training** itself: `train.py` separates
+"which dataset" (`--dataset`) from "which heads" (`--signals`), each head's
+margin is selected independently, and one shared DD6 epoch-selection criterion
+— the unweighted mean of every head's own validation macro-F1 — picks the
+epoch every head is scored at. `arch_encoder_training.md` section 4b is the
+design; `planned_updates/joint_multi_head_training_implementation.md` task 3
+is the instructions it was built from. What is still outstanding from that plan
+is the report shape holding three arms per signal (task 4) and the six-signal
+sweep across them (task 5).
 
-**Blocked, in this order:** joint multi-head training; multi-symptom
-recombinations (12.2–12.5); cluster-tagging the four untagged library sets.
+**Blocked, in this order:** multi-symptom recombinations (12.2–12.5);
+cluster-tagging the four untagged library sets.
 
 **The one thing that surprises people about the merge.** Joint training on
 merged single-signal datasets needs *no* part of 12.5. `fold_bucket` is a pure

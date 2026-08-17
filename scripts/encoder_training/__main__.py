@@ -117,12 +117,15 @@ from .train import (
     FineTuneConfig,
     ProbeConfig,
     TrainError,
+    build_joint_metadata,
     build_metadata,
     display_model,
     resolve_device,
     run_finetune,
+    run_finetune_joint,
     run_probe,
     write_artefacts,
+    write_joint_artefacts,
 )
 
 #: The default three-encoder comparison, and why each one is in it.
@@ -459,6 +462,18 @@ def _artefact_dir(args: argparse.Namespace, arm: str) -> Path:
     return Path(args.models_dir) / args.signal / arm
 
 
+def _joint_artefact_dir(args: argparse.Namespace, arm: str, signals: Sequence[str]) -> Path:
+    """Where a joint run's artefacts live: ``models/encoder/joint<N>/<arm>/``.
+
+    Not ``<signal>/<arm>/`` for any of the trained signals: there is no single
+    signal this model belongs to, and putting it under one of six would either
+    duplicate the shared ~440MB encoder across directories or leave five of six
+    signal directories pointing at weights that live in a sixth (task 3
+    instruction 7).
+    """
+    return Path(args.models_dir) / f"joint{len(signals)}" / arm
+
+
 def _model_slug(label: str) -> str:
     """A label reduced to something safe to name a directory after."""
     return "".join(character if character.isalnum() else "-" for character in label).strip("-")
@@ -688,6 +703,27 @@ def run_arm_a(args: argparse.Namespace) -> int:
 def run_arm_b(args: argparse.Namespace) -> int:
     """Arm B end to end: fine-tune every fold, score test once, write everything.
 
+    ``--dataset`` names the fold tree to load; ``--signals`` names the heads to
+    train and evaluate against it, defaulting to every signal the loaded fold
+    declares (task 3 instruction 1). A plain ``finetune --signal fever_present``
+    call still resolves both to ``fever_present`` and takes the single-signal
+    path below completely unchanged -- same stem, same artefact directory, same
+    report -- which is what makes a single-signal run's numbers comparable to
+    every report committed before this command could merge datasets at all.
+    Anything else (a merged tree, or several ``--signals``) takes the joint path.
+    """
+    dataset_name = args.dataset or args.signal
+    folds = load_folds(args.data_dir, dataset_name, folds=args.folds)
+    signals = tuple(args.signals) if args.signals else tuple(folds[0].signals)
+
+    if len(signals) == 1 and dataset_name == signals[0]:
+        return _run_arm_b_single(args, folds)
+    return _run_arm_b_joint(args, folds, dataset_name=dataset_name, signals=signals)
+
+
+def _run_arm_b_single(args: argparse.Namespace, folds) -> int:
+    """The single-signal path, unchanged since before ``--dataset``/``--signals`` existed.
+
     The order of the first three statements is the point of them being separate.
     ``check_device`` sets ``CUBLAS_WORKSPACE_CONFIG`` and then runs a real matmul
     *before* 440MB of weights are downloaded and before the first fold starts:
@@ -701,7 +737,6 @@ def run_arm_b(args: argparse.Namespace) -> int:
     ``null_ambiguous`` slice, and McNemar can only make it when both models are
     in one report. Arm A costs seconds once its embedding cache exists.
     """
-    folds = load_folds(args.data_dir, args.signal, folds=args.folds)
     # Loaded before the encoder and before the first fold, so a bad path or a
     # labels file that no longer matches the ruleset costs a second rather than
     # an hour of GPU followed by a report with a hole in it.
@@ -856,6 +891,169 @@ def run_arm_b(args: argparse.Namespace) -> int:
             **probe_header,
         },
     )
+
+
+def _run_arm_b_joint(
+    args: argparse.Namespace, folds, *, dataset_name: str, signals: Sequence[str]
+) -> int:
+    """The joint path: one encoder, several heads sharing it, one report per head.
+
+    Arm A and the baselines do not ride along here, unlike the single-signal
+    path. Both answer one question each -- a frozen probe or a bag-of-words
+    model over one head -- and the ticket's paired comparison (A1 vs A3) is
+    against a single-signal Arm B run made with the plain ``finetune`` path, not
+    against a probe fitted beside the joint encoder. ``--no-probe`` and
+    ``--no-baselines`` are effectively always on here.
+    """
+    holdout = _load_holdout(args)
+    cuda_required = not args.allow_cpu and args.device != "cpu"
+    device_facts = check_device(args.device, cuda_required=cuda_required)
+    device = device_facts["device"]
+    for line in format_report(device_facts):
+        print(line)
+
+    factory = _encoder_factory(args, device)
+    config = _finetune_config(args)
+    artefact_dir = _joint_artefact_dir(args, ARM_B_NAME, signals)
+    weights_dir = None if args.no_weights else artefact_dir / "weights"
+
+    reference = factory()
+    _warn_if_unpinned(reference)
+    encoder_facts = reference.to_dict()
+    probe_header = {
+        "model_revision": reference.revision,
+        "revision_pinned": reference.revision_pinned,
+        "tokeniser_lowercases": reference.facts.lowercases_input,
+        "tokeniser_vocab_size": reference.facts.vocab_size,
+        "tokeniser_discards_casing": reference.facts.discards_casing,
+    }
+    del reference
+
+    runs_by_signal, results = run_finetune_joint(
+        folds,
+        factory,
+        signals=signals,
+        config=config,
+        weights_dir=weights_dir,
+        holdout=holdout,
+        progress=args.progress,
+    )
+
+    control_meta = None
+    control_runs_by_signal: dict | None = None
+    if not args.no_control:
+        control_runs_by_signal, _ = run_finetune_joint(
+            folds,
+            factory,
+            signals=signals,
+            config=config,
+            # As with the single-signal path: a control's weights are never
+            # used for anything, so they are not written.
+            weights_dir=None,
+            shuffle_seed=args.shuffle_seed,
+            # Nor is the control scored on the holdout -- README rule 3 asks
+            # for the number of every *candidate* model, and a model fitted on
+            # permuted labels is not one.
+            holdout=None,
+            progress=args.progress,
+        )
+        control_meta = {
+            "shuffle_seed": args.shuffle_seed,
+            "permuted": "training labels only; validation and test left unpermuted",
+            "run_name": next(iter(control_runs_by_signal.values())).name,
+            "passing_looks_like": (
+                "near-zero training loss (the model memorises the permutation) together with "
+                "chance performance on the unpermuted test split, on every head at once -- one "
+                "shared encoder, one control"
+            ),
+        }
+
+    metadata = build_joint_metadata(
+        signals=signals,
+        arm=ARM_B_NAME,
+        encoder_facts=encoder_facts,
+        config=config,
+        device=device_facts,
+        dataset={
+            "dir": str(args.data_dir),
+            "name": dataset_name,
+            "folds": args.folds,
+            "generator_version": folds[0].train.generator_version,
+            "generator_base_seed": args.seed,
+            "split_salt": folds[0].train.split_salt,
+            "dataset_seeds": [fold.train.stats.get("seed") for fold in folds],
+            "examples_per_fold": {
+                "train": len(folds[0].train),
+                "val": len(folds[0].val),
+                "test": len(folds[0].test),
+            },
+        },
+        ruleset=str(args.ruleset),
+        ruleset_hash=hash_ruleset_file(args.ruleset),
+        results=results,
+        control=control_meta,
+    )
+    for path in write_joint_artefacts(
+        artefact_dir, arm=ARM_B_NAME, metadata=metadata, results=results
+    ):
+        print(f"wrote {path}")
+
+    # One report per trained head (DD5): each is that signal's own view of the
+    # one physical joint run, in the same report shape a single-signal Arm B
+    # run produces, just under a stem that cannot collide with one.
+    boot = BootstrapConfig(resamples=args.resamples, seed=args.bootstrap_seed, alpha=args.alpha)
+    for signal in signals:
+        signal_runs = [runs_by_signal[signal]]
+        if control_runs_by_signal is not None:
+            signal_runs.append(control_runs_by_signal[signal])
+        per_signal_args = argparse.Namespace(**{**vars(args), "signal": signal})
+        header = _header(
+            per_signal_args,
+            folds,
+            extra={
+                "dataset": dataset_name,
+                "joint_signals": list(signals),
+                "arm": ARM_B_NAME,
+                "base_model": args.base_model,
+                "pooling": args.pooling,
+                "max_seq_len": args.max_seq_len,
+                "device": device,
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "lr": args.lr,
+                "warmup_ratio": args.warmup_ratio,
+                "determinism": args.determinism,
+                "train_seed": args.train_seed,
+                "trainable": "all layers unfrozen, shared by every head",
+                "holdout": _holdout_header(holdout),
+                "validation_guided_decisions": list(VALIDATION_GUIDED_DECISIONS),
+                "artefacts": str(artefact_dir),
+                "weights": (
+                    "not written (--no-weights)"
+                    if weights_dir is None
+                    else f"{weights_dir} -- ~440MB shared per fold, not committed"
+                ),
+                **probe_header,
+            },
+        )
+        report = build_report(
+            signal_runs,
+            header=header,
+            boot=boot,
+            checks=_checks(folds),
+            fragments=_fragment_provenance(folds),
+        )
+        json_path, markdown_path = write_report(
+            report,
+            args.report_dir,
+            stem=f"{signal}.{dataset_name}.{ARM_B_NAME}",
+            markdown=not args.no_markdown,
+            fragment_rows=args.fragment_rows,
+        )
+        print(f"wrote {json_path}")
+        if markdown_path is not None:
+            print(f"wrote {markdown_path}")
+    return 0
 
 
 def run_compare_models(args: argparse.Namespace) -> int:
@@ -1211,6 +1409,23 @@ def build_parser() -> argparse.ArgumentParser:
     _add_report_args(finetune)
     _add_encoder_args(finetune)
     _add_holdout_args(finetune)
+    finetune.add_argument(
+        "--dataset",
+        default=None,
+        help="the fold tree to load, i.e. the signal position of the fold filename. Defaults to "
+        "--signal, which is today's behaviour. Pass a merged tree's name (e.g. joint6, from "
+        "merge-folds) to train jointly; --signals then names which of its heads to train",
+    )
+    finetune.add_argument(
+        "--signals",
+        nargs="+",
+        default=None,
+        help="the heads to train and evaluate against --dataset. Defaults to every signal the "
+        "loaded fold declares, which is --signal alone on an unmerged tree and every merged "
+        "signal on one from merge-folds. Passing the same single value as --signal and --dataset "
+        "takes the unchanged single-signal path; anything else takes the joint path, which skips "
+        "Arm A and the baselines (both are single-head machinery) and writes one report per head",
+    )
     finetune.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     finetune.add_argument("--models-dir", type=Path, default=DEFAULT_MODELS_DIR)
     finetune.add_argument("--device", default="auto")

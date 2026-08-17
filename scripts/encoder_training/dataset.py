@@ -134,6 +134,11 @@ class Example:
     mask: Mapping[str, bool]
     #: The one non-filler fragment, or ``None`` for a structural null.
     decisive: FragmentInfo | None
+    #: signal -> the id this example had in *that signal's own* dataset
+    #: (``merge.py``'s ``meta.source_ids``), or ``None`` on a tree that was never
+    #: merged. ``None`` here, not an empty mapping, is what lets :meth:`id_for`
+    #: fall back to ``example_id`` unconditionally on an unmerged tree.
+    source_ids: Mapping[str, str] | None = None
 
     @property
     def library(self) -> str | None:
@@ -168,6 +173,26 @@ class Example:
 
     def is_labelled(self, signal: str) -> bool:
         return self.mask.get(signal, False)
+
+    def id_for(self, signal: str) -> str:
+        """This example's id in ``signal``'s own dataset (merge.py DD4).
+
+        On an unmerged tree ``source_ids`` is ``None`` and this is just
+        ``example_id`` -- which is what keeps a single-signal run's predictions
+        identical to a run made before the merge existed. On a merged tree a
+        masked signal has no entry, and asking for one is a caller error: it
+        means scoring a signal on an example that was never reachable for it,
+        which should have been filtered out by ``is_labelled`` already.
+        """
+        if self.source_ids is None:
+            return self.example_id
+        try:
+            return self.source_ids[signal]
+        except KeyError as error:
+            raise DatasetError(
+                f"example {self.example_id!r} has no source id for {signal!r}; it is masked for "
+                "that signal and must not be reachable when scoring it"
+            ) from error
 
 
 @dataclass(frozen=True)
@@ -453,6 +478,18 @@ def _build_example(
     if not isinstance(text, str):
         raise DatasetError(f"{path}: example {example_id!r} has no 'text'")
 
+    raw_source_ids = meta.get("source_ids")
+    source_ids: dict[str, str] | None = None
+    if raw_source_ids is not None:
+        if not isinstance(raw_source_ids, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in raw_source_ids.items()
+        ):
+            raise DatasetError(
+                f"{path}: example {example_id!r} has a malformed 'meta.source_ids'; expected a "
+                "signal -> id mapping of strings"
+            )
+        source_ids = dict(raw_source_ids)
+
     return Example(
         example_id=example_id,
         split=split_name,
@@ -464,6 +501,7 @@ def _build_example(
         decisive=_decisive_fragment(
             raw_ids, fragments, example_id=example_id, label_mode=label_mode, path=path
         ),
+        source_ids=source_ids,
     )
 
 

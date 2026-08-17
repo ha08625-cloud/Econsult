@@ -366,12 +366,31 @@ def _decisive(predictions: Sequence[Prediction]) -> list[Prediction]:
     return [prediction for prediction in predictions if prediction.truth != CLASS_NULL]
 
 
+def _margin_for(margin: float | Mapping[str, float], signal: str) -> float:
+    """Resolve one signal's margin, whether the caller passed one for all or one each.
+
+    A plain ``float`` is the single-model shape every command used before joint
+    training existed, and stays the default so nothing here changes for them. A
+    mapping is what a joint model needs: each head's margin was selected
+    independently on its own validation split (task 3 instruction 3 -- no
+    cross-head trade), so there is no single number to apply to every column.
+    """
+    if isinstance(margin, Mapping):
+        if signal not in margin:
+            raise HoldoutError(
+                f"no margin given for {signal!r}; every signal being scored needs its own "
+                f"already-selected margin, and {list(margin)} did not include it"
+            )
+        return margin[signal]
+    return margin
+
+
 def build_predictions(
     holdout: HoldoutSet,
     scores: Mapping[str, Sequence[Sequence[float]]],
     *,
     signals: Sequence[str],
-    margin: float = 0.0,
+    margin: float | Mapping[str, float] = 0.0,
     gated_class: int = CLASS_TRUE,
 ) -> dict[str, list[Prediction]]:
     """Turn one forward pass into per-signal predictions, keyed by submission.
@@ -379,6 +398,10 @@ def build_predictions(
     ``scores`` holds one row per submission per signal, in the order
     :attr:`HoldoutSet.texts` returned them. Omitted cells are dropped here and
     nowhere else, so every downstream count is over judged cells only.
+
+    ``margin`` is either one number applied to every signal (a single-head run)
+    or a signal -> margin mapping (a joint run, where each head's margin was
+    chosen independently and there is no one number that means "the margin").
     """
     per_signal: dict[str, list[Prediction]] = {}
     for signal in signals:
@@ -393,6 +416,7 @@ def build_predictions(
                 f"the scorer returned {len(rows)} rows for {signal!r} against "
                 f"{len(holdout)} submissions"
             )
+        resolved_margin = _margin_for(margin, signal)
         predictions: list[Prediction] = []
         for submission, row in zip(holdout.submissions, rows, strict=True):
             if not submission.is_judged(signal):
@@ -405,7 +429,7 @@ def build_predictions(
                     # submission, which is what makes them move together.
                     example_id=f"{submission.submission_id}:{signal}",
                     truth=submission.classes[signal],
-                    predicted=apply_margin(values, margin, gated_class=gated_class),
+                    predicted=apply_margin(values, resolved_margin, gated_class=gated_class),
                     unit=submission.submission_id,
                     scores=values,
                 )
@@ -419,7 +443,7 @@ def score_holdout(
     scorer: Callable[[Sequence[str]], Mapping[str, Sequence[Sequence[float]]]],
     *,
     signals: Sequence[str],
-    margin: float = 0.0,
+    margin: float | Mapping[str, float] = 0.0,
     gated_class: int = CLASS_TRUE,
     resamples: int = DEFAULT_RESAMPLES,
     seed: int = 0,
@@ -432,6 +456,10 @@ def score_holdout(
     synthetic test set first -- README rule 2 says this set never selects
     anything, and the way to make that a structural property rather than a
     promise is to give it nothing to select with.
+
+    ``margin`` is one number for a single-head model, or a signal -> margin
+    mapping for a joint one: each head's margin is selected independently
+    (task 3 instruction 3), so a joint model has no single margin to quote.
 
     ``signals`` is the set of heads the model actually has. A ruleset signal
     with no head is listed in the result and not scored; a head whose signal the
@@ -458,6 +486,7 @@ def score_holdout(
         matrix = confusion_matrix(predictions)
         entry = {
             "signal": signal,
+            "margin": _margin_for(margin, signal),
             "distribution": distribution,
             "all": _slice_block(predictions, resamples=resamples, seed=seed, alpha=alpha),
             "decisive": _slice_block(

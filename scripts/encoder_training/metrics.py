@@ -89,7 +89,15 @@ class Prediction:
         *,
         scores: Sequence[float] | None = None,
     ) -> Prediction:
-        """Build a prediction from a loaded example, carrying its provenance across."""
+        """Build a prediction from a loaded example, carrying its provenance across.
+
+        Keyed by ``example.id_for(signal)`` rather than ``example.example_id``
+        directly: on an unmerged tree the two are the same, so every existing
+        single-signal run is unaffected, but on a merged multi-head tree this is
+        what makes a joint model's predictions for signal S land under the id S's
+        own single-signal run used, so McNemar and every other id-keyed pairing
+        mechanism work across the two without modification (merge.py DD4).
+        """
         if not example.is_labelled(signal):
             raise MetricsError(
                 f"example {example.example_id!r} carries no label for {signal!r}, so it cannot "
@@ -97,7 +105,7 @@ class Prediction:
                 "denominator"
             )
         return cls(
-            example_id=example.example_id,
+            example_id=example.id_for(signal),
             truth=example.class_for(signal),
             predicted=predicted,
             unit=example.resampling_unit,

@@ -352,6 +352,45 @@ def test_the_margin_arrives_already_chosen_and_is_applied(tmp_path):
     assert gated["margin"] == 0.3
 
 
+def test_a_joint_model_scores_each_head_under_its_own_margin(tmp_path):
+    """A joint model's heads each chose their own margin independently (task 3).
+
+    There is no single number that means "the margin" for a joint model, so
+    `score_holdout` also accepts a signal -> margin mapping and applies each
+    head's own margin to its own cells, rather than one margin to every column.
+    """
+    holdout = load_holdout(_two_signal_set(tmp_path), signals=SIGNALS)
+    marginal = (0.1, 0.45, 0.35)
+    scores = {
+        "fever_present": [marginal, marginal, marginal],
+        "dysuria_present": [marginal, marginal, marginal],
+    }
+
+    block = score_holdout(
+        holdout,
+        _scorer(scores),
+        signals=["fever_present", "dysuria_present"],
+        margin={"fever_present": 0.3, "dysuria_present": 0.0},
+        resamples=20,
+    )
+    by_signal = {entry["signal"]: entry for entry in block["by_signal"]}
+    # fever_present's own 0.3 margin demotes `true` to the runner-up...
+    assert by_signal["fever_present"]["per_class"]["true"]["predicted"] == 0
+    assert by_signal["fever_present"]["margin"] == 0.3
+    # ...but dysuria_present's own margin is plain argmax, so `true` still wins.
+    assert by_signal["dysuria_present"]["per_class"]["true"]["predicted"] == 3
+    assert by_signal["dysuria_present"]["margin"] == 0.0
+
+
+def test_a_joint_model_missing_a_signals_margin_is_refused(tmp_path):
+    holdout = load_holdout(_two_signal_set(tmp_path), signals=SIGNALS)
+    scores = {"fever_present": [CONFIDENT[CLASS_NULL]] * 3}
+    with pytest.raises(HoldoutError, match="no margin given for 'fever_present'"):
+        score_holdout(
+            holdout, _scorer(scores), signals=["fever_present"], margin={"dysuria_present": 0.1}
+        )
+
+
 def test_a_signal_with_no_head_is_listed_rather_than_scored(tmp_path):
     holdout = load_holdout(_two_signal_set(tmp_path), signals=SIGNALS)
     scores = {"fever_present": [CONFIDENT[CLASS_NULL]] * 3}

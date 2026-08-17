@@ -28,13 +28,21 @@ fold's training clusters -- which are this fold's validation and test clusters -
 and every disjointness check in the package would still pass.
 """
 
+import dataclasses
 import json
 from pathlib import Path
 
 import pytest
 
 from scripts.encoder_training.__main__ import build_parser
-from scripts.encoder_training.dataset import CLASS_FALSE, CLASS_NULL, CLASS_TRUE, load_fold
+from scripts.encoder_training.dataset import (
+    CLASS_FALSE,
+    CLASS_NULL,
+    CLASS_TRUE,
+    fold_dataset_path,
+    load_fold,
+    load_folds,
+)
 from scripts.encoder_training.decision import DecisionRule
 from scripts.encoder_training.embed import EmbeddingSpec
 from scripts.encoder_training.metrics import Prediction
@@ -65,6 +73,8 @@ from scripts.encoder_training.train import (
     write_artefacts,
 )
 from tests.test_encoder_training_arm_a import _tiny_encoder_dir
+from tests.test_encoder_training_merge import FOLDS as _MERGE_FOLDS
+from tests.test_encoder_training_merge import write_tree as _write_source_tree
 
 FIXTURES = Path(__file__).parent / "fixtures" / "encoder_training"
 TRAIN = FIXTURES / "mini.fold0.train.jsonl"
@@ -663,3 +673,483 @@ def test_arm_b_renders_in_the_same_report_as_arm_a(transformers_module, tmp_path
     assert f"`{ARM_B_NAME}`" in markdown
     assert "eff n" in markdown
     assert any("Arm B" in line for line in report["expectations"])
+
+
+# --------------------------------------------------------------------------
+# Joint multi-head training (task 3)
+#
+# ``dataset.py`` and ``metrics.py`` carry the id-remapping half of this (DD4:
+# ``Example.id_for``, used by ``Prediction.from_example``), so it needs no
+# torch and is covered by ``tests/test_encoder_training_dataset.py`` and
+# ``tests/test_encoder_training_metrics.py``. Everything here is the training
+# path itself: fanning one fold's training run out into several heads, DD6's
+# shared epoch criterion, and the per-head, no-cross-head-trade margin
+# selection (instruction 3).
+# --------------------------------------------------------------------------
+
+JOINT_SIGNALS = ("fever_present", "dysuria_present")
+
+
+def _joint_fold(tmp_path, *, signals=JOINT_SIGNALS, name="joint2"):
+    """A tiny two-signal merged fold, built by merging two miniature source trees.
+
+    Reuses ``test_encoder_training_merge``'s own miniature generator rather than
+    inventing a second one: the merge tool is already exhaustively tested
+    against it, and what this module needs is a merged tree to train against,
+    not a second opinion on the merge itself.
+    """
+    from scripts.encoder_training.merge import merge_folds
+
+    source_dir = tmp_path / "sources"
+    _write_source_tree(source_dir, signals=signals, folds=_MERGE_FOLDS)
+    merged_dir = tmp_path / "merged"
+    merge_folds(source_dir, signals=signals, out_dir=merged_dir, name=name, folds=_MERGE_FOLDS)
+    folds = load_folds(merged_dir, name, folds=_MERGE_FOLDS)
+    return folds[0]
+
+
+def _drop_signal_from_val(fold, signal):
+    """A copy of ``fold`` whose validation split has no example labelled for ``signal``."""
+    filtered = tuple(example for example in fold.val.examples if not example.is_labelled(signal))
+    return dataclasses.replace(fold, val=dataclasses.replace(fold.val, examples=filtered))
+
+
+# -- stdlib-only: no torch anywhere near these ------------------------------
+
+
+def test_labelled_any_is_the_union_across_heads():
+    from scripts.encoder_training.dataset import Example
+    from scripts.encoder_training.train import _labelled_any
+
+    def _example(example_id, **classes):
+        mask = {signal: True for signal in classes}
+        return Example(
+            example_id=example_id,
+            split="train",
+            text="x",
+            label_mode="true",
+            fragment_ids=("f1",),
+            classes={**{s: 1 for s in classes}, **classes},
+            mask=mask,
+            decisive=None,
+        )
+
+    fever_only = _example("a", fever_present=1)
+    dysuria_only = _example("b", dysuria_present=1)
+    neither = _example("c")
+    split = dataclasses.replace(
+        load_fold(TRAIN, VAL, TEST).train,
+        examples=(fever_only, dysuria_only, neither),
+    )
+    kept = _labelled_any(split, ("fever_present", "dysuria_present"))
+    assert [example.example_id for example in kept] == ["a", "b"]
+    # A single-signal call reduces to `_labelled`, which is the parity this
+    # generalisation has to preserve (instruction 1).
+    from scripts.encoder_training.train import _labelled
+
+    assert _labelled_any(split, ("fever_present",)) == _labelled(split, "fever_present")
+
+
+def test_joint_fold_result_fans_out_into_single_signal_shape():
+    """Instruction 5: `for_signal` is what lets the existing report machinery read it."""
+    from scripts.encoder_training.train import JointFineTuneFoldResult
+
+    raw = [
+        _prediction("test-000000", CLASS_TRUE, CLASS_TRUE, "cluster-a", scores=(0.1, 0.8, 0.1)),
+    ]
+    fever_rule = DecisionRule(margin=0.1, macro_f1=0.6)
+    dysuria_rule = DecisionRule(margin=0.3, macro_f1=0.5)
+    joint = JointFineTuneFoldResult(
+        fold_index=0,
+        signals=("fever_present", "dysuria_present"),
+        fold_runs={
+            "fever_present": FoldRun.build(
+                fold_index=0, n_train=6, n_val=4, n_test=1, rule=fever_rule, raw=raw, ruled=raw
+            ),
+            "dysuria_present": FoldRun.build(
+                fold_index=0, n_train=6, n_val=4, n_test=1, rule=dysuria_rule, raw=raw, ruled=raw
+            ),
+        },
+        head_state={
+            "fever_present": {"weight": [[0.1]], "bias": [0.0]},
+            "dysuria_present": {"weight": [[0.2]], "bias": [0.1]},
+        },
+        n_parameters=100,
+        n_trainable=100,
+        best_epoch=2,
+        val_macro_f1_by_epoch={
+            "fever_present": (0.4, 0.6),
+            "dysuria_present": (0.3, 0.5),
+        },
+        mean_val_macro_f1_by_epoch=(0.35, 0.55),
+        train_loss_by_epoch=(0.9, 0.4),
+        val_summary={
+            "fever_present": {"n_examples": 4, "macro_f1": 0.6},
+            "dysuria_present": {"n_examples": 4, "macro_f1": 0.5},
+        },
+        steps_per_epoch=3,
+        warmup_steps=1,
+        weights_path="models/encoder/joint2/arm_b_finetune/weights/fold0.encoder.pt",
+    )
+
+    fever_single = joint.for_signal("fever_present")
+    assert fever_single.fold_run.rule.margin == 0.1
+    assert fever_single.val_macro_f1_by_epoch == (0.4, 0.6)
+    assert fever_single.val_summary == {"n_examples": 4, "macro_f1": 0.6}
+    # The weights are shared, so both fanned-out results point at every head,
+    # not just their own -- a joint model's .pt cannot be sliced by signal.
+    assert set(fever_single.head_state) == {"fever_present", "dysuria_present"}
+    assert fever_single.best_epoch == joint.for_signal("dysuria_present").best_epoch == 2
+
+    block = joint.to_dict()
+    assert block["signals"] == ["fever_present", "dysuria_present"]
+    assert block["decision_rules"]["dysuria_present"]["margin"] == 0.3
+    assert block["val_macro_f1_by_epoch"]["fever_present"] == [0.4, 0.6]
+    assert block["mean_val_macro_f1_by_epoch"] == [0.35, 0.55]
+
+
+def test_select_then_score_multi_selects_every_head_before_scoring_anything(monkeypatch):
+    """Instruction 3, generalising the holdout module's own order test.
+
+    Every head's margin is chosen independently -- the calls to `select_margin`
+    are per signal, on that signal's own predictions -- and only once every rule
+    exists is `score_test` (and then `score_realistic`) called at all.
+    """
+    from scripts.encoder_training.train import select_then_score_multi
+
+    calls: list[tuple[str, object]] = []
+    fever_predictions = [_prediction("f0", CLASS_TRUE, CLASS_TRUE, "u1", scores=(0, 1, 0))]
+    dysuria_predictions = [_prediction("d0", CLASS_NULL, CLASS_NULL, "u2", scores=(0, 0, 1))]
+
+    def fake_select(predictions):
+        calls.append(("select_margin", predictions))
+        return DecisionRule(margin=0.1 if predictions is fever_predictions else 0.4)
+
+    monkeypatch.setattr("scripts.encoder_training.train.select_margin", fake_select)
+
+    def score_test(rules):
+        calls.append(("score_test", dict(rules)))
+        return {"fever_present": [], "dysuria_present": []}
+
+    def score_realistic(rules):
+        calls.append(("score_realistic", dict(rules)))
+        return {"margin": {signal: rule.margin for signal, rule in rules.items()}}
+
+    rules, test_predictions, realistic = select_then_score_multi(
+        {"fever_present": fever_predictions, "dysuria_present": dysuria_predictions},
+        score_test=score_test,
+        score_realistic=score_realistic,
+    )
+
+    assert [name for name, _ in calls] == [
+        "select_margin",
+        "select_margin",
+        "score_test",
+        "score_realistic",
+    ]
+    assert rules["fever_present"].margin == 0.1
+    assert rules["dysuria_present"].margin == 0.4
+    assert realistic == {"margin": {"fever_present": 0.1, "dysuria_present": 0.4}}
+    assert test_predictions == {"fever_present": [], "dysuria_present": []}
+
+
+def test_joint_artefacts_write_the_decision_mapping_form(tmp_path):
+    """Instruction 3: `foldN.decision.json` is always `{signal: rule}`, even here."""
+    from scripts.encoder_training.train import (
+        JointFineTuneFoldResult,
+        read_joint_decision,
+        write_joint_artefacts,
+    )
+
+    raw = [_prediction("test-000000", CLASS_TRUE, CLASS_TRUE, "cluster-a", scores=(0.1, 0.8, 0.1))]
+    joint = JointFineTuneFoldResult(
+        fold_index=0,
+        signals=("fever_present", "dysuria_present"),
+        fold_runs={
+            "fever_present": FoldRun.build(
+                fold_index=0,
+                n_train=1,
+                n_val=1,
+                n_test=1,
+                rule=DecisionRule(margin=0.15),
+                raw=raw,
+                ruled=raw,
+            ),
+            "dysuria_present": FoldRun.build(
+                fold_index=0,
+                n_train=1,
+                n_val=1,
+                n_test=1,
+                rule=DecisionRule(margin=0.25),
+                raw=raw,
+                ruled=raw,
+            ),
+        },
+        head_state={"fever_present": {"weight": [[0.1]], "bias": [0.0]}},
+        n_parameters=1,
+        n_trainable=1,
+        best_epoch=1,
+        val_macro_f1_by_epoch={"fever_present": (0.5,), "dysuria_present": (0.4,)},
+        mean_val_macro_f1_by_epoch=(0.45,),
+        train_loss_by_epoch=(0.5,),
+        val_summary={"fever_present": {}, "dysuria_present": {}},
+        steps_per_epoch=1,
+        warmup_steps=0,
+        weights_path="w.pt",
+    )
+    metadata = {"arm": ARM_B_NAME, "signals": ["fever_present", "dysuria_present"]}
+    directory = tmp_path / "joint2" / ARM_B_NAME
+    written = write_joint_artefacts(directory, arm=ARM_B_NAME, metadata=metadata, results=[joint])
+    assert len(written) == 3  # metadata + head + decision, one fold
+
+    head = json.loads((directory / "fold0.head.json").read_text(encoding="utf-8"))
+    assert head["signals"] == ["fever_present", "dysuria_present"]
+    assert set(head["heads"]) == {"fever_present"}
+
+    rules = read_joint_decision(directory / "fold0.decision.json")
+    assert rules["fever_present"].margin == 0.15
+    assert rules["dysuria_present"].margin == 0.25
+
+
+def test_build_joint_metadata_requires_a_signal_list():
+    from scripts.encoder_training.train import REQUIRED_JOINT_METADATA, build_joint_metadata
+
+    assert "signals" in REQUIRED_JOINT_METADATA
+    assert "signal" not in REQUIRED_JOINT_METADATA
+
+    metadata = build_joint_metadata(
+        signals=["fever_present", "dysuria_present"],
+        arm=ARM_B_NAME,
+        encoder_facts={**SPEC.to_dict(), "tokeniser": {}},
+        config=FineTuneConfig(),
+        device={"device": "cpu"},
+        dataset={"dir": "x", "folds": 1},
+        ruleset="data/uti1.json",
+        ruleset_hash="0" * 64,
+        results=[],
+    )
+    assert metadata["signals"] == ["fever_present", "dysuria_present"]
+    assert "at most six of seven keys" in metadata["encoder_contract"]
+
+
+def test_cli_exposes_dataset_and_signals_and_defaults_them_off():
+    """A plain `finetune` call must keep resolving to today's single-signal path."""
+    args = build_parser().parse_args(["finetune"])
+    assert args.dataset is None
+    assert args.signals is None
+
+    joint_args = build_parser().parse_args(
+        ["finetune", "--dataset", "joint6", "--signals", "fever_present", "dysuria_present"]
+    )
+    assert joint_args.dataset == "joint6"
+    assert joint_args.signals == ["fever_present", "dysuria_present"]
+
+
+def test_run_arm_b_dispatches_single_vs_joint_by_dataset_and_signals(tmp_path, monkeypatch):
+    """The routing rule itself, without paying for an encoder anywhere.
+
+    Same dataset name as the (single) signal takes the path unchanged since
+    before `--dataset`/`--signals` existed; anything else -- a merged tree, or
+    more than one requested head -- takes the joint path. Both branches are
+    monkeypatched to no-ops so this only tests the *routing*.
+    """
+    import scripts.encoder_training.__main__ as main_module
+
+    calls: list[str] = []
+
+    def fake_single(args, folds):
+        calls.append("single")
+
+    def fake_joint(args, folds, *, dataset_name, signals):
+        calls.append(f"joint:{dataset_name}:{signals}")
+
+    monkeypatch.setattr(main_module, "_run_arm_b_single", fake_single)
+    monkeypatch.setattr(main_module, "_run_arm_b_joint", fake_joint)
+
+    single_dir = tmp_path / "single"
+    single_dir.mkdir()
+    for split, source in (("train", TRAIN), ("val", VAL), ("test", TEST)):
+        destination = fold_dataset_path(single_dir, SIGNAL, 0, split)
+        destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+        source_stats = source.with_name(source.name + ".stats.json")
+        destination_stats = destination.with_name(destination.name + ".stats.json")
+        # The committed fixture's sidecar was cut from a five-fold sweep; this
+        # test only puts one fold's files on disk, so the sidecar is rewritten
+        # to agree with what is actually here rather than read as five.
+        stats = json.loads(source_stats.read_text(encoding="utf-8"))
+        stats["folds"] = 1
+        destination_stats.write_text(json.dumps(stats), encoding="utf-8")
+
+    args = build_parser().parse_args(
+        ["finetune", "--signal", SIGNAL, "--data-dir", str(single_dir), "--folds", "1"]
+    )
+    main_module.run_arm_b(args)
+    assert calls == ["single"]
+
+    merged_dir = tmp_path / "merged"
+    source_dir = tmp_path / "sources"
+    from scripts.encoder_training.merge import merge_folds
+
+    _write_source_tree(source_dir, signals=JOINT_SIGNALS, folds=_MERGE_FOLDS)
+    merge_folds(
+        source_dir, signals=JOINT_SIGNALS, out_dir=merged_dir, name="joint2", folds=_MERGE_FOLDS
+    )
+    joint_args = build_parser().parse_args(
+        [
+            "finetune",
+            "--dataset",
+            "joint2",
+            "--data-dir",
+            str(merged_dir),
+            "--folds",
+            str(_MERGE_FOLDS),
+        ]
+    )
+    main_module.run_arm_b(joint_args)
+    assert calls[1].startswith("joint:joint2:")
+    assert "fever_present" in calls[1] and "dysuria_present" in calls[1]
+
+
+# -- torch required: the joint training loop itself -------------------------
+
+
+def test_a_head_with_no_labelled_validation_examples_fails_loudly(transformers_module, tmp_path):
+    """Instruction 9: no silent default margin for a head that cannot select one."""
+    from scripts.encoder_training.train import run_finetune_joint_fold
+
+    fold = _drop_signal_from_val(_joint_fold(tmp_path), "dysuria_present")
+    with pytest.raises(TrainError, match="dysuria_present.*no labelled validation examples"):
+        run_finetune_joint_fold(
+            fold,
+            _encoder_factory(_tiny_encoder_dir(tmp_path, lower=False)),
+            signals=JOINT_SIGNALS,
+            config=_tiny_config(epochs=1),
+        )
+
+
+def test_joint_run_produces_one_head_one_rule_one_prediction_set_per_signal(
+    transformers_module, tmp_path
+):
+    """The task 3 deliverable, stated directly: N heads, N rules, N prediction sets."""
+    from scripts.encoder_training.train import run_finetune_joint_fold
+
+    fold = _joint_fold(tmp_path)
+    result = run_finetune_joint_fold(
+        fold,
+        _encoder_factory(_tiny_encoder_dir(tmp_path, lower=False)),
+        signals=JOINT_SIGNALS,
+        config=_tiny_config(epochs=2),
+        weights_dir=None,
+    )
+
+    assert set(result.signals) == set(JOINT_SIGNALS)
+    assert set(result.fold_runs) == set(JOINT_SIGNALS)
+    assert set(result.head_state) == set(JOINT_SIGNALS)
+    assert set(result.val_macro_f1_by_epoch) == set(JOINT_SIGNALS)
+    assert len(result.mean_val_macro_f1_by_epoch) == 2
+
+    # DD4: predictions are keyed by the id this example had in *that signal's*
+    # own tree, not the merged id -- so single-signal ids like "test-000000",
+    # never "fever_present:test-000000".
+    for signal in JOINT_SIGNALS:
+        fold_run = result.fold_runs[signal]
+        assert fold_run.raw, f"{signal} produced no test predictions"
+        for prediction in fold_run.raw:
+            assert not prediction.example_id.startswith(f"fold0:{signal}:")
+            assert not prediction.example_id.startswith("fold0:shared:")
+            assert prediction.example_id.startswith("fold0:")
+
+
+def test_single_signal_joint_run_matches_the_original_single_signal_path(
+    transformers_module, tmp_path
+):
+    """Instruction 1: the parity test.
+
+    `run_finetune_joint_fold` and `run_finetune_fold` are independent
+    implementations, so this proves they agree rather than assuming it. Same
+    fold, same fresh encoder weights (same tiny-BERT directory, same seed), same
+    config: if the two diverge, this is where it shows.
+    """
+    from scripts.encoder_training.train import run_finetune_fold, run_finetune_joint_fold
+
+    fold = load_fold(TRAIN, VAL, TEST)
+    encoder_dir = _tiny_encoder_dir(tmp_path, lower=False)
+    config = _tiny_config(epochs=2)
+
+    old = run_finetune_fold(
+        fold, _encoder_factory(encoder_dir), signal=SIGNAL, config=config, weights_dir=None
+    )
+    new = run_finetune_joint_fold(
+        fold, _encoder_factory(encoder_dir), signals=[SIGNAL], config=config, weights_dir=None
+    )
+
+    assert new.best_epoch == old.best_epoch
+    assert new.val_macro_f1_by_epoch[SIGNAL] == old.val_macro_f1_by_epoch
+    assert new.mean_val_macro_f1_by_epoch == old.val_macro_f1_by_epoch
+    assert new.train_loss_by_epoch == old.train_loss_by_epoch
+    assert new.fold_runs[SIGNAL].rule.margin == old.fold_run.rule.margin
+    assert [p.example_id for p in new.fold_runs[SIGNAL].raw] == [
+        p.example_id for p in old.fold_run.raw
+    ]
+    assert [p.predicted for p in new.fold_runs[SIGNAL].raw] == [
+        p.predicted for p in old.fold_run.raw
+    ]
+    assert [p.scores for p in new.fold_runs[SIGNAL].raw] == [p.scores for p in old.fold_run.raw]
+
+
+def test_predict_finetuned_multi_matches_predict_finetuned_for_one_signal(
+    transformers_module, tmp_path
+):
+    from scripts.encoder_training.model import LinearHeads
+    from scripts.encoder_training.train import predict_finetuned, predict_finetuned_multi
+
+    fold = load_fold(TRAIN, VAL, TEST)
+    encoder = _encoder_factory(_tiny_encoder_dir(tmp_path, lower=False))()
+    heads = LinearHeads(fold.signals, hidden_size=int(encoder.model.config.hidden_size))
+
+    single = predict_finetuned(fold.test.examples, encoder, heads, signal=SIGNAL, batch_size=2)
+    multi = predict_finetuned_multi(
+        fold.test.examples, encoder, heads, signals=[SIGNAL], batch_size=2
+    )[SIGNAL]
+
+    assert [p.example_id for p in single] == [p.example_id for p in multi]
+    assert [p.predicted for p in single] == [p.predicted for p in multi]
+    assert [p.scores for p in single] == [p.scores for p in multi]
+
+
+def test_run_finetune_joint_fans_out_into_one_model_run_per_signal(transformers_module, tmp_path):
+    from scripts.encoder_training.train import run_finetune_joint
+
+    fold = _joint_fold(tmp_path)
+    runs, results = run_finetune_joint(
+        [fold],
+        _encoder_factory(_tiny_encoder_dir(tmp_path, lower=False)),
+        signals=JOINT_SIGNALS,
+        config=_tiny_config(epochs=1),
+        weights_dir=None,
+    )
+
+    assert set(runs) == set(JOINT_SIGNALS)
+    for signal in JOINT_SIGNALS:
+        run = runs[signal]
+        assert run.kind == "finetune"
+        assert len(run.folds) == 1
+        assert run.name == runs[JOINT_SIGNALS[0]].name  # one shared physical run
+    assert len(results) == 1
+
+
+def test_joint_weights_file_records_every_head(torch_module, transformers_module, tmp_path):
+    from scripts.encoder_training.train import run_finetune_joint_fold
+
+    weights_dir = tmp_path / "weights"
+    fold = _joint_fold(tmp_path)
+    result = run_finetune_joint_fold(
+        fold,
+        _encoder_factory(_tiny_encoder_dir(tmp_path, lower=False)),
+        signals=JOINT_SIGNALS,
+        config=_tiny_config(epochs=1),
+        weights_dir=weights_dir,
+    )
+    payload = torch_module.load(result.weights_path, map_location="cpu", weights_only=False)
+    assert set(payload["signals"]) == set(JOINT_SIGNALS)
+    assert set(payload["heads"]) == set(JOINT_SIGNALS)

@@ -222,6 +222,86 @@ construction — which also means part of any gain it shows is the tokeniser rat
 than the register, and the report header carries `tokeniser_discards_casing` so
 that reading is available rather than reconstructed.
 
+### 4b. Joint multi-head training
+
+`finetune --dataset <tree> --signals <signal ...>` trains one encoder with
+several heads sharing it, over a merged tree `merge-folds` produced. `--dataset`
+names the fold tree to load (the signal position of the fold filename);
+`--signals` names which of its declared heads to train and evaluate, defaulting
+to every signal the loaded fold declares. A plain `finetune --signal
+fever_present` call still resolves both to `fever_present` and takes the
+single-signal path completely unchanged — same stem, same artefact directory,
+same report — which is what a single-signal run's numbers being comparable to
+every report committed before joint training existed depends on. That equality
+is proved rather than assumed: `run_finetune_joint_fold(fold, factory,
+signals=[signal], ...)` and `run_finetune_fold(fold, factory, signal=signal,
+...)` are independent implementations, and
+`tests/test_encoder_training_arm_b.py` diffs their output on the same fold
+rather than asserting a tautology.
+
+**Training is joint; evaluation is per head.** `_labelled_any` widens the
+training split to every example labelled for *any* trained signal — a dysuria
+example belongs in it because it carries a dysuria label, even though it
+carries no key at all for the other five heads. `masked_cross_entropy` already
+normalised over labelled positions across every signal together (it always had
+to, for the single-head case to be a special case of the general one), so
+nothing there changes. What is new is epoch and margin selection.
+
+**Epoch selection is one criterion across every head (DD6).** One shared
+encoder means one set of weights to stop at, so per-head early stopping is
+impossible. The criterion is the **unweighted** mean of every head's own
+validation macro-F1 — not weighted by how many labelled examples each head has,
+because that would let fever and dysuria decide nocturia's stopping point, and
+the weak signals are exactly where this ticket's question is most alive. Every
+head's own per-epoch macro-F1 is recorded in the sidecar too, not just the
+mean, so a report can show where a head's own best epoch differed from the one
+DD6 actually selected — and where it does, part of any movement against that
+head's single-signal run is the stopping rule rather than the representation.
+
+**Margin selection is per head, independently — no cross-head trade.** Each
+head's margin is chosen by `select_margin` on that head's own validation
+predictions alone, under the unchanged DD9 objective. A margin that sacrificed
+nocturia's `null → true` rate to buy fever a point of macro-F1 is a decision
+nobody asked for. `foldN.decision.json` under a joint artefact directory is
+therefore always a `{signal: rule}` mapping, never a single flat rule —
+`write_joint_artefacts`/`read_joint_decision` are the writer and reader for it,
+kept separate from the single-signal `write_artefacts`/`DecisionRule.read` pair,
+which is unchanged.
+
+**Predictions are keyed by the id they had in their own signal's tree
+(merge.py DD4).** `Example.id_for(signal)` returns `meta.source_ids[signal]`
+on a merged tree and `example_id` unchanged on one that was never merged, and
+`Prediction.from_example` calls it rather than reading `example_id` directly —
+one small change in `metrics.py` that makes every existing pairing mechanism,
+McNemar above all, work across a joint run's predictions and a single-signal
+run's without either module knowing the other exists. Asking for a signal's id
+on an example that is masked for it is a hard error, not a fallback: it means
+scoring a signal on an example `is_labelled` should already have excluded.
+
+**Artefacts go to `models/encoder/joint<N>/<arm>/`**, not under any one
+trained signal's own directory — there is no single signal a joint model
+belongs to, and putting it under one of six would either duplicate the shared
+~440MB encoder N times or leave five of six directories pointing at weights
+that live in a sixth. `foldN.head.json` holds every trained head's weights in
+one file, keyed by signal, alongside the one `.pt` they all share.
+
+**One `ModelRun` per trained head, from one physical run.** `run_finetune_joint`
+returns a `signal -> ModelRun` mapping rather than one `ModelRun`: each entry is
+that signal's own view of the same training run (`JointFineTuneFoldResult.
+for_signal`), shaped exactly like a single-signal Arm B run's `ModelRun` so it
+drops into that signal's own report unchanged. The CLI writes one report per
+head, stem `<signal>.<dataset>.arm_b_finetune`, so it cannot collide with a
+single-signal report's own `<signal>.arm_b_finetune` stem. Arm A and the
+baselines do not ride along in a joint run: both are single-head machinery, and
+the paired comparison this ticket turns on (A1 vs A3) is against a
+single-signal Arm B run made separately, not a probe fitted beside the joint
+encoder.
+
+**What this does not do.** It does not decide which comparisons matter or how
+they are reported — the report shape that holds three arms per signal and the
+sweep across all six signals are `planned_updates/joint_multi_head_training_
+implementation.md`'s tasks 4 and 5, not this one.
+
 ---
 
 ## 5. How the numbers are made honest
@@ -384,37 +464,41 @@ rule is tunable, versioned and documented.
   `data/uti1.json` declares seven. Swapping in a real encoder stays blocked until
   either all seven heads exist or that contract permits partial output. Recorded
   here so nobody plans around a swap that is not available.
-* **No multi-head or multi-signal training.** The masked-loss path — a *missing*
-  signal key means "exclude from the loss", an explicit `null` means "train
-  towards the null class" — is written and unit-tested against synthetic
-  fixtures, because with one signal it gets no coverage from real data and
-  conflating the two after multi-head training starts is expensive.
+* ~~**No multi-head or multi-signal training.**~~ **The training path is done.**
+  `planned_updates/multi_symptom_training_expansion.md` is the plan for this,
+  and `arch_training.md` 12.8 is the summary. Three things it establishes that
+  are easy to get wrong from here.
 
-  `planned_updates/multi_symptom_training_expansion.md` is the plan for lifting
-  this, and `arch_training.md` 12.8 is the summary. Two things it establishes
-  that are easy to get wrong from here. **The six single-signal runs are done**
-  (2026-08-16) and needed no code change, because `--signal` was already a flag
-  on every subcommand. Six Arm B heads at `roberta-base`, one per signal, with
-  Arm A and the baselines in each report; `arch_training.md` section 10 has the
-  results table and `reports/encoder_training/2026-08-16-plain-english.md` is
-  the write-up. Every shuffled-label control passed on all six. **Arm B beat Arm
-  A on `null_ambiguous` in every signal**, p between 3e-05 and 2e-39 — the fever
-  finding, replicated six times over. What those runs do *not* give you is a
-  joint model: they are six separate heads, and nothing here has yet trained one
-  encoder to answer several questions at once. And **joint training on
-  merged single-signal datasets is nearer than it looks**: `LinearHeads` is
-  already per-signal, `masked_cross_entropy` already normalises over labelled
-  positions across all heads together, and fold assignment is a signal-blind
-  hash so cluster disjointness survives concatenation. What is genuinely missing
-  is a merge step, per-head margin selection (`select_margin` returns one scalar
-  and `run_finetune` filters to one signal via `_labelled`), and a report shape
-  that can hold six signals or pair a joint run against a single-signal one.
+  **The six single-signal runs are done** (2026-08-16) and needed no code
+  change, because `--signal` was already a flag on every subcommand. Six Arm B
+  heads at `roberta-base`, one per signal, with Arm A and the baselines in each
+  report; `arch_training.md` section 10 has the results table and
+  `reports/encoder_training/2026-08-16-plain-english.md` is the write-up. Every
+  shuffled-label control passed on all six. **Arm B beat Arm A on
+  `null_ambiguous` in every signal**, p between 3e-05 and 2e-39 — the fever
+  finding, replicated six times over. Six separate heads, not a joint model.
 
-  Whatever is built there must control for gradient steps. Merging six 10k
-  datasets gives the encoder six times the updates, so a fever movement would
-  confound cross-symptom exposure with step count. The control is a fever-only
-  run at the merged example count — same clusters, same steps, more of them —
-  and it is the arm that makes the comparison mean anything.
+  **The merge step exists** (`scripts/encoder_training/merge.py`,
+  `merge-folds`): it concatenates the six per-signal fold trees into one that
+  `load_folds` reads unchanged, keeping every head masked where it had no label
+  and every example's original id in `meta.source_ids`.
+
+  **The joint training path exists** (section 4b): `finetune --dataset
+  <merged tree> --signals <heads>` trains several heads sharing one encoder,
+  with DD6's shared epoch criterion and independent per-head margins. What
+  remains is the report shape that holds three arms per signal (A1, the
+  volume-matched A2, and the joint A3) and is safe on an unpairable A2, and the
+  six-signal sweep across all three arms — tasks 4 and 5 of
+  `planned_updates/joint_multi_head_training_implementation.md`.
+
+  Whatever runs the sweep must control for gradient steps. Merging six 10k
+  datasets gives the encoder six times the updates, so a fever movement between
+  A1 and A3 would confound cross-symptom exposure with step count. A2 — that
+  signal alone at the merged example count, same clusters, same steps, more of
+  them — is the unpaired control that bounds how much of any movement step
+  count alone could explain; it does not by itself isolate the ticket's
+  question, which is what the paired A1-vs-A3 comparison is for (DD1 of the
+  implementation plan).
 * **No hyperparameter search.** The recipe was fixed before any run. Four
   quantities may be chosen against validation and they are enumerated in code.
 * ~~**No realistic held-out evaluation set.**~~ **Done.** `data/realistic/`
@@ -429,11 +513,15 @@ rule is tunable, versioned and documented.
 
 ```
 python -m scripts.encoder_training generate-folds --folds 5   # 15 generator runs, scripted
+python -m scripts.encoder_training merge-folds --folds 5      # concatenate six signals into one tree
 python -m scripts.encoder_training baselines --folds 5        # majority / length / TF-IDF
 python -m scripts.encoder_training smoke-cuda                 # can this GPU launch a kernel
 python -m scripts.encoder_training smoke                      # ... and can it load the encoder
 python -m scripts.encoder_training probe --folds 5            # Arm A, the frozen probe
 python -m scripts.encoder_training finetune --folds 5         # Arm B, every layer unfrozen
+python -m scripts.encoder_training finetune --folds 5 \       # Arm B, jointly: one encoder,
+  --dataset joint6 --signals fever_present dysuria_present \  # every signal merge-folds wrote
+  flank_pain_present haematuria_present nocturia_present urinary_frequency_present
 python -m scripts.encoder_training compare-models --folds 5   # Arm B over several base encoders
 ```
 
