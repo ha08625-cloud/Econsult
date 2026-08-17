@@ -1378,6 +1378,13 @@ def _selected_epochs(results: Sequence, signal: str) -> str:
     can differ from this head's own best -- and where it does, part of any
     movement against A1 is the stopping rule rather than the representation. So
     both are printed, and only when they differ.
+
+    ``best_epoch`` counts from **one** -- ``finetune_fold_model`` and
+    ``finetune_joint_fold_model`` both iterate ``range(1, epochs + 1)`` -- while
+    the history it is read against is a list indexed from zero. Converting here
+    is what makes the two comparable: without it every single-signal arm reports
+    a divergence it cannot have, since its selection criterion *is* the argmax of
+    that history.
     """
     selected = [result.best_epoch for result in results]
     own = []
@@ -1385,7 +1392,9 @@ def _selected_epochs(results: Sequence, signal: str) -> str:
         history = result.val_macro_f1_by_epoch
         if isinstance(history, Mapping):
             history = history[signal]
-        own.append(max(range(len(history)), key=lambda index: history[index]) if history else None)
+        own.append(
+            1 + max(range(len(history)), key=lambda index: history[index]) if history else None
+        )
     rendered = ", ".join(str(epoch) for epoch in selected)
     if own == selected:
         return rendered

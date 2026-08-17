@@ -33,9 +33,9 @@
     ],
     "paired_comparison": "A1_single vs A3_joint, paired on this signal's test examples. A2_volume pairs with nothing and its McNemar rows are recorded as skipped rather than omitted",
     "selected_epochs": {
-      "A1_single": "3, 3, 1, 1, 3 (this head's own best epoch would have been 2, 2, 0, 0, 2)",
-      "A2_volume": "3, 2, 1, 3, 2 (this head's own best epoch would have been 2, 1, 0, 2, 1)",
-      "A3_joint": "3, 3, 2, 3, 1 (this head's own best epoch would have been 2, 2, 1, 0, 1)"
+      "A1_single": "3, 3, 1, 1, 3",
+      "A2_volume": "3, 2, 1, 3, 2",
+      "A3_joint": "3, 3, 2, 3, 1 (this head's own best epoch would have been 3, 3, 2, 1, 2)"
     },
     "volume_arm": "included",
     "what_no_arm_isolates": "**No arm is matched to A3 on both encoder gradient steps and per-head supervision, because no such dataset exists**: holding one fixed moves the other. A1 vs A3 varies cross-symptom exposure and step count together, and A2 bounds how much of any movement step count alone could explain -- but nothing here isolates cross-symptom exposure on its own. A further confound is DD6: A1 stops at the epoch that maximises this head's own validation macro-F1, A3 at the epoch that maximises the unweighted mean across every head, so where the two diverge (see `selected_epochs`) part of any movement is the stopping rule rather than the representation.",
