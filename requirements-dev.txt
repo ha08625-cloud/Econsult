@@ -1,5 +1,5 @@
 # Development-only tooling.
 # Not installed in production — see requirements.txt for runtime dependencies.
 
-ruff==0.16.1
+ruff==0.16.3
 pre-commit==4.6.1
