@@ -1815,9 +1815,16 @@ margin is selected independently, and one shared DD6 epoch-selection criterion
 — the unweighted mean of every head's own validation macro-F1 — picks the
 epoch every head is scored at. `arch_encoder_training.md` section 4b is the
 design; `planned_updates/joint_multi_head_training_implementation.md` task 3
-is the instructions it was built from. What is still outstanding from that plan
-is the report shape holding three arms per signal (task 4) and the six-signal
-sweep across them (task 5).
+is the instructions it was built from. **Task 4 has landed too**: `joint-compare`
+loads three fold trees in one invocation — A1 (the signal alone), A2 (the same
+clusters, ~4.5× the recombinations) and A3 (joint) — and writes one report per
+signal holding all three. A1 against A3 is the paired comparison, because A3's
+slice for a signal *is* that signal's own examples under their own ids; A2 pairs
+with nothing and comes back as a **recorded** untestable pair rather than as a
+missing row, which is what stops "could not be tested" being read as "no
+difference found". `arch_encoder_training.md` section 4c has the arm table and
+the sentence about what no arm isolates. What is still outstanding is the sweep
+itself (task 5), which needs a GPU and the A2 datasets generating.
 
 **Blocked, in this order:** multi-symptom recombinations (12.2–12.5);
 cluster-tagging the four untagged library sets.

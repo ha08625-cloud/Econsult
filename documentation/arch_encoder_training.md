@@ -298,9 +298,57 @@ single-signal Arm B run made separately, not a probe fitted beside the joint
 encoder.
 
 **What this does not do.** It does not decide which comparisons matter or how
-they are reported — the report shape that holds three arms per signal and the
-sweep across all six signals are `planned_updates/joint_multi_head_training_
-implementation.md`'s tasks 4 and 5, not this one.
+they are reported — that is 4c, below. The sweep itself (task 5) has not been
+run.
+
+---
+
+### 4c. The three-arm comparison, and what it does not isolate
+
+`joint-compare` is the only command here that loads **three** fold trees, one
+per arm, and it exists because the question "does exposure to five other
+symptoms' confounders help each symptom's answer" needs a control on both sides
+of it.
+
+| arm | tree | examples/epoch | that head's labelled positions |
+|---|---|---|---|
+| **A1** | that signal alone | 10,000 | **10,000** |
+| **A2** | that signal alone, ~4.5× the recombinations | 44,680 | **44,680** |
+| **A3** | the merged tree | 44,680 | **10,000** |
+
+**A1 against A3 is the comparison.** It holds per-head supervision fixed and
+varies exactly one thing: whether the shared encoder is also being pulled by
+five other heads. It is pairable because A3's slice for a signal *is* that
+signal's own examples, under the ids they had in its own tree (4b, DD4), so
+McNemar, `_qualify` and the per-fragment table all work with no help from the
+report layer.
+
+**A2 is an unpaired volume control.** Its test examples are different texts, so
+it pairs with nothing and is read through the pooled cluster interval and the
+per-fold spread instead. It is retained deliberately: without it, a movement
+between A1 and A3 cannot be separated from the fact that A3 takes 4.5× the
+encoder gradient steps. Its prediction ids are qualified with the arm's own
+label before the report sees them (`_as_unpaired`), so "A2 pairs with nothing"
+is a property of what the report is handed rather than of how many examples
+somebody happened to generate — two trees that coincidentally numbered the same
+count of test examples would otherwise be paired text-for-different-text.
+
+**What no arm isolates, and every report says so in its header.** There is no
+arm matched to A3 on *both* encoder steps and per-head supervision, because no
+such dataset exists — holding one fixed moves the other. A1↔A3 varies exposure
+and step count together; A2 bounds how much of any movement step count alone can
+explain. DD6 is a second confound: A1 stops at the epoch maximising its own
+head's validation macro-F1 and A3 at the epoch maximising the unweighted mean
+across heads, so the header prints both arms' selected epochs per fold and says
+where this head's own best would have differed.
+
+**One report per signal**, stem `<signal>.joint_comparison`, holding all three
+arms, the baselines fitted on A1's folds, and the holdout numbers. One
+six-signal report was rejected: the headline, ticket-question, sub-class recall
+and per-fragment sections are all per-signal-slice by construction. Because a
+report holds no per-example predictions, **A1 is re-run rather than read off
+disk** — the paired test can only be computed inside the invocation that
+produced both arms, and A1 is deterministic from the pinned seeds.
 
 ---
 
@@ -445,6 +493,20 @@ Five sections carry the weight:
   and `arch_training.md` section 9 is the test for which one is in front of you.
 * **Both confusion matrices** — raw argmax and post-decision-rule, because "the
   model is wrong" and "the rule is conservative" are different findings.
+* **Pairs that could not be tested** — printed under the McNemar table whenever
+  a report holds two runs scored on different examples (A2, above). McNemar
+  pairs on the example id, so such a pair cannot be tested at all — and a reader
+  who expected a comparison and found nothing would read the absence as "no
+  difference found". Each entry names both runs, the slice, both sizes and how
+  many ids they share. **A pair skipped for any reason other than a genuine
+  dataset difference is a bug**, and the entry is what makes it findable: the
+  only condition `compare_models` swallows is a differing example *set*, and a
+  duplicate id or a truth disagreement on a shared one still raises.
+
+A long header value — the arms table, what no arm isolates, the predictions
+recorded before the run — is printed as prose under the header table rather than
+inside a cell, because a markdown cell does not wrap and those are the entries a
+reader most needs to be able to read.
 
 The decision rule itself is a separate artefact with a stated objective: maximise
 macro-F1 **subject to** a `null → true` rate no worse than argmax's. That cell

@@ -22,6 +22,7 @@ You have good CI tests, but there is nothing that can verify the deployed system
 - Deterministic data augmentation
 - Full question sets
 - Encoder/head training
+- `report.py`'s `FEVER_LIBRARY_CLUSTERS` is emitted into every report regardless of which signal the report is about, so a dysuria or nocturia report carries a fever library table under a heading about effective sample size. Pre-existing, harmless to the numbers (nothing is computed from it) and wrong-shaped now that six signals are trainable. Left alone deliberately by the joint-comparison ticket: fixing it means either per-signal tables or deriving the table from the run's own fragment provenance, and both are a change to what the report claims rather than a rename.
 
 ### production readiness updates
 - MHRA registration - econsult health is registered as a class I medical device (technically anything that acts as patient triage is class 2a but we want to avoid that)

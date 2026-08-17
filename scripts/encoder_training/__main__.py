@@ -1,6 +1,6 @@
 """Command-line entry point for encoder training and evaluation.
 
-Eight subcommands.
+Nine subcommands.
 
     python -m scripts.encoder_training generate-folds --folds 5
 
@@ -81,6 +81,24 @@ anything this comparison might find. Defaults to the incumbent
 (Bio_ClinicalBERT), ``bert-base-uncased`` as the pretraining-corpus control, and
 ``roberta-base`` as the contender on negation scope.
 
+    python -m scripts.encoder_training joint-compare --folds 5
+
+The three-armed comparison this whole package has been building towards, and the
+one command here that loads **three** fold trees rather than one: A1, each
+signal's own 10k dataset trained one head at a time; A2, the same clusters
+recombined ~4.5x as many times, still one head at a time; A3, the merged tree
+with every head sharing one encoder. Each arm is fine-tuned against its own
+folds, then restricted to one signal's slice, and all three go into that signal's
+own report -- one report per signal, stem ``<signal>.joint_comparison``.
+
+**A1 against A3 is the comparison.** It holds per-head supervision fixed at
+10,000 labelled positions and varies exactly one thing: whether the encoder is
+also being pulled by five other heads. It is pairable, because A3's slice for a
+signal *is* that signal's own examples under the ids they had in its own tree.
+**A2 pairs with nothing** -- its test examples are different texts -- so its
+McNemar rows come back as recorded skips rather than as silence, and it is read
+through the pooled cluster interval instead.
+
 No command touches ``app/``, and nothing in ``app/`` imports this. The dependency
 runs one way, and ``tests/test_wiring.py`` asserts it.
 """
@@ -89,7 +107,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
@@ -158,6 +177,13 @@ DEFAULT_COMPARISON_MODELS = (
 DEFAULT_SIGNAL = "fever_present"
 DEFAULT_FOLDS = 5
 DEFAULT_DATA_DIR = Path("data/synthetic/generated/folds")
+
+#: Where the A2 arm's fold tree lives: the same six signals, the same clusters,
+#: the same fold assignment, generated at roughly 4.5x the recombinations. A
+#: separate directory rather than a suffix in the same one because A1's and A2's
+#: files would otherwise collide on :func:`dataset.fold_dataset_path`'s naming
+#: convention, which has only a signal, a fold and a split in it.
+DEFAULT_VOLUME_DIR = Path("data/synthetic/generated/folds-volume")
 DEFAULT_REPORT_DIR = Path("reports/encoder_training")
 DEFAULT_MANIFEST = Path("data/synthetic/manifest.json")
 DEFAULT_RULESET = Path("data/uti1.json")
@@ -1227,6 +1253,607 @@ def run_compare_models(args: argparse.Namespace) -> int:
     )
 
 
+# ---------------------------------------------------------------------------
+# The three-armed joint comparison (implementation plan task 4)
+# ---------------------------------------------------------------------------
+
+#: What each arm is called in a report, and in its artefact directory. Short
+#: because the label is part of every run name (``arm_b_finetune@A1_single``)
+#: and of the paths under ``models/encoder/``.
+ARM_A1_LABEL = "A1_single"
+ARM_A2_LABEL = "A2_volume"
+ARM_A3_LABEL = "A3_joint"
+
+#: One sentence per arm saying what it holds fixed and how it may be read. The
+#: DD1 table's numbers -- examples per epoch, labelled positions for the head
+#: this report is about -- are filled in per signal by :func:`_arm_line`.
+ARM_NOTES = {
+    ARM_A1_LABEL: (
+        "this signal's own dataset, one head. **The paired arm**: A3's slice for this signal *is* "
+        "these examples, so A1 vs A3 is scored example for example and McNemar applies."
+    ),
+    ARM_A2_LABEL: (
+        "this signal's own clusters again, recombined roughly 4.5x as many times, one head. "
+        "**Unpaired, by construction**: its test examples are different texts with their own ids, "
+        "so it is read through the pooled cluster interval and the per-fold spread and never "
+        "through McNemar. It is here to bound how much of any A1-to-A3 movement encoder gradient "
+        "steps alone could explain, at unchanged effective n."
+    ),
+    ARM_A3_LABEL: (
+        "the merged tree, every head sharing one encoder. This head's supervision is unchanged "
+        "from A1 -- a dysuria example carries no fever key at all, which is a mask rather than a "
+        "`null` assertion -- so the only mechanism by which this arm can move is representational."
+    ),
+}
+
+#: What no arm isolates (DD1, final paragraph). In the header rather than an
+#: appendix, because it is the sentence that stops the whole report being read
+#: as a clean isolation of cross-symptom exposure.
+WHAT_NO_ARM_ISOLATES = (
+    "**No arm is matched to A3 on both encoder gradient steps and per-head supervision, because "
+    "no such dataset exists**: holding one fixed moves the other. A1 vs A3 varies cross-symptom "
+    "exposure and step count together, and A2 bounds how much of any movement step count alone "
+    "could explain -- but nothing here isolates cross-symptom exposure on its own. A further "
+    "confound is DD6: A1 stops at the epoch that maximises this head's own validation macro-F1, "
+    "A3 at the epoch that maximises the unweighted mean across every head, so where the two "
+    "diverge (see `selected_epochs`) part of any movement is the stopping rule rather than the "
+    "representation."
+)
+
+#: Recorded before the sweep ran, as `arch_training.md` section 9's house rule
+#: requires: a ceiling asserted after a disappointing number is an excuse.
+#: Reproduced verbatim from the implementation plan.
+JOINT_PREDICTIONS = (
+    "**A1 -> A2 (4.5x recombinations, identical clusters): little or nothing, possibly slightly "
+    "negative.** Effective n is unchanged; only surface forms multiply. A large gain here makes "
+    'the interesting question "why did more views of the same ideas help", and the answer is '
+    "more likely optimisation than data.",
+    "**A1 -> A3 on fever: within +/-2-3 points, i.e. probably not detectable.** The fever head "
+    "gets no new supervision, only a differently-shaped encoder, and the paired five-fold "
+    "sensitivity is itself roughly 2-3 points.",
+    "**A1 -> A3 on `nocturia_present` and `urinary_frequency_present`: the one place a large "
+    "effect is plausible, in either direction.** They are the two weakest signals, TF-IDF is also "
+    "worst on exactly those two, and the working hypothesis is that they are near-synonyms. Joint "
+    "training is the first thing that forces one encoder to hold both apart, and mutual "
+    "disambiguation and mutual interference are both live.",
+    "**Holdout: expect a large drop from the recombination numbers.** Every `null` training "
+    "example for a signal pairs an absence of that signal's language with *bland non-clinical* "
+    'filler, so "clinical-sounding symptom language implies not null" is an available shortcut, '
+    "and real submissions are dense with clinical language about other symptoms. **The joint run "
+    "does not fix it** -- each head is masked on the other signals' examples -- which is what "
+    "ticket 6's multi-symptom recombinations are for.",
+)
+
+
+@dataclass(frozen=True)
+class JointArm:
+    """One arm of the comparison: the folds it trained on and what came out.
+
+    Holds a fold list *per signal* even for A3, where every signal's entry is the
+    same merged fold list, so that the header builder can ask each arm the same
+    two questions -- how many examples per epoch, how many labelled positions for
+    this head -- without a special case for the arm whose dataset is shared.
+    """
+
+    label: str
+    dataset: str
+    folds_by_signal: Mapping[str, Sequence]
+    #: signal -> that head's :class:`report.ModelRun`.
+    runs: Mapping[str, object]
+    #: signal -> that head's per-fold results, for the selected-epoch line. A3's
+    #: entries are the shared :class:`train.JointFineTuneFoldResult` objects.
+    results: Mapping[str, Sequence]
+    #: signal -> the shuffled-label control's run, or ``None`` where the sweep
+    #: did not run one (the default here, as in ``compare-models``).
+    control_runs: Mapping[str, object] | None = None
+
+
+def _labelled_positions(folds: Sequence, signal: str) -> int:
+    """How many training positions one head actually receives gradient from.
+
+    The number DD1 turns on. A merged tree's example count is the sum across six
+    signals, but each head is masked everywhere it has no label, so its
+    supervision is unchanged from its own single-signal run -- and an arms table
+    that printed only examples-per-epoch would suggest the opposite.
+    """
+    return sum(1 for example in folds[0].train.examples if example.is_labelled(signal))
+
+
+def _arm_line(arm: JointArm, signal: str) -> str:
+    """One arm as a line of the DD1 table, for the header."""
+    folds = arm.folds_by_signal[signal]
+    return (
+        f"**{arm.label}** (`{arm.dataset}`): {len(folds[0].train)} examples per epoch, "
+        f"**{_labelled_positions(folds, signal)}** labelled positions for `{signal}` -- "
+        f"{ARM_NOTES[arm.label]}"
+    )
+
+
+def _selected_epochs(results: Sequence, signal: str) -> str:
+    """Which epoch each fold stopped at, and where this head disagreed (DD6).
+
+    A single-signal fold result records one history and stops at its own best
+    epoch, so the two always agree and only one list is printed. A joint fold
+    stops at the epoch maximising the unweighted mean across every head, which
+    can differ from this head's own best -- and where it does, part of any
+    movement against A1 is the stopping rule rather than the representation. So
+    both are printed, and only when they differ.
+    """
+    selected = [result.best_epoch for result in results]
+    own = []
+    for result in results:
+        history = result.val_macro_f1_by_epoch
+        if isinstance(history, Mapping):
+            history = history[signal]
+        own.append(max(range(len(history)), key=lambda index: history[index]) if history else None)
+    rendered = ", ".join(str(epoch) for epoch in selected)
+    if own == selected:
+        return rendered
+    return (
+        f"{rendered} (this head's own best epoch would have been "
+        f"{', '.join(str(epoch) for epoch in own)})"
+    )
+
+
+def _as_unpaired(run, *, prefix: str):
+    """One arm's run with every prediction id qualified by the arm's own name.
+
+    A2 is a different dataset -- the same clusters, recombined a different number
+    of times into different texts -- but its examples are numbered from zero
+    exactly as A1's are. The ids therefore *look* comparable and are not, and if
+    a regeneration ever gave the two trees the same number of test examples the
+    two id sets would match exactly: :func:`report.compare_models` would then
+    pair two different texts under one id and report a McNemar test over pairs
+    that do not exist, raising only in the lucky case where the two disagree
+    about a truth.
+
+    Qualifying the ids here makes "A2 pairs with nothing" (DD1) a property of
+    what the report is handed rather than a property of how many examples
+    somebody happened to generate. The report records the pair as skipped, with
+    its reason, exactly as it would for any other unpairable arm.
+    """
+
+    def rekey(prediction):
+        return replace(prediction, example_id=f"{prefix}:{prediction.example_id}")
+
+    return replace(
+        run,
+        folds=tuple(
+            replace(
+                fold,
+                raw=tuple(rekey(prediction) for prediction in fold.raw),
+                ruled=tuple(rekey(prediction) for prediction in fold.ruled),
+            )
+            for fold in run.folds
+        ),
+    )
+
+
+def _dataset_meta(args: argparse.Namespace, folds: Sequence, *, directory: Path, name: str) -> dict:
+    """The dataset block every metadata sidecar carries, for one arm's tree."""
+    return {
+        "dir": str(directory),
+        "name": name,
+        "folds": args.folds,
+        "generator_version": folds[0].train.generator_version,
+        "generator_base_seed": args.seed,
+        "split_salt": folds[0].train.split_salt,
+        "dataset_seeds": [fold.train.stats.get("seed") for fold in folds],
+        "examples_per_fold": {
+            "train": len(folds[0].train),
+            "val": len(folds[0].val),
+            "test": len(folds[0].test),
+        },
+    }
+
+
+def _run_single_signal_arm(
+    args: argparse.Namespace,
+    *,
+    label: str,
+    directory: Path,
+    folds_by_signal: Mapping[str, Sequence],
+    factory,
+    config,
+    encoder_facts: Mapping[str, object],
+    device_facts: Mapping[str, object],
+    holdout,
+    unpaired: bool = False,
+) -> JointArm:
+    """One single-signal arm (A1 or A2): one fine-tune per signal, six in all.
+
+    ``unpaired`` qualifies this arm's prediction ids with its own label, which is
+    what A2 needs and A1 must not have -- see :func:`_as_unpaired`.
+    """
+    arm_name = f"{ARM_B_NAME}__{_model_slug(label)}"
+    runs: dict[str, object] = {}
+    results_by_signal: dict[str, Sequence] = {}
+    control_runs: dict[str, object] | None = {} if args.control else None
+
+    for signal, folds in folds_by_signal.items():
+        print(f"\n=== {label}: {signal} ===", flush=True)
+        artefact_dir = Path(args.models_dir) / signal / arm_name
+        run, results = run_finetune(
+            folds,
+            factory,
+            signal=signal,
+            config=config,
+            weights_dir=None if args.no_weights else artefact_dir / "weights",
+            holdout=holdout,
+            label=label,
+            progress=args.progress,
+        )
+        runs[signal] = _as_unpaired(run, prefix=label) if unpaired else run
+        results_by_signal[signal] = results
+
+        if control_runs is not None:
+            control_run, _ = run_finetune(
+                folds,
+                factory,
+                signal=signal,
+                config=config,
+                weights_dir=None,
+                shuffle_seed=args.shuffle_seed,
+                holdout=None,
+                label=label,
+                progress=args.progress,
+            )
+            control_runs[signal] = control_run
+
+        metadata = build_metadata(
+            signal=signal,
+            arm=arm_name,
+            encoder_facts=encoder_facts,
+            config=config,
+            device=device_facts,
+            dataset=_dataset_meta(args, folds, directory=directory, name=signal),
+            ruleset=str(args.ruleset),
+            ruleset_hash=hash_ruleset_file(args.ruleset),
+            results=results,
+            control=None,
+        )
+        for path in write_artefacts(
+            artefact_dir, signal=signal, arm=arm_name, metadata=metadata, results=results
+        ):
+            print(f"wrote {path}")
+
+    return JointArm(
+        label=label,
+        dataset=str(directory),
+        folds_by_signal=folds_by_signal,
+        runs=runs,
+        results=results_by_signal,
+        control_runs=control_runs,
+    )
+
+
+def _run_joint_arm(
+    args: argparse.Namespace,
+    *,
+    label: str,
+    directory: Path,
+    dataset_name: str,
+    folds: Sequence,
+    signals: Sequence[str],
+    factory,
+    config,
+    encoder_facts: Mapping[str, object],
+    device_facts: Mapping[str, object],
+    holdout,
+) -> JointArm:
+    """The joint arm (A3): one fine-tune, every head sharing one encoder."""
+    print(f"\n=== {label}: {dataset_name}, {len(signals)} heads ===", flush=True)
+    arm_name = f"{ARM_B_NAME}__{_model_slug(label)}"
+    artefact_dir = Path(args.models_dir) / f"joint{len(signals)}" / arm_name
+
+    runs, results = run_finetune_joint(
+        folds,
+        factory,
+        signals=signals,
+        config=config,
+        weights_dir=None if args.no_weights else artefact_dir / "weights",
+        holdout=holdout,
+        label=label,
+        progress=args.progress,
+    )
+
+    control_runs = None
+    control_meta = None
+    if args.control:
+        control_runs, _ = run_finetune_joint(
+            folds,
+            factory,
+            signals=signals,
+            config=config,
+            weights_dir=None,
+            shuffle_seed=args.shuffle_seed,
+            holdout=None,
+            label=label,
+            progress=args.progress,
+        )
+        control_meta = {
+            "shuffle_seed": args.shuffle_seed,
+            "permuted": "training labels only; validation and test left unpermuted",
+            "run_name": next(iter(control_runs.values())).name,
+        }
+
+    metadata = build_joint_metadata(
+        signals=signals,
+        arm=arm_name,
+        encoder_facts=encoder_facts,
+        config=config,
+        device=device_facts,
+        dataset=_dataset_meta(args, folds, directory=directory, name=dataset_name),
+        ruleset=str(args.ruleset),
+        ruleset_hash=hash_ruleset_file(args.ruleset),
+        results=results,
+        control=control_meta,
+    )
+    for path in write_joint_artefacts(
+        artefact_dir, arm=arm_name, metadata=metadata, results=results
+    ):
+        print(f"wrote {path}")
+
+    return JointArm(
+        label=label,
+        dataset=dataset_name,
+        folds_by_signal={signal: folds for signal in signals},
+        runs=runs,
+        results={signal: results for signal in signals},
+        control_runs=control_runs,
+    )
+
+
+def run_joint_compare(args: argparse.Namespace) -> int:
+    """The three-armed comparison, across every signal, in one report per signal.
+
+    Three fold trees, not one, which is the structural difference from
+    ``compare-models``: each arm is fine-tuned against its *own* dataset, and the
+    arms are then restricted to one signal's slice and put in that signal's
+    report together (DD5).
+
+    **A1 is re-run rather than read off disk.** The report holds no per-example
+    predictions, so the paired McNemar between A1 and A3 can only be computed
+    inside the invocation that produced both. A1 is deterministic from the pinned
+    seeds and costs an hour, and re-running it buys a holdout number under the
+    same code as A3's.
+
+    Nothing is written until every arm has finished, because the report needs all
+    three. The per-fold artefacts *are* written as each arm completes, so a
+    failure in the last arm loses the report rather than the models.
+    """
+    signals = tuple(args.signals)
+    if len(signals) < 2:
+        raise TrainError(
+            f"a joint comparison needs at least two signals, got {list(signals)}. With one there "
+            "is no cross-symptom exposure to measure and the A3 arm is a single-signal run"
+        )
+    if not args.no_volume_arm and Path(args.volume_dir) == Path(args.data_dir):
+        raise TrainError(
+            f"--volume-dir and --data-dir are the same tree ({args.data_dir}). A2 is meant to be "
+            "the same clusters recombined several times over, so pointing it at A1's tree runs "
+            "the same arm twice and reports the difference between two seeds as a volume effect. "
+            "Pass --no-volume-arm to drop A2 instead"
+        )
+    joint_dataset = args.joint_dataset or f"joint{len(signals)}"
+
+    # Every tree, and the holdout, before a single weight is downloaded: a bad
+    # path or a labels file that no longer matches the ruleset must cost a
+    # second rather than six hours of GPU followed by a traceback.
+    baseline_folds = {
+        signal: load_folds(args.data_dir, signal, folds=args.folds) for signal in signals
+    }
+    volume_folds = (
+        {}
+        if args.no_volume_arm
+        else {signal: load_folds(args.volume_dir, signal, folds=args.folds) for signal in signals}
+    )
+    joint_folds = load_folds(args.joint_dir, joint_dataset, folds=args.folds)
+    missing = [signal for signal in signals if signal not in joint_folds[0].signals]
+    if missing:
+        raise TrainError(
+            f"the merged tree {joint_dataset!r} under {args.joint_dir} declares "
+            f"{list(joint_folds[0].signals)} and does not carry {missing}. Re-run merge-folds over "
+            "the signals this comparison is about, or pass --signals to match the tree"
+        )
+    holdout = _load_holdout(args)
+
+    cuda_required = not args.allow_cpu and args.device != "cpu"
+    device_facts = check_device(args.device, cuda_required=cuda_required)
+    device = device_facts["device"]
+    for line in format_report(device_facts):
+        print(line)
+
+    factory = _encoder_factory(args, device)
+    config = _finetune_config(args)
+
+    reference = factory()
+    _warn_if_unpinned(reference)
+    encoder_facts = reference.to_dict()
+    encoder_header = {
+        "model_revision": reference.revision,
+        "revision_pinned": reference.revision_pinned,
+        "tokeniser_lowercases": reference.facts.lowercases_input,
+        "tokeniser_vocab_size": reference.facts.vocab_size,
+        "tokeniser_discards_casing": reference.facts.discards_casing,
+    }
+    del reference
+
+    arms = [
+        _run_single_signal_arm(
+            args,
+            label=ARM_A1_LABEL,
+            directory=args.data_dir,
+            folds_by_signal=baseline_folds,
+            factory=factory,
+            config=config,
+            encoder_facts=encoder_facts,
+            device_facts=device_facts,
+            holdout=holdout,
+        )
+    ]
+    if volume_folds:
+        arms.append(
+            _run_single_signal_arm(
+                args,
+                label=ARM_A2_LABEL,
+                directory=args.volume_dir,
+                folds_by_signal=volume_folds,
+                factory=factory,
+                config=config,
+                encoder_facts=encoder_facts,
+                device_facts=device_facts,
+                holdout=holdout,
+                unpaired=True,
+            )
+        )
+    arms.append(
+        _run_joint_arm(
+            args,
+            label=ARM_A3_LABEL,
+            directory=args.joint_dir,
+            dataset_name=joint_dataset,
+            folds=joint_folds,
+            signals=signals,
+            factory=factory,
+            config=config,
+            encoder_facts=encoder_facts,
+            device_facts=device_facts,
+            holdout=holdout,
+        )
+    )
+
+    return _emit_joint_reports(
+        args,
+        arms=arms,
+        signals=signals,
+        baseline_folds=baseline_folds,
+        joint_dataset=joint_dataset,
+        device=device,
+        holdout=holdout,
+        encoder_header=encoder_header,
+    )
+
+
+def _emit_joint_reports(
+    args: argparse.Namespace,
+    *,
+    arms: Sequence[JointArm],
+    signals: Sequence[str],
+    baseline_folds: Mapping[str, Sequence],
+    joint_dataset: str,
+    device: str,
+    holdout,
+    encoder_header: Mapping[str, object],
+) -> int:
+    """One report per signal, each holding every arm restricted to that signal.
+
+    The restriction is a filter on which runs go into which report, not a
+    reslicing of anything: A3's predictions for a signal are already only that
+    signal's labelled examples, keyed by the id they had in its own tree, and A1's
+    and A2's are single-signal by construction.
+
+    ``checks`` and the header's dataset fields describe **A1's** tree. It is the
+    arm the paired comparison is against, the arm the report's own test slice
+    belongs to, and pooling three trees' test clusters into one partition
+    statement would make a true sentence about each tree into a false one about
+    all three. The fragment provenance is the union across the arms, because the
+    cluster-tag coverage block is about the libraries behind every number in the
+    report -- and it is filtered to this signal, so a merged tree's other five
+    signals' libraries do not enter it.
+    """
+    boot = BootstrapConfig(resamples=args.resamples, seed=args.bootstrap_seed, alpha=args.alpha)
+    # Every arm's every signal, deduplicated by fragment id inside
+    # `_fragment_provenance`: each report filters this to its own signal, so a
+    # union missing one signal's libraries would leave that signal's coverage
+    # block empty and its warning unprinted -- which is the one place a reader
+    # is told how wide the intervals below should have been.
+    fragments = _fragment_provenance(
+        [fold for arm in arms for folds in arm.folds_by_signal.values() for fold in folds]
+    )
+
+    for signal in signals:
+        runs: list = []
+        if not args.no_baselines:
+            runs.extend(
+                run_all(baseline_folds[signal], signal=signal, shuffle_seed=args.shuffle_seed)
+            )
+        runs.extend(arm.runs[signal] for arm in arms)
+        runs.extend(arm.control_runs[signal] for arm in arms if arm.control_runs is not None)
+
+        per_signal_args = argparse.Namespace(**{**vars(args), "signal": signal})
+        header = _header(
+            per_signal_args,
+            baseline_folds[signal],
+            extra={
+                "report": "three-arm joint comparison (A1 single-signal, A2 volume, A3 joint)",
+                "joint_signals": list(signals),
+                "arms": [_arm_line(arm, signal) for arm in arms],
+                "paired_comparison": (
+                    f"{ARM_A1_LABEL} vs {ARM_A3_LABEL}, paired on this signal's test examples. "
+                    f"{ARM_A2_LABEL} pairs with nothing and its McNemar rows are recorded as "
+                    "skipped rather than omitted"
+                ),
+                "selected_epochs": {
+                    arm.label: _selected_epochs(arm.results[signal], signal) for arm in arms
+                },
+                "volume_arm": (
+                    "dropped (--no-volume-arm), so nothing in this report separates a movement "
+                    "between A1 and A3 from the difference in encoder gradient steps between them"
+                    if args.no_volume_arm
+                    else "included"
+                ),
+                "what_no_arm_isolates": WHAT_NO_ARM_ISOLATES,
+                "predictions": list(JOINT_PREDICTIONS),
+                "arm": ARM_B_NAME,
+                "base_model": args.base_model,
+                "pooling": args.pooling,
+                "max_seq_len": args.max_seq_len,
+                "device": device,
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "lr": args.lr,
+                "warmup_ratio": args.warmup_ratio,
+                "determinism": args.determinism,
+                "train_seed": args.train_seed,
+                "trainable": "all layers unfrozen in every arm",
+                "holdout": _holdout_header(holdout),
+                "validation_guided_decisions": list(VALIDATION_GUIDED_DECISIONS),
+                "negative_control": (
+                    "run per arm" if args.control else "not run (--control is off)"
+                ),
+                "artefacts": str(args.models_dir),
+                **encoder_header,
+            },
+        )
+        report = build_report(
+            runs,
+            header=header,
+            boot=boot,
+            checks={
+                **_checks(baseline_folds[signal]),
+                "arm_datasets": (
+                    "checked at load. Every arm's tree was loaded before any training started, "
+                    "and the merged tree was asserted to declare every head this comparison "
+                    f"trains ({', '.join(signals)}). The checks above describe A1's tree, which "
+                    "is the one this report's test slice belongs to."
+                ),
+            },
+            fragments=fragments,
+        )
+        json_path, markdown_path = write_report(
+            report,
+            args.report_dir,
+            stem=f"{signal}.joint_comparison",
+            markdown=not args.no_markdown,
+            fragment_rows=args.fragment_rows,
+        )
+        print(f"wrote {json_path}")
+        if markdown_path is not None:
+            print(f"wrote {markdown_path}")
+    return 0
+
+
 def _add_report_args(parser: argparse.ArgumentParser) -> None:
     """Arguments shared by every command that writes an evaluation report."""
     parser.add_argument("--signal", default=DEFAULT_SIGNAL)
@@ -1566,6 +2193,86 @@ def build_parser() -> argparse.ArgumentParser:
     )
     compare.add_argument("--progress", action="store_true")
     compare.set_defaults(handler=run_compare_models)
+
+    joint = subparsers.add_parser(
+        "joint-compare",
+        help="the three-armed comparison: single-signal, high-volume single-signal, and joint",
+    )
+    _add_report_args(joint)
+    _add_encoder_args(joint)
+    _add_holdout_args(joint)
+    joint.add_argument(
+        "--signals",
+        nargs="+",
+        default=list(DEFAULT_SIGNALS),
+        help="the signals to compare, one report each. Defaults to the six with fragment "
+        "libraries, which is what merge-folds merges by default",
+    )
+    joint.add_argument(
+        "--volume-dir",
+        type=Path,
+        default=DEFAULT_VOLUME_DIR,
+        help="the A2 arm's fold tree: the same clusters and the same fold assignment, generated "
+        "at roughly 4.5x the recombinations. A separate directory because A1's and A2's files "
+        "would otherwise collide under the fold naming convention",
+    )
+    joint.add_argument(
+        "--no-volume-arm",
+        action="store_true",
+        help="drop A2. It is about 70% of the GPU bill, and it is the only thing separating an "
+        "A1-to-A3 movement from a difference in encoder gradient steps, so dropping it costs the "
+        "comparison its volume control. The report says which was done",
+    )
+    joint.add_argument(
+        "--joint-dir",
+        type=Path,
+        default=DEFAULT_DATA_DIR,
+        help="where the merged tree lives. Defaults to --data-dir, which is where merge-folds "
+        "writes it unless told otherwise",
+    )
+    joint.add_argument(
+        "--joint-dataset",
+        default=None,
+        help="the merged tree's name in the fold filename. Defaults to joint<N> for N signals, "
+        "matching merge-folds' own default",
+    )
+    joint.add_argument("--models-dir", type=Path, default=DEFAULT_MODELS_DIR)
+    joint.add_argument("--device", default="auto")
+    joint.add_argument("--epochs", type=int, default=FineTuneConfig.epochs)
+    joint.add_argument("--batch-size", type=int, default=FineTuneConfig.batch_size)
+    joint.add_argument("--lr", type=float, default=FineTuneConfig.lr)
+    joint.add_argument("--weight-decay", type=float, default=FineTuneConfig.weight_decay)
+    joint.add_argument("--warmup-ratio", type=float, default=FineTuneConfig.warmup_ratio)
+    joint.add_argument("--max-grad-norm", type=float, default=FineTuneConfig.max_grad_norm)
+    joint.add_argument("--eval-batch-size", type=int, default=FineTuneConfig.eval_batch_size)
+    joint.add_argument(
+        "--determinism", choices=DETERMINISM_MODES, default=FineTuneConfig.determinism
+    )
+    joint.add_argument("--train-seed", type=int, default=FineTuneConfig.seed)
+    joint.add_argument("--allow-cpu", action="store_true")
+    joint.add_argument(
+        "--no-weights",
+        action="store_true",
+        help="do not write the fine-tuned encoders. Thirteen runs of five folds at ~440MB is "
+        "~28GB; none of it is committed and all of it is regenerable from the pinned seeds",
+    )
+    joint.add_argument(
+        "--control",
+        action="store_true",
+        help="run the shuffled-label negative control for every arm. Off by default, as in "
+        "compare-models: it would double an already thirteen-run sweep, and it answers a question "
+        "the single-signal runs on these same datasets already answered",
+    )
+    joint.add_argument(
+        "--no-baselines",
+        action="store_true",
+        help="omit the baselines. They are fitted on A1's folds -- the tree this report's test "
+        "slice belongs to -- once per signal",
+    )
+    joint.add_argument(
+        "--progress", action="store_true", help="print per-epoch training loss and validation score"
+    )
+    joint.set_defaults(handler=run_joint_compare)
 
     return parser
 

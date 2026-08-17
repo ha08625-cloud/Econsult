@@ -88,7 +88,14 @@ from .metrics import (
 #: `null` on any report whose runs did not score it -- which is every report
 #: written before the set was readable by any code, and any run made with
 #: `--no-holdout`.
-SCHEMA_VERSION = 5
+#:
+#: 6 added `skipped_comparisons`: the pairs McNemar could not be run on because
+#: the two runs were scored on different examples, each with the reason. Additive
+#: -- `comparisons` still holds exactly what it held -- and empty on every report
+#: whose runs all share one test set, which is every report written before a
+#: three-arm joint comparison put a differently-generated dataset in the same
+#: report as the one it is being compared against.
+SCHEMA_VERSION = 6
 
 #: Sub-classes the hard `null` libraries carry, across every signal rather than
 #: fever alone. Listed so that a sub-class the manifest declares but no test fold
@@ -650,18 +657,59 @@ def _restrict(predictions: Sequence[Prediction], slice_name: str) -> list[Predic
     return [prediction for prediction in predictions if prediction.label_mode == slice_name]
 
 
+def _skipped_dict(
+    left: ModelRun,
+    right: ModelRun,
+    slice_name: str,
+    a: Sequence[Prediction],
+    b: Sequence[Prediction],
+) -> dict:
+    """Why one pair could not be tested, in enough detail to tell bug from fact."""
+    a_ids = {prediction.example_id for prediction in a}
+    b_ids = {prediction.example_id for prediction in b}
+    common = len(a_ids & b_ids)
+    return {
+        "a": left.name,
+        "b": right.name,
+        "slice": slice_name,
+        "n_a": len(a_ids),
+        "n_b": len(b_ids),
+        "n_common": common,
+        "reason": (
+            f"example sets differ: {left.name} has {len(a_ids)}, {right.name} has {len(b_ids)}, "
+            f"{common} in common"
+        ),
+    }
+
+
 def compare_models(
     runs: Sequence[ModelRun], *, slices: Sequence[str] = ("overall", "null_ambiguous")
-) -> list[dict]:
+) -> tuple[list[dict], list[dict]]:
     """Paired McNemar tests between every pair of non-control models.
 
     Run on the **raw** argmax decisions. Comparing two models under two
     separately-tuned margins would confound a difference in the models with a
     difference in their rules, and the rule is the thing that is easiest to
     change afterwards.
+
+    Returns ``(comparisons, skipped)``. A pair whose two sides were scored on
+    **different examples** cannot be paired at all -- there is nothing to pair --
+    and one report can now legitimately hold such a pair: the three-arm joint
+    comparison puts A2, a freshly generated dataset with its own example ids, in
+    the same report as the two arms that share one. Those pairs are recorded in
+    ``skipped`` rather than dropped, because a reader who expected three
+    comparisons and finds two will otherwise read the missing one as "no
+    difference found". A pair skipped for any reason other than a genuine
+    dataset difference is a bug, and the entry is what makes it findable.
+
+    Only that one condition is caught here. Every other :class:`MetricsError`
+    -- duplicate ids, or the two sides disagreeing about an example's truth --
+    is still raised, because both mean something is wrong with the report's
+    inputs rather than with the pairing.
     """
     comparable = [run for run in runs if not run.is_control]
     comparisons: list[dict] = []
+    skipped: list[dict] = []
     for index, left in enumerate(comparable):
         for right in comparable[index + 1 :]:
             for slice_name in slices:
@@ -669,8 +717,13 @@ def compare_models(
                 b = _restrict(right.pooled("raw"), slice_name)
                 if not a or not b:
                     continue
+                if {prediction.example_id for prediction in a} != {
+                    prediction.example_id for prediction in b
+                }:
+                    skipped.append(_skipped_dict(left, right, slice_name, a, b))
+                    continue
                 comparisons.append(_mcnemar_dict(left, right, slice_name, mcnemar(a, b)))
-    return comparisons
+    return comparisons, skipped
 
 
 def _holdout_spread(values: Sequence[float | None]) -> dict:
@@ -1108,6 +1161,7 @@ def build_report(
     coverage = cluster_tag_coverage(
         fragments or (), signal=header.get("signal") if fragments else None
     )
+    comparisons, skipped = compare_models(runs)
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -1121,7 +1175,11 @@ def build_report(
         "bootstrap": boot.to_dict(),
         "checks": dict(checks or {}),
         "models": models,
-        "comparisons": compare_models(runs),
+        "comparisons": comparisons,
+        # Never merged into `comparisons`, and never dropped: "could not be
+        # tested" and "tested and found nothing" are different statements and a
+        # reader must not be able to mistake one for the other.
+        "skipped_comparisons": skipped,
         "model_movement": model_movement(models),
         "expectations": list(EXPECTATIONS),
         "limitations": list(LIMITATIONS),
@@ -1196,17 +1254,42 @@ def _slice_rows(entries: Sequence[Mapping[str, object]], statistic: str) -> list
     ]
 
 
+#: How long a header value may be before it is printed as prose under the table
+#: instead of inside a cell. A markdown table cell does not wrap, and a header
+#: entry that is a paragraph -- what a run's arms hold fixed, what no arm
+#: isolates, what was predicted before looking -- is exactly the entry a reader
+#: most needs to be able to read.
+HEADER_CELL_LIMIT = 120
+
+
+def _header_prose(key: str, value: object) -> list[str]:
+    """One over-long header value, as prose: a paragraph, or a bulleted list."""
+    lines = [f"**{key.replace('_', ' ')}**", ""]
+    if isinstance(value, (list, tuple)):
+        lines.extend(f"* {item}" for item in value)
+    else:
+        lines.append(str(value))
+    lines.append("")
+    return lines
+
+
 def _render_header(report: Mapping[str, object]) -> list[str]:
     header = report["header"]
     lines = ["# Encoder training: evaluation report", ""]
     lines.append(f"*Generated {report['generated_at']}.*")
     lines.append("")
     rows = []
+    prose: list[tuple[str, object]] = []
     for key, value in header.items():
         if isinstance(value, Mapping):
             rendered = ", ".join(f"{name} {count}" for name, count in value.items())
+        elif isinstance(value, (list, tuple)):
+            rendered = ", ".join(str(item) for item in value)
         else:
             rendered = str(value)
+        if len(rendered) > HEADER_CELL_LIMIT:
+            prose.append((key, value))
+            continue
         rows.append([key.replace("_", " "), f"`{rendered}`"])
     boot = report["bootstrap"]
     rows.append(
@@ -1217,6 +1300,8 @@ def _render_header(report: Mapping[str, object]) -> list[str]:
         ]
     )
     lines.extend(_table(["", ""], rows))
+    for key, value in prose:
+        lines.extend(_header_prose(key, value))
     return lines
 
 
@@ -1670,6 +1755,24 @@ def _render_ticket_question(report: Mapping[str, object]) -> list[str]:
         lines.append(f"No pair of non-control models carries a `{DECIDING_SLICE}` slice.")
         lines.append("")
 
+    # Named here as well as under the comparison table, because this is the
+    # section a reader comes to for the answer: a missing row on the deciding
+    # slice is exactly the one most likely to be read as "no difference".
+    unpairable = [
+        entry
+        for entry in (report.get("skipped_comparisons") or [])
+        if entry["slice"] == DECIDING_SLICE
+    ]
+    if unpairable:
+        lines.append(
+            "Not on this table, because they cannot be paired at all -- different examples on the "
+            "two sides, so there is nothing for McNemar to pair: "
+            + "; ".join(f"`{entry['a']}` vs `{entry['b']}`" for entry in unpairable)
+            + ". Read those through the intervals above and the per-fold spread, and see "
+            '"Pairs that could not be tested" below.'
+        )
+        lines.append("")
+
     lines.append("### 3. Where the errors fall")
     lines.append("")
     lines.append(
@@ -1847,12 +1950,52 @@ def _render_fragments(model: Mapping[str, object], *, fragment_rows: int) -> lis
     return lines
 
 
+def _render_skipped(report: Mapping[str, object]) -> list[str]:
+    """The pairs that could not be paired, and why.
+
+    Printed under the comparison table rather than omitted, because the failure
+    mode this exists to prevent is silent: a reader who expected a comparison
+    and does not find one reads its absence as "no difference found". "Not
+    pairable" and "no difference" are opposite statements.
+    """
+    skipped = report.get("skipped_comparisons") or []
+    if not skipped:
+        return []
+    lines = [
+        "### Pairs that could not be tested",
+        "",
+        "McNemar pairs on the example id, so two models scored on **different examples** cannot be",
+        "compared this way at all -- there is nothing to pair. That is a property of the datasets,",
+        "not a result: read those runs through their pooled cluster intervals and their per-fold",
+        "spread, and do not read the absence of a row above as agreement between them.",
+        "",
+    ]
+    lines.extend(
+        _table(
+            ["pair", "slice", "n (a)", "n (b)", "shared", "reason"],
+            [
+                [
+                    f"`{entry['a']}` vs `{entry['b']}`",
+                    entry["slice"],
+                    str(entry["n_a"]),
+                    str(entry["n_b"]),
+                    str(entry["n_common"]),
+                    entry["reason"],
+                ]
+                for entry in skipped
+            ],
+        )
+    )
+    return lines
+
+
 def _render_comparisons(report: Mapping[str, object]) -> list[str]:
     comparisons = report["comparisons"]
     lines = ["## Paired comparisons (McNemar, raw argmax)", ""]
     if not comparisons:
         lines.append("No pair of non-control models to compare.")
         lines.append("")
+        lines.extend(_render_skipped(report))
         return lines
     lines.append(
         "Exact two-sided McNemar over the examples the two models disagree about. Pairing unit is "
@@ -1872,6 +2015,7 @@ def _render_comparisons(report: Mapping[str, object]) -> list[str]:
         for comparison in comparisons
     ]
     lines.extend(_table(["pair", "slice", "n", "a only", "b only", "p"], rows))
+    lines.extend(_render_skipped(report))
     return lines
 
 
