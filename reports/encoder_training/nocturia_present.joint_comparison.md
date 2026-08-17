@@ -1,0 +1,1607 @@
+# Encoder training: evaluation report
+
+*Generated 2026-08-17T11:31:04+00:00.*
+
+|  |  |
+|---|---|
+| signal | `nocturia_present` |
+| folds | `5` |
+| generator version | `2` |
+| generator base seed | `42` |
+| generator seed rule | `base + 100 * fold + {train: 0, val: 1, test: 2}` |
+| split salt | `0` |
+| dataset dir | `data/synthetic/generated/folds` |
+| ruleset | `data/uti1.json` |
+| ruleset hash | `325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f` |
+| examples per fold | `train 10000, val 2000, test 2000` |
+| shuffle seed | `7` |
+| report | `three-arm joint comparison (A1 single-signal, A2 volume, A3 joint)` |
+| joint signals | `dysuria_present, fever_present, flank_pain_present, haematuria_present, nocturia_present, urinary_frequency_present` |
+| volume arm | `included` |
+| arm | `arm_b_finetune` |
+| base model | `roberta-base` |
+| pooling | `mean` |
+| max seq len | `256` |
+| device | `cuda` |
+| epochs | `3` |
+| batch size | `32` |
+| lr | `2e-05` |
+| warmup ratio | `0.1` |
+| determinism | `strict` |
+| train seed | `1234` |
+| trainable | `all layers unfrozen in every arm` |
+| holdout | `data/realistic/uti1_holdout.labels.tsv -- 67 real submissions, scored after test, selects nothing` |
+| negative control | `not run (--control is off)` |
+| artefacts | `models/encoder` |
+| model revision | `e2da8e2f811d1448a5b465c236feacd80ffbac7b` |
+| revision pinned | `True` |
+| tokeniser lowercases | `False` |
+| tokeniser vocab size | `50265` |
+| tokeniser discards casing | `False` |
+| cluster tag coverage | `0 of 7 libraries carry cluster markers; 351 of 351 fragments are in libraries with none` |
+| bootstrap | `2000 resamples over clusters, alpha=0.05, seed=0` |
+
+**arms**
+
+* **A1_single** (`data/synthetic/generated/folds`): 10000 examples per epoch, **10000** labelled positions for `nocturia_present` -- this signal's own dataset, one head. **The paired arm**: A3's slice for this signal *is* these examples, so A1 vs A3 is scored example for example and McNemar applies.
+* **A2_volume** (`data/synthetic/generated/folds-volume`): 44680 examples per epoch, **44680** labelled positions for `nocturia_present` -- this signal's own clusters again, recombined roughly 4.5x as many times, one head. **Unpaired, by construction**: its test examples are different texts with their own ids, so it is read through the pooled cluster interval and the per-fold spread and never through McNemar. It is here to bound how much of any A1-to-A3 movement encoder gradient steps alone could explain, at unchanged effective n.
+* **A3_joint** (`joint6`): 44680 examples per epoch, **10000** labelled positions for `nocturia_present` -- the merged tree, every head sharing one encoder. This head's supervision is unchanged from A1 -- a dysuria example carries no fever key at all, which is a mask rather than a `null` assertion -- so the only mechanism by which this arm can move is representational.
+
+**paired comparison**
+
+A1_single vs A3_joint, paired on this signal's test examples. A2_volume pairs with nothing and its McNemar rows are recorded as skipped rather than omitted
+
+**selected epochs**
+
+{'A1_single': "1, 1, 1, 3, 1 (this head's own best epoch would have been 0, 0, 0, 2, 0)", 'A2_volume': "2, 3, 2, 1, 3 (this head's own best epoch would have been 1, 2, 1, 0, 2)", 'A3_joint': "3, 3, 2, 3, 1 (this head's own best epoch would have been 0, 1, 0, 0, 0)"}
+
+**what no arm isolates**
+
+**No arm is matched to A3 on both encoder gradient steps and per-head supervision, because no such dataset exists**: holding one fixed moves the other. A1 vs A3 varies cross-symptom exposure and step count together, and A2 bounds how much of any movement step count alone could explain -- but nothing here isolates cross-symptom exposure on its own. A further confound is DD6: A1 stops at the epoch that maximises this head's own validation macro-F1, A3 at the epoch that maximises the unweighted mean across every head, so where the two diverge (see `selected_epochs`) part of any movement is the stopping rule rather than the representation.
+
+**predictions**
+
+* **A1 -> A2 (4.5x recombinations, identical clusters): little or nothing, possibly slightly negative.** Effective n is unchanged; only surface forms multiply. A large gain here makes the interesting question "why did more views of the same ideas help", and the answer is more likely optimisation than data.
+* **A1 -> A3 on fever: within +/-2-3 points, i.e. probably not detectable.** The fever head gets no new supervision, only a differently-shaped encoder, and the paired five-fold sensitivity is itself roughly 2-3 points.
+* **A1 -> A3 on `nocturia_present` and `urinary_frequency_present`: the one place a large effect is plausible, in either direction.** They are the two weakest signals, TF-IDF is also worst on exactly those two, and the working hypothesis is that they are near-synonyms. Joint training is the first thing that forces one encoder to hold both apart, and mutual disambiguation and mutual interference are both live.
+* **Holdout: expect a large drop from the recombination numbers.** Every `null` training example for a signal pairs an absence of that signal's language with *bland non-clinical* filler, so "clinical-sounding symptom language implies not null" is an available shortcut, and real submissions are dense with clinical language about other symptoms. **The joint run does not fix it** -- each head is masked on the other signals' examples -- which is what ticket 6's multi-symptom recombinations are for.
+
+**validation guided decisions**
+
+* pooling mode (DD3) -- mean vs CLS, compared once
+* learning rate
+* epoch count (the epoch restored is the best-scoring one on the fold's own validation split)
+* decision margin (DD9)
+
+## How to read these numbers
+
+Every table below prints **two** counts: `n`, the number of examples in the slice, and
+`eff n`, the number of distinct fragment **clusters** behind them. The examples are
+recombinations of a few hundred hand-written sentence fragments, and fragments tagged as
+the same idea are grouped into one cluster. `eff n` is the number of independent ideas
+the slice tested; `n` is how many times they were reshuffled.
+
+**`eff n` is the sample size.** Every confidence interval here is a bootstrap that
+resamples clusters, not examples. Resampling examples would measure the noise of the
+recombination process rather than the noise that matters, and would report intervals
+roughly `sqrt(n / eff n)` too narrow -- a factor of ten or more on these slices.
+
+A slice with a large `n` and a small `eff n` is not a large sample. Ten thousand examples
+built from sixty-six fragments is sixty-six ideas seen many times, and no amount of
+further generation changes that. Where `eff n` is small, the interval is wide, and the
+honest reading is that the slice cannot separate two models.
+
+Two confusion matrices are printed for each model: **raw argmax**, and the same scores
+under the fold's selected decision rule. They are separate because "the model is wrong"
+and "the rule is conservative" are different findings. The rule maximises macro-F1
+subject to a `null -> true` rate no worse than argmax's -- `null -> true` being the cell
+that invents a symptom into a patient's pre-filled form, which is a constraint rather
+than something to trade against F1.
+
+## Cluster-tag coverage, and what it does to the intervals below
+
+> **Warning: all 7 libraries behind this run carry no cluster markers at all, so every line in them counts as an independent idea.** Where that is not true -- where several lines are one idea written several ways -- the `eff n` of every slice drawn from those libraries is an **upper bound**, and the confidence intervals below are correspondingly **narrower than the truth**.
+>
+> Untagged: `nocturia_false`, `nocturia_null_attribution`, `nocturia_null_hedged`, `nocturia_null_historical`, `nocturia_null_metaphor`, `nocturia_null_thirdparty`, `nocturia_true`.
+
+Tagging cannot inflate a number -- `[c01]` siblings are forced into one cluster and one
+split, so it only ever *reduces* `eff n`, correctly, by stopping the same idea being
+counted twice. The asymmetry is what makes cross-signal comparison unsafe: a fully
+tagged signal is penalised for being honest and an untagged one is flattered by default,
+so a ranking across signals is partly an artefact of this column.
+
+| library | fragments | tagged | coverage |
+|---|---|---|---|
+| `nocturia_false` | 54 | 0 | 0.0% |
+| `nocturia_null_attribution` | 51 | 0 | 0.0% |
+| `nocturia_null_hedged` | 47 | 0 | 0.0% |
+| `nocturia_null_historical` | 46 | 0 | 0.0% |
+| `nocturia_null_metaphor` | 52 | 0 | 0.0% |
+| `nocturia_null_thirdparty` | 47 | 0 | 0.0% |
+| `nocturia_true` | 54 | 0 | 0.0% |
+
+## Headline: fold-aggregated
+
+Pooled over every fold, so each fragment cluster is a test cluster exactly once and the
+aggregate test set is the whole library. Intervals are the cluster bootstrap; the across-fold
+spread beside them is a stability check with four degrees of freedom, not a CI.
+
+**Read the `decisive` column, not `overall`.** Structural nulls -- filler recombined with no
+decisive fragment at all -- carry the single idea "no signal language anywhere", so they share
+one resampling unit. That is the correct treatment and it makes the overall interval nearly
+unreadable: one unit holding a third of the examples lands in a resample zero to three times,
+swinging overall accuracy by twenty points on nothing. `decisive` drops them and is the slice
+with a real sample behind it.
+
+| model | kind | decisive n | eff n | decisive accuracy [95% CI] | decisive macro-F1 [95% CI] | overall acc | per-fold overall mean +/- sd |
+|---|---|---|---|---|---|---|---|
+| `majority_class` | baseline | 7022 | **351** | 43.6% [38.0%, 49.9%] | 20.2% [18.4%, 22.2%] | 60.4% | 60.4% +/- 0.2% |
+| `length_only` | baseline | 7022 | **351** | 43.6% [38.0%, 49.9%] | 20.2% [18.4%, 22.2%] | 60.4% | 60.4% +/- 0.2% |
+| `tfidf_logreg` | baseline | 7022 | **351** | 64.9% [59.5%, 70.4%] | 60.2% [54.3%, 66.2%] | 75.3% | 75.3% +/- 3.4% |
+| `length_only__shuffled` | negative control | 7022 | **351** | 43.6% [38.0%, 49.9%] | 20.2% [18.4%, 22.2%] | 60.4% | 60.4% +/- 0.2% |
+| `tfidf_logreg__shuffled` | negative control | 7022 | **351** | 43.6% [38.0%, 49.8%] | 20.2% [18.4%, 22.2%] | 60.4% | 60.4% +/- 0.2% |
+| `arm_b_finetune@A1_single` | finetune | 7022 | **351** | 83.0% [78.5%, 87.1%] | 81.7% [76.9%, 86.2%] | 87.9% | 87.9% +/- 3.3% |
+| `arm_b_finetune@A2_volume` | finetune | 6953 | **351** | 88.0% [84.2%, 91.4%] | 86.5% [82.2%, 90.3%] | 91.6% | 91.6% +/- 3.1% |
+| `arm_b_finetune@A3_joint` | finetune | 7022 | **351** | 92.3% [89.3%, 95.2%] | 91.4% [87.8%, 94.6%] | 94.4% | 94.4% +/- 3.0% |
+
+### Null sub-class recall, pooled
+
+The table the whole exercise exists for: how often each hard `null` sub-class is correctly
+left as `null`. `eff n` here is the sub-class's entire library, which a single split cannot reach.
+
+**Never read this table on its own.** Every example in these slices is truly `null`, so a model
+that always answers `null` scores 100% across the row -- as `majority_class` below does. High
+null recall is only a finding when the `true` and `false` recalls in the per-class tables are
+high too.
+
+| model | adjacent | attribution | hedged | historical | metaphor | third_party |
+|---|---|---|---|---|---|---|
+| `majority_class` | -- | 100.0% [100.0%, 100.0%] (eff n 51) | 100.0% [100.0%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 46) | 100.0% [100.0%, 100.0%] (eff n 52) | 100.0% [100.0%, 100.0%] (eff n 47) |
+| `length_only` | -- | 100.0% [100.0%, 100.0%] (eff n 51) | 100.0% [100.0%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 46) | 100.0% [100.0%, 100.0%] (eff n 52) | 100.0% [100.0%, 100.0%] (eff n 47) |
+| `tfidf_logreg` | -- | 86.0% [77.0%, 93.3%] (eff n 51) | 97.3% [95.3%, 98.8%] (eff n 47) | 91.5% [85.1%, 96.6%] (eff n 46) | 93.1% [86.8%, 97.7%] (eff n 52) | 87.7% [78.8%, 94.8%] (eff n 47) |
+| `length_only__shuffled` | -- | 100.0% [100.0%, 100.0%] (eff n 51) | 100.0% [100.0%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 46) | 100.0% [100.0%, 100.0%] (eff n 52) | 100.0% [100.0%, 100.0%] (eff n 47) |
+| `tfidf_logreg__shuffled` | -- | 99.8% [99.5%, 100.0%] (eff n 51) | 100.0% [100.0%, 100.0%] (eff n 47) | 100.0% [100.0%, 100.0%] (eff n 46) | 100.0% [100.0%, 100.0%] (eff n 52) | 100.0% [100.0%, 100.0%] (eff n 47) |
+| `arm_b_finetune@A1_single` | -- | 88.2% [79.1%, 95.7%] (eff n 51) | 80.9% [70.1%, 90.6%] (eff n 47) | 92.1% [84.2%, 98.1%] (eff n 46) | 91.6% [84.4%, 97.8%] (eff n 52) | 93.3% [85.2%, 99.4%] (eff n 47) |
+| `arm_b_finetune@A2_volume` | -- | 91.6% [83.1%, 97.7%] (eff n 51) | 88.5% [79.0%, 96.0%] (eff n 47) | 93.4% [86.3%, 98.5%] (eff n 46) | 95.3% [90.9%, 99.0%] (eff n 52) | 96.1% [91.8%, 99.3%] (eff n 47) |
+| `arm_b_finetune@A3_joint` | -- | 87.0% [76.9%, 95.6%] (eff n 51) | 95.6% [90.2%, 99.8%] (eff n 47) | 95.3% [87.8%, 100.0%] (eff n 46) | 94.6% [89.6%, 98.3%] (eff n 52) | 92.9% [85.5%, 98.6%] (eff n 47) |
+
+## The real-text holdout
+
+Scored against `data/realistic/uti1_holdout.labels.tsv` -- 67 free-text submissions
+written to read like real patients, labelled once and used to select nothing. **Every
+other number in this report is a recombination of the same fragment libraries the models
+were trained on.** This section is the only measurement here that speaks to real patient
+text, and it is a validity check rather than a comparison.
+
+> This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it.
+
+> **The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.
+
+> 67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.
+
+*Scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise.*
+
+*The folds are not pooled. Five folds are five models scored on the same 67 submissions, so pooling would count each submission five times; the figures below are the mean and spread across folds, and the spread is a stability check rather than a confidence interval.*
+
+**Read the `decisive` columns.** A `null` cell is one a model scores by answering "no
+information", which the majority-class baseline does perfectly; the decisive cells are
+the ones where the patient said something the model has to read. Where a signal has no
+`false` examples at all, its decisive figure is very nearly recall on `true` and nothing
+here tests whether an explicit denial is read correctly.
+
+Not scored, because no head exists for them: `dysuria_present`, `urinary_frequency_present`, `fever_present`, `flank_pain_present`, `haematuria_present`, `recent_uti_present`.
+
+### `arm_b_finetune@A1_single`
+
+Recombination test slice: **n 7022**, **eff n 351** clusters, accuracy 83.0% [78.5%, 87.1%]. Holdout: **n 67** submissions, one observation each, scored by 5 fold models at margins 0.05, 0.15, 0.85, 0.0, 0.1. The two `n`s are printed together because they are not the same kind of number and the second is far the smaller.
+
+| signal | true/false/null | omitted | decisive n | decisive acc (mean +/- sd) | worst-case half-width | all n | all acc (mean +/- sd) | null recall |
+|---|---|---|---|---|---|---|---|---|
+| `nocturia_present` | 9/0/58 | 0 | 9 | 40.0% +/- 25.6% | +/-32.7% | 67 | 88.7% +/- 3.4% | 96.2% +/- 4.1% |
+
+* `nocturia_present`: no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation.
+
+`null -> true` on real text, per fold: `nocturia_present` 0, 6, 1, 0, 0 of 58. This is the cell that invents a symptom into a patient's pre-filled form, counted here on submissions rather than on recombinations.
+
+### `arm_b_finetune@A2_volume`
+
+Recombination test slice: **n 6953**, **eff n 351** clusters, accuracy 88.0% [84.2%, 91.4%]. Holdout: **n 67** submissions, one observation each, scored by 5 fold models at margins 0.9, 0.35, 0.75, 0.0, 0.75. The two `n`s are printed together because they are not the same kind of number and the second is far the smaller.
+
+| signal | true/false/null | omitted | decisive n | decisive acc (mean +/- sd) | worst-case half-width | all n | all acc (mean +/- sd) | null recall |
+|---|---|---|---|---|---|---|---|---|
+| `nocturia_present` | 9/0/58 | 0 | 9 | 48.9% +/- 25.6% | +/-32.7% | 67 | 89.6% +/- 3.5% | 95.9% +/- 5.0% |
+
+* `nocturia_present`: no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation.
+
+`null -> true` on real text, per fold: `nocturia_present` 0, 6, 0, 1, 0 of 58. This is the cell that invents a symptom into a patient's pre-filled form, counted here on submissions rather than on recombinations.
+
+### `arm_b_finetune@A3_joint`
+
+Recombination test slice: **n 7022**, **eff n 351** clusters, accuracy 92.3% [89.3%, 95.2%]. Holdout: **n 67** submissions, one observation each, scored by 5 fold models at margins {'dysuria_present': 0.55, 'fever_present': 0.0, 'flank_pain_present': 0.0, 'haematuria_present': 0.6, 'nocturia_present': 0.0, 'urinary_frequency_present': 0.0}, {'dysuria_present': 0.65, 'fever_present': 0.9, 'flank_pain_present': 0.0, 'haematuria_present': 0.55, 'nocturia_present': 0.0, 'urinary_frequency_present': 0.0}, {'dysuria_present': 0.9, 'fever_present': 0.9, 'flank_pain_present': 0.75, 'haematuria_present': 0.0, 'nocturia_present': 0.0, 'urinary_frequency_present': 0.0}, {'dysuria_present': 0.9, 'fever_present': 0.9, 'flank_pain_present': 0.75, 'haematuria_present': 0.0, 'nocturia_present': 0.9, 'urinary_frequency_present': 0.9}, {'dysuria_present': 0.8, 'fever_present': 0.0, 'flank_pain_present': 0.3, 'haematuria_present': 0.9, 'nocturia_present': 0.9, 'urinary_frequency_present': 0.9}. The two `n`s are printed together because they are not the same kind of number and the second is far the smaller.
+
+| signal | true/false/null | omitted | decisive n | decisive acc (mean +/- sd) | worst-case half-width | all n | all acc (mean +/- sd) | null recall |
+|---|---|---|---|---|---|---|---|---|
+| `dysuria_present` | 56/0/11 | 0 | 56 | 83.9% +/- 2.2% | +/-13.1% | 67 | 73.4% +/- 2.2% | 20.0% +/- 4.1% |
+| `fever_present` | 9/9/49 | 0 | 18 | 88.9% +/- 3.9% | +/-23.1% | 67 | 31.3% +/- 7.8% | 10.2% +/- 9.5% |
+| `flank_pain_present` | 7/7/53 | 0 | 14 | 92.9% +/- 5.1% | +/-26.2% | 67 | 23.0% +/- 1.3% | 4.5% +/- 1.0% |
+| `haematuria_present` | 9/2/56 | 0 | 11 | 100.0% +/- 0.0% | +/-29.5% | 67 | 21.2% +/- 2.5% | 5.7% +/- 2.9% |
+| `nocturia_present` | 9/0/58 | 0 | 9 | 75.6% +/- 18.3% | +/-32.7% | 67 | 33.1% +/- 21.7% | 26.6% +/- 27.9% |
+| `urinary_frequency_present` | 26/0/41 | 0 | 26 | 79.2% +/- 3.4% | +/-19.2% | 67 | 52.2% +/- 10.3% | 35.1% +/- 18.7% |
+
+* `dysuria_present`: no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation.
+* `nocturia_present`: no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation.
+* `urinary_frequency_present`: no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation.
+
+`null -> true` on real text, per fold: `dysuria_present` 7, 8, 8, 7, 7 of 11; `fever_present` 44, 41, 41, 29, 47 of 49; `flank_pain_present` 47, 47, 48, 46, 49 of 53; `haematuria_present` 34, 44, 53, 43, 46 of 56; `nocturia_present` 44, 44, 51, 13, 15 of 58; `urinary_frequency_present` 15, 27, 28, 16, 10 of 41. This is the cell that invents a symptom into a patient's pre-filled form, counted here on submissions rather than on recombinations.
+
+## The ticket's question: model or libraries?
+
+This ticket exists to answer one question -- **is the bottleneck the model or the
+fragment libraries?** -- and three numbers decide it. All three are on this page.
+
+### 1. Accuracy on `null_ambiguous`
+
+The only slice where a transformer can earn its keep. Clear positives, clear negatives
+and `null_structural` are the easy three-quarters of the data; bag-of-words handles them,
+so an overall accuracy is close to uninformative here.
+
+**This table cannot be read on its own, and the first row is why.** Every example in this
+slice is truly `null`, so a model that answers `null` unconditionally scores 100% across
+it -- which is exactly what `majority_class` does, and it has learned nothing. A number
+here is a finding only when the `true` and `false` recalls in the same model's per-class
+table are high at the same time. The same caveat applies to every McNemar row below it.
+
+| model | kind | n | eff n | accuracy [95% CI] |
+|---|---|---|---|---|
+| `majority_class` | baseline | 3062 | **243** | 100.0% [100.0%, 100.0%] |
+| `length_only` | baseline | 3062 | **243** | 100.0% [100.0%, 100.0%] |
+| `tfidf_logreg` | baseline | 3062 | **243** | 91.1% [88.1%, 93.7%] |
+| `arm_b_finetune@A1_single` | finetune | 3062 | **243** | 89.2% [85.5%, 92.6%] |
+| `arm_b_finetune@A2_volume` | finetune | 2959 | **243** | 93.0% [90.0%, 95.6%] |
+| `arm_b_finetune@A3_joint` | finetune | 3062 | **243** | 93.0% [89.9%, 95.7%] |
+
+### 2. The same comparison, paired
+
+Two overlapping intervals do not settle whether one model beats another on the same
+examples. McNemar does, over the examples the two disagree about -- read it alongside the
+intervals above, never instead of them.
+
+| pair | n | a only | b only | p |
+|---|---|---|---|---|
+| `majority_class` vs `length_only` | 3062 | 0 | 0 | 1 |
+| `majority_class` vs `tfidf_logreg` | 3062 | 286 | 0 | 1.61e-86 |
+| `majority_class` vs `arm_b_finetune@A1_single` | 3062 | 339 | 0 | 1.79e-102 |
+| `majority_class` vs `arm_b_finetune@A3_joint` | 3062 | 223 | 0 | 1.48e-67 |
+| `length_only` vs `tfidf_logreg` | 3062 | 286 | 0 | 1.61e-86 |
+| `length_only` vs `arm_b_finetune@A1_single` | 3062 | 339 | 0 | 1.79e-102 |
+| `length_only` vs `arm_b_finetune@A3_joint` | 3062 | 223 | 0 | 1.48e-67 |
+| `tfidf_logreg` vs `arm_b_finetune@A1_single` | 3062 | 251 | 198 | 0.014 |
+| `tfidf_logreg` vs `arm_b_finetune@A3_joint` | 3062 | 152 | 215 | 0.00118 |
+| `arm_b_finetune@A1_single` vs `arm_b_finetune@A3_joint` | 3062 | 129 | 245 | 2.05e-09 |
+
+Not on this table, because they cannot be paired at all -- different examples on the two sides, so there is nothing for McNemar to pair: `majority_class` vs `arm_b_finetune@A2_volume`; `length_only` vs `arm_b_finetune@A2_volume`; `tfidf_logreg` vs `arm_b_finetune@A2_volume`; `arm_b_finetune@A1_single` vs `arm_b_finetune@A2_volume`; `arm_b_finetune@A2_volume` vs `arm_b_finetune@A3_joint`. Read those through the intervals above and the per-fold spread, and see "Pairs that could not be tested" below.
+
+### 3. Where the errors fall
+
+The per-fragment table below, as one number per model. Errors spread thinly across many
+fragments say the method is too weak. Errors piled onto a handful say those specific ideas
+are not learnable from the data we have -- and the table names them, which is what makes
+this the most decision-useful thing in the report.
+
+* `majority_class`: 3960 errors across 108 of 351 decisive fragments. Half of them fall on **38** fragments (an even spread would be 54.0); the worst ten carry 15.8% of all errors.
+* `length_only`: 3960 errors across 108 of 351 decisive fragments. Half of them fall on **38** fragments (an even spread would be 54.0); the worst ten carry 15.8% of all errors.
+* `tfidf_logreg`: 2468 errors across 159 of 351 decisive fragments. Half of them fall on **29** fragments (an even spread would be 79.5); the worst ten carry 21.8% of all errors.
+* `arm_b_finetune@A1_single`: 1194 errors across 86 of 351 decisive fragments. Half of them fall on **17** fragments (an even spread would be 43.0); the worst ten carry 33.9% of all errors.
+* `arm_b_finetune@A2_volume`: 833 errors across 81 of 351 decisive fragments. Half of them fall on **14** fragments (an even spread would be 40.5); the worst ten carry 40.0% of all errors.
+* `arm_b_finetune@A3_joint`: 539 errors across 48 of 351 decisive fragments. Half of them fall on **8** fragments (an even spread would be 24.0); the worst ten carry 58.3% of all errors.
+
+### Reading the three together
+
+* Fine-tune clear of the frozen probe **and** clear of TF-IDF on the slice above: the
+  frozen pooled representation was the bottleneck, and the next month is model work.
+* Fine-tune no better than the frozen probe, with errors concentrated on a handful of
+  named fragments: those ideas are not learnable from the data we have, and the next
+  month is library work on the fragments the table names.
+* Both arms poor with errors spread evenly across most fragments: neither reading is
+  supported yet, and the honest answer is that the slice cannot separate them -- check
+  `eff n` before concluding anything at all.
+
+**The conclusion is a sentence a person writes after reading those three, in the ticket's
+own terms.** This report does not write it. The numbers constrain the conclusion; they do
+not determine it.
+
+## What we expected before looking
+
+Recorded before any run, in this module, so the result can be scored against a prediction
+rather than rationalised after the fact. **Whoever writes this run up owes each bullet a
+verdict -- held, or did not hold, and by how much.** A plan that records a prediction and
+never scores it has wasted the prediction.
+
+* Majority-class should land near 60%, which is the generator's `null` share and not a property of the data worth anything.
+* The length-only model is the direct measurable test of the length leak `arch_training.md` section 9 argues for but has never measured. Materially above majority means text length is a usable proxy for the label, which is a library problem rather than a model one.
+* TF-IDF should do well on clear positives, clear negatives and `null_structural`, and badly on the ambiguous sub-classes. Its overall accuracy is therefore close to uninformative. **The number that matters is the `null_ambiguous` slice**, tested with McNemar against the transformer once that exists.
+* Both negative controls must fail. Shuffled train labels must score at chance on the unpermuted test split, and no fragment or cluster may appear on both sides of a split.
+* Arm A -- the frozen probe -- should handle clear positives, clear negatives and `null_structural`, and should do **badly** on the five hard `null` sub-classes. Third-party attribution, tense and metaphor are compositional scope problems, and a single mean-pooled vector blurs the structure that carries them: a linear probe over it has no mechanism for "the fever belongs to the daughter". A bad Arm A result on those slices is the predicted outcome, not a bug.
+* Arm A beating TF-IDF on `null_ambiguous` would be a genuine finding about the encoder; losing to it there would say the pooled representation discards what the ambiguous libraries are made of. Either way the comparison is McNemar's, not two point estimates side by side -- and neither answers the ticket's question on its own, because Arm A cannot separate "the libraries are the bottleneck" from "the method is too weak". That is Arm B's job.
+* Arm B -- the fine-tune -- is the arm that answers the ticket, and **either outcome is a finding**. If unfreezing 110M parameters lifts the five hard `null` sub-classes clear of Arm A, the frozen pooled representation was the bottleneck and the fix is model work. If it does not -- if a fully fine-tuned encoder still cannot tell whose fever it is or when it happened -- then the limit is in the ideas the libraries contain, and the fix is library work on the fragments the per-fragment table names. Nothing here predicts which; the point of building both arms is that the question stops being answerable by argument.
+* Arm B's negative control passes by doing **two** things at once: driving training loss towards zero, because 110M parameters can memorise a permutation, while scoring at chance on the unpermuted test split. Near-zero training loss on its own is not a failure and chance test performance on its own is not a pass; the sidecar records the per-fold loss curve so both halves can be read.
+* Arm B is expected to be *unstable* across folds in a way Arm A is not. Fine-tuning a 110M-parameter model on 10,000 recombinations of a few dozen fragments has far more freedom to fit fold-specific detail, so the across-fold standard deviation should be the wider of the two. That is a property of the arm, not evidence against it -- but it is why the pooled cluster bootstrap, not the fold spread, remains the headline interval.
+* `max_seq_len` is not the interesting constraint. The proof-of-concept run's median example is 36 tokens and its 90th percentile 54, against a limit of 256. Training on 36-token recombinations and eventually serving 300-token real submissions is a distribution shift no sequence length fixes.
+
+## Negative controls and checks
+
+* **fragment disjointness** -- checked, not assumed. Loading each fold asserts that no fragment and no cluster appears in two of its splits, so no hand-written sentence is on both sides of a train/test boundary and no `[c01]` sibling pair is split across one. Asserted at load time on every run, and a violation is a hard error rather than a warning.
+* **test partition** -- checked. Across the 5 folds, 2131 distinct clusters are held out, each in exactly one fold, so pooling the folds counts every idea once. That figure spans every library in the manifest -- filler and other signals' libraries included -- not just this signal's; the per-slice `eff n` columns are the numbers that bound anything.
+* **fold configuration** -- checked. The three splits of each fold agree on generator version, fold count, fold index and salt, and all folds agree on the salt.
+* **arm datasets** -- checked at load. Every arm's tree was loaded before any training started, and the merged tree was asserted to declare every head this comparison trains (dysuria_present, fever_present, flank_pain_present, haematuria_present, nocturia_present, urinary_frequency_present). The checks above describe A1's tree, which is the one this report's test slice belongs to.
+
+Shuffled-label controls, evaluated on the **unpermuted** test split. A large model will
+memorise permuted training labels and drive train loss to zero; that is correct behaviour
+and says nothing. Only the test score is the control.
+
+| control | accuracy [95% CI] | macro-F1 [95% CI] |
+|---|---|---|
+| `length_only__shuffled` | 60.4% [39.1%, 76.8%] | 25.1% [18.7%, 29.0%] |
+| `tfidf_logreg__shuffled` | 60.4% [39.1%, 76.8%] | 25.1% [18.7%, 29.0%] |
+
+## Paired comparisons (McNemar, raw argmax)
+
+Exact two-sided McNemar over the examples the two models disagree about. Pairing unit is the
+example, not the cluster -- see the limitations.
+
+| pair | slice | n | a only | b only | p |
+|---|---|---|---|---|---|
+| `majority_class` vs `length_only` | overall | 10000 | 0 | 0 | 1 |
+| `majority_class` vs `length_only` | null_ambiguous | 3062 | 0 | 0 | 1 |
+| `majority_class` vs `tfidf_logreg` | overall | 10000 | 288 | 1790 | 2.49e-264 |
+| `majority_class` vs `tfidf_logreg` | null_ambiguous | 3062 | 286 | 0 | 1.61e-86 |
+| `majority_class` vs `arm_b_finetune@A1_single` | overall | 10000 | 355 | 3110 | 0 |
+| `majority_class` vs `arm_b_finetune@A1_single` | null_ambiguous | 3062 | 339 | 0 | 1.79e-102 |
+| `majority_class` vs `arm_b_finetune@A3_joint` | overall | 10000 | 248 | 3634 | 0 |
+| `majority_class` vs `arm_b_finetune@A3_joint` | null_ambiguous | 3062 | 223 | 0 | 1.48e-67 |
+| `length_only` vs `tfidf_logreg` | overall | 10000 | 288 | 1790 | 2.49e-264 |
+| `length_only` vs `tfidf_logreg` | null_ambiguous | 3062 | 286 | 0 | 1.61e-86 |
+| `length_only` vs `arm_b_finetune@A1_single` | overall | 10000 | 355 | 3110 | 0 |
+| `length_only` vs `arm_b_finetune@A1_single` | null_ambiguous | 3062 | 339 | 0 | 1.79e-102 |
+| `length_only` vs `arm_b_finetune@A3_joint` | overall | 10000 | 248 | 3634 | 0 |
+| `length_only` vs `arm_b_finetune@A3_joint` | null_ambiguous | 3062 | 223 | 0 | 1.48e-67 |
+| `tfidf_logreg` vs `arm_b_finetune@A1_single` | overall | 10000 | 454 | 1707 | 4.96e-170 |
+| `tfidf_logreg` vs `arm_b_finetune@A1_single` | null_ambiguous | 3062 | 251 | 198 | 0.014 |
+| `tfidf_logreg` vs `arm_b_finetune@A3_joint` | overall | 10000 | 228 | 2112 | 0 |
+| `tfidf_logreg` vs `arm_b_finetune@A3_joint` | null_ambiguous | 3062 | 152 | 215 | 0.00118 |
+| `arm_b_finetune@A1_single` vs `arm_b_finetune@A3_joint` | overall | 10000 | 269 | 900 | 7.03e-80 |
+| `arm_b_finetune@A1_single` vs `arm_b_finetune@A3_joint` | null_ambiguous | 3062 | 129 | 245 | 2.05e-09 |
+
+### Pairs that could not be tested
+
+McNemar pairs on the example id, so two models scored on **different examples** cannot be
+compared this way at all -- there is nothing to pair. That is a property of the datasets,
+not a result: read those runs through their pooled cluster intervals and their per-fold
+spread, and do not read the absence of a row above as agreement between them.
+
+| pair | slice | n (a) | n (b) | shared | reason |
+|---|---|---|---|---|---|
+| `majority_class` vs `arm_b_finetune@A2_volume` | overall | 10000 | 10000 | 0 | example sets differ: majority_class has 10000, arm_b_finetune@A2_volume has 10000, 0 in common |
+| `majority_class` vs `arm_b_finetune@A2_volume` | null_ambiguous | 3062 | 2959 | 0 | example sets differ: majority_class has 3062, arm_b_finetune@A2_volume has 2959, 0 in common |
+| `length_only` vs `arm_b_finetune@A2_volume` | overall | 10000 | 10000 | 0 | example sets differ: length_only has 10000, arm_b_finetune@A2_volume has 10000, 0 in common |
+| `length_only` vs `arm_b_finetune@A2_volume` | null_ambiguous | 3062 | 2959 | 0 | example sets differ: length_only has 3062, arm_b_finetune@A2_volume has 2959, 0 in common |
+| `tfidf_logreg` vs `arm_b_finetune@A2_volume` | overall | 10000 | 10000 | 0 | example sets differ: tfidf_logreg has 10000, arm_b_finetune@A2_volume has 10000, 0 in common |
+| `tfidf_logreg` vs `arm_b_finetune@A2_volume` | null_ambiguous | 3062 | 2959 | 0 | example sets differ: tfidf_logreg has 3062, arm_b_finetune@A2_volume has 2959, 0 in common |
+| `arm_b_finetune@A1_single` vs `arm_b_finetune@A2_volume` | overall | 10000 | 10000 | 0 | example sets differ: arm_b_finetune@A1_single has 10000, arm_b_finetune@A2_volume has 10000, 0 in common |
+| `arm_b_finetune@A1_single` vs `arm_b_finetune@A2_volume` | null_ambiguous | 3062 | 2959 | 0 | example sets differ: arm_b_finetune@A1_single has 3062, arm_b_finetune@A2_volume has 2959, 0 in common |
+| `arm_b_finetune@A2_volume` vs `arm_b_finetune@A3_joint` | overall | 10000 | 10000 | 0 | example sets differ: arm_b_finetune@A2_volume has 10000, arm_b_finetune@A3_joint has 10000, 0 in common |
+| `arm_b_finetune@A2_volume` vs `arm_b_finetune@A3_joint` | null_ambiguous | 2959 | 3062 | 0 | example sets differ: arm_b_finetune@A2_volume has 2959, arm_b_finetune@A3_joint has 3062, 0 in common |
+
+## What moved, and where
+
+The headline is the least useful output of a model comparison. These two tables are the
+useful one: a diffuse lift and a fix to one error family are different findings, and an
+aggregate accuracy cannot tell them apart. `spread` is max minus min across the models --
+a row where every encoder lands together is a row model choice does not touch.
+
+### By library, accuracy after the decision rule
+
+Worst-performing library first. For a single-class library -- `fever_false` holds only
+`false` examples -- accuracy here *is* that class's recall on that library.
+
+| library | n | `majority_class` | `length_only` | `tfidf_logreg` | `arm_b_finetune@A1_single` | `arm_b_finetune@A2_volume` | `arm_b_finetune@A3_joint` | spread |
+|---|---|---|---|---|---|---|---|---|
+| `nocturia_false` | 2479 | 0.0% | 0.0% | 48.2% | 82.4% | 90.9% | 96.9% | 96.9pp |
+| `nocturia_true` | 1481 | 0.0% | 0.0% | 38.5% | 71.1% | 73.0% | 83.3% | 83.3pp |
+| `nocturia_null_hedged` | 592 | 100.0% | 100.0% | 97.3% | 80.9% | 88.5% | 95.6% | 19.1pp |
+| `nocturia_null_attribution` | 655 | 100.0% | 100.0% | 86.0% | 88.2% | 91.6% | 87.0% | 14.0pp |
+| `nocturia_null_thirdparty` | 579 | 100.0% | 100.0% | 87.7% | 93.3% | 96.1% | 92.9% | 12.3pp |
+| `nocturia_null_historical` | 554 | 100.0% | 100.0% | 91.5% | 92.1% | 93.4% | 95.3% | 8.5pp |
+| `nocturia_null_metaphor` | 682 | 100.0% | 100.0% | 93.1% | 91.6% | 95.3% | 94.6% | 8.4pp |
+| `(none)` | 2978 | 100.0% | 100.0% | 100.0% | 99.5% | 99.6% | 99.2% | 0.8pp |
+
+### By fragment, errors
+
+Ordered by the worst model's error count, so the fragments the comparison is about sort
+to the top whichever encoder wins. Counts, not rates: these are the sentences a month of
+library work would be spent on. The JSON holds every fragment.
+
+| fragment | library | truth | `majority_class` | `length_only` | `tfidf_logreg` | `arm_b_finetune@A1_single` | `arm_b_finetune@A2_volume` | `arm_b_finetune@A3_joint` | spread |
+|---|---|---|---|---|---|---|---|---|---|
+| `nocturia_false:75848908` | `nocturia_false` | false | 74 | 74 | 56 | 0 | 1 | 3 | 74 |
+| `nocturia_false:3e89d247` | `nocturia_false` | false | 68 | 68 | 67 | 0 | 0 | 0 | 68 |
+| `nocturia_false:0105f271` | `nocturia_false` | false | 67 | 67 | 56 | 0 | 0 | 0 | 67 |
+| `nocturia_false:3a70bcb2` | `nocturia_false` | false | 63 | 63 | 63 | 0 | 0 | 0 | 63 |
+| `nocturia_false:e6fd6a44` | `nocturia_false` | false | 61 | 61 | 0 | 7 | 0 | 0 | 61 |
+| `nocturia_false:776d32bb` | `nocturia_false` | false | 60 | 60 | 52 | 0 | 0 | 0 | 60 |
+| `nocturia_false:876119ca` | `nocturia_false` | false | 60 | 60 | 7 | 20 | 0 | 0 | 60 |
+| `nocturia_false:79441d6a` | `nocturia_false` | false | 59 | 59 | 10 | 0 | 0 | 0 | 59 |
+| `nocturia_false:76105311` | `nocturia_false` | false | 57 | 57 | 9 | 0 | 0 | 0 | 57 |
+| `nocturia_false:01f605e7` | `nocturia_false` | false | 55 | 55 | 20 | 0 | 0 | 0 | 55 |
+| `nocturia_false:3fbd0758` | `nocturia_false` | false | 55 | 55 | 3 | 0 | 0 | 0 | 55 |
+| `nocturia_false:cd9ee762` | `nocturia_false` | false | 55 | 55 | 1 | 0 | 0 | 0 | 55 |
+| `nocturia_false:21180255` | `nocturia_false` | false | 54 | 54 | 54 | 0 | 0 | 0 | 54 |
+| `nocturia_false:31c155d0` | `nocturia_false` | false | 54 | 54 | 3 | 0 | 0 | 0 | 54 |
+| `nocturia_false:a9489bdd` | `nocturia_false` | false | 54 | 54 | 1 | 0 | 0 | 0 | 54 |
+| `nocturia_false:cddf064c` | `nocturia_false` | false | 53 | 53 | 48 | 0 | 0 | 0 | 53 |
+| `nocturia_false:48f35b91` | `nocturia_false` | false | 52 | 52 | 0 | 0 | 0 | 0 | 52 |
+| `nocturia_false:3aab37fe` | `nocturia_false` | false | 51 | 51 | 48 | 51 | 41 | 0 | 51 |
+| `nocturia_false:a9555a97` | `nocturia_false` | false | 51 | 51 | 43 | 0 | 0 | 0 | 51 |
+| `nocturia_false:59e83d34` | `nocturia_false` | false | 50 | 50 | 2 | 0 | 0 | 0 | 50 |
+| `nocturia_true:c3f73311` | `nocturia_true` | true | 50 | 50 | 13 | 1 | 0 | 0 | 50 |
+| `nocturia_false:1bd2f6f8` | `nocturia_false` | false | 49 | 49 | 45 | 49 | 46 | 0 | 49 |
+| `nocturia_false:55832b2b` | `nocturia_false` | false | 49 | 49 | 12 | 0 | 0 | 0 | 49 |
+| `nocturia_false:b11139a0` | `nocturia_false` | false | 49 | 49 | 0 | 0 | 0 | 0 | 49 |
+| `nocturia_false:98d02ead` | `nocturia_false` | false | 48 | 48 | 40 | 32 | 3 | 0 | 48 |
+| `nocturia_true:86e1cd53` | `nocturia_true` | true | 48 | 48 | 47 | 48 | 27 | 48 | 21 |
+| `nocturia_false:bf88ba0d` | `nocturia_false` | false | 47 | 47 | 47 | 28 | 3 | 0 | 47 |
+| `nocturia_false:eff52ced` | `nocturia_false` | false | 47 | 47 | 11 | 18 | 0 | 21 | 47 |
+| `nocturia_false:5e819a32` | `nocturia_false` | false | 46 | 46 | 46 | 0 | 0 | 0 | 46 |
+| `nocturia_false:b1f7e93f` | `nocturia_false` | false | 46 | 46 | 46 | 0 | 27 | 0 | 46 |
+| `nocturia_false:c6a4c61b` | `nocturia_false` | false | 46 | 46 | 0 | 0 | 0 | 0 | 46 |
+| `nocturia_false:99cd439f` | `nocturia_false` | false | 45 | 45 | 45 | 0 | 0 | 0 | 45 |
+| `nocturia_false:dfdc943b` | `nocturia_false` | false | 45 | 45 | 2 | 0 | 0 | 0 | 45 |
+| `nocturia_true:594869e7` | `nocturia_true` | true | 44 | 44 | 27 | 33 | 0 | 0 | 44 |
+| `nocturia_false:1a41970c` | `nocturia_false` | false | 43 | 43 | 1 | 19 | 3 | 0 | 43 |
+| `nocturia_false:1cb7de3b` | `nocturia_false` | false | 43 | 43 | 42 | 40 | 0 | 0 | 43 |
+| `nocturia_false:4a12f37a` | `nocturia_false` | false | 43 | 43 | 42 | 0 | 1 | 0 | 43 |
+| `nocturia_false:f4140180` | `nocturia_false` | false | 43 | 43 | 2 | 0 | 0 | 0 | 43 |
+| `nocturia_false:08a0b22d` | `nocturia_false` | false | 41 | 41 | 0 | 0 | 0 | 0 | 41 |
+| `nocturia_false:2e5a7e5a` | `nocturia_false` | false | 41 | 41 | 4 | 38 | 16 | 0 | 41 |
+
+*177 further fragments erred on at least one model; the JSON holds them all.*
+
+## `majority_class`
+
+Always predicts the most common class in its fold's training split. Expected to score the generator's `null` share, which is a flag setting rather than a property of the data.
+
+Decision-rule margins selected per fold (on each fold's own validation split): 0.0.
+Every fold selected margin 0, so the ruled and raw views below are the same decisions. That is a finding rather than a bug: no margin improved macro-F1 without worsening the `null -> true` rate.
+
+*Confusion matrix, raw argmax*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 0 | 0 | 2479 | 2479 |
+| **truth true** | 0 | 0 | 1481 | 1481 |
+| **truth null** | 0 | 0 | 6040 | 6040 |
+| **total** | 0 | 0 | 10000 | 10000 |
+
+`null -> true`: 0 of 6040 truly-null examples (0.00%).
+
+*Confusion matrix, after the decision rule*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 0 | 0 | 2479 | 2479 |
+| **truth true** | 0 | 0 | 1481 | 1481 |
+| **truth null** | 0 | 0 | 6040 | 6040 |
+| **total** | 0 | 0 | 10000 | 10000 |
+
+`null -> true`: 0 of 6040 truly-null examples (0.00%).
+
+### Per class, after the decision rule
+
+| class | support | predicted | precision | recall | F1 |
+|---|---|---|---|---|---|
+| `false` | 2479 | 0 | -- | 0.0% | 0.0% |
+| `true` | 1481 | 0 | -- | 0.0% | 0.0% |
+| `null` | 6040 | 10000 | 60.4% | 100.0% | 75.3% |
+
+### By label mode
+
+| label mode | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| false | 2479 | **54** | 0.0% [0.0%, 0.0%] |
+| null_ambiguous | 3062 | **243** | 100.0% [100.0%, 100.0%] |
+| null_structural | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+| true | 1481 | **54** | 0.0% [0.0%, 0.0%] |
+
+### By null sub-class
+
+| sub-class | n | eff n | null recall [95% CI] |
+|---|---|---|---|
+| attribution | 655 | **51** | 100.0% [100.0%, 100.0%] |
+| hedged | 592 | **47** | 100.0% [100.0%, 100.0%] |
+| historical | 554 | **46** | 100.0% [100.0%, 100.0%] |
+| metaphor | 682 | **52** | 100.0% [100.0%, 100.0%] |
+| third_party | 579 | **47** | 100.0% [100.0%, 100.0%] |
+
+### By fragment library
+
+| library | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| nocturia_false | 2479 | **54** | 0.0% [0.0%, 0.0%] |
+| nocturia_null_attribution | 655 | **51** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_hedged | 592 | **47** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_historical | 554 | **46** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_metaphor | 682 | **52** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_thirdparty | 579 | **47** | 100.0% [100.0%, 100.0%] |
+| nocturia_true | 1481 | **54** | 0.0% [0.0%, 0.0%] |
+| (none) | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+
+### Per-fragment errors (worst first)
+
+Whether errors are spread thinly across many fragments or piled onto a few is the difference
+between "the method is too weak" (model work) and "these specific ideas are not learnable from
+the data we have" (library work, and these are the fragments to write more of). No intervals:
+a fragment is one cluster, so an interval over its own examples measures nothing.
+
+108 of 351 decisive fragments were got wrong at least once.
+
+`majority_class`: 3960 errors across 108 of 351 decisive fragments. Half of them fall on **38** fragments (an even spread would be 54.0); the worst ten carry 15.8% of all errors.
+
+| fragment | library | sub-class | truth | correct | accuracy | predicted as |
+|---|---|---|---|---|---|---|
+| `nocturia_false:75848908` | `nocturia_false` | -- | false | 0/74 | 0.0% | null 74 |
+| `nocturia_false:3e89d247` | `nocturia_false` | -- | false | 0/68 | 0.0% | null 68 |
+| `nocturia_false:0105f271` | `nocturia_false` | -- | false | 0/67 | 0.0% | null 67 |
+| `nocturia_false:3a70bcb2` | `nocturia_false` | -- | false | 0/63 | 0.0% | null 63 |
+| `nocturia_false:e6fd6a44` | `nocturia_false` | -- | false | 0/61 | 0.0% | null 61 |
+| `nocturia_false:776d32bb` | `nocturia_false` | -- | false | 0/60 | 0.0% | null 60 |
+| `nocturia_false:876119ca` | `nocturia_false` | -- | false | 0/60 | 0.0% | null 60 |
+| `nocturia_false:79441d6a` | `nocturia_false` | -- | false | 0/59 | 0.0% | null 59 |
+| `nocturia_false:76105311` | `nocturia_false` | -- | false | 0/57 | 0.0% | null 57 |
+| `nocturia_false:01f605e7` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:3fbd0758` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:cd9ee762` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:21180255` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:31c155d0` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:a9489bdd` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:cddf064c` | `nocturia_false` | -- | false | 0/53 | 0.0% | null 53 |
+| `nocturia_false:48f35b91` | `nocturia_false` | -- | false | 0/52 | 0.0% | null 52 |
+| `nocturia_false:3aab37fe` | `nocturia_false` | -- | false | 0/51 | 0.0% | null 51 |
+| `nocturia_false:a9555a97` | `nocturia_false` | -- | false | 0/51 | 0.0% | null 51 |
+| `nocturia_false:59e83d34` | `nocturia_false` | -- | false | 0/50 | 0.0% | null 50 |
+| `nocturia_true:c3f73311` | `nocturia_true` | -- | true | 0/50 | 0.0% | null 50 |
+| `nocturia_false:1bd2f6f8` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:55832b2b` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:b11139a0` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:98d02ead` | `nocturia_false` | -- | false | 0/48 | 0.0% | null 48 |
+| `nocturia_true:86e1cd53` | `nocturia_true` | -- | true | 0/48 | 0.0% | null 48 |
+| `nocturia_false:bf88ba0d` | `nocturia_false` | -- | false | 0/47 | 0.0% | null 47 |
+| `nocturia_false:eff52ced` | `nocturia_false` | -- | false | 0/47 | 0.0% | null 47 |
+| `nocturia_false:5e819a32` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:b1f7e93f` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:c6a4c61b` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:99cd439f` | `nocturia_false` | -- | false | 0/45 | 0.0% | null 45 |
+| `nocturia_false:dfdc943b` | `nocturia_false` | -- | false | 0/45 | 0.0% | null 45 |
+| `nocturia_true:594869e7` | `nocturia_true` | -- | true | 0/44 | 0.0% | null 44 |
+| `nocturia_false:1a41970c` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:1cb7de3b` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:4a12f37a` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:f4140180` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:08a0b22d` | `nocturia_false` | -- | false | 0/41 | 0.0% | null 41 |
+| `nocturia_false:2e5a7e5a` | `nocturia_false` | -- | false | 0/41 | 0.0% | null 41 |
+
+*68 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+
+## `length_only`
+
+Logistic regression on token count alone. The direct measurable test of the length leak: anything materially above majority means text length is a usable proxy for the label, which is a fragment-library problem rather than a model one.
+
+Decision-rule margins selected per fold (on each fold's own validation split): 0.0.
+Every fold selected margin 0, so the ruled and raw views below are the same decisions. That is a finding rather than a bug: no margin improved macro-F1 without worsening the `null -> true` rate.
+
+*Confusion matrix, raw argmax*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 0 | 0 | 2479 | 2479 |
+| **truth true** | 0 | 0 | 1481 | 1481 |
+| **truth null** | 0 | 0 | 6040 | 6040 |
+| **total** | 0 | 0 | 10000 | 10000 |
+
+`null -> true`: 0 of 6040 truly-null examples (0.00%).
+
+*Confusion matrix, after the decision rule*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 0 | 0 | 2479 | 2479 |
+| **truth true** | 0 | 0 | 1481 | 1481 |
+| **truth null** | 0 | 0 | 6040 | 6040 |
+| **total** | 0 | 0 | 10000 | 10000 |
+
+`null -> true`: 0 of 6040 truly-null examples (0.00%).
+
+### Per class, after the decision rule
+
+| class | support | predicted | precision | recall | F1 |
+|---|---|---|---|---|---|
+| `false` | 2479 | 0 | -- | 0.0% | 0.0% |
+| `true` | 1481 | 0 | -- | 0.0% | 0.0% |
+| `null` | 6040 | 10000 | 60.4% | 100.0% | 75.3% |
+
+### By label mode
+
+| label mode | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| false | 2479 | **54** | 0.0% [0.0%, 0.0%] |
+| null_ambiguous | 3062 | **243** | 100.0% [100.0%, 100.0%] |
+| null_structural | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+| true | 1481 | **54** | 0.0% [0.0%, 0.0%] |
+
+### By null sub-class
+
+| sub-class | n | eff n | null recall [95% CI] |
+|---|---|---|---|
+| attribution | 655 | **51** | 100.0% [100.0%, 100.0%] |
+| hedged | 592 | **47** | 100.0% [100.0%, 100.0%] |
+| historical | 554 | **46** | 100.0% [100.0%, 100.0%] |
+| metaphor | 682 | **52** | 100.0% [100.0%, 100.0%] |
+| third_party | 579 | **47** | 100.0% [100.0%, 100.0%] |
+
+### By fragment library
+
+| library | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| nocturia_false | 2479 | **54** | 0.0% [0.0%, 0.0%] |
+| nocturia_null_attribution | 655 | **51** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_hedged | 592 | **47** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_historical | 554 | **46** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_metaphor | 682 | **52** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_thirdparty | 579 | **47** | 100.0% [100.0%, 100.0%] |
+| nocturia_true | 1481 | **54** | 0.0% [0.0%, 0.0%] |
+| (none) | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+
+### Per-fragment errors (worst first)
+
+Whether errors are spread thinly across many fragments or piled onto a few is the difference
+between "the method is too weak" (model work) and "these specific ideas are not learnable from
+the data we have" (library work, and these are the fragments to write more of). No intervals:
+a fragment is one cluster, so an interval over its own examples measures nothing.
+
+108 of 351 decisive fragments were got wrong at least once.
+
+`length_only`: 3960 errors across 108 of 351 decisive fragments. Half of them fall on **38** fragments (an even spread would be 54.0); the worst ten carry 15.8% of all errors.
+
+| fragment | library | sub-class | truth | correct | accuracy | predicted as |
+|---|---|---|---|---|---|---|
+| `nocturia_false:75848908` | `nocturia_false` | -- | false | 0/74 | 0.0% | null 74 |
+| `nocturia_false:3e89d247` | `nocturia_false` | -- | false | 0/68 | 0.0% | null 68 |
+| `nocturia_false:0105f271` | `nocturia_false` | -- | false | 0/67 | 0.0% | null 67 |
+| `nocturia_false:3a70bcb2` | `nocturia_false` | -- | false | 0/63 | 0.0% | null 63 |
+| `nocturia_false:e6fd6a44` | `nocturia_false` | -- | false | 0/61 | 0.0% | null 61 |
+| `nocturia_false:776d32bb` | `nocturia_false` | -- | false | 0/60 | 0.0% | null 60 |
+| `nocturia_false:876119ca` | `nocturia_false` | -- | false | 0/60 | 0.0% | null 60 |
+| `nocturia_false:79441d6a` | `nocturia_false` | -- | false | 0/59 | 0.0% | null 59 |
+| `nocturia_false:76105311` | `nocturia_false` | -- | false | 0/57 | 0.0% | null 57 |
+| `nocturia_false:01f605e7` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:3fbd0758` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:cd9ee762` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:21180255` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:31c155d0` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:a9489bdd` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:cddf064c` | `nocturia_false` | -- | false | 0/53 | 0.0% | null 53 |
+| `nocturia_false:48f35b91` | `nocturia_false` | -- | false | 0/52 | 0.0% | null 52 |
+| `nocturia_false:3aab37fe` | `nocturia_false` | -- | false | 0/51 | 0.0% | null 51 |
+| `nocturia_false:a9555a97` | `nocturia_false` | -- | false | 0/51 | 0.0% | null 51 |
+| `nocturia_false:59e83d34` | `nocturia_false` | -- | false | 0/50 | 0.0% | null 50 |
+| `nocturia_true:c3f73311` | `nocturia_true` | -- | true | 0/50 | 0.0% | null 50 |
+| `nocturia_false:1bd2f6f8` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:55832b2b` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:b11139a0` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:98d02ead` | `nocturia_false` | -- | false | 0/48 | 0.0% | null 48 |
+| `nocturia_true:86e1cd53` | `nocturia_true` | -- | true | 0/48 | 0.0% | null 48 |
+| `nocturia_false:bf88ba0d` | `nocturia_false` | -- | false | 0/47 | 0.0% | null 47 |
+| `nocturia_false:eff52ced` | `nocturia_false` | -- | false | 0/47 | 0.0% | null 47 |
+| `nocturia_false:5e819a32` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:b1f7e93f` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:c6a4c61b` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:99cd439f` | `nocturia_false` | -- | false | 0/45 | 0.0% | null 45 |
+| `nocturia_false:dfdc943b` | `nocturia_false` | -- | false | 0/45 | 0.0% | null 45 |
+| `nocturia_true:594869e7` | `nocturia_true` | -- | true | 0/44 | 0.0% | null 44 |
+| `nocturia_false:1a41970c` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:1cb7de3b` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:4a12f37a` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:f4140180` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:08a0b22d` | `nocturia_false` | -- | false | 0/41 | 0.0% | null 41 |
+| `nocturia_false:2e5a7e5a` | `nocturia_false` | -- | false | 0/41 | 0.0% | null 41 |
+
+*68 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+
+## `tfidf_logreg`
+
+TF-IDF unigrams and bigrams into logistic regression. Tests whether the dataset is keyword-solvable. Its overall accuracy is close to uninformative; the `null_ambiguous` slice is the number that matters.
+
+Decision-rule margins selected per fold (on each fold's own validation split): 0.0, 0.05, 0.2.
+
+*Confusion matrix, raw argmax*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 1183 | 166 | 1130 | 2479 |
+| **truth true** | 212 | 607 | 662 | 1481 |
+| **truth null** | 143 | 145 | 5752 | 6040 |
+| **total** | 1538 | 918 | 7544 | 10000 |
+
+`null -> true`: 145 of 6040 truly-null examples (2.40%).
+
+*Confusion matrix, after the decision rule*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 1195 | 151 | 1133 | 2479 |
+| **truth true** | 228 | 570 | 683 | 1481 |
+| **truth null** | 146 | 128 | 5766 | 6040 |
+| **total** | 1569 | 849 | 7582 | 10000 |
+
+`null -> true`: 128 of 6040 truly-null examples (2.12%).
+
+### Per class, after the decision rule
+
+| class | support | predicted | precision | recall | F1 |
+|---|---|---|---|---|---|
+| `false` | 2479 | 1569 | 76.2% | 48.2% | 59.0% |
+| `true` | 1481 | 849 | 67.1% | 38.5% | 48.9% |
+| `null` | 6040 | 7582 | 76.0% | 95.5% | 84.7% |
+
+### By label mode
+
+| label mode | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| false | 2479 | **54** | 48.2% [36.3%, 59.7%] |
+| null_ambiguous | 3062 | **243** | 91.1% [88.1%, 93.7%] |
+| null_structural | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+| true | 1481 | **54** | 38.5% [29.2%, 48.8%] |
+
+### By null sub-class
+
+| sub-class | n | eff n | null recall [95% CI] |
+|---|---|---|---|
+| attribution | 655 | **51** | 86.0% [77.0%, 93.3%] |
+| hedged | 592 | **47** | 97.3% [95.3%, 98.8%] |
+| historical | 554 | **46** | 91.5% [85.1%, 96.6%] |
+| metaphor | 682 | **52** | 93.1% [86.8%, 97.7%] |
+| third_party | 579 | **47** | 87.7% [78.8%, 94.8%] |
+
+### By fragment library
+
+| library | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| nocturia_false | 2479 | **54** | 48.2% [36.3%, 59.7%] |
+| nocturia_null_attribution | 655 | **51** | 86.0% [77.0%, 93.3%] |
+| nocturia_null_hedged | 592 | **47** | 97.3% [95.3%, 98.8%] |
+| nocturia_null_historical | 554 | **46** | 91.5% [85.1%, 96.6%] |
+| nocturia_null_metaphor | 682 | **52** | 93.1% [86.8%, 97.7%] |
+| nocturia_null_thirdparty | 579 | **47** | 87.7% [78.8%, 94.8%] |
+| nocturia_true | 1481 | **54** | 38.5% [29.2%, 48.8%] |
+| (none) | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+
+### Per-fragment errors (worst first)
+
+Whether errors are spread thinly across many fragments or piled onto a few is the difference
+between "the method is too weak" (model work) and "these specific ideas are not learnable from
+the data we have" (library work, and these are the fragments to write more of). No intervals:
+a fragment is one cluster, so an interval over its own examples measures nothing.
+
+159 of 351 decisive fragments were got wrong at least once.
+
+`tfidf_logreg`: 2468 errors across 159 of 351 decisive fragments. Half of them fall on **29** fragments (an even spread would be 79.5); the worst ten carry 21.8% of all errors.
+
+| fragment | library | sub-class | truth | correct | accuracy | predicted as |
+|---|---|---|---|---|---|---|
+| `nocturia_false:3a70bcb2` | `nocturia_false` | -- | false | 0/63 | 0.0% | true 2, null 61 |
+| `nocturia_false:21180255` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:bf88ba0d` | `nocturia_false` | -- | false | 0/47 | 0.0% | null 47 |
+| `nocturia_false:5e819a32` | `nocturia_false` | -- | false | 0/46 | 0.0% | true 5, null 41 |
+| `nocturia_false:b1f7e93f` | `nocturia_false` | -- | false | 0/46 | 0.0% | true 46 |
+| `nocturia_false:99cd439f` | `nocturia_false` | -- | false | 0/45 | 0.0% | null 45 |
+| `nocturia_true:0740576d` | `nocturia_true` | -- | true | 0/40 | 0.0% | null 40 |
+| `nocturia_false:deb3785c` | `nocturia_false` | -- | false | 0/38 | 0.0% | null 38 |
+| `nocturia_false:0620aada` | `nocturia_false` | -- | false | 0/37 | 0.0% | null 37 |
+| `nocturia_true:4a4f4b70` | `nocturia_true` | -- | true | 0/34 | 0.0% | false 2, null 32 |
+| `nocturia_true:f3e4ee3e` | `nocturia_true` | -- | true | 0/34 | 0.0% | null 34 |
+| `nocturia_false:2ba145eb` | `nocturia_false` | -- | false | 0/32 | 0.0% | null 32 |
+| `nocturia_true:126e0cfb` | `nocturia_true` | -- | true | 0/32 | 0.0% | false 4, null 28 |
+| `nocturia_true:a2f6ab3f` | `nocturia_true` | -- | true | 0/31 | 0.0% | false 15, null 16 |
+| `nocturia_false:5efba823` | `nocturia_false` | -- | false | 0/30 | 0.0% | null 30 |
+| `nocturia_true:f2891c69` | `nocturia_true` | -- | true | 0/30 | 0.0% | false 15, null 15 |
+| `nocturia_false:14ecd3b3` | `nocturia_false` | -- | false | 0/28 | 0.0% | true 28 |
+| `nocturia_true:00a2bd48` | `nocturia_true` | -- | true | 0/28 | 0.0% | false 22, null 6 |
+| `nocturia_true:0c394532` | `nocturia_true` | -- | true | 0/27 | 0.0% | false 1, null 26 |
+| `nocturia_true:4506c1ce` | `nocturia_true` | -- | true | 0/26 | 0.0% | null 26 |
+| `nocturia_true:efa44ced` | `nocturia_true` | -- | true | 0/25 | 0.0% | null 25 |
+| `nocturia_true:1e14667e` | `nocturia_true` | -- | true | 0/19 | 0.0% | false 17, null 2 |
+| `nocturia_true:f81d11be` | `nocturia_true` | -- | true | 0/19 | 0.0% | null 19 |
+| `nocturia_null_attribution:0dfc44e6` | `nocturia_null_attribution` | attribution | null | 0/16 | 0.0% | false 3, true 13 |
+| `nocturia_true:4dc9876b` | `nocturia_true` | -- | true | 0/15 | 0.0% | false 1, null 14 |
+| `nocturia_true:e847f8b0` | `nocturia_true` | -- | true | 0/15 | 0.0% | false 9, null 6 |
+| `nocturia_null_thirdparty:6ecdd54e` | `nocturia_null_thirdparty` | third_party | null | 0/13 | 0.0% | false 2, true 11 |
+| `nocturia_null_historical:9354ddb0` | `nocturia_null_historical` | historical | null | 0/11 | 0.0% | true 11 |
+| `nocturia_false:3e89d247` | `nocturia_false` | -- | false | 1/68 | 1.5% | false 1, null 67 |
+| `nocturia_true:86e1cd53` | `nocturia_true` | -- | true | 1/48 | 2.1% | false 2, true 1, null 45 |
+| `nocturia_false:1cb7de3b` | `nocturia_false` | -- | false | 1/43 | 2.3% | false 1, null 42 |
+| `nocturia_false:4a12f37a` | `nocturia_false` | -- | false | 1/43 | 2.3% | false 1, null 42 |
+| `nocturia_true:23c9421e` | `nocturia_true` | -- | true | 1/33 | 3.0% | false 24, true 1, null 8 |
+| `nocturia_true:39566c91` | `nocturia_true` | -- | true | 1/32 | 3.1% | false 2, true 1, null 29 |
+| `nocturia_false:32f00a7f` | `nocturia_false` | -- | false | 1/31 | 3.2% | false 1, null 30 |
+| `nocturia_false:72f0059f` | `nocturia_false` | -- | false | 1/30 | 3.3% | false 1, true 1, null 28 |
+| `nocturia_true:e853d9c0` | `nocturia_true` | -- | true | 1/28 | 3.6% | true 1, null 27 |
+| `nocturia_true:fa67d22f` | `nocturia_true` | -- | true | 1/25 | 4.0% | true 1, null 24 |
+| `nocturia_true:8cfc0f45` | `nocturia_true` | -- | true | 2/35 | 5.7% | true 2, null 33 |
+| `nocturia_false:3aab37fe` | `nocturia_false` | -- | false | 3/51 | 5.9% | false 3, null 48 |
+
+*119 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+
+## `length_only__shuffled`
+
+Logistic regression on token count alone. The direct measurable test of the length leak: anything materially above majority means text length is a usable proxy for the label, which is a fragment-library problem rather than a model one. **Negative control:** trained on permuted training labels (seed 7) and evaluated on the unpermuted test split, where it must land at chance.
+
+Decision-rule margins selected per fold (on each fold's own validation split): 0.0.
+Every fold selected margin 0, so the ruled and raw views below are the same decisions. That is a finding rather than a bug: no margin improved macro-F1 without worsening the `null -> true` rate.
+
+*Confusion matrix, raw argmax*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 0 | 0 | 2479 | 2479 |
+| **truth true** | 0 | 0 | 1481 | 1481 |
+| **truth null** | 0 | 0 | 6040 | 6040 |
+| **total** | 0 | 0 | 10000 | 10000 |
+
+`null -> true`: 0 of 6040 truly-null examples (0.00%).
+
+*Confusion matrix, after the decision rule*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 0 | 0 | 2479 | 2479 |
+| **truth true** | 0 | 0 | 1481 | 1481 |
+| **truth null** | 0 | 0 | 6040 | 6040 |
+| **total** | 0 | 0 | 10000 | 10000 |
+
+`null -> true`: 0 of 6040 truly-null examples (0.00%).
+
+### Per class, after the decision rule
+
+| class | support | predicted | precision | recall | F1 |
+|---|---|---|---|---|---|
+| `false` | 2479 | 0 | -- | 0.0% | 0.0% |
+| `true` | 1481 | 0 | -- | 0.0% | 0.0% |
+| `null` | 6040 | 10000 | 60.4% | 100.0% | 75.3% |
+
+### By label mode
+
+| label mode | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| false | 2479 | **54** | 0.0% [0.0%, 0.0%] |
+| null_ambiguous | 3062 | **243** | 100.0% [100.0%, 100.0%] |
+| null_structural | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+| true | 1481 | **54** | 0.0% [0.0%, 0.0%] |
+
+### By null sub-class
+
+| sub-class | n | eff n | null recall [95% CI] |
+|---|---|---|---|
+| attribution | 655 | **51** | 100.0% [100.0%, 100.0%] |
+| hedged | 592 | **47** | 100.0% [100.0%, 100.0%] |
+| historical | 554 | **46** | 100.0% [100.0%, 100.0%] |
+| metaphor | 682 | **52** | 100.0% [100.0%, 100.0%] |
+| third_party | 579 | **47** | 100.0% [100.0%, 100.0%] |
+
+### By fragment library
+
+| library | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| nocturia_false | 2479 | **54** | 0.0% [0.0%, 0.0%] |
+| nocturia_null_attribution | 655 | **51** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_hedged | 592 | **47** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_historical | 554 | **46** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_metaphor | 682 | **52** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_thirdparty | 579 | **47** | 100.0% [100.0%, 100.0%] |
+| nocturia_true | 1481 | **54** | 0.0% [0.0%, 0.0%] |
+| (none) | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+
+### Per-fragment errors (worst first)
+
+Whether errors are spread thinly across many fragments or piled onto a few is the difference
+between "the method is too weak" (model work) and "these specific ideas are not learnable from
+the data we have" (library work, and these are the fragments to write more of). No intervals:
+a fragment is one cluster, so an interval over its own examples measures nothing.
+
+108 of 351 decisive fragments were got wrong at least once.
+
+`length_only__shuffled`: 3960 errors across 108 of 351 decisive fragments. Half of them fall on **38** fragments (an even spread would be 54.0); the worst ten carry 15.8% of all errors.
+
+| fragment | library | sub-class | truth | correct | accuracy | predicted as |
+|---|---|---|---|---|---|---|
+| `nocturia_false:75848908` | `nocturia_false` | -- | false | 0/74 | 0.0% | null 74 |
+| `nocturia_false:3e89d247` | `nocturia_false` | -- | false | 0/68 | 0.0% | null 68 |
+| `nocturia_false:0105f271` | `nocturia_false` | -- | false | 0/67 | 0.0% | null 67 |
+| `nocturia_false:3a70bcb2` | `nocturia_false` | -- | false | 0/63 | 0.0% | null 63 |
+| `nocturia_false:e6fd6a44` | `nocturia_false` | -- | false | 0/61 | 0.0% | null 61 |
+| `nocturia_false:776d32bb` | `nocturia_false` | -- | false | 0/60 | 0.0% | null 60 |
+| `nocturia_false:876119ca` | `nocturia_false` | -- | false | 0/60 | 0.0% | null 60 |
+| `nocturia_false:79441d6a` | `nocturia_false` | -- | false | 0/59 | 0.0% | null 59 |
+| `nocturia_false:76105311` | `nocturia_false` | -- | false | 0/57 | 0.0% | null 57 |
+| `nocturia_false:01f605e7` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:3fbd0758` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:cd9ee762` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:21180255` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:31c155d0` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:a9489bdd` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:cddf064c` | `nocturia_false` | -- | false | 0/53 | 0.0% | null 53 |
+| `nocturia_false:48f35b91` | `nocturia_false` | -- | false | 0/52 | 0.0% | null 52 |
+| `nocturia_false:3aab37fe` | `nocturia_false` | -- | false | 0/51 | 0.0% | null 51 |
+| `nocturia_false:a9555a97` | `nocturia_false` | -- | false | 0/51 | 0.0% | null 51 |
+| `nocturia_false:59e83d34` | `nocturia_false` | -- | false | 0/50 | 0.0% | null 50 |
+| `nocturia_true:c3f73311` | `nocturia_true` | -- | true | 0/50 | 0.0% | null 50 |
+| `nocturia_false:1bd2f6f8` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:55832b2b` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:b11139a0` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:98d02ead` | `nocturia_false` | -- | false | 0/48 | 0.0% | null 48 |
+| `nocturia_true:86e1cd53` | `nocturia_true` | -- | true | 0/48 | 0.0% | null 48 |
+| `nocturia_false:bf88ba0d` | `nocturia_false` | -- | false | 0/47 | 0.0% | null 47 |
+| `nocturia_false:eff52ced` | `nocturia_false` | -- | false | 0/47 | 0.0% | null 47 |
+| `nocturia_false:5e819a32` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:b1f7e93f` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:c6a4c61b` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:99cd439f` | `nocturia_false` | -- | false | 0/45 | 0.0% | null 45 |
+| `nocturia_false:dfdc943b` | `nocturia_false` | -- | false | 0/45 | 0.0% | null 45 |
+| `nocturia_true:594869e7` | `nocturia_true` | -- | true | 0/44 | 0.0% | null 44 |
+| `nocturia_false:1a41970c` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:1cb7de3b` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:4a12f37a` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:f4140180` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:08a0b22d` | `nocturia_false` | -- | false | 0/41 | 0.0% | null 41 |
+| `nocturia_false:2e5a7e5a` | `nocturia_false` | -- | false | 0/41 | 0.0% | null 41 |
+
+*68 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+
+## `tfidf_logreg__shuffled`
+
+TF-IDF unigrams and bigrams into logistic regression. Tests whether the dataset is keyword-solvable. Its overall accuracy is close to uninformative; the `null_ambiguous` slice is the number that matters. **Negative control:** trained on permuted training labels (seed 7) and evaluated on the unpermuted test split, where it must land at chance.
+
+Decision-rule margins selected per fold (on each fold's own validation split): 0.0.
+Every fold selected margin 0, so the ruled and raw views below are the same decisions. That is a finding rather than a bug: no margin improved macro-F1 without worsening the `null -> true` rate.
+
+*Confusion matrix, raw argmax*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 0 | 0 | 2479 | 2479 |
+| **truth true** | 0 | 0 | 1481 | 1481 |
+| **truth null** | 1 | 0 | 6039 | 6040 |
+| **total** | 1 | 0 | 9999 | 10000 |
+
+`null -> true`: 0 of 6040 truly-null examples (0.00%).
+
+*Confusion matrix, after the decision rule*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 0 | 0 | 2479 | 2479 |
+| **truth true** | 0 | 0 | 1481 | 1481 |
+| **truth null** | 1 | 0 | 6039 | 6040 |
+| **total** | 1 | 0 | 9999 | 10000 |
+
+`null -> true`: 0 of 6040 truly-null examples (0.00%).
+
+### Per class, after the decision rule
+
+| class | support | predicted | precision | recall | F1 |
+|---|---|---|---|---|---|
+| `false` | 2479 | 1 | 0.0% | 0.0% | 0.0% |
+| `true` | 1481 | 0 | -- | 0.0% | 0.0% |
+| `null` | 6040 | 9999 | 60.4% | 100.0% | 75.3% |
+
+### By label mode
+
+| label mode | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| false | 2479 | **54** | 0.0% [0.0%, 0.0%] |
+| null_ambiguous | 3062 | **243** | 100.0% [99.9%, 100.0%] |
+| null_structural | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+| true | 1481 | **54** | 0.0% [0.0%, 0.0%] |
+
+### By null sub-class
+
+| sub-class | n | eff n | null recall [95% CI] |
+|---|---|---|---|
+| attribution | 655 | **51** | 99.8% [99.5%, 100.0%] |
+| hedged | 592 | **47** | 100.0% [100.0%, 100.0%] |
+| historical | 554 | **46** | 100.0% [100.0%, 100.0%] |
+| metaphor | 682 | **52** | 100.0% [100.0%, 100.0%] |
+| third_party | 579 | **47** | 100.0% [100.0%, 100.0%] |
+
+### By fragment library
+
+| library | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| nocturia_false | 2479 | **54** | 0.0% [0.0%, 0.0%] |
+| nocturia_null_attribution | 655 | **51** | 99.8% [99.5%, 100.0%] |
+| nocturia_null_hedged | 592 | **47** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_historical | 554 | **46** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_metaphor | 682 | **52** | 100.0% [100.0%, 100.0%] |
+| nocturia_null_thirdparty | 579 | **47** | 100.0% [100.0%, 100.0%] |
+| nocturia_true | 1481 | **54** | 0.0% [0.0%, 0.0%] |
+| (none) | 2978 | **1** | 100.0% [100.0%, 100.0%] |
+
+### Per-fragment errors (worst first)
+
+Whether errors are spread thinly across many fragments or piled onto a few is the difference
+between "the method is too weak" (model work) and "these specific ideas are not learnable from
+the data we have" (library work, and these are the fragments to write more of). No intervals:
+a fragment is one cluster, so an interval over its own examples measures nothing.
+
+109 of 351 decisive fragments were got wrong at least once.
+
+`tfidf_logreg__shuffled`: 3961 errors across 109 of 351 decisive fragments. Half of them fall on **38** fragments (an even spread would be 54.5); the worst ten carry 15.8% of all errors.
+
+| fragment | library | sub-class | truth | correct | accuracy | predicted as |
+|---|---|---|---|---|---|---|
+| `nocturia_false:75848908` | `nocturia_false` | -- | false | 0/74 | 0.0% | null 74 |
+| `nocturia_false:3e89d247` | `nocturia_false` | -- | false | 0/68 | 0.0% | null 68 |
+| `nocturia_false:0105f271` | `nocturia_false` | -- | false | 0/67 | 0.0% | null 67 |
+| `nocturia_false:3a70bcb2` | `nocturia_false` | -- | false | 0/63 | 0.0% | null 63 |
+| `nocturia_false:e6fd6a44` | `nocturia_false` | -- | false | 0/61 | 0.0% | null 61 |
+| `nocturia_false:776d32bb` | `nocturia_false` | -- | false | 0/60 | 0.0% | null 60 |
+| `nocturia_false:876119ca` | `nocturia_false` | -- | false | 0/60 | 0.0% | null 60 |
+| `nocturia_false:79441d6a` | `nocturia_false` | -- | false | 0/59 | 0.0% | null 59 |
+| `nocturia_false:76105311` | `nocturia_false` | -- | false | 0/57 | 0.0% | null 57 |
+| `nocturia_false:01f605e7` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:3fbd0758` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:cd9ee762` | `nocturia_false` | -- | false | 0/55 | 0.0% | null 55 |
+| `nocturia_false:21180255` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:31c155d0` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:a9489bdd` | `nocturia_false` | -- | false | 0/54 | 0.0% | null 54 |
+| `nocturia_false:cddf064c` | `nocturia_false` | -- | false | 0/53 | 0.0% | null 53 |
+| `nocturia_false:48f35b91` | `nocturia_false` | -- | false | 0/52 | 0.0% | null 52 |
+| `nocturia_false:3aab37fe` | `nocturia_false` | -- | false | 0/51 | 0.0% | null 51 |
+| `nocturia_false:a9555a97` | `nocturia_false` | -- | false | 0/51 | 0.0% | null 51 |
+| `nocturia_false:59e83d34` | `nocturia_false` | -- | false | 0/50 | 0.0% | null 50 |
+| `nocturia_true:c3f73311` | `nocturia_true` | -- | true | 0/50 | 0.0% | null 50 |
+| `nocturia_false:1bd2f6f8` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:55832b2b` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:b11139a0` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_false:98d02ead` | `nocturia_false` | -- | false | 0/48 | 0.0% | null 48 |
+| `nocturia_true:86e1cd53` | `nocturia_true` | -- | true | 0/48 | 0.0% | null 48 |
+| `nocturia_false:bf88ba0d` | `nocturia_false` | -- | false | 0/47 | 0.0% | null 47 |
+| `nocturia_false:eff52ced` | `nocturia_false` | -- | false | 0/47 | 0.0% | null 47 |
+| `nocturia_false:5e819a32` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:b1f7e93f` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:c6a4c61b` | `nocturia_false` | -- | false | 0/46 | 0.0% | null 46 |
+| `nocturia_false:99cd439f` | `nocturia_false` | -- | false | 0/45 | 0.0% | null 45 |
+| `nocturia_false:dfdc943b` | `nocturia_false` | -- | false | 0/45 | 0.0% | null 45 |
+| `nocturia_true:594869e7` | `nocturia_true` | -- | true | 0/44 | 0.0% | null 44 |
+| `nocturia_false:1a41970c` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:1cb7de3b` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:4a12f37a` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:f4140180` | `nocturia_false` | -- | false | 0/43 | 0.0% | null 43 |
+| `nocturia_false:08a0b22d` | `nocturia_false` | -- | false | 0/41 | 0.0% | null 41 |
+| `nocturia_false:2e5a7e5a` | `nocturia_false` | -- | false | 0/41 | 0.0% | null 41 |
+
+*69 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+
+## `arm_b_finetune@A1_single`
+
+`roberta-base` with **every layer unfrozen**, mean-pooled, with the same `Linear(768, 3)` head -- 110M trainable parameters against Arm A's 2,307. Three epochs at batch 32, learning rate 2e-5, 10% linear warmup, AdamW, fp32. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation: the full model fits in 12GB with room to spare, so anything that reads like a compute compromise would be a mistake rather than a saving. This is the arm that separates "the fragment libraries are the bottleneck" from "the method is too weak": if a fully fine-tuned encoder still cannot read third-party attribution, tense or metaphor, the limit is in the ideas the libraries contain and the fix is library work, not model work.
+
+Decision-rule margins selected per fold (on each fold's own validation split): 0.0, 0.05, 0.1, 0.15, 0.85.
+
+*Confusion matrix, raw argmax*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 2041 | 105 | 333 | 2479 |
+| **truth true** | 9 | 1069 | 403 | 1481 |
+| **truth null** | 99 | 256 | 5685 | 6040 |
+| **total** | 2149 | 1430 | 6421 | 10000 |
+
+`null -> true`: 256 of 6040 truly-null examples (4.24%).
+
+*Confusion matrix, after the decision rule*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 2043 | 101 | 335 | 2479 |
+| **truth true** | 9 | 1053 | 419 | 1481 |
+| **truth null** | 102 | 244 | 5694 | 6040 |
+| **total** | 2154 | 1398 | 6448 | 10000 |
+
+`null -> true`: 244 of 6040 truly-null examples (4.04%).
+
+### Per class, after the decision rule
+
+| class | support | predicted | precision | recall | F1 |
+|---|---|---|---|---|---|
+| `false` | 2479 | 2154 | 94.8% | 82.4% | 88.2% |
+| `true` | 1481 | 1398 | 75.3% | 71.1% | 73.2% |
+| `null` | 6040 | 6448 | 88.3% | 94.3% | 91.2% |
+
+### By label mode
+
+| label mode | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| false | 2479 | **54** | 82.4% [73.2%, 90.9%] |
+| null_ambiguous | 3062 | **243** | 89.2% [85.5%, 92.6%] |
+| null_structural | 2978 | **1** | 99.5% [99.5%, 99.5%] |
+| true | 1481 | **54** | 71.1% [59.4%, 81.9%] |
+
+### By null sub-class
+
+| sub-class | n | eff n | null recall [95% CI] |
+|---|---|---|---|
+| attribution | 655 | **51** | 88.2% [79.1%, 95.7%] |
+| hedged | 592 | **47** | 80.9% [70.1%, 90.6%] |
+| historical | 554 | **46** | 92.1% [84.2%, 98.1%] |
+| metaphor | 682 | **52** | 91.6% [84.4%, 97.8%] |
+| third_party | 579 | **47** | 93.3% [85.2%, 99.4%] |
+
+### By fragment library
+
+| library | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| nocturia_false | 2479 | **54** | 82.4% [73.2%, 90.9%] |
+| nocturia_null_attribution | 655 | **51** | 88.2% [79.1%, 95.7%] |
+| nocturia_null_hedged | 592 | **47** | 80.9% [70.1%, 90.6%] |
+| nocturia_null_historical | 554 | **46** | 92.1% [84.2%, 98.1%] |
+| nocturia_null_metaphor | 682 | **52** | 91.6% [84.4%, 97.8%] |
+| nocturia_null_thirdparty | 579 | **47** | 93.3% [85.2%, 99.4%] |
+| nocturia_true | 1481 | **54** | 71.1% [59.4%, 81.9%] |
+| (none) | 2978 | **1** | 99.5% [99.5%, 99.5%] |
+
+### Per-fragment errors (worst first)
+
+Whether errors are spread thinly across many fragments or piled onto a few is the difference
+between "the method is too weak" (model work) and "these specific ideas are not learnable from
+the data we have" (library work, and these are the fragments to write more of). No intervals:
+a fragment is one cluster, so an interval over its own examples measures nothing.
+
+86 of 351 decisive fragments were got wrong at least once.
+
+`arm_b_finetune@A1_single`: 1194 errors across 86 of 351 decisive fragments. Half of them fall on **17** fragments (an even spread would be 43.0); the worst ten carry 33.9% of all errors.
+
+| fragment | library | sub-class | truth | correct | accuracy | predicted as |
+|---|---|---|---|---|---|---|
+| `nocturia_false:3aab37fe` | `nocturia_false` | -- | false | 0/51 | 0.0% | null 51 |
+| `nocturia_false:1bd2f6f8` | `nocturia_false` | -- | false | 0/49 | 0.0% | null 49 |
+| `nocturia_true:86e1cd53` | `nocturia_true` | -- | true | 0/48 | 0.0% | null 48 |
+| `nocturia_true:0740576d` | `nocturia_true` | -- | true | 0/40 | 0.0% | false 2, null 38 |
+| `nocturia_false:deb3785c` | `nocturia_false` | -- | false | 0/38 | 0.0% | null 38 |
+| `nocturia_true:86863ee3` | `nocturia_true` | -- | true | 0/34 | 0.0% | null 34 |
+| `nocturia_true:f3e4ee3e` | `nocturia_true` | -- | true | 0/34 | 0.0% | null 34 |
+| `nocturia_true:126e0cfb` | `nocturia_true` | -- | true | 0/32 | 0.0% | null 32 |
+| `nocturia_false:5efba823` | `nocturia_false` | -- | false | 0/30 | 0.0% | null 30 |
+| `nocturia_false:bc25d693` | `nocturia_false` | -- | false | 0/29 | 0.0% | true 29 |
+| `nocturia_true:e853d9c0` | `nocturia_true` | -- | true | 0/28 | 0.0% | null 28 |
+| `nocturia_true:4506c1ce` | `nocturia_true` | -- | true | 0/26 | 0.0% | null 26 |
+| `nocturia_null_attribution:7fc5b7ab` | `nocturia_null_attribution` | attribution | null | 0/21 | 0.0% | true 21 |
+| `nocturia_null_thirdparty:49d8e5c9` | `nocturia_null_thirdparty` | third_party | null | 0/18 | 0.0% | true 18 |
+| `nocturia_null_hedged:b85fb3a3` | `nocturia_null_hedged` | hedged | null | 0/16 | 0.0% | true 16 |
+| `nocturia_null_attribution:e51cceef` | `nocturia_null_attribution` | attribution | null | 0/15 | 0.0% | true 15 |
+| `nocturia_null_hedged:01c072bf` | `nocturia_null_hedged` | hedged | null | 0/15 | 0.0% | false 15 |
+| `nocturia_null_thirdparty:776f85a8` | `nocturia_null_thirdparty` | third_party | null | 0/15 | 0.0% | false 15 |
+| `nocturia_true:1e05f648` | `nocturia_true` | -- | true | 0/15 | 0.0% | false 1, null 14 |
+| `nocturia_null_attribution:9017e283` | `nocturia_null_attribution` | attribution | null | 0/13 | 0.0% | true 13 |
+| `nocturia_null_historical:0e6d519c` | `nocturia_null_historical` | historical | null | 0/13 | 0.0% | true 13 |
+| `nocturia_null_metaphor:03b3b8c4` | `nocturia_null_metaphor` | metaphor | null | 0/13 | 0.0% | false 13 |
+| `nocturia_null_attribution:6a302d90` | `nocturia_null_attribution` | attribution | null | 0/12 | 0.0% | false 2, true 10 |
+| `nocturia_null_historical:bdf2082b` | `nocturia_null_historical` | historical | null | 0/12 | 0.0% | true 12 |
+| `nocturia_null_metaphor:c666d342` | `nocturia_null_metaphor` | metaphor | null | 0/12 | 0.0% | true 12 |
+| `nocturia_null_hedged:31bc996d` | `nocturia_null_hedged` | hedged | null | 0/11 | 0.0% | true 11 |
+| `nocturia_null_metaphor:a88b521b` | `nocturia_null_metaphor` | metaphor | null | 0/11 | 0.0% | false 11 |
+| `nocturia_null_hedged:20ad42fe` | `nocturia_null_hedged` | hedged | null | 0/9 | 0.0% | true 9 |
+| `nocturia_null_hedged:841744b2` | `nocturia_null_hedged` | hedged | null | 0/9 | 0.0% | false 4, true 5 |
+| `nocturia_false:14ecd3b3` | `nocturia_false` | -- | false | 1/28 | 3.6% | false 1, true 27 |
+| `nocturia_true:efa44ced` | `nocturia_true` | -- | true | 1/25 | 4.0% | true 1, null 24 |
+| `nocturia_true:31923f27` | `nocturia_true` | -- | true | 1/17 | 5.9% | true 1, null 16 |
+| `nocturia_false:1cb7de3b` | `nocturia_false` | -- | false | 3/43 | 7.0% | false 3, null 40 |
+| `nocturia_false:2e5a7e5a` | `nocturia_false` | -- | false | 3/41 | 7.3% | false 3, true 24, null 14 |
+| `nocturia_null_hedged:8dad6abb` | `nocturia_null_hedged` | hedged | null | 1/11 | 9.1% | false 10, null 1 |
+| `nocturia_null_hedged:58ffb85e` | `nocturia_null_hedged` | hedged | null | 1/8 | 12.5% | true 7, null 1 |
+| `nocturia_true:a2f6ab3f` | `nocturia_true` | -- | true | 5/31 | 16.1% | true 5, null 26 |
+| `nocturia_null_hedged:55035966` | `nocturia_null_hedged` | hedged | null | 3/16 | 18.8% | true 13, null 3 |
+| `nocturia_true:4dc9876b` | `nocturia_true` | -- | true | 3/15 | 20.0% | true 3, null 12 |
+| `nocturia_true:f2891c69` | `nocturia_true` | -- | true | 7/30 | 23.3% | true 7, null 23 |
+
+*46 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+
+## `arm_b_finetune@A2_volume`
+
+`roberta-base` with **every layer unfrozen**, mean-pooled, with the same `Linear(768, 3)` head -- 110M trainable parameters against Arm A's 2,307. Three epochs at batch 32, learning rate 2e-5, 10% linear warmup, AdamW, fp32. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation: the full model fits in 12GB with room to spare, so anything that reads like a compute compromise would be a mistake rather than a saving. This is the arm that separates "the fragment libraries are the bottleneck" from "the method is too weak": if a fully fine-tuned encoder still cannot read third-party attribution, tense or metaphor, the limit is in the ideas the libraries contain and the fix is library work, not model work.
+
+Decision-rule margins selected per fold (on each fold's own validation split): 0.0, 0.35, 0.75, 0.9.
+
+*Confusion matrix, raw argmax*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 2288 | 62 | 176 | 2526 |
+| **truth true** | 29 | 1083 | 356 | 1468 |
+| **truth null** | 40 | 191 | 5775 | 6006 |
+| **total** | 2357 | 1336 | 6307 | 10000 |
+
+`null -> true`: 191 of 6006 truly-null examples (3.18%).
+
+*Confusion matrix, after the decision rule*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 2297 | 53 | 176 | 2526 |
+| **truth true** | 29 | 1072 | 367 | 1468 |
+| **truth null** | 43 | 176 | 5787 | 6006 |
+| **total** | 2369 | 1301 | 6330 | 10000 |
+
+`null -> true`: 176 of 6006 truly-null examples (2.93%).
+
+### Per class, after the decision rule
+
+| class | support | predicted | precision | recall | F1 |
+|---|---|---|---|---|---|
+| `false` | 2526 | 2369 | 97.0% | 90.9% | 93.9% |
+| `true` | 1468 | 1301 | 82.4% | 73.0% | 77.4% |
+| `null` | 6006 | 6330 | 91.4% | 96.4% | 93.8% |
+
+### By label mode
+
+| label mode | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| false | 2526 | **54** | 90.9% [84.5%, 96.5%] |
+| null_ambiguous | 2959 | **243** | 93.0% [90.0%, 95.6%] |
+| null_structural | 3047 | **1** | 99.6% [99.6%, 99.6%] |
+| true | 1468 | **54** | 73.0% [61.6%, 83.8%] |
+
+### By null sub-class
+
+| sub-class | n | eff n | null recall [95% CI] |
+|---|---|---|---|
+| attribution | 630 | **51** | 91.6% [83.1%, 97.7%] |
+| hedged | 598 | **47** | 88.5% [79.0%, 96.0%] |
+| historical | 534 | **46** | 93.4% [86.3%, 98.5%] |
+| metaphor | 602 | **52** | 95.3% [90.9%, 99.0%] |
+| third_party | 595 | **47** | 96.1% [91.8%, 99.3%] |
+
+### By fragment library
+
+| library | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| nocturia_false | 2526 | **54** | 90.9% [84.5%, 96.5%] |
+| nocturia_null_attribution | 630 | **51** | 91.6% [83.1%, 97.7%] |
+| nocturia_null_hedged | 598 | **47** | 88.5% [79.0%, 96.0%] |
+| nocturia_null_historical | 534 | **46** | 93.4% [86.3%, 98.5%] |
+| nocturia_null_metaphor | 602 | **52** | 95.3% [90.9%, 99.0%] |
+| nocturia_null_thirdparty | 595 | **47** | 96.1% [91.8%, 99.3%] |
+| nocturia_true | 1468 | **54** | 73.0% [61.6%, 83.8%] |
+| (none) | 3047 | **1** | 99.6% [99.6%, 99.6%] |
+
+### Per-fragment errors (worst first)
+
+Whether errors are spread thinly across many fragments or piled onto a few is the difference
+between "the method is too weak" (model work) and "these specific ideas are not learnable from
+the data we have" (library work, and these are the fragments to write more of). No intervals:
+a fragment is one cluster, so an interval over its own examples measures nothing.
+
+81 of 351 decisive fragments were got wrong at least once.
+
+`arm_b_finetune@A2_volume`: 833 errors across 81 of 351 decisive fragments. Half of them fall on **14** fragments (an even spread would be 40.5); the worst ten carry 40.0% of all errors.
+
+| fragment | library | sub-class | truth | correct | accuracy | predicted as |
+|---|---|---|---|---|---|---|
+| `nocturia_false:3aab37fe` | `nocturia_false` | -- | false | 0/41 | 0.0% | null 41 |
+| `nocturia_true:126e0cfb` | `nocturia_true` | -- | true | 0/37 | 0.0% | null 37 |
+| `nocturia_false:deb3785c` | `nocturia_false` | -- | false | 0/32 | 0.0% | null 32 |
+| `nocturia_true:0740576d` | `nocturia_true` | -- | true | 0/32 | 0.0% | null 32 |
+| `nocturia_true:86863ee3` | `nocturia_true` | -- | true | 0/31 | 0.0% | null 31 |
+| `nocturia_true:f3e4ee3e` | `nocturia_true` | -- | true | 0/30 | 0.0% | null 30 |
+| `nocturia_true:4506c1ce` | `nocturia_true` | -- | true | 0/29 | 0.0% | null 29 |
+| `nocturia_true:86e1cd53` | `nocturia_true` | -- | true | 0/27 | 0.0% | null 27 |
+| `nocturia_true:e853d9c0` | `nocturia_true` | -- | true | 0/27 | 0.0% | null 27 |
+| `nocturia_true:00a2bd48` | `nocturia_true` | -- | true | 0/26 | 0.0% | false 26 |
+| `nocturia_true:efa44ced` | `nocturia_true` | -- | true | 0/21 | 0.0% | null 21 |
+| `nocturia_null_hedged:20ad42fe` | `nocturia_null_hedged` | hedged | null | 0/19 | 0.0% | true 19 |
+| `nocturia_true:4dc9876b` | `nocturia_true` | -- | true | 0/19 | 0.0% | null 19 |
+| `nocturia_null_attribution:7fc5b7ab` | `nocturia_null_attribution` | attribution | null | 0/17 | 0.0% | true 17 |
+| `nocturia_true:f81d11be` | `nocturia_true` | -- | true | 0/17 | 0.0% | null 17 |
+| `nocturia_null_hedged:ce59b729` | `nocturia_null_hedged` | hedged | null | 0/16 | 0.0% | false 16 |
+| `nocturia_null_historical:0e6d519c` | `nocturia_null_historical` | historical | null | 0/15 | 0.0% | true 15 |
+| `nocturia_null_attribution:0dfc44e6` | `nocturia_null_attribution` | attribution | null | 0/13 | 0.0% | true 13 |
+| `nocturia_null_hedged:6d988886` | `nocturia_null_hedged` | hedged | null | 0/11 | 0.0% | true 11 |
+| `nocturia_null_thirdparty:776f85a8` | `nocturia_null_thirdparty` | third_party | null | 0/9 | 0.0% | false 2, true 7 |
+| `nocturia_null_attribution:b68c3406` | `nocturia_null_attribution` | attribution | null | 0/8 | 0.0% | true 8 |
+| `nocturia_null_metaphor:a88b521b` | `nocturia_null_metaphor` | metaphor | null | 0/7 | 0.0% | false 7 |
+| `nocturia_null_metaphor:c666d342` | `nocturia_null_metaphor` | metaphor | null | 0/7 | 0.0% | true 7 |
+| `nocturia_null_thirdparty:3f34a4a7` | `nocturia_null_thirdparty` | third_party | null | 0/7 | 0.0% | true 7 |
+| `nocturia_true:a2f6ab3f` | `nocturia_true` | -- | true | 2/30 | 6.7% | true 2, null 28 |
+| `nocturia_false:1bd2f6f8` | `nocturia_false` | -- | false | 7/53 | 13.2% | false 7, null 46 |
+| `nocturia_true:2cbd088f` | `nocturia_true` | -- | true | 11/37 | 29.7% | true 11, null 26 |
+| `nocturia_false:5efba823` | `nocturia_false` | -- | false | 10/30 | 33.3% | false 10, null 20 |
+| `nocturia_null_historical:bdf2082b` | `nocturia_null_historical` | historical | null | 3/9 | 33.3% | true 6, null 3 |
+| `nocturia_null_attribution:9017e283` | `nocturia_null_attribution` | attribution | null | 4/10 | 40.0% | true 6, null 4 |
+| `nocturia_false:b1f7e93f` | `nocturia_false` | -- | false | 26/53 | 49.1% | false 26, true 27 |
+| `nocturia_true:31923f27` | `nocturia_true` | -- | true | 11/22 | 50.0% | false 1, true 11, null 10 |
+| `nocturia_null_metaphor:0dc4620e` | `nocturia_null_metaphor` | metaphor | null | 8/16 | 50.0% | false 8, null 8 |
+| `nocturia_null_historical:9c1540ad` | `nocturia_null_historical` | historical | null | 2/4 | 50.0% | true 2, null 2 |
+| `nocturia_true:f2891c69` | `nocturia_true` | -- | true | 17/32 | 53.1% | true 17, null 15 |
+| `nocturia_true:1e05f648` | `nocturia_true` | -- | true | 7/13 | 53.8% | false 1, true 7, null 5 |
+| `nocturia_null_attribution:e9eb77fb` | `nocturia_null_attribution` | attribution | null | 5/9 | 55.6% | true 4, null 5 |
+| `nocturia_false:2e5a7e5a` | `nocturia_false` | -- | false | 22/38 | 57.9% | false 22, true 3, null 13 |
+| `nocturia_null_historical:9354ddb0` | `nocturia_null_historical` | historical | null | 7/12 | 58.3% | true 5, null 7 |
+| `nocturia_null_hedged:31bc996d` | `nocturia_null_hedged` | hedged | null | 6/10 | 60.0% | true 4, null 6 |
+
+*41 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+
+## `arm_b_finetune@A3_joint`
+
+`roberta-base` with **every layer unfrozen**, mean-pooled, with the same `Linear(768, 3)` head -- 110M trainable parameters against Arm A's 2,307. Three epochs at batch 32, learning rate 2e-5, 10% linear warmup, AdamW, fp32. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation: the full model fits in 12GB with room to spare, so anything that reads like a compute compromise would be a mistake rather than a saving. This is the arm that separates "the fragment libraries are the bottleneck" from "the method is too weak": if a fully fine-tuned encoder still cannot read third-party attribution, tense or metaphor, the limit is in the ideas the libraries contain and the fix is library work, not model work. **Joint multi-head training**: 6 heads sharing one encoder (dysuria_present, fever_present, flank_pain_present, haematuria_present, nocturia_present, urinary_frequency_present). Epoch selection uses DD6's unweighted mean of every head's own validation macro-F1, so this signal's stopping point may differ from a single-signal run's own best epoch. Each head's margin is chosen independently on its own validation split -- no cross-head trade.
+
+Decision-rule margins selected per fold (on each fold's own validation split): 0.0, 0.9.
+
+*Confusion matrix, raw argmax*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 2390 | 37 | 52 | 2479 |
+| **truth true** | 34 | 1244 | 203 | 1481 |
+| **truth null** | 87 | 161 | 5792 | 6040 |
+| **total** | 2511 | 1442 | 6047 | 10000 |
+
+`null -> true`: 161 of 6040 truly-null examples (2.67%).
+
+*Confusion matrix, after the decision rule*
+
+|  | pred false | pred true | pred null | total |
+|---|---|---|---|---|
+| **truth false** | 2403 | 23 | 53 | 2479 |
+| **truth true** | 37 | 1233 | 211 | 1481 |
+| **truth null** | 87 | 152 | 5801 | 6040 |
+| **total** | 2527 | 1408 | 6065 | 10000 |
+
+`null -> true`: 152 of 6040 truly-null examples (2.52%).
+
+### Per class, after the decision rule
+
+| class | support | predicted | precision | recall | F1 |
+|---|---|---|---|---|---|
+| `false` | 2479 | 2527 | 95.1% | 96.9% | 96.0% |
+| `true` | 1481 | 1408 | 87.6% | 83.3% | 85.4% |
+| `null` | 6040 | 6065 | 95.6% | 96.0% | 95.8% |
+
+### By label mode
+
+| label mode | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| false | 2479 | **54** | 96.9% [92.6%, 99.8%] |
+| null_ambiguous | 3062 | **243** | 93.0% [89.9%, 95.7%] |
+| null_structural | 2978 | **1** | 99.2% [99.2%, 99.2%] |
+| true | 1481 | **54** | 83.3% [72.1%, 93.3%] |
+
+### By null sub-class
+
+| sub-class | n | eff n | null recall [95% CI] |
+|---|---|---|---|
+| attribution | 655 | **51** | 87.0% [76.9%, 95.6%] |
+| hedged | 592 | **47** | 95.6% [90.2%, 99.8%] |
+| historical | 554 | **46** | 95.3% [87.8%, 100.0%] |
+| metaphor | 682 | **52** | 94.6% [89.6%, 98.3%] |
+| third_party | 579 | **47** | 92.9% [85.5%, 98.6%] |
+
+### By fragment library
+
+| library | n | eff n | accuracy [95% CI] |
+|---|---|---|---|
+| nocturia_false | 2479 | **54** | 96.9% [92.6%, 99.8%] |
+| nocturia_null_attribution | 655 | **51** | 87.0% [76.9%, 95.6%] |
+| nocturia_null_hedged | 592 | **47** | 95.6% [90.2%, 99.8%] |
+| nocturia_null_historical | 554 | **46** | 95.3% [87.8%, 100.0%] |
+| nocturia_null_metaphor | 682 | **52** | 94.6% [89.6%, 98.3%] |
+| nocturia_null_thirdparty | 579 | **47** | 92.9% [85.5%, 98.6%] |
+| nocturia_true | 1481 | **54** | 83.3% [72.1%, 93.3%] |
+| (none) | 2978 | **1** | 99.2% [99.2%, 99.2%] |
+
+### Per-fragment errors (worst first)
+
+Whether errors are spread thinly across many fragments or piled onto a few is the difference
+between "the method is too weak" (model work) and "these specific ideas are not learnable from
+the data we have" (library work, and these are the fragments to write more of). No intervals:
+a fragment is one cluster, so an interval over its own examples measures nothing.
+
+48 of 351 decisive fragments were got wrong at least once.
+
+`arm_b_finetune@A3_joint`: 539 errors across 48 of 351 decisive fragments. Half of them fall on **8** fragments (an even spread would be 24.0); the worst ten carry 58.3% of all errors.
+
+| fragment | library | sub-class | truth | correct | accuracy | predicted as |
+|---|---|---|---|---|---|---|
+| `nocturia_true:86e1cd53` | `nocturia_true` | -- | true | 0/48 | 0.0% | null 48 |
+| `nocturia_true:0740576d` | `nocturia_true` | -- | true | 0/40 | 0.0% | false 34, null 6 |
+| `nocturia_false:deb3785c` | `nocturia_false` | -- | false | 0/38 | 0.0% | null 38 |
+| `nocturia_true:f3e4ee3e` | `nocturia_true` | -- | true | 0/34 | 0.0% | null 34 |
+| `nocturia_true:2cbd088f` | `nocturia_true` | -- | true | 0/33 | 0.0% | null 33 |
+| `nocturia_true:efa44ced` | `nocturia_true` | -- | true | 0/25 | 0.0% | null 25 |
+| `nocturia_null_attribution:7fc5b7ab` | `nocturia_null_attribution` | attribution | null | 0/21 | 0.0% | true 21 |
+| `nocturia_true:3904c08b` | `nocturia_true` | -- | true | 0/21 | 0.0% | null 21 |
+| `nocturia_null_attribution:0dfc44e6` | `nocturia_null_attribution` | attribution | null | 0/16 | 0.0% | true 16 |
+| `nocturia_null_historical:148ef11e` | `nocturia_null_historical` | historical | null | 0/16 | 0.0% | true 16 |
+| `nocturia_null_thirdparty:776f85a8` | `nocturia_null_thirdparty` | third_party | null | 0/15 | 0.0% | false 14, true 1 |
+| `nocturia_null_attribution:3b2e43f2` | `nocturia_null_attribution` | attribution | null | 0/11 | 0.0% | true 11 |
+| `nocturia_null_metaphor:6679717b` | `nocturia_null_metaphor` | metaphor | null | 0/11 | 0.0% | true 11 |
+| `nocturia_null_attribution:0de14f1d` | `nocturia_null_attribution` | attribution | null | 0/9 | 0.0% | true 9 |
+| `nocturia_null_hedged:20ad42fe` | `nocturia_null_hedged` | hedged | null | 0/9 | 0.0% | true 9 |
+| `nocturia_null_hedged:ce59b729` | `nocturia_null_hedged` | hedged | null | 0/8 | 0.0% | false 8 |
+| `nocturia_null_metaphor:3c29e25d` | `nocturia_null_metaphor` | metaphor | null | 0/7 | 0.0% | true 7 |
+| `nocturia_true:4a4f4b70` | `nocturia_true` | -- | true | 1/34 | 2.9% | true 1, null 33 |
+| `nocturia_null_attribution:b68c3406` | `nocturia_null_attribution` | attribution | null | 1/12 | 8.3% | false 11, null 1 |
+| `nocturia_null_thirdparty:57357800` | `nocturia_null_thirdparty` | third_party | null | 2/10 | 20.0% | false 8, null 2 |
+| `nocturia_null_attribution:e51cceef` | `nocturia_null_attribution` | attribution | null | 4/15 | 26.7% | true 11, null 4 |
+| `nocturia_null_historical:9c1540ad` | `nocturia_null_historical` | historical | null | 3/9 | 33.3% | true 6, null 3 |
+| `nocturia_null_metaphor:03b3b8c4` | `nocturia_null_metaphor` | metaphor | null | 5/13 | 38.5% | false 8, null 5 |
+| `nocturia_null_thirdparty:7bf707e3` | `nocturia_null_thirdparty` | third_party | null | 6/15 | 40.0% | true 9, null 6 |
+| `nocturia_false:9b901e69` | `nocturia_false` | -- | false | 11/24 | 45.8% | false 11, null 13 |
+| `nocturia_null_hedged:01c072bf` | `nocturia_null_hedged` | hedged | null | 7/15 | 46.7% | false 8, null 7 |
+| `nocturia_false:eff52ced` | `nocturia_false` | -- | false | 26/47 | 55.3% | false 26, true 21 |
+| `nocturia_null_thirdparty:54eb6d2b` | `nocturia_null_thirdparty` | third_party | null | 12/20 | 60.0% | true 8, null 12 |
+| `nocturia_null_historical:bdf2082b` | `nocturia_null_historical` | historical | null | 8/12 | 66.7% | true 4, null 8 |
+| `nocturia_null_metaphor:a88b521b` | `nocturia_null_metaphor` | metaphor | null | 8/11 | 72.7% | false 3, null 8 |
+| `nocturia_null_metaphor:332c3e8c` | `nocturia_null_metaphor` | metaphor | null | 7/9 | 77.8% | false 2, null 7 |
+| `nocturia_null_metaphor:5761cdcf` | `nocturia_null_metaphor` | metaphor | null | 7/9 | 77.8% | false 2, null 7 |
+| `nocturia_null_attribution:57d09418` | `nocturia_null_attribution` | attribution | null | 14/17 | 82.4% | false 1, true 2, null 14 |
+| `nocturia_true:86863ee3` | `nocturia_true` | -- | true | 29/34 | 85.3% | true 29, null 5 |
+| `nocturia_true:deaf98d5` | `nocturia_true` | -- | true | 27/31 | 87.1% | true 27, null 4 |
+| `nocturia_null_attribution:3ba64f27` | `nocturia_null_attribution` | attribution | null | 7/8 | 87.5% | true 1, null 7 |
+| `nocturia_true:0c394532` | `nocturia_true` | -- | true | 24/27 | 88.9% | false 3, true 24 |
+| `nocturia_null_metaphor:13cc4183` | `nocturia_null_metaphor` | metaphor | null | 11/12 | 91.7% | false 1, null 11 |
+| `nocturia_true:126e0cfb` | `nocturia_true` | -- | true | 30/32 | 93.8% | true 30, null 2 |
+| `nocturia_null_attribution:ef685925` | `nocturia_null_attribution` | attribution | null | 15/16 | 93.8% | true 1, null 15 |
+
+*8 further fragments with at least one error are in the JSON sidecar; every fragment is there regardless of score.*
+
+## Appendix: per-fold numbers
+
+Point estimates only. A single fold's test slice holds 2-5 clusters per hard sub-class, which
+is the whole reason the headline is pooled.
+
+### `majority_class`
+
+| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 2000 | 2000 | 0.0 | 60.5% | 60.5% | 25.1% | 0.00% |
+| 1 | 10000 | 2000 | 2000 | 0.0 | 60.1% | 60.1% | 25.0% | 0.00% |
+| 2 | 10000 | 2000 | 2000 | 0.0 | 60.4% | 60.4% | 25.1% | 0.00% |
+| 3 | 10000 | 2000 | 2000 | 0.0 | 60.8% | 60.8% | 25.2% | 0.00% |
+| 4 | 10000 | 2000 | 2000 | 0.0 | 60.3% | 60.3% | 25.1% | 0.00% |
+
+### `length_only`
+
+| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 2000 | 2000 | 0.0 | 60.5% | 60.5% | 25.1% | 0.00% |
+| 1 | 10000 | 2000 | 2000 | 0.0 | 60.1% | 60.1% | 25.0% | 0.00% |
+| 2 | 10000 | 2000 | 2000 | 0.0 | 60.4% | 60.4% | 25.1% | 0.00% |
+| 3 | 10000 | 2000 | 2000 | 0.0 | 60.8% | 60.8% | 25.2% | 0.00% |
+| 4 | 10000 | 2000 | 2000 | 0.0 | 60.3% | 60.3% | 25.1% | 0.00% |
+
+### `tfidf_logreg`
+
+| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 2000 | 2000 | 0.0 | 74.5% | 74.5% | 61.1% | 0.50% |
+| 1 | 10000 | 2000 | 2000 | 0.0 | 73.7% | 73.7% | 63.7% | 1.83% |
+| 2 | 10000 | 2000 | 2000 | 0.2 | 77.0% | 76.3% | 64.1% | 2.57% |
+| 3 | 10000 | 2000 | 2000 | 0.05 | 71.4% | 71.6% | 55.0% | 0.91% |
+| 4 | 10000 | 2000 | 2000 | 0.0 | 80.5% | 80.5% | 74.0% | 4.81% |
+
+### `length_only__shuffled`
+
+| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 2000 | 2000 | 0.0 | 60.5% | 60.5% | 25.1% | 0.00% |
+| 1 | 10000 | 2000 | 2000 | 0.0 | 60.1% | 60.1% | 25.0% | 0.00% |
+| 2 | 10000 | 2000 | 2000 | 0.0 | 60.4% | 60.4% | 25.1% | 0.00% |
+| 3 | 10000 | 2000 | 2000 | 0.0 | 60.8% | 60.8% | 25.2% | 0.00% |
+| 4 | 10000 | 2000 | 2000 | 0.0 | 60.3% | 60.3% | 25.1% | 0.00% |
+
+### `tfidf_logreg__shuffled`
+
+| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 2000 | 2000 | 0.0 | 60.4% | 60.4% | 25.1% | 0.00% |
+| 1 | 10000 | 2000 | 2000 | 0.0 | 60.1% | 60.1% | 25.0% | 0.00% |
+| 2 | 10000 | 2000 | 2000 | 0.0 | 60.4% | 60.4% | 25.1% | 0.00% |
+| 3 | 10000 | 2000 | 2000 | 0.0 | 60.8% | 60.8% | 25.2% | 0.00% |
+| 4 | 10000 | 2000 | 2000 | 0.0 | 60.3% | 60.3% | 25.1% | 0.00% |
+
+### `arm_b_finetune@A1_single`
+
+| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 10000 | 2000 | 2000 | 0.05 | 84.5% | 84.5% | 81.2% | 3.31% |
+| 1 | 10000 | 2000 | 2000 | 0.15 | 86.9% | 87.1% | 83.1% | 5.66% |
+| 2 | 10000 | 2000 | 2000 | 0.85 | 85.9% | 85.4% | 78.3% | 3.73% |
+| 3 | 10000 | 2000 | 2000 | 0.0 | 92.0% | 92.0% | 87.2% | 2.14% |
+| 4 | 10000 | 2000 | 2000 | 0.1 | 90.5% | 90.6% | 87.9% | 5.39% |
+
+### `arm_b_finetune@A2_volume`
+
+| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 44680 | 2000 | 2000 | 0.9 | 88.3% | 88.4% | 83.1% | 1.83% |
+| 1 | 44680 | 2000 | 2000 | 0.35 | 92.8% | 93.0% | 91.5% | 3.48% |
+| 2 | 44680 | 2000 | 2000 | 0.75 | 87.7% | 88.0% | 81.2% | 3.93% |
+| 3 | 44680 | 2000 | 2000 | 0.0 | 94.5% | 94.5% | 91.7% | 1.28% |
+| 4 | 44680 | 2000 | 2000 | 0.75 | 94.0% | 93.8% | 91.7% | 4.06% |
+
+### `arm_b_finetune@A3_joint`
+
+| fold | train n | val n | test n | margin | acc (raw) | acc (ruled) | macro-F1 | null->true |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 44680 | 2000 | 2000 | 0.0 | 98.2% | 98.2% | 97.9% | 1.24% |
+| 1 | 44830 | 2000 | 2000 | 0.0 | 94.7% | 94.7% | 93.6% | 1.91% |
+| 2 | 45230 | 2000 | 2000 | 0.0 | 90.0% | 90.0% | 84.8% | 2.65% |
+| 3 | 45430 | 2000 | 2000 | 0.9 | 96.0% | 95.9% | 93.3% | 1.40% |
+| 4 | 45590 | 2000 | 2000 | 0.9 | 92.4% | 93.1% | 91.1% | 5.39% |
+
+## Limitations
+
+* **Effective n, not n, bounds every number here.** A slice's example count says how much recombination happened. Its effective n -- the number of distinct hand-written fragment clusters behind it -- says how many independent ideas were tested, and that is what the error bar is computed over. Ten thousand examples built from sixty-six fragments is sixty-six ideas seen many times, and quoting the ten thousand is the single easiest way to over-read this report.
+* **Fold aggregation buys about a factor of three on the error bar, not a factor of twelve.** Pooling five folds raises the effective n of each hard sub-class from 2-5 clusters to its whole library, 32-47. Uncertainty on a proportion falls as 1/sqrt(n), so roughly +/-30 points becomes roughly +/-8. That is the difference between a number that can carry a conclusion and one that cannot; it is not a twelve-fold improvement in precision.
+* **The pooled result carries a small optimism.** Fold i's validation clusters are fold i+1's test clusters, so each fold's margin was selected on a sibling fold's test data. Within any one fold there is no leakage -- each fold trains its own model and never sees its own test bucket -- but the pooled figure is very slightly flattered. Nested cross-validation would remove it and is not worth the cost for one scalar per fold.
+* **The across-fold standard deviation is a stability check, not a confidence interval.** Five folds give it four degrees of freedom, so it is itself noisy and will occasionally look reassuringly small for no reason. The headline interval is the pooled cluster bootstrap.
+* **McNemar's pairing unit is the example, not the cluster.** It answers "did these two models behave differently on this data", which is narrower than "would they behave differently on new fragments". Where a slice's examples are recombinations of a few clusters it will overstate significance in exactly the way the cluster bootstrap avoids. Read it alongside the interval, never instead of it.
+* **Fold mode trains on 60% of clusters, the legacy split on 70%.** Numbers here are therefore not directly comparable to any single-split figure recorded in `arch_training.md` section 10. The fold-aggregated numbers are the honest ones.
+* **A slice containing only one class cannot be read on its own.** The five `null` sub-class slices hold nothing but truly-`null` examples, so a model that answers `null` unconditionally scores 100% on all of them. Sub-class recall is a finding only when the `true` and `false` recalls are high at the same time, which is why the per-class table sits beside it.
+* **The overall interval is dominated by one resampling unit.** All structural nulls share one unit, by design -- thousands of recombinations of a handful of filler sentences are not thousands of observations. The cost is that the pooled overall accuracy swings widely under resampling for reasons that have nothing to do with the model. The `decisive` slice, which drops them, is the one to read.
+* **The real-text holdout cannot rank two models, and is not a smaller version of the tables above.** 67 submissions with no cluster structure give roughly +/-12 points on one overall figure and +/-20 or worse on a per-signal decisive slice. It answers a different question -- does any of this transfer to text a patient actually wrote -- and it answers it in one direction only: a large drop there is conclusive, a small difference between two models there is noise.
+* **Fragment libraries, not sample size, are the ceiling.** Forty-seven metaphor clusters is forty-seven ideas however many examples are drawn from them. Everything section 9 of `arch_training.md` says about what this data is and is not worth continues to apply in full.
+
+## What this data is and is not worth
+
+*Reproduced in full from `arch_training.md` sections 9 and 10 rather than cross-
+referenced, because this report is read on its own and every number in it is bounded by
+what follows.*
+
+* **The validation score is a smoke test, not evidence.** Under the default bands validation holds 15 distinct positive fragments, and every `true` validation example is a recombination of those 15 sentences; one unlucky fragment moves the score several points. The training plan asks for around 200 fragments per signal. We have roughly half that for `true` and for `false` alike.
+* **Length may still leak.** Fragment *count* is drawn from one distribution that never sees the label, so it cannot be a proxy for it. Fragment *length* is not controlled at all: `fever_true` fragments run from 3 words to 98, while the `fever_null` libraries sit in a 9-40 word band. The medians are close (16 against 15-19), so this is a tail problem rather than a systematic offset -- but a 98-word positive has no counterpart anywhere in the null libraries, and a model can notice that. The `length_only` baseline in this report is the direct measurement of how much is there to notice.
+* **Urgency language leaks too.** About 17% of `fever_true` fragments bundle the fever claim with a justification -- "three important meetings I can't miss" -- against 8% of `fever_false` and almost none of `fever_null`. That is exactly the "sounds urgent, must be positive" shortcut the libraries are meant to prevent. Pairing with filler washes some of it out; fixing it properly is library work.
+* **The examples are short.** Two or three sentences by default, against real submissions that are longer and messier. The variable fragment count narrows that gap rather than closing it: the count ceiling is the number of filler libraries, and past a few fragments each example still carries exactly one supervised claim, just buried in more noise. The proof-of-concept run's median example is 36 tokens against a `max_seq_len` of 256, so sequence length is not the constraint and raising it would fix nothing.
+* **One signal per dataset, and six signals have libraries.** A generated example carries a label for the run's signal and no other, so nothing here is multi-label. What changed is that the filler libraries are now lint-verified silent about all six signals with libraries -- fever, dysuria, urinary frequency, nocturia, flank pain, haematuria -- rather than about fever alone. They are *not* silent about `recent_uti_present`, the seventh `send_to_encoder` signal, which has no libraries and so no lexicon: `uti_speculation` asserts it outright.
+* **The six signals' numbers are not comparable to each other at face value.** Only the `fever_*` and `dysuria_*` confounder libraries are hand-tagged into clusters. The other four signals' libraries treat every line as an independent idea, which flatters their `eff n` and narrows their intervals; `dysuria`, tagged throughout, is penalised for it. The cluster-tag coverage table at the top of this report is the per-run statement of how far that applies here. It does not touch a fever-versus-fever comparison, which is scored on identical, already-tagged fever clusters.
+
+### Effective sample size: count clusters, not examples
+
+The single easiest way to over-read anything this pipeline produces is to quote an example count. **The effective sample size of any evaluation slice is the number of distinct clusters behind it, not the number of examples.** Ten thousand examples built from 66 training fragments is 66 ideas seen many times.
+
+Clusters rather than fragments, because `[c01]`-tagged siblings are one idea written twice. They always land in the same split, so they are one observation and not two -- which means the manual clustering *reduces* effective n where it applies, correctly, because it stopped counting the same idea twice.
+
+Under a single 70/15/15 split a per-sub-class score is computed over **2 to 5 independent ideas**, and all five hard sub-classes together are of that order. A third-party recall figure could then take only the values 0, 0.5 or 1.0, carrying an uncertainty of roughly +/-30 percentage points -- wider than any effect this ticket could plausibly detect. That is a library-size problem, not a splitter problem, and the fix for it is more fragments.
+
+Pooling all five folds is the mitigation and is what this report does: every cluster is a test cluster in exactly one fold, so a sub-class's aggregate test set is its whole library.
+
+| library | fragments | clusters (the effective n) |
+|---|---|---|
+| `fever_true` | 96 | **96** |
+| `fever_false` | 98 | **98** |
+| `fever_null_attribution` | 50 | **43** |
+| `fever_null_hedged` | 73 | **63** |
+| `fever_null_historical` | 45 | **36** |
+| `fever_null_metaphor` | 55 | **47** |
+| `fever_null_thirdparty` | 46 | **35** |
+
+Note what that is worth and no more. Effective n rises 12- to 17-fold for the hard
+sub-classes, but the error bar does **not** shrink 12- to 17-fold: uncertainty on a
+proportion goes as 1/sqrt(n), so roughly +/-30 points becomes roughly +/-8. That is the
+difference between a number that can carry a conclusion and one that cannot -- a metaphor
+recall of 0.6 +/-0.08 is a finding, 0.5 +/-0.30 is noise. Folds create no new ideas, so 47
+metaphor clusters is still 47 and everything above applies unchanged.
+
+## The next ticket
+
+* **Write more held-out submissions, and write the ones that are missing.** The 67 in `data/realistic/` exist and are scored above, which closes the previous next-ticket: everything else in this report is a recombination of the same few hundred fragments the models were trained on, and held-out *clusters* remove memorisation and nothing else -- the test examples are still short, still one supervised claim plus filler, still assembled by the same generator in the same register.
+* The shortage in the held-out set is **specific rather than general**, and writing another 67 of the same shape would not fix it. What is missing is **explicit denials** -- "no burning", "I'm not going more often than usual", "no waking at night" -- and submissions where the patient turns out not to have a UTI at all. Three signals have no `false` example anywhere in the set, so a model that never predicts `false` is not penalised on them, and explicit denial was the largest error family in the synthetic evaluation.
+* **Multi-symptom recombinations** (`arch_training.md` 12.5 and 12.6) are the other half. A generated example carries a label for one signal and no other, so every `null` example for a signal pairs an absence of that signal's language with *bland non-clinical* filler -- and real submissions are dense with clinical language about other symptoms. If "clinical-sounding text implies not-null" is a shortcut the models have taken, the holdout numbers above are where it shows, and joint multi-head training does not fix it because each head is masked on the other signals' examples.
