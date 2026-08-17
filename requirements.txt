@@ -16,4 +16,4 @@ sentry-sdk[fastapi]
 slowapi==0.1.10
 limits==5.8.0
 zxcvbn==4.4.28
-pydantic-settings==2.14.1
+pydantic-settings==2.15.0
