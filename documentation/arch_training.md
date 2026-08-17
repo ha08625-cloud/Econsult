@@ -1172,6 +1172,52 @@ two are near-synonyms of each other — "going a lot" against "going a lot at
 night" — which is also why `urinary_frequency` is the only library set that
 needed an `adjacent` confounder class. Untested.
 
+**The three-arm joint comparison ran on 2026-08-17, and its result inverts
+depending on which test set you read.** Six signals, three arms each: A1 (that
+signal alone, 10k), A2 (that signal alone at 4.5× the recombinations) and A3 (one
+encoder, six heads, the merged tree). Reports are
+`<signal>.joint_comparison.json`; the write-up is
+`reports/encoder_training/2026-08-17-plain-english.md`.
+
+| signal | A1 | A2 | A3 | A1→A3 paired | `null→true`, synthetic | `null→true`, **real text** |
+|---|---|---|---|---|---|---|
+| `nocturia` | 83.0% | 88.0% | **92.3%** | A3, p=7e-80 | 4.04% → 2.52% | 2% → **58%** |
+| `haematuria` | 91.5% | 92.8% | **94.9%** | A3, p=8e-27 | 2.33% → 1.61% | 22% → **79%** |
+| `dysuria` | 94.9% | 95.3% | **98.1%** | A3, p=3e-22 | 3.49% → 1.34% | 45% → **67%** |
+| `flank_pain` | 96.0% | 95.5% | **97.8%** | A3, p=3e-07 | 1.51% → 0.58% | 53% → **89%** |
+| `urinary_frequency` | 85.3% | 84.5% | 86.2% | A3, p=0.034 | 1.94% → 2.53% | 5% → **47%** |
+| `fever` | 92.9% | 93.8% | 93.5% | **245/245, p=1.0** | 1.34% → 2.40% | 17% → **82%** |
+
+Four facts from it belong here because they are facts about *the data*:
+
+**Joint training helps on recombinations and is catastrophic on real text.** A3
+improves the decisive slice on four of six signals and improves the synthetic
+`null→true` rate on four of six — while multiplying the same rate on the 67 real
+submissions by 3× to 24×. Across all 402 real answers A3 scores **39.1%**, against
+**66.7%** for replying `null` to everything. This is the failure mode 12.5 was
+written to prevent, now measured rather than argued: every `null` example for a
+signal pairs the absence of that signal's language with *bland non-clinical*
+filler, so no head is ever taught that dense clinical language about another
+symptom is still `null` for it — and six heads sharing an encoder make symptom
+language maximally salient. **Multi-symptom recombinations are therefore the
+critical path, not an option.**
+
+**A2 does its job and mostly rules out the boring explanation.** 4.5× the
+recombinations of the same clusters buys −0.8 to +1.3 points on five of six
+signals, so A3's gains are not explained by gradient steps. Nocturia is the
+exception at +5.0, so roughly half of its +9.3 is volume.
+
+**The near-synonym hypothesis held, asymmetrically.** Joint training resolved the
+`nocturia`/`urinary_frequency` ambiguity in nocturia's favour: nocturia's `hedged`
+recall 80.9% → 95.6% and 66 fragments improved against 30 worsened, while
+`urinary_frequency`'s `adjacent` recall — the class that exists *because* of this
+pair — fell 94.7% → 81.8%, at 41 improved against 38 worsened.
+
+**Fever's headline hid a regression.** +0.6 overall and a dead-even 245/245 paired
+count, but `null_ambiguous` moved against A3 (p=1e-06), driven entirely by
+`attribution` falling 96.3% → 80.5%. A headline can be null while the slice the
+libraries exist for moves.
+
 The `haematuria_present` run starts at all only because of its three null
 libraries: `_check_pools` requires a non-empty
 ambiguous/confounder pool, so with only `true` and `false` it exited whatever
