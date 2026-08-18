@@ -1,6 +1,6 @@
 """Reports that keep the fragment libraries honest as they grow.
 
-Five reports, none of which change a single fragment: they print and stop.
+Six reports, none of which change a single fragment: they print and stop.
 
 * **Hedge markers** flag lines in the decisive libraries that read as uncertain,
   as a prompt to re-read them by hand. Precision here is poor by construction --
@@ -19,6 +19,12 @@ Five reports, none of which change a single fragment: they print and stop.
   decision, so it reports and proposes rather than failing. Its zero-hit pairs
   are printed as pasteable ``null_on`` declarations, which is what makes
   declaring roughly 250 pairs by hand affordable without a wildcard.
+* **Declared ``null_on`` pairs** are the other side of that decision, once it has
+  been made. ``absent`` pairs are re-checked and a hit is a failure; ``policy``
+  pairs are listed with their matched-line count and their note, because a
+  lexicon cannot check them and an unchecked claim should at least be visible.
+  Undeclared pairs are listed too -- that list is the cost of every decision
+  deliberately left unmade.
 * **Split coverage** lists every ``(library, split)`` cell. Generation aborts on
   an empty cell (DD9); the lint reports it instead, because the tool you reach
   for when the generator refuses to run must not refuse for the same reason.
@@ -33,10 +39,11 @@ from __future__ import annotations
 
 import difflib
 import re
+import textwrap
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from .manifest import SPLITS, Fragment
+from .manifest import SPLITS, Fragment, NullOn
 from .normalise import normalise
 
 #: Uncertainty language, reported in ``positive`` and ``negative`` libraries only.
@@ -129,6 +136,20 @@ NULL_ON_BLOCK_HEADER = (
     "the library does talk about the signal and the label is null anyway -- is "
     "hand-written and hand-judged. Read the library before pasting its block: "
     "the lint has found nothing, which is not the same as there being nothing."
+)
+
+#: Printed above the declared-pair report. Two halves because DD2 splits the
+#: guarantee in two and only one half is machine-checkable; collapsing them into
+#: one report is how the checked half stops being checked.
+DECLARED_PAIR_HEADER = (
+    "Declared null_on pairs, split by basis. An 'absent' pair claims the library "
+    "never mentions the signal, which is the half a lexicon can check: a hit "
+    "here is a FAILURE, resolved exactly as a filler-purity hit is (narrow the "
+    "lexicon and add the phrase to the trap test; rewrite the line; or baseline "
+    "the pair with the reason). A 'policy' pair claims the library does mention "
+    "the signal and the label is null anyway, which no lexicon can check: hits "
+    "are expected, and what is printed instead is the matched-line count beside "
+    "the note, so the size of the standing claim is visible rather than implied."
 )
 
 #: Matching lines printed per non-silent cell before the rest are counted only.
@@ -677,6 +698,119 @@ def cross_signal_cells(
     return sorted(cells, key=lambda cell: (-cell.matched, cell.library, cell.signal))
 
 
+def absent_pair_hits(fragments: Iterable[Fragment]) -> list[LexiconHit]:
+    """Report lexicon hits against pairs declared ``null_on`` with basis ``absent``.
+
+    The generalisation of :func:`filler_lexicon_hits` to every library that has
+    made the same claim. ``absent`` says the library never mentions the signal,
+    so a hit is a claim contradicted by the text and the check has teeth; a test
+    holds this to a per-pair baseline in CI.
+
+    ``policy`` pairs are deliberately not here. They assert the label rather than
+    the silence, so a hit against one is the lexicon working: see
+    :func:`policy_pairs`.
+
+    Filler purity stays a separate, *stricter* check over the filler libraries,
+    and the two differ on exactly the two filler pairs declared ``policy``
+    (``uti_speculation`` and ``expectations`` on ``recent_uti_present``). Keeping
+    it strict is the point: filler is paired with examples of every label, so a
+    filler line that acquires signal language is worth catching even where the
+    declaration would tolerate it.
+    """
+    members = list(fragments)
+    hits: list[LexiconHit] = []
+    for signal in SIGNAL_LEXICONS:
+        for fragment in members:
+            if fragment.null_on_basis(signal) != "absent":
+                continue
+            if matched := lexicon_matches(fragment.text, signal):
+                hits.append(
+                    LexiconHit(
+                        fragment_id=fragment.fragment_id,
+                        library=fragment.library,
+                        terms=matched,
+                        text=fragment.text,
+                        signal=signal,
+                    )
+                )
+    return sorted(hits, key=lambda hit: (hit.signal, hit.fragment_id))
+
+
+@dataclass(frozen=True)
+class DeclaredPair:
+    """One declared (library, signal) pair, with what the lexicon found in it."""
+
+    library: str
+    signal: str
+    basis: str
+    note: str
+    matched: int
+    lines: int
+
+    @property
+    def rate(self) -> float:
+        return self.matched / self.lines if self.lines else 0.0
+
+
+def declared_pairs(fragments: Iterable[Fragment], basis: str) -> list[DeclaredPair]:
+    """Return every declared pair of one ``basis``, worst first.
+
+    Counts *lines*, not terms, for the same reason the cross-signal grid does:
+    "23 of 40 lines" is the unit the standing claim is read in.
+    """
+    members = list(fragments)
+    by_library: dict[str, list[Fragment]] = {}
+    for fragment in members:
+        by_library.setdefault(fragment.library, []).append(fragment)
+
+    pairs: list[DeclaredPair] = []
+    for library in sorted(by_library):
+        lines = by_library[library]
+        declared: dict[str, NullOn] = {entry.signal: entry for entry in lines[0].null_on}
+        for signal in sorted(declared):
+            entry = declared[signal]
+            if entry.basis != basis or signal not in SIGNAL_LEXICONS:
+                continue
+            matched = sum(1 for f in lines if lexicon_matches(f.text, signal))
+            pairs.append(
+                DeclaredPair(
+                    library=library,
+                    signal=signal,
+                    basis=entry.basis,
+                    note=entry.note,
+                    matched=matched,
+                    lines=len(lines),
+                )
+            )
+    return sorted(pairs, key=lambda pair: (-pair.matched, pair.library, pair.signal))
+
+
+def policy_pairs(fragments: Iterable[Fragment]) -> list[DeclaredPair]:
+    """Return the ``policy`` pairs -- the half of the guarantee nobody can check."""
+    return declared_pairs(fragments, "policy")
+
+
+def undeclared_pairs(fragments: Iterable[Fragment]) -> list[tuple[str, str]]:
+    """Return the (library, foreign signal) pairs carrying no declaration.
+
+    The default state, and the one worth printing: an undeclared pair is a
+    library that cannot be used as a companion in that signal's run, so the list
+    is the cost of every decision deliberately left unmade.
+    """
+    members = list(fragments)
+    own: dict[str, str | None] = {}
+    declared: dict[str, set[str]] = {}
+    for fragment in members:
+        own[fragment.library] = fragment.signal_key
+        declared[fragment.library] = {entry.signal for entry in fragment.null_on}
+    return sorted(
+        (library, signal)
+        for library in own
+        for signal in SIGNAL_LEXICONS
+        if signal != own[library] and signal not in declared[library]
+    )
+
+
 def cross_split_near_duplicates(
     fragments: Iterable[Fragment], threshold: float = NEAR_DUPLICATE_THRESHOLD
 ) -> list[NearDuplicate]:
@@ -773,8 +907,49 @@ def render_report(fragments: Sequence[Fragment]) -> list[str]:
     lines += ["", "Cross-signal language (every library, every foreign signal)"]
     lines += render_cross_signal_report(fragments)
 
+    lines += ["", "Declared null_on pairs"]
+    lines += render_declared_pairs(fragments)
+
     lines += ["", "Split coverage (DD9: generation aborts on an empty cell)"]
     lines += render_split_coverage(fragments)
+    return lines
+
+
+def render_declared_pairs(fragments: Sequence[Fragment]) -> list[str]:
+    """Render the enforced ``absent`` half and the asserted ``policy`` half.
+
+    The two halves are printed apart and labelled, because the whole content of
+    DD2 is that one of them is checked and the other is a standing claim, and a
+    reader who cannot tell them apart has neither.
+    """
+    absent = declared_pairs(fragments, "absent")
+    policy = policy_pairs(fragments)
+    undeclared = undeclared_pairs(fragments)
+    failures = absent_pair_hits(fragments)
+
+    lines: list[str] = [f"  {DECLARED_PAIR_HEADER}"]
+    lines.append(f"  {len(absent)} absent, {len(policy)} policy, {len(undeclared)} undeclared")
+
+    lines += ["", f"  absent pairs with a lexicon hit (a failure): {len(failures)}"]
+    for hit in failures:
+        lines.append(
+            f"    {hit.library} -> {hit.signal} {hit.fragment_id} "
+            f"[{', '.join(hit.terms)}] {_wrap(hit.text, 80)}"
+        )
+
+    lines += ["", f"  policy pairs, with the lines the lexicon reads as the signal: {len(policy)}"]
+    for pair in policy:
+        lines.append(
+            f"    {pair.library:<34}{pair.signal:<28}{pair.matched:>3}/{pair.lines:<3}"
+            f"{pair.rate:>6.0%}"
+        )
+        # Wrapped rather than truncated: a policy note is the whole of the
+        # unverifiable claim, and half of one is worse than a pointer to it.
+        lines += [f"      {line}" for line in textwrap.wrap(pair.note, 92)]
+
+    lines += ["", f"  undeclared pairs, ineligible as companions: {len(undeclared)}"]
+    for library, signal in undeclared:
+        lines.append(f"    {library:<34}{signal}")
     return lines
 
 

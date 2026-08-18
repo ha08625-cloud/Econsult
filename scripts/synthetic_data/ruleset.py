@@ -60,3 +60,25 @@ def load_and_validate(ruleset_path: Path, signal_key: str) -> dict:
         raise RulesetError(f"ruleset not found: {ruleset_path}")
     ruleset = json.loads(ruleset_path.read_text(encoding="utf-8"))
     return validate_signal(ruleset, signal_key, source=str(ruleset_path))
+
+
+def encoder_signals(ruleset: dict) -> set[str]:
+    """Return every Boolean ``answer_key`` the ruleset sends to the encoder.
+
+    The set a ``null_on`` declaration may name. Read from the ruleset rather
+    than from the manifest so a declaration for a signal that has no libraries
+    yet is still legal -- that is the normal state while a signal is being
+    written, and it is how ``recent_uti_present`` was declared ahead of its own
+    libraries landing.
+    """
+    questions = ruleset.get("questions")
+    if not isinstance(questions, list):
+        raise RulesetError("ruleset has no 'questions' list")
+    return {
+        question["answer_key"]
+        for question in questions
+        if isinstance(question, dict)
+        and question.get("send_to_encoder") is True
+        and question.get("answer_type") == "Boolean"
+        and isinstance(question.get("answer_key"), str)
+    }

@@ -18,19 +18,25 @@ from scripts.synthetic_data.__main__ import main as cli_main
 from scripts.synthetic_data.lint import (
     NULL_ON_BLOCK_HEADER,
     SIGNAL_LEXICONS,
+    absent_pair_hits,
     cross_signal_cells,
     cross_split_near_duplicates,
+    declared_pairs,
     filler_lexicon_hits,
     hedge_marker_hits,
     lexicon_matches,
+    policy_pairs,
     render_cross_signal_report,
     render_report,
     signal_language_hits,
+    undeclared_pairs,
 )
 from scripts.synthetic_data.manifest import (
+    SPLITS,
     Fragment,
     LibrarySpec,
     ManifestError,
+    NullOn,
     assign_split,
     bucket_coverage,
     check_no_empty_cells,
@@ -57,7 +63,7 @@ from scripts.synthetic_data.recombine import (
     parse_distribution,
     parse_fragment_counts,
 )
-from scripts.synthetic_data.ruleset import RulesetError, validate_signal
+from scripts.synthetic_data.ruleset import RulesetError, encoder_signals, validate_signal
 
 # --------------------------------------------------------------------------
 # Helpers
@@ -72,6 +78,13 @@ def _entry(name: str, **overrides) -> dict:
         "fragment_type": "filler",
     }
     entry.update(overrides)
+    # Filler is only eligible for a signal it has been declared null on, so a
+    # fixture filler library needs the declaration the real ones carry or
+    # build_pools drops it. Declared here rather than in each fixture so a new
+    # fixture cannot forget it; a signal library is skipped because declaring
+    # null_on for its own signal is an error.
+    if entry["signal_key"] is None:
+        entry.setdefault("null_on", {SIGNAL: {"basis": "absent"}})
     return entry
 
 
@@ -102,6 +115,11 @@ def _fragment(text: str, **overrides) -> Fragment:
         "split": "train",
     }
     fields.update(overrides)
+    # As _entry: a filler fragment is only eligible for a signal it has been
+    # declared null on, so the default filler fragment carries the declaration
+    # the real filler libraries carry.
+    if fields["signal_key"] is None:
+        fields.setdefault("null_on", (NullOn(signal=SIGNAL, basis="absent"),))
     return Fragment(**fields)
 
 
@@ -1203,6 +1221,7 @@ def test_cli_honours_a_fragment_count_override(tmp_path, libraries):
 # --------------------------------------------------------------------------
 
 REAL_MANIFEST = Path(__file__).resolve().parents[1] / "data" / "synthetic" / "manifest.json"
+REAL_RULESET = Path(__file__).resolve().parents[1] / "data" / "uti1.json"
 
 #: Filler fragments permitted to match a signal's lexicon, per signal. All six
 #: are empty: the filler libraries are silent about every signal that has
@@ -1504,6 +1523,535 @@ def test_the_report_says_a_zero_is_evidence_and_not_proof():
     # in arch_training.md.
     report = "\n".join(render_cross_signal_report(_real_fragments()))
     assert "NOT proof" in report
+
+
+# --------------------------------------------------------------------------
+# 17b. The null_on declaration (DD1, DD2, DD3)
+#
+# Schema tests run against fixtures; the four pinned-set tests below run
+# against the real manifest, because the declaration *is* the real manifest and
+# a fixture cannot say whether somebody read a library before claiming it was
+# silent.
+# --------------------------------------------------------------------------
+
+
+def _spec(**overrides) -> LibrarySpec:
+    payload = {
+        "name": "lib",
+        "file": "lib.txt",
+        "signal_key": None,
+        "fragment_type": "filler",
+    }
+    payload.update(overrides)
+    return parse_manifest({"libraries": [payload]})[0]
+
+
+def test_null_on_parses_into_sorted_entries():
+    spec = _spec(
+        null_on={
+            "nocturia_present": {"basis": "absent"},
+            "fever_present": {"basis": "policy", "note": "past tense throughout"},
+        }
+    )
+    # Sorted by signal, so two manifests declaring the same pairs in a different
+    # order are the same manifest.
+    assert spec.null_on == (
+        NullOn(signal="fever_present", basis="policy", note="past tense throughout"),
+        NullOn(signal="nocturia_present", basis="absent", note=""),
+    )
+
+
+def test_a_library_with_no_null_on_is_undeclared_rather_than_null():
+    # The default is silence about the decision, not the decision. A closed-world
+    # default would mean adding an eighth signal silently asserted that every
+    # existing library was null on it.
+    spec = _spec()
+    assert spec.null_on == ()
+
+
+def test_an_unknown_basis_raises():
+    with pytest.raises(ManifestError, match="unknown basis"):
+        _spec(null_on={"fever_present": {"basis": "silent"}})
+
+
+def test_a_policy_entry_without_a_note_raises():
+    # The whole of DD2: policy is the half no lexicon can check, so the rule that
+    # makes the label null has to be written down or the claim is invisible.
+    with pytest.raises(ManifestError, match="no note"):
+        _spec(null_on={"fever_present": {"basis": "policy"}})
+
+
+def test_a_policy_entry_whose_note_is_only_whitespace_raises():
+    with pytest.raises(ManifestError, match="no note"):
+        _spec(null_on={"fever_present": {"basis": "policy", "note": "   "}})
+
+
+def test_an_absent_entry_needs_no_note_but_may_carry_one():
+    spec = _spec(null_on={"fever_present": {"basis": "absent", "note": "flushed toilets"}})
+    assert spec.null_on[0].note == "flushed toilets"
+
+
+def test_declaring_null_on_for_the_librarys_own_signal_raises():
+    # That value comes from fragment_type, and two sources for one value is one
+    # that can disagree with itself.
+    with pytest.raises(ManifestError, match="its own signal"):
+        _spec(
+            signal_key="fever_present",
+            fragment_type="positive",
+            null_on={"fever_present": {"basis": "absent"}},
+        )
+
+
+def test_a_signal_the_ruleset_does_not_send_to_the_encoder_raises():
+    with pytest.raises(ManifestError, match="does not send to the encoder"):
+        parse_manifest(
+            {
+                "libraries": [
+                    {
+                        "name": "lib",
+                        "file": "lib.txt",
+                        "signal_key": None,
+                        "fragment_type": "filler",
+                        "null_on": {"fever_presnt": {"basis": "absent"}},
+                    }
+                ]
+            },
+            signals={"fever_present"},
+        )
+
+
+def test_without_a_ruleset_the_signal_name_is_not_checked():
+    # The reporting tools load the manifest with no ruleset in hand, and a lint
+    # that refuses to run because the manifest is wrong is useless exactly when
+    # it is needed.
+    assert _spec(null_on={"anything_at_all": {"basis": "absent"}}).null_on[0].signal == (
+        "anything_at_all"
+    )
+
+
+def test_an_unknown_key_inside_a_null_on_entry_raises():
+    # "notes" would otherwise be a note that silently does not exist.
+    with pytest.raises(ManifestError, match="unknown key"):
+        _spec(null_on={"fever_present": {"basis": "policy", "notes": "typo"}})
+
+
+def test_a_null_on_that_is_not_an_object_raises():
+    with pytest.raises(ManifestError, match="not an object keyed by signal"):
+        _spec(null_on=["fever_present"])
+
+
+def test_a_null_on_entry_that_is_not_an_object_raises():
+    with pytest.raises(ManifestError, match="is not an object"):
+        _spec(null_on={"fever_present": "absent"})
+
+
+def test_the_declaration_reaches_the_fragment(tmp_path):
+    # DD3's instruction 3: resolved once at load time, so build_pools and the
+    # companion draw never read the manifest a second time.
+    (tmp_path / "lib.txt").write_text("the parking here is impossible\n", encoding="utf-8")
+    manifest = _write_manifest(
+        tmp_path,
+        [
+            _entry(
+                "lib",
+                null_on={
+                    "fever_present": {"basis": "absent"},
+                    "dysuria_present": {"basis": "policy", "note": "all past tense"},
+                },
+            )
+        ],
+        {"lib.txt": _spread_lines("lib", 60)},
+    )
+    fragment = load_fragments(manifest, check_cells=False)[0]
+    assert fragment.null_on_basis("fever_present") == "absent"
+    assert fragment.null_on_basis("dysuria_present") == "policy"
+    assert fragment.null_on_basis("nocturia_present") is None
+    assert fragment.declares_null_on("fever_present")
+    assert not fragment.declares_null_on("nocturia_present")
+
+
+# --------------------------------------------------------------------------
+# 17c. The declaration against the real manifest (the CI baseline)
+# --------------------------------------------------------------------------
+
+#: Every (library, signal) pair declared ``absent`` in which a lexicon
+#: nevertheless finds the signal's language. An entry here is a claim that a
+#: line reads as another signal's language, is staying where it is anyway, and
+#: somebody decided that on purpose -- exactly as for ``FILLER_PURITY_BASELINE``.
+#:
+#: All 28 are lexicon over-reach, and they cluster in three families that are
+#: worth naming because each is the lexicon working as designed rather than
+#: failing: a **flushed toilet** where the fever lexicon wants a flushed face
+#: (6 lines, all haematuria); a **counting word** ("times", "more",
+#: "constantly", "all day") that qualifies the pain or the colour rather than
+#: how often the patient goes (13 lines); and a **pain word** that belongs to
+#: another clause than the urinary anchor it was paired with (7 lines). Each
+#: pair's ``note`` in the manifest says which.
+#:
+#: Narrowing the lexicons to clear these would cost real recall -- "flushed" is
+#: how patients describe a fever, and "more" is how they describe frequency --
+#: which is the trade ``FILLER_PURITY_HEADER`` describes and why baselining is
+#: the third resolution rather than the last resort.
+ABSENT_PAIR_BASELINE: dict[tuple[str, str], set[str]] = {
+    ("dysuria_false", "urinary_frequency_present"): {
+        "dysuria_false:64f15eeb",
+    },
+    ("dysuria_null_hedged", "urinary_frequency_present"): {
+        "dysuria_null_hedged:464ee4f6",
+        "dysuria_null_hedged:58a8b3c4",
+        "dysuria_null_hedged:8e93e0ff",
+        "dysuria_null_hedged:cae59b3c",
+        "dysuria_null_hedged:ec574b54",
+    },
+    ("dysuria_null_historical", "flank_pain_present"): {
+        "dysuria_null_historical:15e236ea",
+    },
+    ("dysuria_null_thirdparty", "nocturia_present"): {
+        "dysuria_null_thirdparty:4365dff9",
+    },
+    ("dysuria_true", "urinary_frequency_present"): {
+        "dysuria_true:a28e78a6",
+    },
+    ("flank_pain_null_historical", "dysuria_present"): {
+        "flank_pain_null_historical:124d71ca",
+    },
+    ("haematuria_false", "fever_present"): {
+        "haematuria_false:b692c4ce",
+    },
+    ("haematuria_null_hedged", "fever_present"): {
+        "haematuria_null_hedged:b46c1780",
+        "haematuria_null_hedged:d9bf40cb",
+        "haematuria_null_hedged:e2b503fc",
+    },
+    ("haematuria_null_hedged", "urinary_frequency_present"): {
+        "haematuria_null_hedged:f5ac0bee",
+    },
+    ("haematuria_null_historical", "dysuria_present"): {
+        "haematuria_null_historical:d046cb69",
+    },
+    ("haematuria_null_historical", "urinary_frequency_present"): {
+        "haematuria_null_historical:3823ca1c",
+    },
+    ("haematuria_null_thirdparty", "nocturia_present"): {
+        "haematuria_null_thirdparty:ed75fa0d",
+    },
+    ("haematuria_true", "fever_present"): {
+        "haematuria_true:7ea098d1",
+        "haematuria_true:a2e5d4cc",
+    },
+    ("haematuria_true", "urinary_frequency_present"): {
+        "haematuria_true:5cf89fbc",
+        "haematuria_true:b54f9151",
+    },
+    ("nocturia_null_attribution", "dysuria_present"): {
+        "nocturia_null_attribution:3b2e43f2",
+        "nocturia_null_attribution:7d2de3ba",
+        "nocturia_null_attribution:e51cceef",
+    },
+    ("nocturia_null_attribution", "haematuria_present"): {
+        "nocturia_null_attribution:dd528c2a",
+    },
+    ("nocturia_null_metaphor", "dysuria_present"): {
+        "nocturia_null_metaphor:be836a5b",
+    },
+    ("recent_uti_null_hedged", "urinary_frequency_present"): {
+        #: The pairs declared ``null_on`` with basis ``policy`` -- the half of the
+        #: guarantee no lexicon can check. Pinned so that adding one is a deliberate
+        #: edit to this list rather than a line in a 1000-line manifest diff, because an
+        #: unchecked claim that nobody notices arriving is the failure mode DD2 exists to
+        #: prevent. Nineteen of the twenty-three are on ``recent_uti_present``, which is
+        #: the expected shape: its lexicon deliberately matches the infection nouns
+        #: every one of these libraries uses while its recency modifiers stop short of
+        #: "last time", "again" and "I'm prone to them".
+        "recent_uti_null_hedged:effd92b2",
+    },
+}
+
+POLICY_PAIRS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("dysuria_false", "recent_uti_present"),
+        ("dysuria_null_historical", "recent_uti_present"),
+        ("dysuria_null_thirdparty", "recent_uti_present"),
+        ("expectations", "recent_uti_present"),
+        ("fever_false", "recent_uti_present"),
+        ("fever_null_historical", "recent_uti_present"),
+        ("fever_true", "recent_uti_present"),
+        ("flank_pain_null_hedged", "recent_uti_present"),
+        ("flank_pain_null_historical", "recent_uti_present"),
+        ("flank_pain_null_thirdparty", "recent_uti_present"),
+        ("haematuria_null_hedged", "recent_uti_present"),
+        ("haematuria_null_historical", "flank_pain_present"),
+        ("haematuria_null_historical", "recent_uti_present"),
+        ("haematuria_null_thirdparty", "recent_uti_present"),
+        ("nocturia_false", "recent_uti_present"),
+        ("nocturia_null_historical", "recent_uti_present"),
+        ("nocturia_null_thirdparty", "recent_uti_present"),
+        ("recent_uti_null_hedged", "dysuria_present"),
+        ("recent_uti_true", "dysuria_present"),
+        ("urinary_frequency_null_adjacent", "haematuria_present"),
+        ("urinary_frequency_null_historical", "recent_uti_present"),
+        ("urinary_frequency_null_thirdparty", "recent_uti_present"),
+        ("uti_speculation", "recent_uti_present"),
+    }
+)
+
+#: The pairs deliberately left undeclared, and therefore ineligible as
+#: companions. Fourteen of the sixteen are the nocturia / urinary-frequency
+#: pair in both directions: "up three times in the night for a wee" genuinely
+#: asserts both signals, the assertion is a per-*line* fact over libraries whose
+#: lines disagree, and DD1 has no state that can express that. The other two are
+#: the same fault in single lines -- ``dysuria_true`` carries "I've been waking
+#: up at night because weeing is so painful" and ``flank_pain_false`` carries
+#: "My sides feel fine, it's just uncomfortable when I wee".
+#:
+#: Undeclared is not a workaround here, it is the honest state: a smaller
+#: companion pool is a smaller dataset, not a wrong one, and the alternative is
+#: a declaration that is false on some lines. Per-line label vectors (12.3)
+#: are what would let these pairs be declared, and they are out of scope.
+UNDECLARED_PAIRS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("dysuria_true", "nocturia_present"),
+        ("flank_pain_false", "dysuria_present"),
+        ("nocturia_false", "urinary_frequency_present"),
+        ("nocturia_null_attribution", "urinary_frequency_present"),
+        ("nocturia_null_hedged", "urinary_frequency_present"),
+        ("nocturia_null_historical", "urinary_frequency_present"),
+        ("nocturia_null_metaphor", "urinary_frequency_present"),
+        ("nocturia_null_thirdparty", "urinary_frequency_present"),
+        ("nocturia_true", "urinary_frequency_present"),
+        ("urinary_frequency_false", "nocturia_present"),
+        ("urinary_frequency_null_adjacent", "nocturia_present"),
+        ("urinary_frequency_null_hedged", "nocturia_present"),
+        ("urinary_frequency_null_historical", "nocturia_present"),
+        ("urinary_frequency_null_metaphor", "nocturia_present"),
+        ("urinary_frequency_null_thirdparty", "nocturia_present"),
+        ("urinary_frequency_true", "nocturia_present"),
+    }
+)
+
+
+def test_no_absent_pair_contains_the_signals_language():
+    hits: dict[tuple[str, str], set[str]] = {}
+    for hit in absent_pair_hits(_real_fragments()):
+        hits.setdefault((hit.library, hit.signal), set()).add(hit.fragment_id)
+    assert hits == ABSENT_PAIR_BASELINE, (
+        "a library declared 'absent' on a signal has acquired that signal's "
+        "language, so every companion drawn from it would make its example's "
+        "label a lie about that signal (DD3). Either the line moved, the lexicon "
+        "widened, or the declaration was wrong: "
+        + "; ".join(
+            f"{hit.library}->{hit.signal} {hit.fragment_id} {hit.terms} {hit.text}"
+            for hit in absent_pair_hits(_real_fragments())
+        )
+    )
+
+
+def test_the_policy_pairs_are_exactly_the_pinned_ones():
+    found = {(pair.library, pair.signal) for pair in policy_pairs(_real_fragments())}
+    assert found == POLICY_PAIRS, (
+        "the set of unverifiable null_on claims has changed. Every policy pair is "
+        "a decision no lexicon can check, so it arrives here or it arrives "
+        f"unnoticed: added={sorted(found - POLICY_PAIRS)} "
+        f"removed={sorted(POLICY_PAIRS - found)}"
+    )
+
+
+def test_every_policy_pair_carries_a_note():
+    # Enforced by the schema too; asserted here against the real manifest so a
+    # note that is present but empty of content is at least visible.
+    thin = [
+        (pair.library, pair.signal, pair.note)
+        for pair in policy_pairs(_real_fragments())
+        if len(pair.note) < 40
+    ]
+    assert not thin, f"a policy claim is too short to be a reason: {thin}"
+
+
+def test_the_undeclared_pairs_are_exactly_the_pinned_ones():
+    found = set(undeclared_pairs(_real_fragments()))
+    assert found == UNDECLARED_PAIRS, (
+        "the set of pairs left undeclared has changed. This list is the cost of "
+        "every decision deliberately unmade, so it shrinks by a declaration "
+        f"being written rather than by accident: added={sorted(found - UNDECLARED_PAIRS)} "
+        f"removed={sorted(UNDECLARED_PAIRS - found)}"
+    )
+
+
+def test_every_foreign_pair_is_either_declared_or_deliberately_undeclared():
+    # The deliverable: no pair is in an unconsidered state. 293 = 43 signal
+    # libraries x 6 foreign signals + 5 filler libraries x 7.
+    fragments = _real_fragments()
+    declared = {
+        (pair.library, pair.signal)
+        for basis in ("absent", "policy")
+        for pair in declared_pairs(fragments, basis)
+    }
+    assert len(declared) + len(UNDECLARED_PAIRS) == len(cross_signal_cells(fragments))
+    assert declared & UNDECLARED_PAIRS == set()
+
+
+def test_the_real_manifest_declares_only_signals_the_ruleset_sends_to_the_encoder():
+    # Catches a typo'd signal name, which is otherwise indistinguishable from a
+    # pair nobody declared.
+    signals = encoder_signals(json.loads(REAL_RULESET.read_text(encoding="utf-8")))
+    load_fragments(REAL_MANIFEST, check_cells=False, signals=signals)
+
+
+def test_filler_purity_stays_stricter_than_the_declaration():
+    # filler_lexicon_hits is deliberately not replaced by absent_pair_hits: the
+    # two filler libraries declared 'policy' on recent_uti_present would stop
+    # being checked, and filler is paired with examples of every label, so a
+    # filler line that acquires signal language is worth catching even where the
+    # declaration would tolerate it.
+    fragments = _real_fragments()
+    filler_policy = {
+        (pair.library, pair.signal)
+        for pair in policy_pairs(fragments)
+        if pair.library in {"expectations", "uti_speculation"}
+    }
+    assert filler_policy == {
+        ("expectations", "recent_uti_present"),
+        ("uti_speculation", "recent_uti_present"),
+    }
+    assert filler_lexicon_hits(fragments) == []
+
+
+# --------------------------------------------------------------------------
+# 17d. What the declaration does to the pools (DD4, DD6, DD17)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("signal", sorted(SIGNAL_LEXICONS))
+def test_every_filler_library_is_eligible_for_every_signal(signal):
+    # Instruction 10, and DD4's byte-identity argument: the filler filter removes
+    # nothing today, so no generated byte moves. It stops being free the moment a
+    # filler library goes undeclared on one of the seven, which is a reason to
+    # keep that from happening quietly rather than to skip the filter.
+    fragments = load_fragments(REAL_MANIFEST, check_cells=False)
+    filler = {f.library for f in fragments if f.fragment_type == "filler"}
+    pools = build_pools(fragments, signal, "train")
+    assert set(pools.filler_libraries) == filler
+    assert pools.undeclared_filler == ()
+
+
+def test_an_undeclared_filler_library_is_excluded_and_named(tmp_path):
+    # DD17's downward branch: the ceiling drops rather than the run failing,
+    # right up to the point where fewer than two filler libraries are left.
+    entries = [
+        _entry("pos", signal_key=SIGNAL, fragment_type="positive"),
+        _entry("neg", signal_key=SIGNAL, fragment_type="negative"),
+        _entry("amb", signal_key=SIGNAL, fragment_type="ambiguous"),
+        _entry("fill_a"),
+        _entry("fill_b"),
+        _entry("fill_c", null_on={}),
+    ]
+    manifest = _write_manifest(
+        tmp_path, entries, {f"{e['name']}.txt": _spread_lines(e["name"], 60) for e in entries}
+    )
+    pools = build_pools(load_fragments(manifest), SIGNAL, "train")
+    assert pools.undeclared_filler == ("fill_c",)
+    assert set(pools.filler_libraries) == {"fill_a", "fill_b"}
+
+
+def test_the_count_ceiling_error_names_the_undeclared_filler_and_the_way_out(tmp_path):
+    entries = [
+        _entry("pos", signal_key=SIGNAL, fragment_type="positive"),
+        _entry("neg", signal_key=SIGNAL, fragment_type="negative"),
+        _entry("amb", signal_key=SIGNAL, fragment_type="ambiguous"),
+        _entry("fill_a"),
+        _entry("fill_b"),
+        _entry("fill_c", null_on={}),
+    ]
+    manifest = _write_manifest(
+        tmp_path, entries, {f"{e['name']}.txt": _spread_lines(e["name"], 60) for e in entries}
+    )
+    pools = build_pools(load_fragments(manifest), SIGNAL, "train")
+    with pytest.raises(PoolError) as excinfo:
+        generate(pools, count=10, seed=42, fragment_counts={3: 1.0})
+    message = str(excinfo.value)
+    # A pool error whose real cause is three lines of missing JSON must not read
+    # as a library-size problem.
+    assert "fill_c" in message
+    assert 'basis "policy"' in message
+
+
+def test_a_run_left_with_one_filler_library_raises_and_names_the_declaration(tmp_path):
+    entries = [
+        _entry("pos", signal_key=SIGNAL, fragment_type="positive"),
+        _entry("neg", signal_key=SIGNAL, fragment_type="negative"),
+        _entry("amb", signal_key=SIGNAL, fragment_type="ambiguous"),
+        _entry("fill_a"),
+        _entry("fill_b", null_on={}),
+        _entry("fill_c", null_on={}),
+    ]
+    manifest = _write_manifest(
+        tmp_path, entries, {f"{e['name']}.txt": _spread_lines(e["name"], 60) for e in entries}
+    )
+    with pytest.raises(PoolError) as excinfo:
+        build_pools(load_fragments(manifest), SIGNAL, "train")
+    assert "fill_b, fill_c" in str(excinfo.value)
+
+
+def test_the_companion_pool_holds_declared_foreign_libraries_only():
+    fragments = load_fragments(REAL_MANIFEST, check_cells=False)
+    pools = build_pools(fragments, "fever_present", "train")
+    pairs = {(signal, library) for signal, library, _ in pools.companion}
+
+    # No filler, and nothing of the primary signal: the primary signal enters an
+    # example through the decisive slot alone, or null_structural and
+    # null_ambiguous collapse into each other (DD6).
+    assert all(signal != "fever_present" for signal, _ in pairs)
+    assert not any(library in {"tangents", "expectations"} for _, library in pairs)
+
+    # Declared pairs are in; undeclared ones are out.
+    assert ("dysuria_present", "dysuria_true") in pairs
+    assert ("nocturia_present", "nocturia_true") in pairs
+    assert pools.companion_signals == (
+        "dysuria_present",
+        "flank_pain_present",
+        "haematuria_present",
+        "nocturia_present",
+        "recent_uti_present",
+        "urinary_frequency_present",
+    )
+
+
+def test_an_undeclared_pair_keeps_its_library_out_of_the_companion_pool():
+    # The two pairs the declaration pass deliberately left undeclared, seen from
+    # the pool that consumes them.
+    fragments = load_fragments(REAL_MANIFEST, check_cells=False)
+    nocturia = build_pools(fragments, "nocturia_present", "train")
+    assert "dysuria_true" not in {library for _, library, _ in nocturia.companion}
+    assert "urinary_frequency_true" not in {library for _, library, _ in nocturia.companion}
+
+    dysuria = build_pools(fragments, "dysuria_present", "train")
+    assert "flank_pain_false" not in {library for _, library, _ in dysuria.companion}
+
+
+def test_the_companion_pool_is_split_restricted():
+    # DD9: a companion comes from the same split as the example. fold_bucket is a
+    # pure hash of the cluster key, with no knowledge of which signal's run is
+    # generating, so this is free -- but a fever *test* example holding a dysuria
+    # *train* fragment would be training text inside the test set.
+    fragments = load_fragments(REAL_MANIFEST, check_cells=False)
+    for split in SPLITS:
+        pools = build_pools(fragments, "fever_present", split)
+        assert all(f.split == split for _, _, members in pools.companion for f in members), (
+            f"a companion fragment from outside {split} reached the {split} pool"
+        )
+
+
+def test_nothing_draws_from_the_companion_pool_yet():
+    # Instruction 10: build_pools may carry other signals' fragments, but no draw
+    # uses them until the companion-share flag lands. The golden-digest test is
+    # the other half of this; this half says so in one line.
+    fragments = load_fragments(REAL_MANIFEST, check_cells=False)
+    pools = build_pools(fragments, "fever_present", "train")
+    assert pools.companion
+    companion_ids = {f.fragment_id for _, _, members in pools.companion for f in members}
+    examples, _ = generate(pools, count=400, seed=42)
+    used = {fid for example in examples for fid in example.meta["fragment_ids"]}
+    assert used & companion_ids == set()
 
 
 # --------------------------------------------------------------------------

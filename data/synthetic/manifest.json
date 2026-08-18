@@ -5,323 +5,1291 @@
       "name": "fever_true",
       "file": "conditions/uti/symptoms/fever/fever_true.txt",
       "signal_key": "fever_present",
-      "fragment_type": "positive"
+      "fragment_type": "positive",
+      "null_on": {
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). One line mentions a relative's infection years ago."
+        }
+      }
     },
     {
       "name": "fever_false",
       "file": "conditions/uti/symptoms/fever/fever_false.txt",
       "signal_key": "fever_present",
-      "fragment_type": "negative"
+      "fragment_type": "negative",
+      "null_on": {
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). Five lines name an infection: three are chest infections (not urinary), one is 'that infection back in summer', and one a kidney infection with no date. None is a urine infection inside the window."
+        }
+      }
     },
     {
       "name": "fever_null_hedged",
       "file": "conditions/uti/symptoms/fever/fever_null_hedged.txt",
       "signal_key": "fever_present",
       "fragment_type": "ambiguous",
-      "subclass": "hedged"
+      "subclass": "hedged",
+      "null_on": {
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "fever_null_metaphor",
       "file": "conditions/uti/symptoms/fever/fever_null_metaphor.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
-      "subclass": "metaphor"
+      "subclass": "metaphor",
+      "null_on": {
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "fever_null_thirdparty",
       "file": "conditions/uti/symptoms/fever/fever_null_thirdparty.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
-      "subclass": "third_party"
+      "subclass": "third_party",
+      "null_on": {
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "fever_null_historical",
       "file": "conditions/uti/symptoms/fever/fever_null_historical.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
-      "subclass": "historical"
+      "subclass": "historical",
+      "null_on": {
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). One line names a chest infection three months ago -- not urinary and outside the window either way."
+        }
+      }
     },
     {
       "name": "fever_null_attribution",
       "file": "conditions/uti/symptoms/fever/fever_null_attribution.txt",
       "signal_key": "fever_present",
       "fragment_type": "confounder",
-      "subclass": "attribution"
+      "subclass": "attribution",
+      "null_on": {
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "dysuria_true",
       "file": "conditions/uti/symptoms/dysuria/dysuria_true.txt",
       "signal_key": "dysuria_present",
-      "fragment_type": "positive"
+      "fragment_type": "positive",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'burning constantly when I go for a wee' has 'constantly' qualifying the burning, not the going."
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "dysuria_false",
       "file": "conditions/uti/symptoms/dysuria/dysuria_false.txt",
       "signal_key": "dysuria_present",
-      "fragment_type": "negative"
+      "fragment_type": "negative",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'it's more a general feeling of being unwell' is 'more' about malaise, not about frequency."
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). 'unlike my last UTI' names no window; 'I don't think it's a bladder infection' is a denied suspicion about this episode."
+        }
+      }
     },
     {
       "name": "dysuria_null_hedged",
       "file": "conditions/uti/symptoms/dysuria/dysuria_null_hedged.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "ambiguous",
-      "subclass": "hedged"
+      "subclass": "hedged",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach on 5 lines: the modifiers matched are 'times', 'more', 'all the time' and 'regularly', and in every case they qualify the pain or the painkillers rather than how often the patient goes."
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "dysuria_null_thirdparty",
       "file": "conditions/uti/symptoms/dysuria/dysuria_null_thirdparty.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "confounder",
-      "subclass": "third_party"
+      "subclass": "third_party",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'Someone I slept with' matches on 'slept', which is not a night void."
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). The four infection lines all belong to somebody else -- a partner, a mother, a sister, an aunt -- so none of them is the patient's own."
+        }
+      }
     },
     {
       "name": "dysuria_null_metaphor",
       "file": "conditions/uti/symptoms/dysuria/dysuria_null_metaphor.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "confounder",
-      "subclass": "metaphor"
+      "subclass": "metaphor",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "dysuria_null_historical",
       "file": "conditions/uti/symptoms/dysuria/dysuria_null_historical.txt",
       "signal_key": "dysuria_present",
       "fragment_type": "confounder",
-      "subclass": "historical"
+      "subclass": "historical",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'that was ages back' matches the anchor 'back' as an adverb of time, not as anatomy."
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). Five lines name a treated infection, four with a marker well outside 30 days (March, the spring, a honeymoon, 'years back') and one with none ('the burning when I weed last time')."
+        }
+      }
     },
     {
       "name": "urinary_frequency_true",
       "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_true.txt",
       "signal_key": "urinary_frequency_present",
-      "fragment_type": "positive"
+      "fragment_type": "positive",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "urinary_frequency_false",
       "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_false.txt",
       "signal_key": "urinary_frequency_present",
-      "fragment_type": "negative"
+      "fragment_type": "negative",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "urinary_frequency_null_hedged",
       "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_hedged.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "ambiguous",
-      "subclass": "hedged"
+      "subclass": "hedged",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "urinary_frequency_null_thirdparty",
       "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_thirdparty.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "confounder",
-      "subclass": "third_party"
+      "subclass": "third_party",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). Both infection lines belong to a flatmate and a daughter's boyfriend."
+        }
+      }
     },
     {
       "name": "urinary_frequency_null_historical",
       "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_historical.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "confounder",
-      "subclass": "historical"
+      "subclass": "historical",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). Three lines name an infection: March and February are outside the window, and 'my last infection and they gave me a three day course' carries no window marker at all."
+        }
+      }
     },
     {
       "name": "urinary_frequency_null_metaphor",
       "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_metaphor.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "confounder",
-      "subclass": "metaphor"
+      "subclass": "metaphor",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "urinary_frequency_null_adjacent",
       "file": "conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_adjacent.txt",
       "signal_key": "urinary_frequency_present",
       "fragment_type": "confounder",
-      "subclass": "adjacent"
+      "subclass": "adjacent",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "policy",
+          "note": "Three lines describe urine colour ('much darker', 'really dark orange', 'a funny colour, sort of murky'). None of those colours is blood -- haematuria_null_hedged carries 'dark orange, almost brown' as a null on its own signal for the same reason -- so the library talks about the territory and is null in it."
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "nocturia_true",
       "file": "conditions/uti/symptoms/nocturia/nocturia_true.txt",
       "signal_key": "nocturia_present",
-      "fragment_type": "positive"
+      "fragment_type": "positive",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "nocturia_false",
       "file": "conditions/uti/symptoms/nocturia/nocturia_false.txt",
       "signal_key": "nocturia_present",
-      "fragment_type": "negative"
+      "fragment_type": "negative",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). One line names a water infection 'years ago'."
+        }
+      }
     },
     {
       "name": "nocturia_null_hedged",
       "file": "conditions/uti/symptoms/nocturia/nocturia_null_hedged.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "ambiguous",
-      "subclass": "hedged"
+      "subclass": "hedged",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "nocturia_null_thirdparty",
       "file": "conditions/uti/symptoms/nocturia/nocturia_null_thirdparty.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "confounder",
-      "subclass": "third_party"
+      "subclass": "third_party",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). One line is a wife's suspicion about her own symptoms."
+        }
+      }
     },
     {
       "name": "nocturia_null_historical",
       "file": "conditions/uti/symptoms/nocturia/nocturia_null_historical.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "confounder",
-      "subclass": "historical"
+      "subclass": "historical",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). Two lines name an infection, one 'two years back' and one 'before the antibiotics last year'."
+        }
+      }
     },
     {
       "name": "nocturia_null_metaphor",
       "file": "conditions/uti/symptoms/nocturia/nocturia_null_metaphor.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "confounder",
-      "subclass": "metaphor"
+      "subclass": "metaphor",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'a wee note' plus 'I kick myself' is the library doing its job -- urinary words used non-urinarily."
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "nocturia_null_attribution",
       "file": "conditions/uti/symptoms/nocturia/nocturia_null_attribution.txt",
       "signal_key": "nocturia_present",
       "fragment_type": "confounder",
-      "subclass": "attribution"
+      "subclass": "attribution",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach on 3 lines: knee pain, an uncomfortable ulcer dressing and calf cramp, each paired with an incidental toilet trip. The pain is named and it is nowhere near urination, which is precisely what an attribution library is written to do."
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'my blood sugar drops at night' is blood in a vein, not blood in urine -- the same trap the filler lexicon already guards."
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "flank_pain_true",
       "file": "conditions/uti/symptoms/flank_pain/flank_pain_true.txt",
       "signal_key": "flank_pain_present",
-      "fragment_type": "positive"
+      "fragment_type": "positive",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "flank_pain_false",
       "file": "conditions/uti/symptoms/flank_pain/flank_pain_false.txt",
       "signal_key": "flank_pain_present",
-      "fragment_type": "negative"
+      "fragment_type": "negative",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "flank_pain_null_hedged",
       "file": "conditions/uti/symptoms/flank_pain/flank_pain_null_hedged.txt",
       "signal_key": "flank_pain_present",
       "fragment_type": "ambiguous",
-      "subclass": "hedged"
+      "subclass": "hedged",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). One line is about having read about kidney infections, which is a worry rather than a diagnosis."
+        }
+      }
     },
     {
       "name": "flank_pain_null_thirdparty",
       "file": "conditions/uti/symptoms/flank_pain/flank_pain_null_thirdparty.txt",
       "signal_key": "flank_pain_present",
       "fragment_type": "confounder",
-      "subclass": "third_party"
+      "subclass": "third_party",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). All four infection lines belong to a husband, a father, a colleague or an aunt."
+        }
+      }
     },
     {
       "name": "flank_pain_null_historical",
       "file": "conditions/uti/symptoms/flank_pain/flank_pain_null_historical.txt",
       "signal_key": "flank_pain_present",
       "fragment_type": "confounder",
-      "subclass": "historical"
+      "subclass": "historical",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'kidney pain every time I had a urine infection' pairs the urine anchor with flank pain, not with pain on passing it."
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). Six lines name an infection; every one carries a marker outside the window (2019, 2018, 'years ago', university, 'in my twenties') or is a chest infection."
+        }
+      }
     },
     {
       "name": "haematuria_true",
       "file": "conditions/uti/symptoms/haematuria/haematuria_true.txt",
       "signal_key": "haematuria_present",
-      "fragment_type": "positive"
+      "fragment_type": "positive",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach on 2 lines: a flushed toilet is not a flushed face."
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach on 2 lines: 'three times today' and 'the last two times' count observations of blood, and neither number is high enough to assert increased frequency in any case."
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "haematuria_false",
       "file": "conditions/uti/symptoms/haematuria/haematuria_false.txt",
       "signal_key": "haematuria_present",
-      "fragment_type": "negative"
+      "fragment_type": "negative",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'before I flushed' is the toilet again."
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "haematuria_null_hedged",
       "file": "conditions/uti/symptoms/haematuria/haematuria_null_hedged.txt",
       "signal_key": "haematuria_present",
       "fragment_type": "ambiguous",
-      "subclass": "hedged"
+      "subclass": "hedged",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach on 3 lines: two flushed toilets and one hot day's walk. None is a body temperature."
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'barely drunk a thing all day' explains the colour and says nothing about how often."
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). One line, 'Its been a funny colour since the antibiotics but that might just be them', is the borderline case in this pair: it implies recent antibiotics and states no indication and no date, so rule 2's treatment-as-diagnosis proxy does not reach it. Read as null; it is the line to revisit first if this declaration is ever doubted."
+        }
+      }
     },
     {
       "name": "haematuria_null_thirdparty",
       "file": "conditions/uti/symptoms/haematuria/haematuria_null_thirdparty.txt",
       "signal_key": "haematuria_present",
       "fragment_type": "confounder",
-      "subclass": "third_party"
+      "subclass": "third_party",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'weeing red after a night out' is a night out."
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). Both infection lines belong to a mother or an aunt."
+        }
+      }
     },
     {
       "name": "haematuria_null_historical",
       "file": "conditions/uti/symptoms/haematuria/haematuria_null_historical.txt",
       "signal_key": "haematuria_present",
       "fragment_type": "confounder",
-      "subclass": "historical"
+      "subclass": "historical",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'hurt my back' is the modifier, and it is nowhere near the urination the anchor matched."
+        },
+        "urinary_frequency_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'in my old job lifting all day' is about the job."
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "policy",
+          "note": "One line, 'When I came off a ladder and hurt my back in 2021 I passed red urine', genuinely reports back pain. It is null on flank_pain_present twice over: 2021 is historical, and the pain is confidently attributed to a fall rather than to the flank."
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). Six lines name a treated infection, all with markers far outside the window (2019, 2015, 'ten years ago', 'years ago', 'last autumn')."
+        }
+      }
     },
     {
       "name": "recent_uti_true",
       "file": "conditions/uti/symptoms/recent_uti/recent_uti_true.txt",
       "signal_key": "recent_uti_present",
-      "fragment_type": "positive"
+      "fragment_type": "positive",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "policy",
+          "note": "Two lines name discomfort or an ache ten days to a fortnight ago, both past and both attributed elsewhere before the diagnosis landed. Past dysuria is null on dysuria_present, as above."
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "recent_uti_false",
       "file": "conditions/uti/symptoms/recent_uti/recent_uti_false.txt",
       "signal_key": "recent_uti_present",
-      "fragment_type": "negative"
+      "fragment_type": "negative",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "recent_uti_null_hedged",
       "file": "conditions/uti/symptoms/recent_uti/recent_uti_null_hedged.txt",
       "signal_key": "recent_uti_present",
       "fragment_type": "ambiguous",
-      "subclass": "hedged"
+      "subclass": "hedged",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "policy",
+          "note": "Four lines describe stinging or bladder twinges, which is dysuria language, and every one places it at ten days to three weeks ago. Past dysuria is null on dysuria_present -- that is what the dysuria_null_historical library is for -- so the pair is a policy claim rather than a leak. A library about 'was that an infection or not' reaches for the symptom that raised the question; this is intrinsic to the axis rather than sloppy writing."
+        },
+        "urinary_frequency_present": {
+          "basis": "absent",
+          "note": "Lexicon over-reach: 'wearing tight jeans all day' is about the jeans."
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "recent_uti_null_thirdparty",
       "file": "conditions/uti/symptoms/recent_uti/recent_uti_null_thirdparty.txt",
       "signal_key": "recent_uti_present",
       "fragment_type": "confounder",
-      "subclass": "third_party"
+      "subclass": "third_party",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "recent_uti_null_historical",
       "file": "conditions/uti/symptoms/recent_uti/recent_uti_null_historical.txt",
       "signal_key": "recent_uti_present",
       "fragment_type": "confounder",
-      "subclass": "historical"
+      "subclass": "historical",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "recent_uti_null_adjacent",
       "file": "conditions/uti/symptoms/recent_uti/recent_uti_null_adjacent.txt",
       "signal_key": "recent_uti_present",
       "fragment_type": "confounder",
-      "subclass": "adjacent"
+      "subclass": "adjacent",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "tangents",
       "file": "filler/tangents.txt",
       "signal_key": null,
       "fragment_type": "filler",
-      "category": "irrelevant"
+      "category": "irrelevant",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "justifiers",
       "file": "filler/justifiers.txt",
       "signal_key": null,
       "fragment_type": "filler",
-      "category": "justification"
+      "category": "justification",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "emotional",
       "file": "filler/emotional.txt",
       "signal_key": null,
       "fragment_type": "filler",
-      "category": "emotional"
+      "category": "emotional",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "absent"
+        }
+      }
     },
     {
       "name": "expectations",
       "file": "filler/expectations.txt",
       "signal_key": null,
       "fragment_type": "filler",
-      "category": "expectation"
+      "category": "expectation",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). Ten lines ask for antibiotics; nine are requests for this episode or name no window ('I had trimethoprim last time', 'because it always comes back'). The one arguable line is 'I think I need stronger antibiotics this time as the last lot didn't clear it properly', which implies a recently-treated episode without asserting one; read as null."
+        }
+      }
     },
     {
       "name": "uti_speculation",
       "file": "conditions/uti/filler/uti_speculation.txt",
       "signal_key": null,
       "fragment_type": "filler",
-      "category": "self_diagnosis"
+      "category": "self_diagnosis",
+      "null_on": {
+        "fever_present": {
+          "basis": "absent"
+        },
+        "dysuria_present": {
+          "basis": "absent"
+        },
+        "urinary_frequency_present": {
+          "basis": "absent"
+        },
+        "nocturia_present": {
+          "basis": "absent"
+        },
+        "flank_pain_present": {
+          "basis": "absent"
+        },
+        "haematuria_present": {
+          "basis": "absent"
+        },
+        "recent_uti_present": {
+          "basis": "policy",
+          "note": "Names an infection but places none inside the 30-day window the encoder_prompt asks about, so every line is null under the section 9 policy: rule 1 (a suspected infection is not a diagnosed one), rule 3 (the axis is the window, not the tense) and rule 6 (recurrence with no window marker says nothing about the last 30 days). All 40 lines are self-diagnosis about the episode that brought the patient in, or recurrence with no date; the one line that names a date at all ('I had one last year') puts it explicitly outside the window."
+        }
+      }
     }
   ]
 }
