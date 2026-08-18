@@ -993,6 +993,79 @@ Rules 2 and 3 both cut against clinical instinct, which is exactly why they are
 worth having in writing: without them the next person to add fragments sorts by
 feel, and the inconsistency grows with the library.
 
+For `recent_uti_present` the same was done. This policy is recorded **before the
+six libraries were finished and before any of them was labelled against it** —
+four drafts existed when it was written and were revised to meet it, which is
+the order that makes a policy a policy rather than a rationalisation of whatever
+the fragments happened to say. The question the libraries are labelled against
+is the `encoder_prompt` in `data/uti1.json`, verbatim:
+
+> *Does the response indicate the patient has had a urine infection in the last
+> 30 days?*
+
+Six rules, every one of which a real submission forces:
+
+1. **A suspected current infection is `null`.** "I reckon it's another UTI, I'm
+   prone to them" is a patient's guess about the episode that brought them here,
+   and a *suspected* infection is not a *had* one. `null` unless the text says it
+   was diagnosed or treated. This is the rule that does the most work, because
+   self-diagnosis is the commonest way patients talk about UTIs.
+2. **Treatment is a proxy for diagnosis.** "I finished a course of nitrofurantoin
+   ten days ago" is **`true`** with no diagnosis stated: an antibiotic given for
+   a urine infection inside the window *is* the diagnosis. Section 9's real-
+   submission reading found this family — what the patient has already tried —
+   in about half the submissions and in no library at all, so it is covered
+   deliberately here rather than incidentally.
+3. **The axis is the 30-day window, not the tense.** "I had one last year" is
+   `null`, **not `false`** — it says nothing at all about the last 30 days. This
+   is the rule most likely to be got wrong by instinct, because past tense reads
+   as a denial and is not one. A `historical` fragment therefore needs a time
+   marker that actually clears 30 days ("in the spring", "three months ago",
+   "when I was pregnant with my first"); a vague one ("a while back", "a few
+   months ago, maybe") does not settle the window and belongs in `hedged`.
+4. **`false` needs an explicit denial that spans the window**, and it must be
+   genuinely varied. "I've never had a water infection", "not for years", "the
+   sample they sent off last week came back clear" all work; a past infection on
+   its own does not (rule 3). Forty rewordings of "haven't had one in N weeks"
+   is two clusters, not forty fragments (section 3), so `false` is written as
+   distinct *situations* — a negative culture, a clear dipstick, a partner's
+   infection nobody caught, a routine check at an annual review.
+5. **Non-urinary infections are the hard confounder and get their own library.**
+   "I had thrush last month and got antibiotics for it", "I was treated for a
+   chest infection in July". An infection noun, a diagnosis, a treatment and a
+   recent date are all present, every surface cue points to `true`, and the
+   answer is `null` because none of it is a *urine* infection. This is the
+   `adjacent` axis, and it is the single library most worth having, on the same
+   reasoning that makes `attribution` and `adjacent` the hardest axes for every
+   other signal. Six libraries, therefore, not five.
+6. **Recurrence without a window marker is `null`.** "I'm prone to them", "it
+   always comes back", "like last time", "I've had them before and this feels
+   similar" are all about a pattern rather than a date, and none of them places
+   an infection inside the last 30 days.
+
+**Rules 1, 3 and 6 have a consequence for `uti_speculation`, and it runs the
+opposite way to what section 3 says above.** Read against these rules, all forty
+of its lines are `null`. Every one of them is either suspicion about the episode
+that brought the patient in (rule 1) or recurrence with no window marker
+(rule 6), and the one line that names a date at all — line 28's "I reckon it's a
+kidney infection, I had one last year" — puts it explicitly outside the window
+(rule 3). **Not one line asserts a
+urine infection inside 30 days.** The sentence in section 3 calling it "full of
+lines that assert it outright" predates this policy and is wrong under it;
+`uti_speculation` needs neither rewriting nor relabelling, and the pair it forms
+with `recent_uti_present` is a candidate `null_on` declaration with basis
+`policy` rather than a leak. Making that declaration is the next ticket's work
+and nothing in the generator relies on it yet.
+
+The same reading applies to `expectations`, which carries four lines about
+previous antibiotics. Three of them — "I had trimethoprim last time and it didn't
+touch it", "Can I try a different antibiotic as trimethoprim doesn't seem to help
+me anymore" and "because it always comes back" — name no window and are `null`
+under rules 3 and 6. Only "I think I need stronger antibiotics this time as the
+last lot didn't clear it properly" arguably implies a recently-treated episode,
+and that is one line out of a hundred, not a library that needs rewriting.
+
+
 That distinction changes what to do about a low number, and there are three
 cases, not one:
 
