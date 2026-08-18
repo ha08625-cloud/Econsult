@@ -57,7 +57,7 @@ from .recombine import (
     parse_fragment_counts,
     to_record,
 )
-from .ruleset import RulesetError, load_and_validate
+from .ruleset import RulesetError, encoder_signals, load_and_validate
 
 DEFAULT_MANIFEST = Path("data/synthetic/manifest.json")
 DEFAULT_RULESET = Path("data/uti1.json")
@@ -240,10 +240,24 @@ def run(args: argparse.Namespace) -> int:
     distribution = parse_distribution(args.dist)
     fragment_counts = parse_fragment_counts(args.fragment_counts)
     load_and_validate(args.ruleset, args.signal)
+    # The set a null_on declaration may name, so a misspelled signal fails here
+    # rather than presenting as a pair nobody declared.
+    signals = encoder_signals(json.loads(Path(args.ruleset).read_text(encoding="utf-8")))
 
     options = split_options(args)
-    fragments = load_fragments(args.manifest, **options)
+    fragments = load_fragments(args.manifest, signals=signals, **options)
     pools = build_pools(fragments, args.signal, args.split)
+    if pools.undeclared_filler:
+        # Loud rather than fatal: an undeclared filler library lowers the
+        # fragment-count ceiling and moves every _draw_filler outcome, and both
+        # are worth knowing about even in a run that still succeeds.
+        print(
+            f"warning: {len(pools.undeclared_filler)} filler librar"
+            f"{'y is' if len(pools.undeclared_filler) == 1 else 'ies are'} undeclared on "
+            f"{args.signal!r} and excluded from this run: "
+            f"{', '.join(pools.undeclared_filler)}",
+            file=sys.stderr,
+        )
 
     examples, telemetry = generate(
         pools,

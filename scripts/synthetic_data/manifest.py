@@ -33,7 +33,7 @@ import hashlib
 import json
 import re
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +41,26 @@ from .normalise import normalise
 
 #: Permitted values for a library's ``fragment_type``.
 FRAGMENT_TYPES = frozenset({"positive", "negative", "ambiguous", "confounder", "filler"})
+
+#: Permitted values for a ``null_on`` entry's ``basis``, and the whole of the
+#: distinction the lint acts on.
+#:
+#: ``absent``
+#:     The library never mentions the signal at all. This is the half a lexicon
+#:     can check, so a lexicon hit against an ``absent`` pair is a **failure**
+#:     rather than a judgement call.
+#: ``policy``
+#:     The library *does* talk about the signal and the correct label is ``null``
+#:     anyway -- ``uti_speculation`` on ``recent_uti_present``, where forty lines
+#:     name an infection and none places one inside the 30-day window. No lexicon
+#:     can check this, so the entry carries a ``note`` giving the rule that makes
+#:     it ``null`` and the lint *lists* the pair with its matched-line count
+#:     instead of failing on it.
+NULL_ON_BASES = frozenset({"absent", "policy"})
+
+#: Keys permitted inside one ``null_on`` entry. Closed rather than open so a
+#: typo ("notes") is an error instead of a note that silently does not exist.
+_NULL_ON_KEYS = frozenset({"basis", "note"})
 
 #: Split names, in band order.
 SPLITS = ("train", "val", "test")
@@ -57,6 +77,31 @@ class ManifestError(ValueError):
 
 
 @dataclass(frozen=True)
+class NullOn:
+    """One library's declaration that a *foreign* signal is ``null`` on its lines.
+
+    "Foreign" is the whole of it: a library's own signal's value comes from
+    ``fragment_type`` and always has, and two sources for one value is one that
+    can disagree with itself. So this only ever carries ``null`` -- there is no
+    cross-signal ``true`` or ``false`` state, because that is a per-*line* fact
+    over libraries whose lines disagree (three of ``flank_pain_false``'s
+    fifty-five lines assert dysuria), and a per-line fact needs the per-line
+    label vectors that section 12.3 describes and this does not have.
+
+    Absent means **undeclared**, not ``null``. A library says nothing about a
+    signal it does not name here, and an undeclared pair is simply ineligible.
+    That is deliberate: a closed-world default would mean adding an eighth
+    signal silently asserted that all 48 existing libraries were silent about
+    it, and ``uti_speculation`` is the standing evidence that a library nobody
+    has read against a signal is not the same as a library that is silent on it.
+    """
+
+    signal: str
+    basis: str
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class LibrarySpec:
     """One declared fragment library, as it appears in the manifest."""
 
@@ -66,6 +111,9 @@ class LibrarySpec:
     fragment_type: str
     subclass: str | None = None
     category: str | None = None
+    #: Sorted by signal, so two manifests that declare the same pairs in a
+    #: different order produce identical specs.
+    null_on: tuple[NullOn, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -81,6 +129,22 @@ class Fragment:
     category: str | None
     cluster_id: str | None
     split: str
+    #: Resolved from the library spec at load time, so nothing downstream reads
+    #: the manifest a second time. Section 7 rejects a second source of one fact
+    #: for the same reason it rejects a second provenance block: the two can
+    #: drift and only one of them is right.
+    null_on: tuple[NullOn, ...] = ()
+
+    def null_on_basis(self, signal: str) -> str | None:
+        """Return the declared basis for ``signal``, or ``None`` if undeclared."""
+        for entry in self.null_on:
+            if entry.signal == signal:
+                return entry.basis
+        return None
+
+    def declares_null_on(self, signal: str) -> bool:
+        """Whether this fragment's library declares ``signal`` ``null`` on every line."""
+        return self.null_on_basis(signal) is not None
 
 
 def parse_line(line: str) -> tuple[str | None, str]:
@@ -171,12 +235,87 @@ def assign_split(key: str, *, folds: int | None = None, fold_index: int = 0, sal
     return "train"
 
 
-def parse_manifest(payload: dict) -> list[LibrarySpec]:
+def parse_null_on(
+    payload: object, *, library: str, own_signal: str | None, signals: Collection[str] | None
+) -> tuple[NullOn, ...]:
+    """Validate one library's ``null_on`` block and return it sorted by signal.
+
+    The block is an object keyed by signal rather than a list of objects, which
+    buys the duplicate check for free: a repeated signal is a duplicate JSON key
+    within one object, and ``test_the_manifest_has_no_duplicate_json_keys``
+    already walks every object in the manifest looking for exactly that. A list
+    would need its own duplicate check and would not be covered by the guard
+    that already exists.
+
+    ``signals`` is the set of signals the run's ruleset sends to the encoder.
+    When it is given, a declaration naming anything else is an error -- that is
+    what catches a typo, since a misspelled signal is otherwise indistinguishable
+    from a pair nobody declared. It is optional because the reporting tools load
+    the manifest without a ruleset, and a lint that refuses to run because the
+    manifest is wrong is useless exactly when it is needed.
+    """
+    if payload is None:
+        return ()
+    if not isinstance(payload, dict):
+        raise ManifestError(
+            f"library {library!r} has a 'null_on' that is not an object keyed by signal: "
+            f"{payload!r}"
+        )
+
+    entries: list[NullOn] = []
+    for signal, body in payload.items():
+        if signal == own_signal:
+            raise ManifestError(
+                f"library {library!r} declares null_on for its own signal {signal!r}; that "
+                "value comes from fragment_type, and two sources for one value is one that "
+                "can disagree with itself"
+            )
+        if signals is not None and signal not in signals:
+            raise ManifestError(
+                f"library {library!r} declares null_on for {signal!r}, which the ruleset "
+                f"does not send to the encoder (known: {', '.join(sorted(signals))})"
+            )
+        if not isinstance(body, dict):
+            raise ManifestError(
+                f"library {library!r} has a null_on entry for {signal!r} that is not an "
+                f"object: {body!r}"
+            )
+        unknown = sorted(set(body) - _NULL_ON_KEYS)
+        if unknown:
+            raise ManifestError(
+                f"library {library!r} has unknown key(s) {', '.join(unknown)} in its "
+                f"null_on entry for {signal!r} (permitted: basis, note)"
+            )
+        basis = body.get("basis")
+        if basis not in NULL_ON_BASES:
+            permitted = ", ".join(sorted(NULL_ON_BASES))
+            raise ManifestError(
+                f"library {library!r} declares null_on for {signal!r} with unknown basis "
+                f"{basis!r} (permitted: {permitted})"
+            )
+        note = body.get("note", "")
+        if not isinstance(note, str):
+            raise ManifestError(
+                f"library {library!r} has a non-string note in its null_on entry for "
+                f"{signal!r}: {note!r}"
+            )
+        if basis == "policy" and not note.strip():
+            raise ManifestError(
+                f"library {library!r} declares null_on for {signal!r} with basis 'policy' "
+                "and no note; a policy claim is the half no lexicon can check, so the rule "
+                "that makes the label null has to be written down"
+            )
+        entries.append(NullOn(signal=signal, basis=basis, note=note))
+
+    return tuple(sorted(entries, key=lambda entry: entry.signal))
+
+
+def parse_manifest(payload: dict, *, signals: Collection[str] | None = None) -> list[LibrarySpec]:
     """Validate the manifest's metadata and return its library specs.
 
     Checks that do not need the filesystem happen here: permitted
-    ``fragment_type``, unique ``name``, and ``signal_key``/``fragment_type``
-    agreement.
+    ``fragment_type``, unique ``name``, ``signal_key``/``fragment_type``
+    agreement, and the ``null_on`` block (:func:`parse_null_on`).
     """
     libraries = payload.get("libraries")
     if not isinstance(libraries, list) or not libraries:
@@ -224,6 +363,12 @@ def parse_manifest(payload: dict) -> list[LibrarySpec]:
                 fragment_type=fragment_type,
                 subclass=entry.get("subclass"),
                 category=entry.get("category"),
+                null_on=parse_null_on(
+                    entry.get("null_on"),
+                    library=name,
+                    own_signal=signal_key,
+                    signals=signals,
+                ),
             )
         )
     return specs
@@ -270,6 +415,7 @@ def read_library(
                 category=spec.category,
                 cluster_id=cluster_id,
                 split=assign_split(key, folds=folds, fold_index=fold_index, salt=salt),
+                null_on=spec.null_on,
             )
         )
 
@@ -349,6 +495,7 @@ def load_fragments(
     folds: int | None = None,
     fold_index: int = 0,
     salt: str = "",
+    signals: Collection[str] | None = None,
 ) -> list[Fragment]:
     """Load, validate, deduplicate and split every declared library.
 
@@ -359,10 +506,14 @@ def load_fragments(
 
     ``folds``, ``fold_index`` and ``salt`` select fold mode; see
     :func:`assign_split`.
+
+    ``signals`` is passed straight to :func:`parse_null_on`; generation supplies
+    the ruleset's encoder signals so a misspelled declaration fails at startup,
+    and the reporting tools leave it out.
     """
     manifest_path = Path(manifest_path)
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    specs = parse_manifest(payload)
+    specs = parse_manifest(payload, signals=signals)
 
     base_dir = manifest_path.parent
     fragments: list[Fragment] = []
