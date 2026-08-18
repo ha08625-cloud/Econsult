@@ -25,15 +25,26 @@ rather than trusted.
   merge; the shared encoder gains gradient from five other heads. Filling the
   five absent keys with ``null`` would be a different ticket and a much worse
   dataset -- see ``arch_training.md`` 12.5.
-* **The structural nulls really are the same examples.** The generator's seed
-  derivation does not include the signal, so all six trees emit byte-identical
-  filler-only examples. One copy is kept, labelled ``null`` for all six signals
-  -- same gradients, 25% fewer forward passes, and each head keeps exactly the
-  15/25/60 mix it trained on alone. That identity is the load-bearing one:
-  if anyone ever adds the signal to the seed derivation, six *divergent*
-  structural-null sets would collapse into whichever arrived first, every head's
-  class prior would shift, and nothing downstream would notice. So it is
-  asserted position for position, and a mismatch is a hard error.
+* **The filler-only examples really are the same examples.** The generator's
+  seed derivation does not include the signal, so all six trees emit
+  byte-identical filler-only examples. One copy is kept, labelled ``null`` for
+  all six signals -- same gradients, 25% fewer forward passes at
+  ``--companion-share 0``, and each head keeps exactly the 15/25/60 mix it
+  trained on alone. That identity is the load-bearing one: if anyone ever adds
+  the signal to the seed derivation, six *divergent* null sets would collapse
+  into whichever arrived first, every head's class prior would shift, and nothing
+  downstream would notice. So it is asserted position for position, and a
+  mismatch is a hard error.
+
+  **The set it runs over is ``meta.filler_only``, not the ``null_structural``
+  label mode**, and at ``--companion-share`` above zero those are different sets.
+  A structural null that drew a companion holds another signal's clinical
+  language, which is drawn from *this* signal's eligible pool -- so it is not the
+  example any other tree emitted at that index, and it is kept per signal like
+  any other owned example. What survives deduplication is the filler-only
+  remainder, which shrinks towards nothing as the share rises. That is this
+  feature's compute bill and it is accepted rather than worked around; see
+  ``arch_training.md`` section 5.
 
 **Every merged example keeps the id it had in its own tree**, in
 ``meta.source_ids``, because the fresh ``example_id`` has to be unique across
@@ -60,23 +71,28 @@ from .dataset import (
     sidecar_path,
 )
 
-#: The label mode of an example built from filler alone. The one mode this
-#: module treats specially, because it is the one every source tree emits
-#: identically and therefore the only one that can be deduplicated.
+#: The label mode of an example that holds no fragment decisive for its signal.
+#: Every deduplicable example has this mode, but not every example with this
+#: mode is deduplicable: at ``--companion-share`` above zero a structural null
+#: may hold another signal's clinical language, drawn from a pool that differs by
+#: signal. ``meta.filler_only`` is the property this module keys off; this
+#: constant is only used to check the two agree in the direction they must.
 STRUCTURAL_NULL_MODE = "null_structural"
 
-#: Prefix for a deduplicated structural null's merged id. Reserved: a signal by
-#: this name would make ``{signal}:{original}`` and ``shared:{original}``
+#: Prefix for a deduplicated filler-only example's merged id. Reserved: a signal
+#: by this name would make ``{signal}:{original}`` and ``shared:{original}``
 #: collide, so it is rejected rather than allowed to overwrite.
 SHARED_ID_PREFIX = "shared"
 
-#: The six signals with fragment libraries, and therefore the six a joint model
-#: can have heads for. ``data/uti1.json`` declares a seventh --
-#: ``recent_uti_present`` -- with no libraries and no trained head, so it is
-#: absent here and a joint model cannot satisfy ``EncoderOutput.validate_against``
-#: (DD8). Adding an untrained seventh head to make the arity match would put an
-#: uninitialised guess behind a contract saying the encoder answered; that is
-#: strictly worse than a stub that is honestly a stub.
+#: The six signals a joint model has heads for. ``data/uti1.json`` declares a
+#: seventh -- ``recent_uti_present`` -- which **now has libraries** and therefore
+#: a fold tree of its own and a place in every other signal's companion pool, but
+#: no trained head: the multi-symptom ticket put a seventh head explicitly out of
+#: scope. So it is absent here, and a joint model still cannot satisfy
+#: ``EncoderOutput.validate_against``. Adding an untrained seventh head to make
+#: the arity match would put an uninitialised guess behind a contract saying the
+#: encoder answered; that is strictly worse than a stub that is honestly a stub.
+#: Pass ``--signals`` to merge a different set.
 DEFAULT_SIGNALS = (
     "dysuria_present",
     "fever_present",
@@ -86,12 +102,22 @@ DEFAULT_SIGNALS = (
     "urinary_frequency_present",
 )
 
-#: Sidecar fields every source must agree on before a merge means anything.
-#: ``generator_version`` because two generators' examples are not one dataset;
-#: the fold triple because ``test`` names a different set of clusters under each
-#: one, so merging across two triples would put one tree's test clusters in
-#: another's training split with every file still loading cleanly.
-SIDECAR_AGREEMENT_FIELDS = ("generator_version", "folds", "fold_index", "split_salt")
+#: Sidecar fields every source must agree on before a merge means anything,
+#: as dotted paths into the sidecar. ``generator_version`` because two
+#: generators' examples are not one dataset; the fold triple because ``test``
+#: names a different set of clusters under each one, so merging across two
+#: triples would put one tree's test clusters in another's training split with
+#: every file still loading cleanly; and ``requested.companion_share`` because a
+#: merged tree mixing an arm at zero with an arm above it is uninterpretable --
+#: the comparison the two arms exist for would be running against a dataset that
+#: is half of each, and nothing downstream would notice.
+SIDECAR_AGREEMENT_FIELDS = (
+    "generator_version",
+    "folds",
+    "fold_index",
+    "split_salt",
+    "requested.companion_share",
+)
 
 #: Fragment-provenance fields that must agree where two sources describe the
 #: same fragment id. A dict union would first-win a disagreement silently, and a
@@ -102,6 +128,29 @@ FRAGMENT_AGREEMENT_FIELDS = ("cluster_key", "fragment_type", "split")
 
 class MergeError(ValueError):
     """Raised when per-signal trees cannot be merged into one honest dataset."""
+
+
+def sidecar_field(stats: Mapping[str, object], field: str) -> object:
+    """Read a dotted path out of a sidecar, refusing rather than defaulting.
+
+    A missing field is a source this module has never seen -- in practice a tree
+    generated before ``GENERATOR_VERSION`` 3, which has no
+    ``requested.companion_share`` and no ``meta.filler_only`` either. Defaulting
+    it to zero would let a pre-companion tree merge with a post-companion one on
+    the strength of a guess, so it raises instead and says what to do.
+    """
+    value: object = stats
+    walked: list[str] = []
+    for part in field.split("."):
+        if not isinstance(value, Mapping) or part not in value:
+            raise MergeError(
+                f"a source sidecar has no {field!r} (missing at {'.'.join(walked + [part])!r}). "
+                "Every field the merge checks is written by GENERATOR_VERSION 3; a tree from "
+                "before it has to be regenerated rather than merged on a default"
+            )
+        walked.append(part)
+        value = value[part]
+    return value
 
 
 @dataclass(frozen=True)
@@ -118,22 +167,26 @@ class SourceSplit:
         return str(self.stats["split"])
 
     @property
+    def companion_share(self) -> float:
+        return float(sidecar_field(self.stats, "requested.companion_share"))
+
+    @property
     def structural(self) -> tuple[dict, ...]:
-        """The filler-only examples, in file order. Shared with every source."""
-        return tuple(
-            record
-            for record in self.records
-            if record["meta"]["label_mode"] == STRUCTURAL_NULL_MODE
-        )
+        """The filler-only examples, in file order. Shared with every source.
+
+        ``meta.filler_only`` and not ``label_mode``: at ``--companion-share``
+        above zero a structural null may carry another signal's language, drawn
+        from a pool that differs by signal, so it is no longer an example every
+        tree emitted. The generator writes this key at assembly rather than
+        leaving it to be re-derived, because re-deriving it needs the manifest
+        and goes quietly wrong the moment a library is edited.
+        """
+        return tuple(record for record in self.records if record["meta"]["filler_only"])
 
     @property
     def owned(self) -> tuple[dict, ...]:
         """The examples only this signal has, in file order."""
-        return tuple(
-            record
-            for record in self.records
-            if record["meta"]["label_mode"] != STRUCTURAL_NULL_MODE
-        )
+        return tuple(record for record in self.records if not record["meta"]["filler_only"])
 
 
 @dataclass(frozen=True)
@@ -250,6 +303,20 @@ def _check_record(record: Mapping[str, object], *, signal: str, split: str, path
         )
     if not isinstance(meta.get("fragment_ids"), list) or not meta["fragment_ids"]:
         raise MergeError(f"{path}: example {example_id!r} has no 'meta.fragment_ids'")
+    filler_only = meta.get("filler_only")
+    if not isinstance(filler_only, bool):
+        raise MergeError(
+            f"{path}: example {example_id!r} has no boolean 'meta.filler_only'. It is what the "
+            "merge deduplicates on, and a tree from before GENERATOR_VERSION 3 does not carry "
+            "it. Re-deriving it from the label mode would be right for such a tree and silently "
+            "wrong for any tree generated with --companion-share above zero, so it is refused"
+        )
+    if filler_only and label_mode != STRUCTURAL_NULL_MODE:
+        raise MergeError(
+            f"{path}: example {example_id!r} is filler-only but has label mode {label_mode!r}. "
+            "Every fragment being filler means no fragment is decisive, so the two can only "
+            "disagree if the generator has drifted"
+        )
     if label_mode == STRUCTURAL_NULL_MODE and labels[signal] is not None:
         raise MergeError(
             f"{path}: example {example_id!r} is a structural null but labels {signal!r} "
@@ -294,25 +361,43 @@ def load_source_split(path: Path | str, *, signal: str, split: str) -> SourceSpl
 def _check_agreement(sources: Sequence[SourceSplit]) -> None:
     """Reject sources that did not come from one fold configuration."""
     for field in SIDECAR_AGREEMENT_FIELDS:
-        values = {source.signal: source.stats[field] for source in sources}
+        values = {source.signal: sidecar_field(source.stats, field) for source in sources}
         distinct = {json.dumps(value, sort_keys=True) for value in values.values()}
         if len(distinct) > 1:
             rendered = ", ".join(f"{signal}={value!r}" for signal, value in values.items())
             raise MergeError(
                 f"the sources disagree on {field!r}: {rendered}. They are not views of one "
                 "partition, so concatenating them would put one tree's test clusters in another "
-                "tree's training split with every file still loading cleanly"
+                "tree's training split -- or one arm's examples in another arm's tree -- with "
+                "every file still loading cleanly"
             )
 
 
 def check_structural_nulls(sources: Sequence[SourceSplit]) -> tuple[dict, ...]:
-    """Assert every source's structural nulls are the same examples, and return them.
+    """Assert every source's filler-only examples are the same examples, and return them.
 
     Position for position on ``example_id``, ``text`` and ``meta.fragment_ids``:
     the identity the union depends on, asserted rather than assumed. If the
-    generator's seed derivation ever grows a signal term, six divergent
-    structural-null sets would silently collapse to one tree's, shifting every
-    head's class prior with nothing downstream the wiser.
+    generator's seed derivation ever grows a signal term, six divergent null sets
+    would silently collapse to one tree's, shifting every head's class prior with
+    nothing downstream the wiser.
+
+    **Relaxed, not deleted, when companions arrived.** The set it runs over is
+    ``meta.filler_only`` rather than the ``null_structural`` label mode, so a
+    structural null that drew another signal's language is kept per signal
+    instead of being asserted identical across trees it cannot be identical in.
+    Everything still filler-only is checked exactly as before, and at
+    ``--companion-share 0`` that is every structural null, so the guard is
+    unweakened where it was ever load-bearing. Deleting it instead would put back
+    the failure it was written for.
+
+    That the remainder still lines up position for position at
+    ``--companion-share`` above zero is not an assumption this function makes --
+    it is what it checks. It happens to hold on the committed libraries because
+    the companion *count* draw consumes the same number of random values in every
+    signal's run, so a run that draws no companion is the run that drew none in
+    every other tree too. If a change ever breaks that, this raises rather than
+    quietly keeping one tree's copy.
     """
     reference = sources[0]
     expected = reference.structural
@@ -321,9 +406,10 @@ def check_structural_nulls(sources: Sequence[SourceSplit]) -> tuple[dict, ...]:
         if len(found) != len(expected):
             raise MergeError(
                 f"fold {reference.stats['fold_index']} {reference.split!r}: {reference.signal!r} "
-                f"has {len(expected)} structural nulls but {source.signal!r} has {len(found)}. "
-                "The six trees are meant to emit byte-identical filler-only examples, so the "
-                "shared copy would no longer describe what every head was trained on"
+                f"has {len(expected)} filler-only examples but {source.signal!r} has "
+                f"{len(found)}. The six trees are meant to emit byte-identical filler-only "
+                "examples, so the shared copy would no longer describe what every head was "
+                "trained on"
             )
         for position, (left, right) in enumerate(zip(expected, found, strict=True)):
             for field, getter in (
@@ -333,8 +419,8 @@ def check_structural_nulls(sources: Sequence[SourceSplit]) -> tuple[dict, ...]:
             ):
                 if getter(left) != getter(right):
                     raise MergeError(
-                        f"fold {reference.stats['fold_index']} {reference.split!r}: structural "
-                        f"null {position} disagrees on {field} between {reference.signal!r} "
+                        f"fold {reference.stats['fold_index']} {reference.split!r}: filler-only "
+                        f"example {position} disagrees on {field} between {reference.signal!r} "
                         f"({getter(left)!r}) and {source.signal!r} ({getter(right)!r}). Keeping "
                         "one copy would silently drop the others"
                     )
@@ -447,7 +533,7 @@ def _owned_record(record: Mapping[str, object], *, signal: str) -> dict:
 
 
 def _shared_record(record: Mapping[str, object], *, signals: Sequence[str]) -> dict:
-    """One structural null, kept once and labelled ``null`` for every signal.
+    """One filler-only example, kept once and labelled ``null`` for every signal.
 
     Sound only because every source asserts ``null`` for its own signal on this
     exact example (checked in :func:`_check_record`) and because the six copies
@@ -539,18 +625,28 @@ def merge_split(sources: Sequence[SourceSplit], *, name: str) -> tuple[list[dict
                     "path": str(source.path),
                     "examples": len(source.records),
                     "signal_owned": len(source.owned),
-                    "structural_nulls": len(source.structural),
+                    "filler_only": len(source.structural),
+                    "companion_share": source.companion_share,
                     "seed": source.stats.get("seed"),
                 }
                 for source in sources
             ],
-            "structural_nulls": {
+            # The arm this tree belongs to. Every source agrees on it or the
+            # merge refused, so one value describes the whole tree -- and a
+            # merged tree that did not record it would be indistinguishable from
+            # the other arm's once it left the directory it was written in.
+            "companion_share": sources[0].companion_share,
+            "filler_only": {
                 "kept": len(shared),
                 "dropped_as_duplicates": len(shared) * (len(sources) - 1),
                 "note": (
                     "the sources emit byte-identical filler-only examples, so one copy is kept "
                     "and labelled null for every signal. Checked position for position on "
-                    "example_id, text and meta.fragment_ids, not assumed"
+                    "example_id, text and meta.fragment_ids, not assumed. Deduplication keys on "
+                    "meta.filler_only rather than on the null_structural label mode: above "
+                    "--companion-share 0 a structural null may carry another signal's language "
+                    "drawn from a pool that differs by signal, so it is kept per signal and this "
+                    "count falls towards zero as the share rises"
                 ),
             },
             "example_ids": (

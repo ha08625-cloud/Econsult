@@ -95,7 +95,7 @@ data/synthetic/
     symptoms/flank_pain/        five libraries, all about flank_pain_present
     symptoms/haematuria/        five libraries, all about haematuria_present
     symptoms/recent_uti/        six libraries, all about recent_uti_present
-    filler/                     one library, UTI-specific filler
+    filler/                     two libraries, UTI-specific filler
   drafts/                       scratch files, deliberately not libraries (section 4)
   generated/                    output, git-ignored
 ```
@@ -114,15 +114,35 @@ contain no condition-specific vocabulary at all (checked: zero lexicon hits
 across their 270 lines), so they sit at the top level. `uti_speculation` is
 UTI-specific in 36 of its 40 lines and sits under the condition.
 
-`expectations.txt` is the awkward one. Twenty-six of its 100 lines are
-UTI-specific (urine culture, cystoscopy, trimethoprim, PSA), so by the same
-rule it ought to be split in two. It is not, and it stays whole in the shared
-filler for now, because splitting it is **not** dataset-neutral: `_draw_filler`
-picks a filler library uniformly and then a fragment within it, so going from
-five filler libraries to six changes every generated example and makes every
-number on file incomparable. The split belongs with the next change that bumps
-`GENERATOR_VERSION` and regenerates everything anyway. Until then, treat the
-shared filler as "condition-agnostic apart from a quarter of `expectations`".
+`expectations.txt` was the awkward one, and **it has now been split**. It was
+left whole for as long as it was because splitting it is **not** dataset-neutral:
+`_draw_filler` picks a filler library uniformly and then a fragment within it, so
+going from five filler libraries to six changes every generated example and makes
+every number on file incomparable. That is why the split waited for a
+`GENERATOR_VERSION` bump that regenerated everything anyway, and it landed with
+the one that took the version to 3.
+
+The re-read moved **34 of the 100 lines**, not the 26 this section used to
+estimate. The rule applied is the language one above — the organ, the
+investigation or the drug is specific to the urinary tract — and applying it line
+by line catches families the earlier count missed: kidneys and kidney function
+("check my creatinine levels", "a scan to check my kidneys aren't damaged"),
+renal stones ("an xray to check for stones", "lithotripsy to break it up") and
+the named antibiotics beyond trimethoprim (ciprofloxacin, cefalexin). Sixty-six
+lines stay in `filler/expectations.txt` — generic tests, generic drugs, and the
+whole *who, how and when* half, none of which names a body part at all — and 34
+move to `conditions/uti/filler/expectations_uti.txt`.
+
+**Both halves needed their own declaration, and neither inherited the parent's.**
+The shared half keeps `recent_uti_present` at basis `policy`: eight of its 66
+lines still ask for antibiotics or a check for infection, and none of them dates
+one inside the window. The UTI half is `policy` on the same signal for a
+different reason — **the lexicon finds nothing in it at all**, so it would have
+passed as `absent`, and six of its lines plainly discuss a urine infection and
+its treatment ("I had trimethoprim last time", "ciprofloxacin ... what worked
+last time", "a urine culture ... to identify the bug"). Declaring `absent` there
+would have recorded the lexicon's silence as a fact about the text, which is the
+one thing section 4's two bases exist to keep apart.
 
 The filler libraries are verified silent about **all seven** signals — that
 check is the lint's (section 8), it runs in CI, and it currently passes with no
@@ -191,8 +211,9 @@ rules (section 4). It is not a leak and it never was.
 | `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
 | `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
 | `filler/emotional.txt` | 60 | Filler: worry and feelings |
-| `filler/expectations.txt` | 100 | Filler: what they want to happen — both *what* (tests, drugs, referrals) and *who, how and when* (a named regular GP, phone vs face to face, timing) |
+| `filler/expectations.txt` | 66 | Filler: what they want to happen, in vocabulary any condition's patient could use — generic tests and drugs ("a blood test", "antibiotics", "a CT scan") and *who, how and when* (a named regular GP, phone vs face to face, timing) |
 | `conditions/uti/filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
+| `conditions/uti/filler/expectations_uti.txt` | 34 | Filler: the same asks in urinary-tract vocabulary — urine culture, cystoscopy, PSA, trimethoprim, kidney stones |
 
 Every symptom is sized now; none is still a seed batch. All the decisive and
 confounder libraries sit at or above the 40–50 band.
@@ -462,7 +483,7 @@ cannot say that. Per-line label vectors (section 12.3) are what would express it
 
 **Undeclared is the default, and it is not the same as silence.** A closed-world
 default — "silent about everything I do not name" — would mean adding an eighth
-signal silently asserted that all 48 existing libraries were silent about it.
+signal silently asserted that all 49 existing libraries were silent about it.
 `uti_speculation` is the standing evidence for why that is unsafe: it had no
 lexicon and nothing checked it for as long as `recent_uti_present` had no
 libraries, and a library nobody has read against a signal is not a library that
@@ -514,15 +535,20 @@ discovered as a surprise later.
 
 #### What the declaration pass decided
 
-293 pairs: **254 `absent`, 23 `policy`, 16 deliberately undeclared.** Every pair
+300 pairs: **260 `absent`, 24 `policy`, 16 deliberately undeclared.** Every pair
 is in one of the three states; none is in an unconsidered one, and a test asserts
-that.
+that. (The pass itself decided 293 across 48 libraries; splitting
+`expectations.txt` in two added the seven cells of a 49th and moved one of them
+from `absent` to `policy`.)
 
-The 23 `policy` pairs are 19 on `recent_uti_present` plus four others, and the
+The 24 `policy` pairs are 20 on `recent_uti_present` plus four others, and the
 shape is expected rather than unlucky. That lexicon deliberately matches the
 infection nouns every library reaches for while its recency modifiers stop short
 of "last time", "again" and "I'm prone to them" — so a historical, third-party or
 non-urinary infection lands in exactly the cell a `policy` note is for.
+`expectations_uti` is the one `policy` pair no lexicon put there: it matches
+nothing, and it is declared `policy` anyway because six of its lines discuss a
+urine infection and its treatment (section 3).
 
 The 16 undeclared pairs are the cost of every decision deliberately left unmade,
 and 14 of them are the **nocturia / urinary-frequency pair in both directions**.
@@ -616,16 +642,21 @@ training on it rises.
 fragments from `tangents` read as three consecutive tangents in the same voice.
 This puts a hard ceiling on the count: a structural null at N needs N distinct
 sources. Without companions those sources are filler libraries and there are
-five, so four is the practical limit and going higher wants more filler
-libraries rather than a code change.
+six, so five is the practical limit and going higher wants more filler
+libraries rather than a code change. It was five and four until
+`expectations.txt` was split in two (section 3) — a reminder that the ceiling
+counts *sources* and not lines, so dividing one library raises it exactly as
+writing a new one does.
 
-**Companions raise that ceiling, and they are the first thing that ever has.**
-One fragment per signal (below), so the ceiling becomes *eligible filler
-libraries + signals with at least one eligible companion library* — five plus
-six against today's tree. The generator checks this up front and refuses to
-start if the requested maximum exceeds what the split can serve, naming both
-halves. An *undeclared* filler library lowers the ceiling for that signal by
-one, which is why the refusal names it (section 4).
+**Companions raise that ceiling too, and they are the first thing other than a
+filler library that ever has.** One fragment per signal (below), so the ceiling
+becomes *eligible filler libraries + signals with at least one eligible companion
+library* — six plus six against today's tree. The generator checks this up front
+and refuses to start if the requested maximum exceeds what the split can serve,
+naming both halves. **The ceiling moves down as well**: an *undeclared* filler
+library lowers it for that signal by one, which is why the refusal names it
+(section 4), and a signal with no eligible companion library at all contributes
+nothing to the second half of the sum.
 
 ### Companions: other symptoms' language in a `null` example
 
@@ -966,16 +997,41 @@ pulled by five other heads on text the fever head gets no gradient from. Filling
 those absent keys with `null` would be a different and much larger ticket — 12.5,
 and then 12.2–12.4.
 
-**The structural nulls are kept once.** Because `run_seed` does not depend on the
-signal, all six trees emit byte-identical filler-only examples; one copy is kept
-and labelled `null` for all six. Same gradients, 25% fewer forward passes, and
-each head keeps its own mix. That identity is the load-bearing assumption, so the
-merge asserts it position for position on `example_id`, `text` and
-`meta.fragment_ids` rather than trusting it — if a signal term ever entered the
-seed derivation, six *divergent* null sets would collapse into whichever arrived
-first, every head's class prior would shift, and nothing downstream would notice.
-The union is only *sound* because the generalised filler lint (section 8) holds
-the filler libraries silent about all six signals; see 12.8.
+**The filler-only examples are kept once.** Because `run_seed` does not depend on
+the signal, all six trees emit byte-identical filler-only examples; one copy is
+kept and labelled `null` for all six. Same gradients, 25% fewer forward passes at
+`--companion-share 0`, and each head keeps its own mix. That identity is the
+load-bearing assumption, so the merge asserts it position for position on
+`example_id`, `text` and `meta.fragment_ids` rather than trusting it — if a
+signal term ever entered the seed derivation, six *divergent* null sets would
+collapse into whichever arrived first, every head's class prior would shift, and
+nothing downstream would notice. The union is only *sound* because the
+generalised filler lint (section 8) holds the filler libraries silent about all
+six signals; see 12.8.
+
+**What it deduplicates on is `meta.filler_only`, not the `null_structural` label
+mode**, and above `--companion-share 0` those are different sets. A structural
+null that drew a companion holds another signal's language drawn from *this*
+signal's eligible pool, so it is not the example any other tree emitted at that
+index: it is kept per signal like any other owned example, keeps its
+`null_structural` mode, and supervises only its own head. What still
+deduplicates is the filler-only remainder, which falls towards nothing as the
+share rises — so the merged tree grows by roughly 1.5×, which is the companion
+feature's compute bill (section 5).
+
+The check was **relaxed rather than deleted**, and the distinction matters: at
+`--companion-share 0` every structural null is still filler-only, so the guard
+covers exactly what it always covered. Deleting it would put back the failure it
+was written for.
+
+That the filler-only remainder still lines up position for position above zero
+is checked, not assumed. It holds on the committed libraries because the
+companion *count* draw consumes the same number of random values in every
+signal's run — `min(fragment_count − 1, eligible companion signals)`, and every
+signal has more eligible companion signals than the largest fragment count — so
+an example that drew no companion is the example that drew none in every other
+tree too. If that ever stops being true the merge raises rather than quietly
+keeping one tree's copy.
 
 **Every merged example keeps the id it had in its own tree.** Six trees all
 number from `train-000000`, so the merged record gets a fresh `example_id` —
@@ -988,11 +1044,17 @@ single-signal run working untouched. The rejected alternative was teaching the
 report layer that two ids are the same example, which would put that knowledge in
 the one module with no way to check it.
 
-Three things the merge refuses outright, each because the failure would otherwise
-be silent: sources that disagree on `generator_version` or on the
-`(folds, fold_index, split_salt)` triple; two sources describing one
-`fragment_id` with a different `cluster_key`, `fragment_type` or `split` (a dict
-union would first-win that); and divergent structural nulls. One thing it reports
+Four things the merge refuses outright, each because the failure would otherwise
+be silent: sources that disagree on `generator_version`, on the
+`(folds, fold_index, split_salt)` triple, or on `requested.companion_share` — a
+merged tree that is half Arm 0 and half Arm P loads cleanly, trains cleanly and
+answers the question the two arms exist to ask with a dataset that is neither of
+them; two sources describing one `fragment_id` with a different `cluster_key`,
+`fragment_type` or `split` (a dict union would first-win that); and divergent
+filler-only examples. A tree generated before `GENERATOR_VERSION` 3 carries
+neither `meta.filler_only` nor `requested.companion_share` and is refused by name
+rather than merged on a default, because a default of zero would be right for
+such a tree and silently wrong beside any tree generated above it. One thing it reports
 without refusing: a `cluster_key` shared by fragments from more than one library.
 Tagged clusters are namespaced `{library}:{tag}` and cannot collide, but untagged
 ones fall back to the normalised text, which is not library-qualified — so
@@ -1004,8 +1066,9 @@ on stderr rather than treated as an error.
 The merged sidecar carries everything `REQUIRED_STATS_KEYS` asks for, plus a
 `signals` list, a `realised.labelled_by_signal` block (which should match each
 source tree's own realised counts exactly, since the merge adds no supervision),
-and `merged_from` — the sources with their signals, example counts and seeds, the
-structural-null tally, and the collision list.
+and `merged_from` — the sources with their signals, example counts, seeds and
+`companion_share`, the arm's own `companion_share`, the filler-only tally, and
+the collision list.
 
 ---
 
@@ -1127,7 +1190,7 @@ picking between them is a labelling decision rather than a bug:
 A fragment is never checked against its own signal's lexicon: that is the
 lexicon working, and the recall guard above is where it is measured.
 
-**35 of the 293 pairs match, across 25 of the 48 libraries.** The head of the
+**35 of the 300 pairs match, across 25 of the 49 libraries.** The head of the
 list is the nocturia / urinary-frequency pair, which is not a lint fault — "up
 three times in the night for a wee" genuinely asserts both — and is the pair
 predicted to resist any library-level declaration:
@@ -1545,11 +1608,12 @@ the form patients actually write it.
 **Two filler families that do not exist.** *What the patient has already tried*
 — cranberry sachets, sodium citrate, D-mannose, paracetamol, ibuprofen, extra
 fluids, a pharmacist visit, a just-finished antibiotic course — appears in about
-half the submissions; the nearest library is `expectations`, which is about what
-they *want*, and 11 of its lines touch treatment at all. *Relevant history and
+half the submissions; the nearest libraries are `expectations` and
+`expectations_uti`, which are about what they *want*, and 11 of their 100 lines
+touch treatment at all. *Relevant history and
 risk factors* — pregnancy, diabetes, kidney stones, recurrent UTIs, male sex,
 age, a previous admission — appears in about a quarter; there are two such lines
-across all five filler libraries.
+across all six filler libraries.
 
 Neither can simply be written as filler: "I finished a course of nitrofurantoin
 ten days ago for a urine infection" and "last year I was hospitalised with a
@@ -1560,8 +1624,10 @@ would *not* stop either line: both are historical claims about an infection
 rather than about a symptom, so they match no anchor-modifier pair. The lint is a
 guard against drift in libraries already judged clean, not a substitute for
 judging a new one. Two new filler libraries would also raise the
-fragment-count ceiling of section 5 by two. Companions are the other way that
-ceiling moves, and the only other one.
+fragment-count ceiling of section 5 by two. There are two other ways that
+ceiling moves and no more: companions, which add a source per eligible foreign
+signal, and splitting an existing filler library, which is what the
+`expectations.txt` split did for one.
 
 **The set is not written in one register.** It splits into three blocks by
 punctuation and contraction habits: seven submissions with missing apostrophes in
@@ -1608,6 +1674,17 @@ repository, and it has to be recorded per submission before they are used.
 
 ## 10. Current state
 
+**Every measured number below was produced at `GENERATOR_VERSION` 2, and the
+generator is now at 3.** Nothing here is comparable with anything generated after
+the bump, and the difference is not cosmetic: version 3 splits `expectations.txt`
+in two, which takes filler from five libraries to six and therefore changes every
+`_draw_filler` outcome and every generated example, and it adds
+`meta.filler_only` and the companion draw. A regenerated Arm 0 baseline at
+version 3 is what these tables have to be re-measured against before any of them
+can be quoted beside a companion run; until that exists, read the rows below as
+history rather than as the control. Each table carries its own version line for
+the same reason.
+
 The generator, its tests and the lint are complete and merged. Every library
 fills all three of its cells, the lint reports `empty cells: 0`, and the
 proof-of-concept `fever_present` run produces output.
@@ -1633,6 +1710,9 @@ fixed the same way, by replacing clusters rather than adding fragments.
 
 **Fragment count and cluster count come apart, and cluster count is what
 matters.** Measured coverage, per signal, over the whole library:
+
+Library sizes, so version-independent — the split moved lines between two
+*filler* libraries and touched no signal library.
 
 | signal | libraries | tagged lines / total | untagged libraries |
 |---|---|---|---|
@@ -1682,6 +1762,8 @@ thinner libraries (roughly 160–200 per 10,000 train examples against fever's
 `--signal` was already a flag on every command. Decisive accuracy, pooled over
 five folds:
 
+Measured on `GENERATOR_VERSION` 2 datasets (2026-08-16).
+
 | signal | eff n | Arm B | Arm A | TF-IDF | `null→true` | errors on `_true`/`_false` |
 |---|---|---|---|---|---|---|
 | `flank_pain` | 243 | 96.0% | 80.7% | 72.8% | 1.51% | 59% |
@@ -1720,6 +1802,8 @@ signal alone, 10k), A2 (that signal alone at 4.5× the recombinations) and A3 (o
 encoder, six heads, the merged tree). Reports are
 `<signal>.joint_comparison.json`; the write-up is
 `reports/encoder_training/2026-08-17-plain-english.md`.
+
+Measured on `GENERATOR_VERSION` 2 datasets (2026-08-17).
 
 | signal | A1 | A2 | A3 | A1→A3 paired | `null→true`, synthetic | `null→true`, **real text** |
 |---|---|---|---|---|---|---|
@@ -1904,6 +1988,41 @@ default 70/15/15 split, and salting the default bands would move the split of
 every dataset generated so far. `--folds` must be at least 3: at two folds the
 test and validation buckets consume everything and there is nothing left to
 train on.
+
+Generate a whole arm. Seven signals x five folds x three splits is 105
+invocations, and the two arms differ in `--companion-share` and in **nothing
+else** — same seed, same counts, same fold triple, same salt, same libraries. If
+anything else differs the comparison is not readable and there is no way to
+recover it after the fact:
+
+```
+for signal in fever_present dysuria_present urinary_frequency_present \
+              nocturia_present flank_pain_present haematuria_present \
+              recent_uti_present; do
+  for fold in 0 1 2 3 4; do
+    for split in train:10000 val:2000 test:2000; do
+      python -m scripts.synthetic_data \
+        --signal "$signal" --folds 5 --fold "$fold" \
+        --split "${split%%:*}" --count "${split##*:}" \
+        --companion-share 0.0 \
+        --out "data/synthetic/generated/arm0/${signal}.fold${fold}.${split%%:*}.jsonl"
+    done
+  done
+done
+```
+
+Arm P is the same loop with `--companion-share 0.5` and a different output
+directory. Then merge each arm's tree separately:
+
+```
+python -m scripts.encoder_training merge-folds \
+    --data-dir data/synthetic/generated/arm0 --folds 5
+```
+
+The merge refuses to mix arms — the sources have to agree on
+`requested.companion_share` as well as on `generator_version` and the fold triple
+(section 7) — so pointing it at a directory holding both would fail rather than
+produce a tree that is half of each.
 
 Find the salts that populate every bucket of every library, which is what has to
 be re-run whenever a library grows:
@@ -2395,19 +2514,34 @@ where the numbers it produces can be trusted:
    **Done for library-level declarations** — see sections 4, 7 and 8. Per-*line*
    vectors (12.3) are not built, so cross-signal `true`/`false` is still
    inexpressible and the nocturia / urinary-frequency pair is still undeclared.
-4. Template the filler libraries (12.1), lowest-risk use of procedural
+4. ~~Companions: draw a non-decisive slot from another signal's declared-`null`
+   library instead of filler.~~ **Built** — `--companion-share`, sections 5 and
+   7, on top of step 3's declarations. It is the step this whole list existed to
+   reach: it is the only one that puts another symptom's clinical language into
+   an example whose label is still `null`, which is the property section 9's
+   real-text failure says the data has never had. Inert at its default of zero,
+   and the merge was relaxed to deduplicate on `meta.filler_only` rather than on
+   the label mode so that a structural null carrying a companion is kept per
+   signal (section 7). **What remains is measuring it**: two arms at
+   `GENERATOR_VERSION` 3 plus a margin-reselection arm, and until they are
+   trained and scored on the 67 submissions this step has bought nothing that
+   has been demonstrated.
+5. Template the filler libraries (12.1), lowest-risk use of procedural
    generation, and add the templates-per-library and clusters-per-split lint
    reports. Note this does *not* raise the fragment-count ceiling: that ceiling
    counts *sources* — filler libraries and eligible companion signals — not
    their size (section 5), so new filler libraries and new declared companion
-   pairs are what raise it.
-5. Engine changes for multi-signal examples (12.2). **Built** — `--emit-signals
+   pairs are what raise it, and splitting an existing filler library in two
+   raises it as surely as writing a new one does.
+6. Engine changes for multi-signal examples (12.2). **Built** — `--emit-signals
    all` emits the several keys, on top of step 3's declarations. What remains is
    *using* it: `merge-folds` refuses a multi-key tree and no arm trains on one,
    so the payoff is still unmeasured (12.2).
-6. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
-   library format.
-7. Template the clinical libraries, once there are enough distinct templates per
+7. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
+   library format. This is what the nocturia / urinary-frequency pair is waiting
+   on: their 14 undeclared cells (section 4) are per-*line* facts and no
+   library-level field can express them.
+8. Template the clinical libraries, once there are enough distinct templates per
    library for the split arithmetic to work.
 
 **The random-error pass (12.6) is independent of everything above it** — it is
@@ -2454,8 +2588,10 @@ first appears.
    principle: `fever_present` and `haematuria_present` train splits regenerated
    at the same flags after the move came out byte-identical, sidecars included.
    Nothing in the generator keys off a path, only off a library's manifest
-   `name`. The one thing it did *not* do is split `expectations.txt` — see
-   section 3 for why that waits for a `GENERATOR_VERSION` bump.
+   `name`. The one thing it did *not* do at the time was split
+   `expectations.txt`; that waited for a `GENERATOR_VERSION` bump and **landed
+   with the bump to 3**, moving 34 of its 100 lines to
+   `conditions/uti/filler/expectations_uti.txt` (section 3).
 2. **Generalise the filler lint to every signal — landed.** This is 12.5's
    *lint* half and nothing else: no manifest schema change, no label vectors.
    It is separable because it checks a guarantee we already rely on rather than
@@ -2485,8 +2621,14 @@ difference found". `arch_encoder_training.md` section 4c has the arm table and
 the sentence about what no arm isolates. What is still outstanding is the sweep
 itself (task 5), which needs a GPU and the A2 datasets generating.
 
-**Blocked, in this order:** multi-symptom recombinations (12.2–12.5);
-cluster-tagging the four untagged library sets.
+**Landed since that was written:** the multi-symptom recombinations themselves —
+the `null_on` declaration pass (section 4), `--companion-share` (section 5),
+`--emit-signals all` (section 7) and the seventh signal's libraries (sections 3
+and 9). What is still outstanding is the *measurement*: the two arms have to be
+generated, trained and scored before any of it is worth anything.
+
+**Still blocked:** per-line label vectors (12.3), and cluster-tagging the four
+untagged library sets.
 
 **The one thing that surprises people about the merge.** Joint training on
 merged single-signal datasets needs *no* part of 12.5. `fold_bucket` is a pure
