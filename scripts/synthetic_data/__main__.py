@@ -20,9 +20,12 @@ between a developer's machine and CI is not reproducible in any useful sense.
 Every run also writes ``<out>.stats.json``.
 
 ``--lint`` is a second, generation-free mode: it loads the same libraries and
-prints the hedge-marker, near-duplicate and filler-purity reports. It reads
-nothing but the manifest, so ``--ruleset``, ``--split``, ``--count`` and
-``--out`` are neither required nor used.
+prints the hedge-marker, near-duplicate, filler-purity and cross-signal reports.
+It reads nothing but the manifest, so ``--ruleset``, ``--split``, ``--count``
+and ``--out`` are neither required nor used. The cross-signal report has no flag
+of its own deliberately: it is the same lexicons asked about every library
+rather than only filler, and splitting it out would let somebody run the lint
+and not see it.
 
 ``--folds K --fold i`` is the third mode, and it is opt-in: without ``--folds``
 the splitter's 70/15/15 bands are untouched and the output is byte-identical to
@@ -144,7 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--lint",
         action="store_true",
         help="report library health instead of generating: hedge markers, "
-        "cross-split near-duplicates and every signal's language in filler",
+        "cross-split near-duplicates, every signal's language in filler, and the "
+        "full (library, foreign signal) grid with its paste-ready null_on block",
     )
     parser.add_argument(
         "--find-fold-salt",

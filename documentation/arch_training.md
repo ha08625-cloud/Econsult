@@ -268,6 +268,16 @@ rather than treated as filler. That is the correct behaviour until the machinery
 in 12.5 exists — treating them as filler would silently assert they say nothing
 about fever, and that guarantee is not written down anywhere the code can check.
 
+**The measurement now exists, and the declaration does not yet.** The lint's
+cross-signal report (section 8) asks the filler-purity question of every library
+rather than only of filler: for each of the 257 (library, foreign signal) pairs
+it prints how many of the library's lines read as that signal's language, and
+proposes a pasteable `null_on` declaration for every pair where it finds none.
+**32 pairs across 23 libraries have at least one match.** That report is
+evidence and a triage list; the manifest field it proposes, and the per-pair
+decisions behind it, are the next ticket's work. Until they land, `build_pools`
+keeps behaving exactly as described above.
+
 The libraries were written to be silent about the other signals, but that is a
 manual reading and it has drifted more than once. Two known exceptions are
 recorded here so they are not rediscovered as mysteries:
@@ -276,12 +286,14 @@ recorded here so they are not rediscovered as mysteries:
   against a urinary one ("it's just uncomfortable when I wee"), which asserts
   `dysuria_present: true` in a library that will eventually be declared silent
   on dysuria. Left in place because rewriting them is a labelling decision.
-  **The lint does not catch this and cannot**: it reads filler, and these are
-  signal-library lines. It is 12.5's label vectors that would make the claim
-  checkable, and the joint-training ticket
-  (`planned_updates/multi_symptom_training_expansion.md`, "what comes next")
-  that has to resolve it, because that is the first run in which one example
-  carries a dysuria label and a flank_pain label at the same time.
+  **The lint now finds this** — `flank_pain_false` matches the dysuria lexicon
+  on 2 of its 55 lines — but finding it is not the same as making the claim
+  checkable. The pair is a *per-line* fact over a library whose lines disagree,
+  and `fragment_type` records the polarity of the library's own signal only, so
+  there is no field a foreign signal's value could be read from. Per-line label
+  vectors (12.3) are what would express it. Until then the honest state for the
+  pair is *undeclared*: `flank_pain_false` cannot be used as a companion in a
+  dysuria run, which costs a smaller pool rather than a wrong label.
 * `filler` carries "blood test" and "blood pressure tablets", and `tangents`
   carries sleep-disturbance lines. Neither is a wrong label under the structural
   null rules. Both were flagged as candidate leaks when the lint was generalised
@@ -294,9 +306,10 @@ the six signals with libraries.** A filler fragment can be paired with anything,
 including examples labelled "no fever mentioned", so fever language in filler
 would make that example's label a lie — and the same holds for each urinary
 signal. There is an automated check for all six — see section 8. What is still
-missing is 12.5: the lint proves filler is silent, but nothing lets a *signal*
-library declare what it says about the other five, which is what a joint
-multi-head run needs.
+missing is 12.5: the lint now *measures* what every signal library says about
+the other six, but nothing lets a library **declare** it, so the generator has
+nothing in the manifest it can rely on. Measuring is done; declaring is the next
+ticket.
 
 ### Cluster markers
 
@@ -675,10 +688,10 @@ structural-null tally, and the collision list.
 ## 8. The lint
 
 `python -m scripts.synthetic_data --lint` reports on library health without
-generating anything. It never edits a fragment. Four reports:
+generating anything. It never edits a fragment. Five reports:
 
 **Signal language in filler** — the one with real teeth. Any filler fragment
-that reads as an assertion about one of the six signals with libraries is
+that reads as an assertion about one of the seven signals with a lexicon is
 flagged, grouped by the signal whose `null` label it would falsify. This is
 enforced by a test that runs against the real libraries in CI, so it fails if
 someone edits a filler library and introduces symptom language. Matching is on
@@ -686,15 +699,18 @@ whole words only: without that, "hot" matches inside `lithotripsy`, `photos` and
 `shot`.
 
 **Currently zero hits, on a per-signal baseline** (`FILLER_PURITY_BASELINE` in
-`tests/test_synthetic_recombination.py` is a dict of six empty sets). An entry
+`tests/test_synthetic_recombination.py` is a dict of empty sets, one per
+lexicon, and it is built from `SIGNAL_LEXICONS` so a new lexicon joins it
+rather than being silently unchecked — `recent_uti_present` did, and filler is
+silent about it too). An entry
 in that baseline is a claim that a line reads as signal language, is staying in
 filler anyway, and that somebody decided that on purpose.
 
-The six lexicons come in two shapes, and the split is not cosmetic. Fever is a
+The seven lexicons come in two shapes, and the split is not cosmetic. Fever is a
 state with a name, so a **term list** does it: "feverish" in filler is a leak
-whatever surrounds it. None of the five urinary signals can be named in one word
-without over- or under-reaching, so each is an **anchor plus modifier** pair and
-a fragment must match one of each:
+whatever surrounds it. None of the other six can be named in one word without
+over- or under-reaching, so each is an **anchor plus modifier** pair and a
+fragment must match one of each:
 
 | signal | anchor | modifier |
 |---|---|---|
@@ -703,6 +719,30 @@ a fragment must match one of each:
 | `nocturia` | named urination | night and getting-up language |
 | `flank_pain` | loin / side / back / kidney / ribs | pain |
 | `haematuria` | named urination, bowl, pan, sample | blood and urine colours |
+| `recent_uti` | infection nouns (uti, cystitis, water/urine/bladder/kidney infection) | diagnosis, treatment and recency markers |
+
+`recent_uti_present` is the seventh, added with the cross-signal report below.
+It has no libraries of its own yet, so nothing measures its recall against one —
+`test_every_lexicon_reaches_most_of_its_own_library` parametrises over the
+signals that *have* a positive library in the live manifest, which is how the
+new signal joins the guard automatically when its six libraries land rather
+than by somebody remembering to remove an exemption.
+
+Its split is the sharpest of the seven, because the question is not "does this
+line name an infection" but "does it put one inside the last 30 days". The
+anchor half alone is the commonest thing said in these libraries:
+`uti_speculation` names an infection on nearly every one of its 40 lines and
+asserts a recent one on none of them. So the recency modifiers deliberately stop
+short of "last time", "last year", "again" and "I'm prone to them" — every one
+of those is how that library talks about the past, none of them places an
+infection inside the window, and the labelling policy those libraries are being
+written against makes all of them `null` (ticket 6, DD18; it lands in section 9
+alongside them). Three lines in the whole tree match: an antibiotics-in-March line in
+`dysuria_null_historical`, a third-party UTI in `flank_pain_null_thirdparty`,
+and a ten-years-ago treatment in `haematuria_null_historical`. All three name an
+infection *and* its treatment, which is exactly what the lexicon is for, and all
+three are still `null` on the 30-day window — which is the shape of a `policy`
+decision rather than a leak.
 
 That shape is what lets the check stay quiet about filler's entirely legitimate
 talk of urine cultures, kidney scans and broken sleep while still firing the
@@ -735,6 +775,58 @@ holds these above 45%, which is a guard against a lexicon quietly narrowed until
 it matches nothing — the easy way to make a filler-purity failure go away, and
 the one that leaves the check dead. It is a floor, not a target: a library that
 grows in a new register will move these numbers and that is normal.
+
+**Cross-signal language** — the same lexicons, asked about *every* library
+against every signal that is not its own, rather than about filler alone. Filler
+purity and this report are one function (`signal_language_hits`) called two
+ways, so the two can never drift apart; a test asserts that the filler rows of
+the grid are exactly what the filler-purity report returns.
+
+The difference is what a hit *means*, and it is why this half fails nothing.
+A filler fragment carrying fever language has one right answer. A
+`nocturia_true` fragment carrying urinary-frequency language has three, and
+picking between them is a labelling decision rather than a bug:
+
+* **Leave the pair undeclared.** That library cannot be used as a companion in
+  that signal's run. Free, honest, and the right default — a smaller pool is a
+  smaller dataset, not a wrong one.
+* **Declare it `null_on` anyway, with a written reason.** For lines that mention
+  the signal and are genuinely `null` on it, like the three `recent_uti` matches
+  above.
+* **Rewrite the lines**, where a line is incidentally impure.
+
+A fragment is never checked against its own signal's lexicon: that is the
+lexicon working, and the recall guard above is where it is measured.
+
+**32 of the 257 pairs match, across 23 of the 42 libraries.** The head of the
+list is the nocturia / urinary-frequency pair, which is not a lint fault — "up
+three times in the night for a wee" genuinely asserts both — and is the pair
+predicted to resist any library-level declaration:
+
+| library | signal | matched | rate |
+|---|---|---|---|
+| `nocturia_null_thirdparty` | `urinary_frequency_present` | 9/47 | 19% |
+| `nocturia_true` | `urinary_frequency_present` | 8/54 | 15% |
+| `nocturia_false` | `urinary_frequency_present` | 6/54 | 11% |
+| `dysuria_null_hedged` | `urinary_frequency_present` | 5/40 | 12% |
+| `urinary_frequency_false` | `nocturia_present` | 5/46 | 11% |
+| `nocturia_null_historical` | `urinary_frequency_present` | 4/46 | 9% |
+
+The remaining 26 pairs run at 1 to 3 lines each; the report prints all 257 rows,
+worst first, with the matched lines under each. The full grid as it stood when
+the report landed, every matched line included, is committed at
+`reports/synthetic_data/2026-08-18-cross-signal-grid.md` — it is the input to
+the per-pair declaration pass, and a terminal scrollback is not a place to keep
+that.
+
+For every pair it finds *nothing* in, it prints a pasteable manifest
+declaration. That is the point of the report rather than a convenience: roughly
+225 pairs have to be declared by hand for the multi-symptom work, and the
+alternative to making the typing cheap is a wildcard — which is a shorthand for
+asserting the pairs without reading them. **A zero is evidence of topical
+absence at 59%–91% lexicon recall, not proof**, and the report says so above the
+block: a human still confirms the library's subject matter before committing a
+declaration, which is one judgement per pair rather than per line.
 
 **Cross-split near-duplicates** — pairs of similar fragments that ended up in
 different splits, i.e. the leakage described in section 6. This is the report
