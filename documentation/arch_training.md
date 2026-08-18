@@ -715,10 +715,20 @@ golden digest over the text, labels and fragment ids. The record's `meta` gained
 
 **What `null_structural` means at P > 0.** It keeps the name because it keeps its
 defining property — no fragment decisive for this signal — and it stops being
-trivially easy, which is the point. It also stops being filler-only, so the
-merge's structural-null deduplication (section 7) barely fires and the merged
-tree grows by roughly 1.5×. That is this feature's compute bill, and it is
-accepted rather than worked around.
+trivially easy, which is the point. It also mostly stops being filler-only, so
+the merge's deduplication (section 7) fires far less often and the merged tree
+grows. **Measured** at `P = 0.5` on the committed libraries: 1,118 filler-only
+examples per 10,000 against 3,064 at `P = 0`, and a merged six-signal tree of
+381,515 examples against 314,200 — **1.21×**, not the ~1.5× predicted before the
+run, because the count draw leaves roughly 37% of structural nulls with no
+companion at the default two-and-three-fragment mix. That is this feature's
+compute bill, and it is accepted rather than worked around.
+
+**A structural null holding clinical text is not a structural null the loader
+rejects.** `dataset.py` used to call any non-filler fragment decisive, which was
+the same test as "decisive for this signal" right up until companions existed. It
+is now the second test, which is what it always meant; see
+`arch_encoder_training.md` section 5.
 
 **Why the two kinds of `null` matter.** A `null_structural` example contains no
 fever words at all, so it is trivially easy — "no fever words, therefore null".
@@ -1016,8 +1026,8 @@ signal's eligible pool, so it is not the example any other tree emitted at that
 index: it is kept per signal like any other owned example, keeps its
 `null_structural` mode, and supervises only its own head. What still
 deduplicates is the filler-only remainder, which falls towards nothing as the
-share rises — so the merged tree grows by roughly 1.5×, which is the companion
-feature's compute bill (section 5).
+share rises — so the merged tree grows by a measured 1.21× at `P = 0.5`, which is
+the companion feature's compute bill (section 5).
 
 The check was **relaxed rather than deleted**, and the distinction matters: at
 `--companion-share 0` every structural null is still filler-only, so the guard
@@ -1795,6 +1805,38 @@ is in the signals rather than in the encoder. The working hypothesis is that the
 two are near-synonyms of each other — "going a lot" against "going a lot at
 night" — which is also why `urinary_frequency` is the only library set that
 needed an `adjacent` confounder class. Untested.
+
+**Both arms of the companion run now exist on disk, and nothing is trained on
+them yet.** `GENERATOR_VERSION` 3, seven signals x five folds x three splits per
+arm, identical settings apart from `--companion-share` — seed 42, 10,000/2,000/
+2,000, `15/25/60`, `--null-ambiguous-ratio 0.5`, salt `0`. Arm 0 is at share 0.0
+and is the regenerated baseline; Arm P is at 0.5, chosen on the grounds in the
+ticket rather than swept. Both merge into a six-head `joint6` tree that
+`load_folds` reads with no new escape hatch, and merging across the two arms is
+refused (section 7). No `PoolExhaustedError` anywhere, including
+`recent_uti_present`, which generated for the first time.
+
+Four facts from the generation, recorded before any model sees the data:
+
+* **The DD5 leak detector is clean.** Mean companions per example, broken down by
+  label mode, spread by at most **0.024** across the four modes on any of the 35
+  train splits, against a mean of about 0.75. The 2,000-example val and test
+  splits reach 0.12, which is what sampling noise looks like on a bucket of ~200.
+  A companion count that tracked the label mode would have meant *more clinical
+  text ⇒ more likely `null`*, and the run would have been void rather than
+  reinterpretable.
+* **So is the companion *polarity* check.** Companion labels run about
+  17/16/67 true/false/null inside `true`, `false` and `null` examples alike, so
+  "clinical language ⇒ `true`" has not replaced "clinical language ⇒ not `null`".
+* **The companion signal mix is flat**: 1,226 to 1,277 draws per foreign signal
+  in a 10,000-example fever split, which is the uniform-over-signals draw
+  working.
+* **The filler-only sets stop being identical across signals above zero, by
+  three examples in ten thousand.** Duplicate rejection redraws on the same
+  per-example RNG, and the rejection history diverges as soon as the companions
+  do. The merge keeps the 1,118 all six sources agree on and lets the three ride
+  as owned examples; at share 0 that divergence is impossible and is a hard error
+  (section 7).
 
 **The three-arm joint comparison ran on 2026-08-17, and its result inverts
 depending on which test set you read.** Six signals, three arms each: A1 (that

@@ -373,58 +373,84 @@ def _check_agreement(sources: Sequence[SourceSplit]) -> None:
             )
 
 
-def check_structural_nulls(sources: Sequence[SourceSplit]) -> tuple[dict, ...]:
-    """Assert every source's filler-only examples are the same examples, and return them.
+#: Fields a shared copy has to agree on across every source before one copy can
+#: stand for all of them. The label mode is not here because it is checked per
+#: record instead: a filler-only example is a ``null_structural`` one or the
+#: generator has drifted.
+SHARED_AGREEMENT_FIELDS = (
+    ("text", lambda record: record["text"]),
+    ("meta.fragment_ids", lambda record: record["meta"]["fragment_ids"]),
+)
 
-    Position for position on ``example_id``, ``text`` and ``meta.fragment_ids``:
-    the identity the union depends on, asserted rather than assumed. If the
-    generator's seed derivation ever grows a signal term, six divergent null sets
+
+def check_structural_nulls(sources: Sequence[SourceSplit]) -> tuple[dict, ...]:
+    """Return the filler-only examples every source emitted, asserting they agree.
+
+    On ``text`` and ``meta.fragment_ids``, matched by ``example_id``: the
+    identity the union depends on, asserted rather than assumed. If the
+    generator's seed derivation ever grew a signal term, six divergent null sets
     would silently collapse to one tree's, shifting every head's class prior with
     nothing downstream the wiser.
 
-    **Relaxed, not deleted, when companions arrived.** The set it runs over is
-    ``meta.filler_only`` rather than the ``null_structural`` label mode, so a
-    structural null that drew another signal's language is kept per signal
-    instead of being asserted identical across trees it cannot be identical in.
-    Everything still filler-only is checked exactly as before, and at
-    ``--companion-share 0`` that is every structural null, so the guard is
-    unweakened where it was ever load-bearing. Deleting it instead would put back
-    the failure it was written for.
+    **Relaxed, not deleted, when companions arrived**, in two steps.
 
-    That the remainder still lines up position for position at
-    ``--companion-share`` above zero is not an assumption this function makes --
-    it is what it checks. It happens to hold on the committed libraries because
-    the companion *count* draw consumes the same number of random values in every
-    signal's run, so a run that draws no companion is the run that drew none in
-    every other tree too. If a change ever breaks that, this raises rather than
-    quietly keeping one tree's copy.
+    The set it runs over is ``meta.filler_only`` rather than the
+    ``null_structural`` label mode. Above ``--companion-share 0`` a structural
+    null may hold another signal's language, drawn from a pool that differs by
+    signal, so it is not the example any other tree emitted and is kept per
+    signal rather than asserted identical to trees it cannot be identical to.
+
+    And the sources are matched by ``example_id`` rather than by position,
+    because above zero the filler-only sets are *nearly* but not exactly the same
+    set. :func:`~scripts.synthetic_data.recombine.generate` rejects an example
+    whose normalised text it has already emitted and redraws on the same
+    per-example RNG, and the ``seen`` set diverges between trees as soon as their
+    companions do -- so an index that collided in one tree and not in another
+    lands on a different draw there, and can come out holding a companion in one
+    tree and filler alone in the next. Measured on the committed libraries at
+    ``--companion-share 0.5``: 1121 filler-only examples in a 10,000-example
+    split against 1118 that all six sources agree on. The agreed ones are
+    deduplicated; the three that not every source emitted are kept per signal,
+    where they are ordinary owned examples carrying an honest ``null`` for their
+    own head and a mask for the others.
+
+    **At ``--companion-share 0`` that divergence is impossible**, so it is a hard
+    error there rather than a tolerated remainder: with no companions every
+    filler-only draw is signal-independent, down to which texts the ``seen`` set
+    already holds, so a disagreement could only be the drift this function exists
+    to catch.
     """
     reference = sources[0]
-    expected = reference.structural
-    for source in sources[1:]:
-        found = source.structural
-        if len(found) != len(expected):
-            raise MergeError(
-                f"fold {reference.stats['fold_index']} {reference.split!r}: {reference.signal!r} "
-                f"has {len(expected)} filler-only examples but {source.signal!r} has "
-                f"{len(found)}. The six trees are meant to emit byte-identical filler-only "
-                "examples, so the shared copy would no longer describe what every head was "
-                "trained on"
-            )
-        for position, (left, right) in enumerate(zip(expected, found, strict=True)):
-            for field, getter in (
-                ("example_id", lambda record: record["example_id"]),
-                ("text", lambda record: record["text"]),
-                ("meta.fragment_ids", lambda record: record["meta"]["fragment_ids"]),
-            ):
+    indexed = [{record["example_id"]: record for record in source.structural} for source in sources]
+    shared_ids = set(indexed[0]).intersection(*indexed[1:])
+
+    for example_id in sorted(shared_ids):
+        left = indexed[0][example_id]
+        for source, records in zip(sources[1:], indexed[1:], strict=True):
+            right = records[example_id]
+            for field, getter in SHARED_AGREEMENT_FIELDS:
                 if getter(left) != getter(right):
                     raise MergeError(
                         f"fold {reference.stats['fold_index']} {reference.split!r}: filler-only "
-                        f"example {position} disagrees on {field} between {reference.signal!r} "
-                        f"({getter(left)!r}) and {source.signal!r} ({getter(right)!r}). Keeping "
-                        "one copy would silently drop the others"
+                        f"example {example_id!r} disagrees on {field} between "
+                        f"{reference.signal!r} ({getter(left)!r}) and {source.signal!r} "
+                        f"({getter(right)!r}). Keeping one copy would silently drop the others"
                     )
-    return expected
+
+    unshared = set().union(*indexed) - shared_ids
+    if unshared and all(source.companion_share == 0.0 for source in sources):
+        listed = ", ".join(sorted(unshared)[:5])
+        raise MergeError(
+            f"fold {reference.stats['fold_index']} {reference.split!r}: {len(unshared)} "
+            f"example(s) are filler-only in some sources and not in others ({listed}"
+            f"{' ...' if len(unshared) > 5 else ''}), at --companion-share 0 where every "
+            "filler-only draw is signal-independent and this cannot happen. Something has made "
+            "the generator's draws depend on the signal, which is the drift that would otherwise "
+            "collapse six divergent null sets into whichever arrived first"
+        )
+
+    # Reference file order, so the merged tree stays byte-reproducible.
+    return tuple(record for record in reference.structural if record["example_id"] in shared_ids)
 
 
 def merge_fragments(sources: Sequence[SourceSplit]) -> dict[str, dict]:
@@ -591,12 +617,22 @@ def merge_split(sources: Sequence[SourceSplit], *, name: str) -> tuple[list[dict
 
     _check_agreement(sources)
     shared = check_structural_nulls(sources)
+    shared_ids = {record["example_id"] for record in shared}
     fragments = merge_fragments(sources)
     collisions = cluster_collisions(fragments)
 
-    groups = [
-        [_owned_record(record, signal=source.signal) for record in source.owned]
+    # Everything the shared copy does not already stand for, which above
+    # --companion-share 0 includes the handful of filler-only examples not every
+    # source emitted. Keyed on the shared set rather than on `filler_only` so
+    # that "deduplicated" and "kept per signal" partition the tree between them
+    # by construction, with no example in both and none in neither.
+    emitted = [
+        [record for record in source.records if record["example_id"] not in shared_ids]
         for source in sources
+    ]
+    groups = [
+        [_owned_record(record, signal=source.signal) for record in own]
+        for source, own in zip(sources, emitted, strict=True)
     ]
     groups.append([_shared_record(record, signals=signals) for record in shared])
     records = _interleave(groups)
@@ -624,12 +660,14 @@ def merge_split(sources: Sequence[SourceSplit], *, name: str) -> tuple[list[dict
                     "signal": source.signal,
                     "path": str(source.path),
                     "examples": len(source.records),
-                    "signal_owned": len(source.owned),
+                    # What this source contributed under its own id: everything
+                    # the deduplicated copy does not already stand for.
+                    "signal_owned": len(own),
                     "filler_only": len(source.structural),
                     "companion_share": source.companion_share,
                     "seed": source.stats.get("seed"),
                 }
-                for source in sources
+                for source, own in zip(sources, emitted, strict=True)
             ],
             # The arm this tree belongs to. Every source agrees on it or the
             # merge refused, so one value describes the whole tree -- and a
@@ -639,6 +677,15 @@ def merge_split(sources: Sequence[SourceSplit], *, name: str) -> tuple[list[dict
             "filler_only": {
                 "kept": len(shared),
                 "dropped_as_duplicates": len(shared) * (len(sources) - 1),
+                # Filler-only in some sources and not in others, so no one copy
+                # describes what every head was trained on. Kept per signal.
+                # Zero at --companion-share 0, where it is a hard error.
+                "kept_per_signal": sum(
+                    1
+                    for source in sources
+                    for record in source.structural
+                    if record["example_id"] not in shared_ids
+                ),
                 "note": (
                     "the sources emit byte-identical filler-only examples, so one copy is kept "
                     "and labelled null for every signal. Checked position for position on "

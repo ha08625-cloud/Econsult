@@ -357,9 +357,15 @@ def test_structural_nulls_are_kept_once(tmp_path):
     assert stats["merged_from"]["filler_only"] == {
         "kept": STRUCTURAL_PER_SPLIT,
         "dropped_as_duplicates": STRUCTURAL_PER_SPLIT * (len(SIGNALS) - 1),
+        "kept_per_signal": 0,
         "note": stats["merged_from"]["filler_only"]["note"],
     }
     assert stats["merged_from"]["companion_share"] == COMPANION_SHARE
+
+
+def _treated(stats):
+    """Mark the fixture tree as the treatment arm, so P > 0 behaviour applies."""
+    stats["requested"]["companion_share"] = 0.5
 
 
 def _companion_in_the_first_structural_null(records, signal):
@@ -404,9 +410,45 @@ def test_a_structural_null_carrying_a_companion_is_kept_per_signal(tmp_path):
 
     # The mode is still a null_structural for every copy, so a merged tree at
     # P > 0 is bigger without any head's mix changing shape.
-    assert stats["realised"]["label_modes"]["null_structural"] == (
-        len(SIGNALS) * 1 + shared_left
-    )
+    assert stats["realised"]["label_modes"]["null_structural"] == (len(SIGNALS) * 1 + shared_left)
+
+
+def test_a_filler_only_example_only_some_sources_emitted_is_kept_per_signal(tmp_path):
+    """The case the real libraries produce at P > 0, and the reason for matching by id.
+
+    ``generate`` redraws an example whose normalised text it has already emitted,
+    on the same per-example RNG, and the ``seen`` set diverges between trees as
+    soon as their companions do -- so one index can come out holding a companion
+    in one tree and filler alone in the next. Measured at
+    ``--companion-share 0.5``: three such examples in a 10,000-example split.
+    Matching by position would call that a hard error; matching by id keeps the
+    1118 the sources agree on and lets the three ride as owned examples.
+    """
+
+    def only_fever_keeps_it(records, signal):
+        if signal == "fever_present":
+            return
+        for record in records:
+            if record["meta"]["label_mode"] == "null_structural":
+                record["meta"]["filler_only"] = False
+                record["text"] = f"a {signal} companion sentence."
+                return
+
+    write_tree(tmp_path, records=only_fever_keeps_it, stats=_treated)
+    records, stats = merge_split(_sources(tmp_path), name="joint3")
+    indexed = _by_id(records)
+
+    disputed = f"train-{OWNED_PER_SPLIT:06d}"
+    assert stats["merged_from"]["filler_only"]["kept"] == STRUCTURAL_PER_SPLIT - 1
+    assert stats["merged_from"]["filler_only"]["kept_per_signal"] == 1
+
+    # fever still holds it as filler-only, and it is kept under fever's own id
+    # rather than as a shared copy asserting null for heads that never saw it.
+    assert f"shared:{disputed}" not in indexed
+    assert indexed[f"fever_present:{disputed}"]["labels"] == {"fever_present": None}
+    assert indexed[f"fever_present:{disputed}"]["meta"]["filler_only"] is True
+    for signal in SIGNALS[1:]:
+        assert indexed[f"{signal}:{disputed}"]["text"] == f"a {signal} companion sentence."
 
 
 def test_records_are_interleaved_so_a_prefix_is_representative(tmp_path):
@@ -579,7 +621,7 @@ def test_divergent_structural_nulls_are_a_hard_error(tmp_path):
 
     write_tree(tmp_path, records=diverge)
 
-    with pytest.raises(MergeError, match="filler-only example 0 disagrees on text"):
+    with pytest.raises(MergeError, match="filler-only example 'train-000003' disagrees on text"):
         merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
 
 
@@ -609,7 +651,7 @@ def test_a_missing_structural_null_is_a_hard_error(tmp_path):
     write_tree(tmp_path, records=drop_one)
 
     with pytest.raises(
-        MergeError, match=r"has 2 filler-only examples but 'dysuria_present' has 1"
+        MergeError, match=r"filler-only in some sources and not in others \(train-000003\)"
     ):
         merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
 

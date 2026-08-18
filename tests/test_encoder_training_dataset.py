@@ -200,18 +200,65 @@ def test_decisive_fragment_is_found_wherever_it_sits():
 def test_filler_is_read_from_the_sidecar_not_the_library_name(tmp_path):
     """DD6: ``fever_true`` and ``tangents`` look equally like filler to a regex.
 
-    Retype the fever library as filler and the example becomes a structural
-    null with no decisive fragment -- which is wrong, but it is wrong *because
-    the sidecar says so*, which is what this asserts.
+    Retype ``tangents`` as this signal's positive library and the example holds
+    two decisive fragments -- which is wrong, but it is wrong *because the
+    sidecar says so*, which is what this asserts.
     """
     path = _copy_fixture(tmp_path, TRAIN)
     _edit_stats(
         path,
-        lambda stats: stats["fragments"]["tangents:66666666"].update({"fragment_type": "positive"}),
+        lambda stats: stats["fragments"]["tangents:66666666"].update(
+            {"fragment_type": "positive", "signal_key": "fever_present"}
+        ),
     )
 
-    with pytest.raises(DatasetError, match="2 decisive fragments"):
+    with pytest.raises(DatasetError, match="2 fragments decisive for"):
         load_split(path)
+
+
+def test_a_non_filler_fragment_of_another_signal_is_not_decisive(tmp_path):
+    """A companion (``--companion-share`` above zero) is clinical and not decisive.
+
+    Retyping ``tangents`` as another signal's positive fragment is exactly what
+    a companion looks like from the loader's side: non-filler, and saying
+    nothing about the label this example is supervised on. Counting it as
+    decisive would make every companion-bearing dataset unloadable, which is
+    what happened before the loader was told the difference.
+    """
+    path = _copy_fixture(tmp_path, TRAIN)
+    _edit_stats(
+        path,
+        lambda stats: stats["fragments"]["tangents:66666666"].update(
+            {"fragment_type": "positive", "signal_key": "dysuria_present"}
+        ),
+    )
+
+    example = _by_id(load_split(path))["train-000000"]
+    assert example.decisive is not None
+    assert example.decisive.fragment_id == "fever_true:11111111"
+    assert example.library == "fever_true"
+
+
+def test_a_structural_null_may_hold_a_companion(tmp_path):
+    """It holds no fragment decisive for *its* signal, which is what the mode means.
+
+    At ``--companion-share`` above zero a structural null stops being
+    filler-only and stops being trivially easy, which is the point of it
+    (``arch_training.md`` section 5). The label-mode agreement check has to read
+    "decisive for this signal" or it would reject every such example.
+    """
+    path = _copy_fixture(tmp_path, TRAIN)
+    _edit_stats(
+        path,
+        lambda stats: stats["fragments"]["tangents:66666666"].update(
+            {"fragment_type": "positive", "signal_key": "dysuria_present"}
+        ),
+    )
+
+    example = _by_id(load_split(path))["train-000005"]
+    assert example.label_mode == "null_structural"
+    assert example.decisive is None
+    assert example.resampling_unit == STRUCTURAL_NULL_UNIT
 
 
 def test_structural_null_has_no_decisive_fragment():
