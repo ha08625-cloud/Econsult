@@ -52,6 +52,8 @@ from scripts.synthetic_data.manifest import (
 from scripts.synthetic_data.normalise import normalise
 from scripts.synthetic_data.recombine import (
     DEFAULT_FRAGMENT_COUNTS,
+    EMIT_SIGNALS_MODES,
+    FRAGMENT_TYPE_LABELS,
     LABEL_MODES,
     DistributionError,
     PoolError,
@@ -60,9 +62,11 @@ from scripts.synthetic_data.recombine import (
     build_pools,
     build_stats,
     generate,
+    label_vector,
     labels_for_mode,
     parse_distribution,
     parse_fragment_counts,
+    to_record,
 )
 from scripts.synthetic_data.ruleset import RulesetError, encoder_signals, validate_signal
 
@@ -522,18 +526,26 @@ def _argv(**flags) -> list[str]:
     return argv
 
 
-def _write_ruleset(base: Path) -> Path:
+def _write_ruleset(base: Path, signals: tuple[str, ...] = (SIGNAL,)) -> Path:
+    """A minimal ruleset defining ``signals``.
+
+    ``signals`` widens it because a ``null_on`` entry may only name a signal the
+    ruleset sends to the encoder, so a manifest declaring foreign pairs needs a
+    ruleset that knows those signals exist. The default is the single-signal
+    ruleset every test below this used before the parameter existed.
+    """
     path = base / "ruleset.json"
     path.write_text(
         json.dumps(
             {
                 "questions": [
                     {
-                        "question_id": "urinary_symptoms_4",
-                        "answer_key": SIGNAL,
+                        "question_id": f"urinary_symptoms_{index}",
+                        "answer_key": signal,
                         "answer_type": "Boolean",
                         "send_to_encoder": True,
                     }
+                    for index, signal in enumerate(signals, start=4)
                 ]
             }
         ),
@@ -3056,3 +3068,376 @@ def test_the_cli_threads_the_share_and_the_sidecar_records_it(tmp_path, companio
         for key, value in row.items()
     )
     assert sum(sum(row.values()) for row in companions["label_mix_by_label"].values()) == drawn
+
+
+# --------------------------------------------------------------------------
+# 21. Label vectors and multi-key emission (6b, DD7, DD13)
+#
+# Built and not measured: no trained arm uses --emit-signals all, and merge-folds
+# refuses a multi-key tree. What is tested is the rule, row by row, because the
+# masked row is the one whose failure is invisible -- emitting null where a key
+# should have been absent teaches every head to answer "not mentioned" to every
+# question it was not trained on, and nothing downstream would say so.
+# --------------------------------------------------------------------------
+
+_VECTOR_SIGNALS = (SIGNAL, OTHER_SIGNAL, THIRD_SIGNAL)
+
+
+def _declares(*signals: str) -> dict:
+    return {signal: {"basis": "absent"} for signal in signals}
+
+
+#: Every library declares every foreign signal except ``fill_c``, which is
+#: deliberately undeclared on the third signal. That one omission is what makes
+#: the masked row reachable in *generated* data rather than only in a unit test:
+#: an example holding fill_c emits no third-signal key at all.
+_VECTOR_LIBRARIES = [
+    _entry(
+        "pos",
+        signal_key=SIGNAL,
+        fragment_type="positive",
+        null_on=_declares(OTHER_SIGNAL, THIRD_SIGNAL),
+    ),
+    _entry(
+        "neg",
+        signal_key=SIGNAL,
+        fragment_type="negative",
+        null_on=_declares(OTHER_SIGNAL, THIRD_SIGNAL),
+    ),
+    _entry(
+        "amb",
+        signal_key=SIGNAL,
+        fragment_type="ambiguous",
+        subclass="hedged",
+        null_on=_declares(OTHER_SIGNAL, THIRD_SIGNAL),
+    ),
+    _entry(
+        "conf",
+        signal_key=SIGNAL,
+        fragment_type="confounder",
+        subclass="third_party",
+        null_on=_declares(OTHER_SIGNAL, THIRD_SIGNAL),
+    ),
+    _entry("fill_a", null_on=_declares(*_VECTOR_SIGNALS)),
+    _entry("fill_b", null_on=_declares(*_VECTOR_SIGNALS)),
+    _entry("fill_c", null_on=_declares(SIGNAL, OTHER_SIGNAL)),
+    _entry(
+        "dys_pos",
+        signal_key=OTHER_SIGNAL,
+        fragment_type="positive",
+        null_on=_declares(SIGNAL, THIRD_SIGNAL),
+    ),
+    _entry(
+        "dys_neg",
+        signal_key=OTHER_SIGNAL,
+        fragment_type="negative",
+        null_on=_declares(SIGNAL, THIRD_SIGNAL),
+    ),
+    _entry(
+        "noc_conf",
+        signal_key=THIRD_SIGNAL,
+        fragment_type="confounder",
+        subclass="third_party",
+        null_on=_declares(SIGNAL, OTHER_SIGNAL),
+    ),
+]
+
+
+@pytest.fixture
+def vector_libraries(tmp_path) -> Path:
+    """Three signals whose libraries declare each other, bar one omission."""
+    return _write_manifest(
+        tmp_path,
+        _VECTOR_LIBRARIES,
+        {f"{e['name']}.txt": _spread_lines(e["name"], 60) for e in _VECTOR_LIBRARIES},
+    )
+
+
+def _vector_pools(manifest_path: Path, split: str = "train"):
+    return build_pools(load_fragments(manifest_path), SIGNAL, split)
+
+
+# --- The table, row by row -------------------------------------------------
+
+
+@pytest.mark.parametrize(("fragment_type", "expected"), sorted(FRAGMENT_TYPE_LABELS.items()))
+def test_an_asserting_fragment_gives_the_signal_its_own_polarity(fragment_type, expected):
+    # Row 2. A confounder asserts null rather than declining to say, which is
+    # the whole difference between null_ambiguous and a missing key.
+    mode = {True: "true", False: "false"}.get(expected, "null_ambiguous")
+    decisive = _fragment(
+        "the decisive claim",
+        signal_key=SIGNAL,
+        fragment_type=fragment_type,
+        null_on=(NullOn(signal=OTHER_SIGNAL, basis="absent"),),
+    )
+    companion = _fragment("some filler", fragment_id="fill:1")
+    vector = label_vector([decisive, companion], signal_key=SIGNAL, label_mode=mode)
+    assert vector[SIGNAL] is expected
+
+
+def test_the_signal_is_null_when_every_fragment_only_declares_it():
+    # Row 3. No fragment asserts the signal and all of them declare it null_on,
+    # so the key is present and its value is null -- a supervised "not
+    # mentioned", not a mask.
+    fragments = [_fragment(f"filler {i}", fragment_id=f"fill:{i}") for i in range(2)]
+    vector = label_vector(fragments, signal_key=SIGNAL, label_mode="null_structural")
+    assert vector == {SIGNAL: None}
+
+
+def test_an_undeclared_fragment_masks_the_signal_rather_than_nulling_it():
+    # Row 1, and the row that must not be got backwards. The other fragment
+    # declares the foreign signal null_on; this one says nothing about it, so
+    # the example is not entitled to a key at all.
+    declared = _fragment(
+        "declared filler",
+        fragment_id="fill:a",
+        null_on=(
+            NullOn(signal=SIGNAL, basis="absent"),
+            NullOn(signal=OTHER_SIGNAL, basis="absent"),
+        ),
+    )
+    silent = _fragment(
+        "undeclared filler",
+        fragment_id="fill:b",
+        null_on=(NullOn(signal=SIGNAL, basis="absent"),),
+    )
+    vector = label_vector([declared, silent], signal_key=SIGNAL, label_mode="null_structural")
+    assert OTHER_SIGNAL not in vector
+    assert vector == {SIGNAL: None}
+
+
+def test_a_signal_no_fragment_names_is_simply_absent():
+    # The candidate set needs no ruleset: a signal nothing asserts and nothing
+    # declares is one every fragment is undeclared on, so the table masks it.
+    fragments = [_fragment(f"filler {i}", fragment_id=f"fill:{i}") for i in range(2)]
+    vector = label_vector(fragments, signal_key=SIGNAL, label_mode="null_structural")
+    assert "haematuria_present" not in vector
+
+
+def test_two_fragments_asserting_one_signal_raise_rather_than_resolve():
+    # Row 4, verified rather than assumed. Two assertions are either redundant
+    # or contradictory, and silently keeping one of them is how a dataset
+    # acquires a wrong label.
+    first = _fragment(
+        "first claim", fragment_id="pos:1", signal_key=SIGNAL, fragment_type="positive", null_on=()
+    )
+    second = _fragment(
+        "second claim", fragment_id="neg:1", signal_key=SIGNAL, fragment_type="negative", null_on=()
+    )
+    with pytest.raises(AssertionError, match="two fragments assert"):
+        label_vector([first, second], signal_key=SIGNAL, label_mode="true")
+
+
+def test_a_vector_that_disagrees_with_the_spec_is_refused():
+    # The primary key is cross-checked against the spec rather than trusted. It
+    # cannot differ while every non-decisive slot is drawn from a pool filtered
+    # on null_on, so a disagreement means that filter was bypassed -- which
+    # would put a wrong label on real training text.
+    decisive = _fragment(
+        "i had a fever",
+        fragment_id="pos:1",
+        signal_key=SIGNAL,
+        fragment_type="positive",
+        null_on=(),
+    )
+    undeclared = _fragment("filler", fragment_id="fill:x", null_on=())
+    with pytest.raises(AssertionError, match="primary signal"):
+        label_vector([decisive, undeclared], signal_key=SIGNAL, label_mode="true")
+
+
+# --- The flag --------------------------------------------------------------
+
+
+def test_emit_signals_primary_is_the_default_and_changes_nothing(vector_libraries):
+    pools = _vector_pools(vector_libraries)
+    for share in (0.0, 0.5):
+        default, _ = generate(pools, count=400, seed=42, companion_share=share)
+        explicit, _ = generate(
+            pools, count=400, seed=42, companion_share=share, emit_signals="primary"
+        )
+        assert [to_record(e) for e in default] == [to_record(e) for e in explicit]
+        assert all(set(e.labels) == {SIGNAL} for e in default)
+
+
+def test_emit_signals_all_changes_only_the_labels(vector_libraries):
+    # The DD4 fixture-digest shape: same seed, same draws, same fragments. The
+    # flag decides how much of what was already decided gets written down, and
+    # nothing else.
+    pools = _vector_pools(vector_libraries)
+    primary, _ = generate(pools, count=400, seed=42, companion_share=0.5)
+    every, _ = generate(pools, count=400, seed=42, companion_share=0.5, emit_signals="all")
+    assert [(e.example_id, e.text, e.meta) for e in primary] == [
+        (e.example_id, e.text, e.meta) for e in every
+    ]
+    assert [e.labels for e in primary] != [e.labels for e in every]
+
+
+def test_the_primary_key_still_holds_what_the_spec_decided(vector_libraries):
+    pools = _vector_pools(vector_libraries)
+    primary, _ = generate(pools, count=800, seed=7, companion_share=0.5)
+    every, _ = generate(pools, count=800, seed=7, companion_share=0.5, emit_signals="all")
+    for one, many in zip(primary, every, strict=True):
+        assert SIGNAL in many.labels
+        assert many.labels[SIGNAL] == one.labels[SIGNAL]
+
+
+def test_every_emitted_companion_key_matches_that_fragments_own_polarity(vector_libraries):
+    pools = _vector_pools(vector_libraries)
+    examples, _ = generate(pools, count=1500, seed=7, companion_share=0.6, emit_signals="all")
+    fragments = load_fragments(vector_libraries)
+    origin = {f.fragment_id: (f.signal_key, f.fragment_type) for f in fragments}
+
+    asserted_keys = 0
+    masked_assertions = 0
+    for example in examples:
+        drawn = {
+            signal: FRAGMENT_TYPE_LABELS[fragment_type]
+            for signal, fragment_type in (origin[fid] for fid in example.meta["fragment_ids"])
+            if signal is not None and signal != SIGNAL
+        }
+        for signal, value in drawn.items():
+            if signal not in example.labels:
+                # An assertion is masked by an *unrelated* fragment being
+                # undeclared on that signal: fill_c says nothing about the third
+                # signal, so an example holding it is not entitled to a key even
+                # when a third-signal fragment is sitting right there. The table
+                # is read over the whole example, never over one fragment.
+                masked_assertions += 1
+                continue
+            assert example.labels[signal] is value, example.meta
+            asserted_keys += 1
+        # Everything else the example is entitled to a key for is null.
+        for signal, value in example.labels.items():
+            if signal != SIGNAL and signal not in drawn:
+                assert value is None
+    assert asserted_keys > 200
+    assert masked_assertions > 20
+
+
+def test_the_undeclared_pair_masks_its_key_in_generated_data(vector_libraries):
+    # fill_c is undeclared on the third signal, so an example holding it emits
+    # no key for that signal -- and an example without it does. Both cells have
+    # to occur, or the test is asserting nothing.
+    pools = _vector_pools(vector_libraries)
+    examples, _ = generate(pools, count=1500, seed=7, companion_share=0.5, emit_signals="all")
+    libraries = {f.fragment_id: f.library for f in load_fragments(vector_libraries)}
+
+    with_fill_c = [
+        e for e in examples if any(libraries[fid] == "fill_c" for fid in e.meta["fragment_ids"])
+    ]
+    without = [
+        e for e in examples if all(libraries[fid] != "fill_c" for fid in e.meta["fragment_ids"])
+    ]
+    assert len(with_fill_c) > 100 and len(without) > 100
+    assert all(THIRD_SIGNAL not in e.labels for e in with_fill_c)
+    assert all(THIRD_SIGNAL in e.labels for e in without)
+    # The other foreign signal is declared everywhere, so it is never masked.
+    assert all(OTHER_SIGNAL in e.labels for e in examples)
+
+
+def test_no_two_assertion_example_is_ever_built(vector_libraries):
+    # DD8 verified rather than assumed: label_vector raises on a second
+    # assertion for one signal, so generating at share 1.0 across every label
+    # mode passes only because no such example can be assembled.
+    pools = _vector_pools(vector_libraries)
+    examples, _ = generate(pools, count=2000, seed=11, companion_share=1.0, emit_signals="all")
+    assert {e.meta["label_mode"] for e in examples} == set(LABEL_MODES)
+
+
+def test_an_unknown_emit_signals_mode_is_rejected(vector_libraries):
+    pools = _vector_pools(vector_libraries)
+    with pytest.raises(DistributionError, match="emit-signals"):
+        generate(pools, count=10, seed=42, emit_signals="both")
+
+
+# --- The sidecar and the CLI ----------------------------------------------
+
+
+def _vector_stats(tmp_path: Path, manifest: Path, **flags) -> dict:
+    out = tmp_path / "out.jsonl"
+    assert (
+        cli_main(
+            _argv(
+                manifest=manifest,
+                ruleset=_write_ruleset(tmp_path, _VECTOR_SIGNALS),
+                split="train",
+                count=1200,
+                out=out,
+                **flags,
+            )
+        )
+        == 0
+    )
+    return json.loads((tmp_path / "out.jsonl.stats.json").read_text(encoding="utf-8"))
+
+
+def test_the_sidecar_reports_the_realised_prior_of_every_head(tmp_path, vector_libraries):
+    # DD12 made a fact in the file rather than a claim in a document: the
+    # decision rule's constraint is stated relative to argmax, and argmax moves
+    # with the prior, so a head's prior has to be readable per head.
+    stats = _vector_stats(tmp_path, vector_libraries, companion_share=0.5, emit_signals="all")
+    assert stats["requested"]["emit_signals"] == "all"
+    rows = stats["realised"]["labels_by_signal"]
+    assert set(rows) == set(_VECTOR_SIGNALS)
+    assert rows[SIGNAL] == {**stats["realised"]["labels"], "absent": 0}
+
+    for signal in (OTHER_SIGNAL, THIRD_SIGNAL):
+        row = rows[signal]
+        assert sum(row.values()) == stats["realised"]["count"]
+        emitted = sum(row[label] for label in ("true", "false", "null"))
+        # A companion head is overwhelmingly null, which is DD13's point: its
+        # prior is nothing like the primary head's, so the two arms are not
+        # comparable on a metric whose constraint is stated relative to argmax.
+        # The real six-signal tree lands near 92% because a companion draw is
+        # spread over five foreign signals; this fixture spreads it over two, so
+        # it is the weaker version of the same shape rather than that number.
+        assert row["null"] / emitted > 0.5
+    # Only the deliberately undeclared pair is ever masked.
+    assert rows[OTHER_SIGNAL]["absent"] == 0
+    assert rows[THIRD_SIGNAL]["absent"] > 0
+
+
+def test_the_sidecar_reports_one_head_at_emit_signals_primary(tmp_path, vector_libraries):
+    stats = _vector_stats(tmp_path, vector_libraries, companion_share=0.5)
+    assert stats["requested"]["emit_signals"] == "primary"
+    rows = stats["realised"]["labels_by_signal"]
+    assert set(rows) == {SIGNAL}
+    assert rows[SIGNAL] == {**stats["realised"]["labels"], "absent": 0}
+
+
+def test_the_cli_writes_multi_key_records(tmp_path, vector_libraries):
+    out = tmp_path / "out.jsonl"
+    assert (
+        cli_main(
+            _argv(
+                manifest=vector_libraries,
+                ruleset=_write_ruleset(tmp_path, _VECTOR_SIGNALS),
+                split="train",
+                count=400,
+                companion_share=0.5,
+                emit_signals="all",
+                out=out,
+            )
+        )
+        == 0
+    )
+    records = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
+    assert all(SIGNAL in record["labels"] for record in records)
+    assert any(len(record["labels"]) == 3 for record in records)
+
+
+def test_the_cli_rejects_an_unknown_emit_signals_choice(tmp_path, vector_libraries):
+    with pytest.raises(SystemExit) as excinfo:
+        cli_main(
+            _argv(
+                manifest=vector_libraries,
+                ruleset=_write_ruleset(tmp_path, _VECTOR_SIGNALS),
+                split="train",
+                count=10,
+                emit_signals="everything",
+                out=tmp_path / "out.jsonl",
+            )
+        )
+    assert excinfo.value.code == 2
+    assert set(EMIT_SIGNALS_MODES) == {"primary", "all"}
