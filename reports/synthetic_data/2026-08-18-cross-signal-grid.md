@@ -5,6 +5,11 @@ the committed `data/synthetic/` tree, recorded here because it is the input to t
 per-pair `null_on` declaration pass and it should not live only in a terminal
 scrollback.
 
+**Regenerated when the six `recent_uti` libraries landed.** The first version of this
+file covered 42 libraries and 257 pairs; the seventh signal's libraries add both new
+rows and new columns, so a stale grid would have sent the declaration pass into a
+tree it did not describe.
+
 **What a row is.** For each (library, signal) pair where the signal is not the
 library's own, how many of the library's lines match that signal's lexicon.
 
@@ -17,7 +22,7 @@ is one judgement per pair, not per line.
 `null_on` with basis `policy` and a written reason, or rewrite the line. See
 `arch_training.md` section 8.
 
-**257 pairs across 42 libraries. 32 match at least one line, across 23 libraries. 225 are silent.**
+**293 pairs across 48 libraries. 35 match at least one line, across 25 libraries. 258 are silent.**
 
 ## The pairs that match
 
@@ -76,6 +81,13 @@ is one judgement per pair, not per line.
 * `[toilet+trips]` My last job started so early that the toilet trips felt like part of the shift
 * `[toilet+times]` When I was expecting my first I needed the toilet three or four times before morning
 
+### `recent_uti_null_hedged` → `dysuria_present` — 4/44 lines (9%)
+
+* `[loo+sting]` I felt a sting when I went to the loo last fortnight but I was using new bath salts so maybe it was just that.
+* `[bladder+twinges]` I had some bladder twinges about ten days ago but drinking extra water seemed to stop it so I am not convinced.
+* `[toilet+stinging]` I was stinging a bit when I went to the toilet three weeks ago but I had switched washing powder so I am not sure.
+* `[wee+stingy]` My wee was stingy around three weeks ago but it might just have been from wearing tight jeans all day.
+
 ### `haematuria_null_hedged` → `fever_present` — 3/45 lines (7%)
 
 * `[hot]` My urine went darker on that hot day walking and was back to normal by teatime.
@@ -124,6 +136,11 @@ is one judgement per pair, not per line.
 
 * `[wee+more]` My insomnia has me awake anyway and I go for a wee out of boredom more than anything
 * `[toilet+times]` The neighbour's car alarm went off twice last night and I went to the toilet both times because I was awake
+
+### `recent_uti_true` → `dysuria_present` — 2/44 lines (5%)
+
+* `[bladder+discomfort]` I assumed the discomfort ten days ago was thrush again but the sample showed a bladder infection.
+* `[urine+ache]` I thought the ache after gardening a fortnight ago was a pulled muscle but the doctor found a urine infection.
 
 ### `urinary_frequency_null_thirdparty` → `nocturia_present` — 2/44 lines (5%)
 
@@ -194,9 +211,13 @@ is one judgement per pair, not per line.
 
 * `[wee+kick]` Ive written a wee note to bring with me because I can never remember everything when Im sat in the room with the doctor and then I kick myself the whole way home
 
+### `recent_uti_null_hedged` → `urinary_frequency_present` — 1/44 lines (2%)
+
+* `[wee+all day]` My wee was stingy around three weeks ago but it might just have been from wearing tight jeans all day.
+
 ## The libraries with no matches at all
 
-19 libraries are silent about every signal that is not their own:
+23 libraries are silent about every signal that is not their own:
 
 * `dysuria_null_metaphor`
 * `emotional`
@@ -212,6 +233,10 @@ is one judgement per pair, not per line.
 * `flank_pain_true`
 * `justifiers`
 * `nocturia_null_hedged`
+* `recent_uti_false`
+* `recent_uti_null_adjacent`
+* `recent_uti_null_historical`
+* `recent_uti_null_thirdparty`
 * `tangents`
 * `urinary_frequency_null_adjacent`
 * `urinary_frequency_null_historical`
