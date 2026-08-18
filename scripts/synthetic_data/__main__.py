@@ -11,6 +11,7 @@
         --null-ambiguous-ratio 0.5 \\
         --fragment-counts 2=0.5,3=0.5 \\
         --companion-share 0.0 \\
+        --emit-signals primary \\
         --out      data/synthetic/generated/fever_present.train.jsonl
 
 Same seed + same libraries + same flags produces byte-identical output. That
@@ -28,6 +29,14 @@ every dataset generated before companions existed is still reproducible from its
 seed. Read ``companions.count_by_label_mode`` in the sidecar after any non-zero
 run: those rows must agree, or the companion count has become a proxy for the
 label.
+
+``--emit-signals all`` widens ``labels`` from the run's own signal to every
+signal the example's fragments jointly have a known status for. It is **built
+and not measured**: no trained arm uses it, ``merge-folds`` refuses a tree whose
+records carry more than their own signal's key, and the flag exists so that the
+mechanism is written, tested and documented rather than sketched. It defaults to
+``primary``, which is byte-identical to what the generator emitted before the
+flag existed.
 
 ``--lint`` is a second, generation-free mode: it loads the same libraries and
 prints the hedge-marker, near-duplicate, filler-purity and cross-signal reports.
@@ -57,7 +66,9 @@ from .lint import render_report
 from .manifest import ManifestError, find_fold_salts, load_fragments
 from .recombine import (
     DEFAULT_COMPANION_SHARE,
+    DEFAULT_EMIT_SIGNALS,
     DEFAULT_NULL_AMBIGUOUS_RATIO,
+    EMIT_SIGNALS_MODES,
     DistributionError,
     PoolError,
     PoolExhaustedError,
@@ -142,6 +153,18 @@ def build_parser() -> argparse.ArgumentParser:
         "and the output is what it was before companions existed; the count is drawn over "
         "the same number of slots in every label mode, so it cannot become a proxy for the "
         "label",
+    )
+    parser.add_argument(
+        "--emit-signals",
+        choices=list(EMIT_SIGNALS_MODES),
+        default=DEFAULT_EMIT_SIGNALS,
+        help="how many signals a record carries a label for. 'primary' emits one key, for "
+        "this run's signal, and is byte-identical to the output before this flag existed. "
+        "'all' also emits a key for every companion signal the example's fragments jointly "
+        "have a known status for -- a signal any fragment is undeclared on gets no key at "
+        "all, which masks that head's loss rather than supervising it towards 'not "
+        "mentioned'. Built and not measured: no trained arm uses it and merge-folds refuses "
+        "a multi-key tree",
     )
     parser.add_argument("--out", type=Path)
     parser.add_argument(
@@ -289,6 +312,7 @@ def run(args: argparse.Namespace) -> int:
         null_ambiguous_ratio=args.null_ambiguous_ratio,
         fragment_counts=fragment_counts,
         companion_share=args.companion_share,
+        emit_signals=args.emit_signals,
     )
     stats = build_stats(
         examples,
@@ -303,6 +327,7 @@ def run(args: argparse.Namespace) -> int:
         manifest_path=str(args.manifest),
         ruleset_path=str(args.ruleset),
         companion_share=args.companion_share,
+        emit_signals=args.emit_signals,
         folds=options["folds"],
         fold_index=options["fold_index"] if options["folds"] is not None else None,
         split_salt=options["salt"],

@@ -820,6 +820,45 @@ to answer "not mentioned" to every question it was not specifically trained on.
 This is written down here because it is the kind of mistake that is invisible
 until the model is mysteriously bad.
 
+**`--emit-signals all` is where that distinction stops being theoretical.** By
+default a record carries one key, for the signal the run asked for. At
+`--emit-signals all` it carries a key for every signal the example's fragments
+*jointly* have a known status for, decided per signal S over the whole example:
+
+| the fragments' states on S | result |
+|---|---|
+| any fragment is **undeclared** on S | **no key for S** |
+| exactly one fragment asserts S (its own signal) | key = that fragment's value |
+| every fragment is `null_on` S | key = `null` |
+| two fragments would assert S | unreachable, and raises if reached |
+
+Three things to read off that table.
+
+* **The first row is read over the whole example, not per fragment.** One
+  undeclared fragment masks the signal even when another fragment is asserting
+  it outright — a dysuria positive next to a filler library nobody has read
+  against dysuria earns no dysuria key. That is the honest answer: the
+  undeclared fragment might be saying something about dysuria too, and no
+  library-level field can say it is not.
+* **The last row is a raise, not a resolution.** Two assertions for one signal
+  are either redundant or contradictory, and silently keeping one of them is how
+  a dataset acquires a wrong label. Section 5's one-fragment-per-signal rule
+  makes it unreachable; the raise is what turns "unreachable" into something
+  verified rather than assumed.
+* **Nothing here reads text.** A fragment's contribution to every signal is
+  fixed before it is drawn — its own signal's value from `fragment_type`, every
+  other signal's from its library's `null_on` declaration (section 4) — so the
+  vector is composed from facts the manifest already stated. The label-first
+  invariant of section 2 is untouched, and the primary key is cross-checked
+  against the spec that was decided before any fragment existed.
+
+**It is built and not measured.** No trained arm uses it, and `merge-folds`
+refuses a tree whose records carry more than their own signal's key, so an
+`--emit-signals all` tree cannot currently reach joint training. The flag exists
+so the mechanism is written, tested and documented; what it would buy — more
+label per example, and therefore training efficiency — is a question of its own
+and is not the one companions were built to answer.
+
 **How many fragments an example holds is not stored.** It is
 `len(meta.fragment_ids)` and nothing else. A second copy of the same number is
 one more thing that can disagree with itself.
@@ -862,6 +901,15 @@ Two blocks in it exist specifically to police section 5's safety argument:
   * `signals` — which foreign signals were drawn, and how often.
   * `requested.companion_share` records the flag, and `split_pool_sizes.companion`
     records what was eligible to draw from.
+* `realised.labels_by_signal` — the realised label prior of every head the run
+  emits, plus an `absent` count for the examples that carried no key for it at
+  all. At `--emit-signals primary` this is one row equal to `realised.labels`.
+  It exists because the decision rule's objective is stated *relative to argmax*
+  (`arch_encoder_training.md` section 8), so a head's prior moves the constraint
+  and not only the head; a prior that has to be inferred from the flags is a
+  prior nobody checks. `absent` is the second half of it — a head supervised on
+  4% of the tree and a head supervised on all of it look identical once the
+  three label counts are normalised.
 
 Two more blocks make the dataset self-describing:
 
@@ -1824,6 +1872,23 @@ for the same reason: a companion share that varied by label would make clinical
 language a proxy for the label. Read `companions.count_by_label_mode` in the
 sidecar afterwards (section 7) — that is the check, not an optional extra.
 
+Emit a label for every signal the example is entitled to one for, rather than
+only the run's own (section 7):
+
+```
+python -m scripts.synthetic_data \
+    --split train --count 10000 \
+    --companion-share 0.5 --emit-signals all \
+    --out data/synthetic/generated/fever_present.train.jsonl
+```
+
+`--emit-signals` defaults to `primary`, which is byte-identical to what the
+generator emitted before the flag existed. `all` is built and not measured: no
+trained arm uses it and `merge-folds` refuses a multi-key tree, so it produces a
+dataset nothing downstream currently consumes. Read
+`realised.labels_by_signal` in the sidecar afterwards — a companion head's prior
+is nothing like the primary head's, and the decision rule is sensitive to that.
+
 Generate one fold of a five-fold run (section 6). Every fold needs all three
 splits, so a full run is fifteen invocations:
 
@@ -1895,10 +1960,12 @@ it would be wrong *silently*.
 
 ## 12. Provisional: scaling beyond the proof of concept
 
-**Status: none of this is built, and none of it is agreed.** Everything above
-section 12 describes the system as it actually is; everything below is a
-provisional plan, written down so it can be reviewed and turned into an
-implementation plan later.
+**Status: mostly not built, and each subsection says where it stands.** This
+section started as "none of this is built"; 12.2 and the library-level half of
+12.5 have since shipped, and their headers say so. Everything above section 12
+describes the system as it actually is; everything below is a provisional plan
+except where a subsection states otherwise, written down so it can be reviewed
+and turned into an implementation plan later.
 
 The ideas below are additive — each one multiplies a different axis of the
 dataset, and they compose. Section 12.5 describes the single mechanism that
@@ -1961,10 +2028,11 @@ library and clusters per split alongside the raw fragment counts.
 
 ### 12.2 Multi-signal libraries
 
-**Partial status: the libraries for all seven signals exist (section 3), the
-engine work does not.** A single-signal run against any of them produces a valid
-dataset; what does not exist is any way for *one* example to carry more than one
-key.
+**Status: built and not measured.** The libraries for all seven signals exist
+(section 3), and `--emit-signals all` now emits a key per signal from one run
+(section 7). What has not happened is any *use* of it: no trained arm reads a
+multi-key tree, `merge-folds` refuses one, and the payoff below is therefore
+still a prediction rather than a measurement.
 
 **The payoff is not more examples, it is more label per example.** Today a
 `true` example is one positive fever fragment plus fillers, and the fillers
@@ -1984,7 +2052,20 @@ is where we want to end up anyway.
 
 **The constraint this introduces** is that we may only emit a label for a signal
 when *every* fragment in the example has a known status for it. That is what
-section 12.5 is about, and it is not optional.
+section 12.5 is about, it is not optional, and it is now enforced — section 7's
+table is that rule.
+
+**What measuring it would cost, and why it has not been paid.** A trained arm at
+`--emit-signals all` is five more fold-trainings, and it would not be comparable
+to the companion arms on the metric that matters. A companion head's realised
+prior is roughly 2/2/95 (measured on the real libraries at
+`--companion-share 0.5`) against the primary head's 15/25/60, and the decision
+rule maximises macro-F1 *subject to a `null → true` rate no worse than argmax's*
+— so moving the prior moves the constraint as well as the head, and a rule that
+suppresses `true` because argmax already almost never says it would score as a
+win for reasons unrelated to reading the text. The question a multi-key arm can
+actually answer is "does more label per example buy training efficiency?", which
+is a different question from the one companions exist to answer.
 
 ### 12.3 Multi-symptom fragments
 
@@ -2021,6 +2102,13 @@ which mildly counteracts the urgency-language leak described in section 9.
 
 ### 12.5 What makes 12.2 to 12.4 safe: label vectors and declared silence
 
+**Status: built for library-level declarations, not for per-line ones.** The
+manifest carries `null_on` (section 4), the lint checks the half of it a lexicon
+can check (section 8), and `--emit-signals all` emits the vector (section 7).
+What is *not* built is the per-line label vector 12.3 needs — so cross-signal
+`true`/`false` is still inexpressible, and the paragraphs below describe the end
+state rather than today.
+
 All three of the above need one mechanism, and it is a direct generalisation of
 the principle in section 2 rather than a departure from it.
 
@@ -2034,14 +2122,23 @@ exactly what a silence declaration controls: silence on a signal earns a `null`,
 absence of a declaration earns no key at all.
 
 **Every fragment therefore has a label vector**, most of whose entries are
-"silent". Single-signal text libraries get theirs from the manifest for free;
-the multi-symptom libraries of 12.3 carry theirs per line.
+"silent". Single-signal text libraries get theirs from the manifest for free —
+**this half is built**; the multi-symptom libraries of 12.3 would carry theirs
+per line, and that half is not.
 
 **Combination is validated on the vector, not the primary signal.** Two
 fragments may be combined only if, for every signal, they do not assert
 different things. Silent-plus-asserted is fine and yields the assertion.
 Silent-plus-silent yields `null`. Asserted-plus-asserted is fine if they agree
 and forbidden if they do not.
+
+Section 7's table is the built version of this, and it is stricter in one place
+and narrower in another. Stricter: *undeclared*-plus-anything yields no key at
+all, because an undeclared library is not a silent one (section 4).
+Narrower: asserted-plus-asserted is not permitted even when the two agree — one
+fragment per signal per example (section 5) makes it unreachable, and the
+generator raises rather than resolving it, because a library-level declaration
+cannot establish that two lines agree.
 
 **The label-first invariant survives, and this is the point.** We still choose
 the target label vector first, then filter each pool down to the fragments
@@ -2293,19 +2390,21 @@ where the numbers it produces can be trusted:
 2. ~~Fold mode and the sidecar provenance block.~~ **Done** — see sections 6, 7
    and 10. It came first because it was the only change on this list the encoder
    training ticket was blocked on.
-3. Add label vectors and declared silence (12.5) with the lint check, while
-   there is still only one trained signal and it is cheap to get right.
+3. ~~Add label vectors and declared silence (12.5) with the lint check, while
+   there is still only one trained signal and it is cheap to get right.~~
+   **Done for library-level declarations** — see sections 4, 7 and 8. Per-*line*
+   vectors (12.3) are not built, so cross-signal `true`/`false` is still
+   inexpressible and the nocturia / urinary-frequency pair is still undeclared.
 4. Template the filler libraries (12.1), lowest-risk use of procedural
    generation, and add the templates-per-library and clusters-per-split lint
    reports. Note this does *not* raise the fragment-count ceiling: that ceiling
    counts *sources* — filler libraries and eligible companion signals — not
    their size (section 5), so new filler libraries and new declared companion
    pairs are what raise it.
-5. Engine changes for multi-signal examples (12.2). **The library half is
-   already done** for six signals; the engine changes that would let one example
-   carry several keys are step 3's job and are deliberately not being attempted
-   before it. Haematuria still needs at least one confounder library before it
-   can generate at all.
+5. Engine changes for multi-signal examples (12.2). **Built** — `--emit-signals
+   all` emits the several keys, on top of step 3's declarations. What remains is
+   *using* it: `merge-folds` refuses a multi-key tree and no arm trains on one,
+   so the payoff is still unmeasured (12.2).
 6. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
    library format.
 7. Template the clinical libraries, once there are enough distinct templates per

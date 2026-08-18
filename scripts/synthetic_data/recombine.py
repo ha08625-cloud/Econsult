@@ -84,6 +84,34 @@ LABELS = ("true", "false", "null")
 #: The four label modes; ``null`` splits into two structurally distinct kinds.
 LABEL_MODES = ("true", "false", "null_structural", "null_ambiguous")
 
+#: How many signals an example emits a key for.
+#:
+#: ``primary``
+#:     One key, for the signal the run was asked for. Every dataset generated so
+#:     far, and everything the merge and the trainer read today.
+#: ``all``
+#:     A key for every signal the example's fragments *jointly* have a known
+#:     status for -- the primary signal plus, at ``--companion-share`` above
+#:     zero, whichever companions came with it. See :func:`label_vector`.
+EMIT_SIGNALS_MODES = ("primary", "all")
+
+DEFAULT_EMIT_SIGNALS = "primary"
+
+#: A fragment's own-signal polarity, projected onto the label its own head would
+#: carry. ``filler`` never appears: a filler fragment has no signal of its own,
+#: and its contribution to any signal comes from its ``null_on`` declaration.
+#:
+#: ``ambiguous`` and ``confounder`` both map to ``None`` rather than being
+#: absent, and that is the point of the ``null_ambiguous`` mode: a confounder
+#: *asserts* that the correct label is "not mentioned", it does not decline to
+#: say.
+FRAGMENT_TYPE_LABELS: Mapping[str, bool | None] = {
+    "positive": True,
+    "negative": False,
+    "ambiguous": None,
+    "confounder": None,
+}
+
 _TERMINAL_PUNCTUATION = ".!?"
 
 
@@ -440,6 +468,82 @@ def labels_for_mode(signal_key: str, label_mode: str) -> dict[str, bool | None]:
     raise ValueError(f"unknown label mode {label_mode!r}")
 
 
+def label_vector(
+    fragments: Sequence[Fragment], *, signal_key: str, label_mode: str
+) -> dict[str, bool | None]:
+    """Every signal this example's fragments *jointly* have a known status for.
+
+    The generalisation of :func:`labels_for_mode` from one key to a vector, and
+    the rule is section 12.5's, applied per signal S over the fragments of one
+    example:
+
+    ==================================== ====================================
+    the fragments' states on S           result
+    ==================================== ====================================
+    any fragment is **undeclared** on S  **no key for S**
+    exactly one fragment asserts S       key = that fragment's value
+    every fragment is ``null_on`` S      key = ``None``
+    two fragments would assert S         unreachable, and raises if reached
+    ==================================== ====================================
+
+    **The masked row is the one that must not be got backwards.** An undeclared
+    fragment earns *no key*, never ``None``. Section 7's distinction between a
+    missing key and a ``null`` value is what makes merged multi-head training
+    sound: a missing key masks that head's loss, and ``None`` supervises it
+    towards "not mentioned". Emit ``None`` where a key should have been absent
+    and every head learns to answer "not mentioned" to every question it was not
+    trained on -- a failure that is invisible until the model is mysteriously
+    bad.
+
+    **Label-first survives.** Nothing here reads a fragment's *text*. A
+    fragment's contribution to every signal is fixed before it is drawn: its own
+    signal's value comes from ``fragment_type`` and every other signal's comes
+    from its library's ``null_on`` declaration. The vector is composed from
+    facts the manifest already stated, not inferred from the assembled blurb.
+
+    The candidate signals are the union of what the fragments assert and what
+    they declare, which needs no ruleset: a signal no fragment names is one every
+    fragment is undeclared on, so the table masks it anyway.
+
+    The primary signal is cross-checked against the spec rather than trusted. It
+    cannot differ -- every non-decisive slot is filled from a pool already
+    filtered on ``null_on`` for the primary signal -- and that is exactly why a
+    disagreement means an eligibility filter has been bypassed somewhere, which
+    would put a wrong label on real training text.
+    """
+    asserted: dict[str, bool | None] = {}
+    candidates: set[str] = set()
+    for fragment in fragments:
+        if fragment.signal_key is not None:
+            if fragment.signal_key in asserted:
+                # DD8 makes this unreachable: the decisive slot is the primary
+                # signal's only entry, and the companion draw takes at most one
+                # fragment per signal. Raised rather than resolved because two
+                # assertions are either redundant or contradictory, and picking
+                # one of them silently is how a dataset acquires a wrong label.
+                raise AssertionError(
+                    f"two fragments assert {fragment.signal_key!r} in one example: "
+                    f"{sorted(f.fragment_id for f in fragments)}"
+                )
+            asserted[fragment.signal_key] = FRAGMENT_TYPE_LABELS[fragment.fragment_type]
+            candidates.add(fragment.signal_key)
+        candidates.update(entry.signal for entry in fragment.null_on)
+
+    vector: dict[str, bool | None] = {}
+    for signal in sorted(candidates):
+        if all(f.signal_key == signal or f.declares_null_on(signal) for f in fragments):
+            vector[signal] = asserted.get(signal)
+
+    expected = labels_for_mode(signal_key, label_mode)[signal_key]
+    if signal_key not in vector or vector[signal_key] != expected:
+        raise AssertionError(
+            f"the label vector says {vector.get(signal_key, '<no key>')!r} for the primary "
+            f"signal {signal_key!r} but the spec says {expected!r}; a fragment reached a "
+            "non-decisive slot without declaring null_on the primary signal"
+        )
+    return vector
+
+
 def make_spec(
     rng: random.Random,
     *,
@@ -672,12 +776,18 @@ def generate(
     null_ambiguous_ratio: float = DEFAULT_NULL_AMBIGUOUS_RATIO,
     fragment_counts: Mapping[int, float] | None = None,
     companion_share: float = DEFAULT_COMPANION_SHARE,
+    emit_signals: str = DEFAULT_EMIT_SIGNALS,
 ) -> tuple[list[AssembledExample], dict]:
     """Generate ``count`` examples for one split, plus generation telemetry.
 
     Returns ``(examples, telemetry)``. Telemetry feeds the stats sidecar and is
     kept separate from the examples so the JSONL stays exactly the training
     schema.
+
+    ``emit_signals`` decides how many keys a record's ``labels`` holds and
+    nothing else: at ``"primary"`` the output is byte-identical to what it was
+    before the flag existed, because the same spec, the same draws and the same
+    fragments produce the same single key. See :func:`label_vector`.
     """
     if count < 0:
         raise ValueError(f"count must not be negative: {count}")
@@ -685,6 +795,10 @@ def generate(
         raise DistributionError(f"null-ambiguous-ratio must be in [0, 1]: {null_ambiguous_ratio}")
     if not 0.0 <= companion_share <= 1.0:
         raise DistributionError(f"companion-share must be in [0, 1]: {companion_share}")
+    if emit_signals not in EMIT_SIGNALS_MODES:
+        raise DistributionError(
+            f"emit-signals must be one of {list(EMIT_SIGNALS_MODES)}: {emit_signals!r}"
+        )
     distribution = dict(distribution or DEFAULT_DISTRIBUTION)
     fragment_counts = dict(fragment_counts or DEFAULT_FRAGMENT_COUNTS)
 
@@ -773,12 +887,21 @@ def generate(
             )
 
         seen.add(key)
+        # The spec's single key, or the same value plus whichever companions
+        # came with it. Either way the primary key holds exactly what was
+        # decided before any fragment was looked at -- label_vector re-derives
+        # it and refuses to return a vector that disagrees with the spec.
+        labels = (
+            spec.labels
+            if emit_signals == "primary"
+            else label_vector(fragments, signal_key=pools.signal_key, label_mode=spec.label_mode)
+        )
         examples.append(
             AssembledExample(
                 example_id=spec.example_id,
                 split=pools.split,
                 text=text,
-                labels=spec.labels,
+                labels=labels,
                 meta={
                     "label_mode": spec.label_mode,
                     # DD10: a structural null is no longer filler-only at
@@ -866,15 +989,20 @@ def _fragment_provenance(fragments: Iterable[Fragment], split: str) -> dict[str,
     }
 
 
-#: A companion's own-signal polarity, projected onto the label its own head
-#: would carry. ``filler`` never appears here: a companion is by definition a
-#: fragment from another signal's library.
-_TYPE_TO_LABEL = {
-    "positive": "true",
-    "negative": "false",
-    "ambiguous": "null",
-    "confounder": "null",
-}
+def _label_name(value: bool | None) -> str:
+    """Render a label value as its sidecar key: ``true``, ``false`` or ``null``.
+
+    One definition, because the tallies below and the companion tallies must
+    agree on what ``None`` is called, and ``str(value).lower()`` quietly renders
+    it ``"none"``.
+    """
+    return "null" if value is None else ("true" if value else "false")
+
+
+#: A companion's own-signal polarity as a sidecar key. Derived from
+#: :data:`FRAGMENT_TYPE_LABELS` rather than restated, so the tallies and the
+#: emitted vector cannot disagree about what a confounder asserts.
+_TYPE_TO_LABEL = {name: _label_name(value) for name, value in FRAGMENT_TYPE_LABELS.items()}
 
 
 def _companion_stats(
@@ -921,8 +1049,7 @@ def _companion_stats(
     label_mix = {label: _empty_labels() for label in LABELS}
 
     for example in examples:
-        label = "null" if example.labels[signal_key] is None else str(example.labels[signal_key])
-        label = label.lower()
+        label = _label_name(example.labels[signal_key])
         mode = example.meta["label_mode"]
         drawn = 0
         for fragment_id in example.meta["fragment_ids"]:
@@ -945,6 +1072,32 @@ def _companion_stats(
     }
 
 
+def _labels_by_signal(examples: Sequence[AssembledExample]) -> dict[str, dict[str, int]]:
+    """The realised label prior of every emitted head, plus how often it is masked.
+
+    DD12's "decided and reported, not emergent", made a fact in the file rather
+    than a claim in a document. At ``--emit-signals primary`` this is one row
+    equal to ``realised.labels``; at ``all`` it is the row per head that a
+    training run needs in order to read its own decision margins, because the
+    margin selector's constraint is stated *relative to argmax* and argmax moves
+    with the prior.
+
+    ``absent`` counts the examples that emitted no key for the signal at all --
+    masked loss, not a ``null`` label (section 7). It is the second half of the
+    prior and reporting only the three label counts would hide it: a head
+    supervised on 4% of the tree and a head supervised on all of it look
+    identical once the counts are normalised.
+    """
+    rows: dict[str, dict[str, int]] = {}
+    for example in examples:
+        for signal, value in example.labels.items():
+            row = rows.setdefault(signal, dict.fromkeys((*LABELS, "absent"), 0))
+            row[_label_name(value)] += 1
+    for row in rows.values():
+        row["absent"] = len(examples) - sum(row[label] for label in LABELS)
+    return {signal: rows[signal] for signal in sorted(rows)}
+
+
 def build_stats(
     examples: Sequence[AssembledExample],
     *,
@@ -959,6 +1112,7 @@ def build_stats(
     manifest_path: str,
     ruleset_path: str,
     companion_share: float = DEFAULT_COMPANION_SHARE,
+    emit_signals: str = DEFAULT_EMIT_SIGNALS,
     folds: int | None = None,
     fold_index: int | None = None,
     split_salt: str = "",
@@ -997,8 +1151,7 @@ def build_stats(
 
     for example in examples:
         mode = example.meta["label_mode"]
-        label = "null" if example.labels[signal_key] is None else str(example.labels[signal_key])
-        label = label.lower()
+        label = _label_name(example.labels[signal_key])
         # DD8: derived, never stored twice. A second copy is one more thing
         # that can disagree with itself.
         count_key = str(len(example.meta["fragment_ids"]))
@@ -1030,6 +1183,7 @@ def build_stats(
             "distribution": {label: distribution[label] for label in LABELS},
             "null_ambiguous_ratio": null_ambiguous_ratio,
             "companion_share": companion_share,
+            "emit_signals": emit_signals,
             "labels": {label: round(count * distribution[label]) for label in LABELS},
             "fragment_counts": {str(n): fragment_counts[n] for n in sorted(fragment_counts)},
         },
@@ -1037,6 +1191,10 @@ def build_stats(
             "count": len(examples),
             "labels": realised_labels,
             "label_modes": realised_modes,
+            # The realised prior of every head this run emits, primary included.
+            # See _labels_by_signal: at --emit-signals all it is the row a
+            # training run needs to read its own decision margins against.
+            "labels_by_signal": _labels_by_signal(examples),
         },
         # The leak detector for the variable fragment count, and the reason it
         # is safe. The count mix is drawn independently of the label, so these
