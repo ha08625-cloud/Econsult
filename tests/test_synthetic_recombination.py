@@ -16,12 +16,16 @@ import pytest
 from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
 from scripts.synthetic_data.__main__ import main as cli_main
 from scripts.synthetic_data.lint import (
+    NULL_ON_BLOCK_HEADER,
     SIGNAL_LEXICONS,
+    cross_signal_cells,
     cross_split_near_duplicates,
     filler_lexicon_hits,
     hedge_marker_hits,
     lexicon_matches,
+    render_cross_signal_report,
     render_report,
+    signal_language_hits,
 )
 from scripts.synthetic_data.manifest import (
     Fragment,
@@ -1245,6 +1249,11 @@ LEXICON_SELF_TEST: dict[str, tuple[str, ...]] = {
         "my urine has turned red today",
         "the toilet bowl was dark red when I went earlier",
     ),
+    "recent_uti_present": (
+        "I finished a course of nitrofurantoin for a water infection ten days ago",
+        "I was diagnosed with a UTI a fortnight ago",
+        "the surgery treated me for cystitis earlier this month",
+    ),
 }
 
 #: The floor each lexicon must clear against its own ``positive`` library, and
@@ -1298,7 +1307,21 @@ def test_every_lexicon_actually_matches_its_own_signal_text(signal):
     )
 
 
-@pytest.mark.parametrize("signal", sorted(SIGNAL_LEXICONS))
+def _signals_with_a_positive_library():
+    """Signals the recall guard can be asked about, read from the live manifest.
+
+    ``recent_uti_present`` has a lexicon and no libraries yet, and measuring
+    recall against a library that does not exist is a ZeroDivisionError rather
+    than a finding. Derived from the manifest rather than from an exemption
+    list, so the signal joins the guard the moment its libraries land and
+    nobody has to remember to remove anything.
+    """
+    return sorted(
+        {f.signal_key for f in _real_fragments() if f.fragment_type == "positive" and f.signal_key}
+    )
+
+
+@pytest.mark.parametrize("signal", _signals_with_a_positive_library())
 def test_every_lexicon_reaches_most_of_its_own_library(signal):
     # The hand-written sentences above are written to match. This runs the same
     # question against the real positive library, where nobody was aiming.
@@ -1341,6 +1364,17 @@ def test_the_known_lexicon_traps_are_not_flagged():
         "I've got stress going on at the moment with family issues that have been dragging on",
         "I've been drinking a lot more water than usual because I'm trying to cut back on coffee",
         "Probably just another water infection, happens quite often",
+        # An infection named, but nothing putting one inside the 30-day window:
+        # a suspicion about now, a recurrence with no marker, and an episode
+        # explicitly outside it. All three are null under section 9's policy,
+        # and all three are how uti_speculation talks.
+        "I reckon it's another UTI, I'm prone to them",
+        "I think it's likely to be a water infection like last time",
+        "I reckon it's a kidney infection, I had one last year",
+        # Treatment named, but no infection to attach it to.
+        "I think I might need antibiotics to clear this up",
+        "I think I need stronger antibiotics this time as the last lot didn't clear it properly",
+        "I had trimethoprim last time and it didn't touch it so I'm hoping for something stronger",
     ]
     assert filler_lexicon_hits([_fragment(t, fragment_type="filler") for t in traps]) == []
 
@@ -1355,6 +1389,121 @@ def test_signal_language_in_a_signal_library_is_not_a_filler_leak():
         ),
     ]
     assert filler_lexicon_hits(fragments) == []
+
+
+# --------------------------------------------------------------------------
+# 17b. The cross-signal report (ticket 6, task 1)
+#
+# The same lexicons as above, asked about every library rather than only
+# filler. Unlike filler purity this report has no right answer to assert
+# against: a hit is a decision to be made (leave the pair undeclared, declare
+# null_on with basis "policy", or rewrite the line), so the tests are about the
+# report covering what it claims to cover rather than about the count.
+# --------------------------------------------------------------------------
+
+
+def test_a_fragment_is_never_checked_against_its_own_signal():
+    # The dysuria lexicon matches this line by design; that is the lexicon
+    # working, and test_every_lexicon_reaches_most_of_its_own_library is where
+    # it is measured. Reporting it here would bury the foreign hits under it.
+    own = _fragment("it burns when I pee", fragment_type="positive", signal_key="dysuria_present")
+    assert [hit.signal for hit in signal_language_hits([own])] == []
+
+    foreign = _fragment("it burns when I pee", fragment_type="positive", signal_key="fever_present")
+    assert [hit.signal for hit in signal_language_hits([foreign])] == ["dysuria_present"]
+
+
+def test_filler_purity_is_the_cross_signal_check_restricted_to_filler():
+    # Not an equivalence for its own sake: if the generalisation had changed
+    # what filler purity reports, the empty baseline in the test above would be
+    # measuring something new while looking untouched.
+    fragments = _real_fragments()
+    filler_names = {f.library for f in fragments if f.fragment_type == "filler"}
+    from_grid = {
+        (cell.library, cell.signal, hit.fragment_id)
+        for cell in cross_signal_cells(fragments)
+        if cell.library in filler_names
+        for hit in cell.hits
+    }
+    from_report = {
+        (hit.library, hit.signal, hit.fragment_id) for hit in filler_lexicon_hits(fragments)
+    }
+    assert from_grid == from_report
+
+
+def test_the_grid_covers_every_library_against_every_foreign_signal():
+    fragments = _real_fragments()
+    libraries = {f.library: f.signal_key for f in fragments}
+    expected = {
+        (library, signal)
+        for library, own in libraries.items()
+        for signal in SIGNAL_LEXICONS
+        if own != signal
+    }
+    cells = cross_signal_cells(fragments)
+    assert {(cell.library, cell.signal) for cell in cells} == expected
+    assert len(cells) == len(expected), "a pair is reported twice"
+
+
+def test_the_grid_is_sorted_worst_first():
+    cells = cross_signal_cells(_real_fragments())
+    keys = [(-cell.matched, cell.library, cell.signal) for cell in cells]
+    assert keys == sorted(keys)
+
+
+def test_every_line_count_is_the_whole_library():
+    fragments = _real_fragments()
+    sizes = Counter(f.library for f in fragments)
+    for cell in cross_signal_cells(fragments):
+        assert cell.lines == sizes[cell.library], (
+            f"{cell.library} reports {cell.lines} lines against {cell.signal} but holds "
+            f"{sizes[cell.library]}"
+        )
+
+
+def _parse_null_on_block(report):
+    """Read the paste-ready block back as ``{library: {signal: declaration}}``.
+
+    Parses it as JSON rather than by string matching, because "can this be
+    pasted into the manifest" is the only property the block has to have and a
+    trailing comma on a last entry is the way to lose it.
+    """
+    block = report.split(NULL_ON_BLOCK_HEADER)[1]
+    declared = {}
+    library, body = None, []
+    for raw in block.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line == '"null_on": {':
+            body = []
+        elif line == "}":
+            declared[library] = json.loads("{" + "\n".join(body) + "}")
+        elif line.startswith('"'):
+            body.append(line)
+        else:
+            library = line
+    return declared
+
+
+def test_the_paste_ready_block_declares_exactly_the_silent_pairs():
+    fragments = _real_fragments()
+    cells = cross_signal_cells(fragments)
+    declared = _parse_null_on_block("\n".join(render_cross_signal_report(fragments)))
+
+    pairs = {(library, signal) for library, entry in declared.items() for signal in entry}
+    assert pairs == {(cell.library, cell.signal) for cell in cells if cell.silent}
+    assert all(
+        value == {"basis": "absent"} for entry in declared.values() for value in entry.values()
+    ), "only the machine-checkable basis may be proposed automatically"
+
+
+def test_the_report_says_a_zero_is_evidence_and_not_proof():
+    # The whole block below it is about to be pasted into the manifest as a
+    # guarantee, so the caveat travels with the output rather than living only
+    # in arch_training.md.
+    report = "\n".join(render_cross_signal_report(_real_fragments()))
+    assert "NOT proof" in report
 
 
 # --------------------------------------------------------------------------
@@ -1572,6 +1721,7 @@ def test_cli_lint_needs_no_split_count_or_out(capsys):
     assert "Hedge markers in decisive libraries:" in out
     assert "Cross-split near-duplicates" in out
     assert "Signal language in filler libraries:" in out
+    assert "Cross-signal language (every library, every foreign signal)" in out
     # Grouped by signal: a bare total would not say which label a hit falsifies.
     for signal in SIGNAL_LEXICONS:
         assert f"  {signal}: " in out

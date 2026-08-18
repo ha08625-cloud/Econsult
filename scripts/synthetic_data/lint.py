@@ -1,6 +1,6 @@
 """Reports that keep the fragment libraries honest as they grow.
 
-Three reports, none of which change a single fragment: they print and stop.
+Five reports, none of which change a single fragment: they print and stop.
 
 * **Hedge markers** flag lines in the decisive libraries that read as uncertain,
   as a prompt to re-read them by hand. Precision here is poor by construction --
@@ -13,6 +13,12 @@ Three reports, none of which change a single fragment: they print and stop.
   with libraries. A filler library that quietly acquires a fever mention would
   put fever text into an example labelled ``null`` on the strength of its
   structure, and the same is true of the five urinary signals.
+* **Cross-signal language** is the same check as filler purity, run over every
+  library against every signal that is not its own. Filler purity asks a
+  question with one right answer; this one asks a question whose answer is a
+  decision, so it reports and proposes rather than failing. Its zero-hit pairs
+  are printed as pasteable ``null_on`` declarations, which is what makes
+  declaring roughly 250 pairs by hand affordable without a wildcard.
 * **Split coverage** lists every ``(library, split)`` cell. Generation aborts on
   an empty cell (DD9); the lint reports it instead, because the tool you reach
   for when the generator refuses to run must not refuse for the same reason.
@@ -96,6 +102,37 @@ FILLER_PURITY_HEADER = (
     "accepted exception (baseline it in the test, with the reason). Grouped by "
     "the signal whose null label the hit would falsify."
 )
+
+#: Printed above the cross-signal report. Says what the zero means, because a
+#: zero here is about to be pasted into the manifest as a guarantee.
+CROSS_SIGNAL_HEADER = (
+    "For every (library, signal) pair where the signal is not the library's "
+    "own: how many of the library's lines read as that signal's language. This "
+    "is evidence of topical absence at 59%-91% lexicon recall, NOT proof. A "
+    "zero means nobody has found the signal's language in the library, not that "
+    "it is not there -- a human confirms the library's subject matter before "
+    "committing a null_on declaration for it. That is one judgement per pair, "
+    "not per line. A non-zero cell has three resolutions (arch_training.md "
+    "section 3): leave the pair undeclared, declare null_on with basis "
+    "'policy' and a note, or rewrite the lines."
+)
+
+#: Printed above the paste-ready block. The block is a typing aid and nothing
+#: more: no wildcard and no manifest-level default exists, because a shorthand
+#: for asserting these in bulk is a shorthand for asserting them without
+#: reading them.
+NULL_ON_BLOCK_HEADER = (
+    "Paste-ready null_on declarations for the zero-hit pairs, one block per "
+    "library. Only basis 'absent' is ever proposed here: it is the half of the "
+    "declaration a lexicon can check, so a hit against a declared 'absent' pair "
+    "is a failure rather than a judgement call. The other basis, 'policy' -- "
+    "the library does talk about the signal and the label is null anyway -- is "
+    "hand-written and hand-judged. Read the library before pasting its block: "
+    "the lint has found nothing, which is not the same as there being nothing."
+)
+
+#: Matching lines printed per non-silent cell before the rest are counted only.
+CROSS_SIGNAL_DETAIL_LIMIT = 4
 
 #: Fever language that must not appear in a filler fragment.
 FEVER_LEXICON = (
@@ -357,10 +394,70 @@ HAEMATURIA_LEXICON = Lexicon(
     ),
 )
 
-#: Every signal the filler libraries must stay silent about, keyed by the
-#: ruleset signal name so a hit can say which label it falsifies. The seventh
-#: ``send_to_encoder`` signal, ``recent_uti_present``, has no libraries and so
-#: nothing to be silent about yet.
+#: A urine infection diagnosed or treated inside the last 30 days. Anchors are
+#: the infection nouns; modifiers are the diagnosis, treatment and recency
+#: markers that turn naming an infection into asserting one happened recently.
+#:
+#: The split matters more here than for any other signal, because the anchor
+#: half on its own is the single commonest thing a patient says in these
+#: libraries: ``uti_speculation`` names an infection on nearly every line and
+#: asserts a recent one on none of them ("Probably just another water
+#: infection, happens quite often" is a guess about *now*, not a diagnosis).
+#: The recency markers deliberately stop short of "last time", "last year" and
+#: "again", which are the ways that library talks about the past: none of them
+#: places an infection inside the window, and section 9's labelling policy
+#: makes all three ``null``.
+RECENT_UTI_LEXICON = Lexicon(
+    anchors=(
+        "bladder infection",
+        "cystitis",
+        "kidney infection",
+        "urinary infection",
+        "urinary tract infection",
+        "urine infection",
+        "uti",
+        "utis",
+        "water infection",
+        "water works infection",
+    ),
+    modifiers=(
+        "a fortnight ago",
+        "amoxicillin",
+        "antibiotic",
+        "antibiotics",
+        "cefalexin",
+        "ciprofloxacin",
+        "confirmed",
+        "course",
+        "days ago",
+        "diagnosed",
+        "earlier this month",
+        "fortnight ago",
+        "fosfomycin",
+        "grew",
+        "macrobid",
+        "nitrofurantoin",
+        "pivmecillinam",
+        "prescribed",
+        "prescription",
+        "recently",
+        "sent off",
+        "showed up",
+        "tested positive",
+        "this month",
+        "trimethoprim",
+        "treated",
+        "treatment",
+        "weeks ago",
+    ),
+)
+
+#: Every signal a library may have to stay silent about, keyed by the ruleset
+#: signal name so a hit can say which label it falsifies. All seven
+#: ``send_to_encoder`` signals are here. ``recent_uti_present`` has no libraries
+#: of its own yet, so nothing measures its recall against one -- the recall
+#: guard parametrises over the signals that *do* have a positive library, and
+#: this one joins it automatically when they land.
 SIGNAL_LEXICONS: dict[str, Lexicon] = {
     "fever_present": Lexicon(terms=FEVER_LEXICON),
     "dysuria_present": DYSURIA_LEXICON,
@@ -368,6 +465,7 @@ SIGNAL_LEXICONS: dict[str, Lexicon] = {
     "nocturia_present": NOCTURIA_LEXICON,
     "flank_pain_present": FLANK_PAIN_LEXICON,
     "haematuria_present": HAEMATURIA_LEXICON,
+    "recent_uti_present": RECENT_UTI_LEXICON,
 }
 
 #: difflib ratio at or above which two fragments count as near-duplicates.
@@ -467,16 +565,22 @@ def lexicon_matches(text: str, signal: str) -> tuple[str, ...]:
     return matched
 
 
-def filler_lexicon_hits(fragments: Iterable[Fragment]) -> list[LexiconHit]:
-    """Report every signal's language in the filler libraries.
+def signal_language_hits(
+    fragments: Iterable[Fragment], signals: Iterable[str] | None = None
+) -> list[LexiconHit]:
+    """Report foreign-signal language in any set of fragments.
 
-    This is the one report with a test behind it: a new hit means a filler
-    library has acquired a mention of a symptom, which is a labelling bug in the
-    data rather than a style problem. Filler is paired with examples of every
-    label, so a fragment that says something about a signal makes every ``null``
-    example it lands in a lie about that signal.
+    "Foreign" is the whole of the generalisation: a fragment is never checked
+    against its *own* signal's lexicon, because a ``dysuria_true`` line matching
+    the dysuria lexicon is the lexicon working rather than a leak, and
+    ``test_every_lexicon_reaches_most_of_its_own_library`` already measures that
+    deliberately. Filler carries no ``signal_key``, so nothing is skipped for it
+    and :func:`filler_lexicon_hits` is unchanged by the generalisation.
+
+    ``signals`` defaults to every signal with a lexicon.
     """
-    filler = [f for f in fragments if f.fragment_type == "filler"]
+    checked = tuple(SIGNAL_LEXICONS) if signals is None else tuple(signals)
+    members = list(fragments)
     hits = [
         LexiconHit(
             fragment_id=fragment.fragment_id,
@@ -485,11 +589,92 @@ def filler_lexicon_hits(fragments: Iterable[Fragment]) -> list[LexiconHit]:
             text=fragment.text,
             signal=signal,
         )
-        for signal in SIGNAL_LEXICONS
-        for fragment in filler
-        if (matched := lexicon_matches(fragment.text, signal))
+        for signal in checked
+        for fragment in members
+        if fragment.signal_key != signal and (matched := lexicon_matches(fragment.text, signal))
     ]
     return sorted(hits, key=lambda hit: (hit.signal, hit.fragment_id))
+
+
+def filler_lexicon_hits(fragments: Iterable[Fragment]) -> list[LexiconHit]:
+    """Report every signal's language in the filler libraries.
+
+    This is the one report with a test behind it: a new hit means a filler
+    library has acquired a mention of a symptom, which is a labelling bug in the
+    data rather than a style problem. Filler is paired with examples of every
+    label, so a fragment that says something about a signal makes every ``null``
+    example it lands in a lie about that signal.
+
+    A special case of :func:`signal_language_hits` -- the ``absent`` half of the
+    cross-signal declaration (DD2), applied to the libraries that have always
+    had to satisfy it.
+    """
+    return signal_language_hits(f for f in fragments if f.fragment_type == "filler")
+
+
+@dataclass(frozen=True)
+class CrossSignalCell:
+    """One (library, foreign signal) pair, with how much of the library matched.
+
+    ``matched`` counts *lines*, not terms: the reader's decision is about the
+    library, and "9 lines, 19%" is the unit that decision is made in.
+    """
+
+    library: str
+    signal: str
+    matched: int
+    lines: int
+    hits: tuple[LexiconHit, ...]
+
+    @property
+    def rate(self) -> float:
+        return self.matched / self.lines if self.lines else 0.0
+
+    @property
+    def silent(self) -> bool:
+        return self.matched == 0
+
+
+def cross_signal_cells(
+    fragments: Iterable[Fragment], signals: Iterable[str] | None = None
+) -> list[CrossSignalCell]:
+    """Return every (library, foreign signal) cell, worst first.
+
+    Every library is covered, filler included: task 3 has to declare filler's
+    pairs too, and a report that silently omitted the libraries the existing
+    check already covers would leave a reader guessing which half they were
+    looking at.
+
+    Sorted by matched count descending, then library, then signal -- the pairs
+    that need a human decision first, and the long tail of zero-hit pairs after
+    them.
+    """
+    checked = tuple(SIGNAL_LEXICONS) if signals is None else tuple(signals)
+    members = list(fragments)
+
+    by_library: dict[str, list[Fragment]] = {}
+    own_signal: dict[str, str | None] = {}
+    for fragment in members:
+        by_library.setdefault(fragment.library, []).append(fragment)
+        own_signal[fragment.library] = fragment.signal_key
+
+    cells: list[CrossSignalCell] = []
+    for library in sorted(by_library):
+        lines = by_library[library]
+        for signal in checked:
+            if own_signal[library] == signal:
+                continue
+            hits = signal_language_hits(lines, (signal,))
+            cells.append(
+                CrossSignalCell(
+                    library=library,
+                    signal=signal,
+                    matched=len(hits),
+                    lines=len(lines),
+                    hits=tuple(hits),
+                )
+            )
+    return sorted(cells, key=lambda cell: (-cell.matched, cell.library, cell.signal))
 
 
 def cross_split_near_duplicates(
@@ -585,8 +770,68 @@ def render_report(fragments: Sequence[Fragment]) -> list[str]:
                 f"    {hit.library} {hit.fragment_id} [{', '.join(hit.terms)}] {_wrap(hit.text)}"
             )
 
+    lines += ["", "Cross-signal language (every library, every foreign signal)"]
+    lines += render_cross_signal_report(fragments)
+
     lines += ["", "Split coverage (DD9: generation aborts on an empty cell)"]
     lines += render_split_coverage(fragments)
+    return lines
+
+
+def render_cross_signal_report(fragments: Sequence[Fragment]) -> list[str]:
+    """Render the full (library, foreign signal) grid and the null_on block.
+
+    Two halves, and they are two different jobs. The grid is triage across
+    roughly 250 pairs, so every pair gets exactly one line carrying the count
+    and the rate, worst first, with the matched lines themselves under the
+    non-silent ones. The block is the typing that follows, for the silent ones
+    only.
+    """
+    cells = cross_signal_cells(fragments)
+    noisy = [cell for cell in cells if not cell.silent]
+    silent = [cell for cell in cells if cell.silent]
+
+    lines: list[str] = [f"  {CROSS_SIGNAL_HEADER}"]
+    lines.append(
+        f"  {len(cells)} pairs across {len({cell.library for cell in cells})} libraries: "
+        f"{len(noisy)} with at least one match, {len(silent)} silent"
+    )
+    lines.append(f"  {'library':<36}{'signal':<28}{'lines':>7}{'rate':>8}")
+    for cell in cells:
+        lines.append(
+            f"  {cell.library:<36}{cell.signal:<28}"
+            f"{cell.matched:>3}/{cell.lines:<3}{cell.rate:>7.0%}"
+        )
+        for hit in cell.hits[:CROSS_SIGNAL_DETAIL_LIMIT]:
+            lines.append(f"      {hit.fragment_id} [{', '.join(hit.terms)}] {_wrap(hit.text, 84)}")
+        if len(cell.hits) > CROSS_SIGNAL_DETAIL_LIMIT:
+            lines.append(
+                f"      ... and {len(cell.hits) - CROSS_SIGNAL_DETAIL_LIMIT} more matching "
+                "lines, counted above but not shown"
+            )
+
+    lines += ["", f"  {NULL_ON_BLOCK_HEADER}"]
+    lines += render_null_on_block(silent)
+    return lines
+
+
+def render_null_on_block(cells: Sequence[CrossSignalCell]) -> list[str]:
+    """Render the silent cells as pasteable manifest ``null_on`` declarations."""
+    by_library: dict[str, list[str]] = {}
+    for cell in cells:
+        by_library.setdefault(cell.library, []).append(cell.signal)
+    if not by_library:
+        return ["  (no silent pairs)"]
+
+    lines: list[str] = []
+    for library in sorted(by_library):
+        lines.append(f"  {library}")
+        lines.append('    "null_on": {')
+        entries = [
+            f'      "{signal}": {{"basis": "absent"}}' for signal in sorted(by_library[library])
+        ]
+        lines += [entry + "," for entry in entries[:-1]] + entries[-1:]
+        lines.append("    }")
     return lines
 
 
