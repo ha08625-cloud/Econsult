@@ -52,6 +52,7 @@ from scripts.synthetic_data.manifest import (
 from scripts.synthetic_data.normalise import normalise
 from scripts.synthetic_data.recombine import (
     DEFAULT_FRAGMENT_COUNTS,
+    LABEL_MODES,
     DistributionError,
     PoolError,
     PoolExhaustedError,
@@ -1006,6 +1007,7 @@ def test_jsonl_records_carry_the_training_schema(tmp_path, libraries):
         # that can disagree with itself.
         assert set(record["meta"]) == {
             "label_mode",
+            "filler_only",
             "fragment_ids",
             "fragment_subclasses",
             "seed",
@@ -2041,10 +2043,10 @@ def test_the_companion_pool_is_split_restricted():
         )
 
 
-def test_nothing_draws_from_the_companion_pool_yet():
-    # Instruction 10: build_pools may carry other signals' fragments, but no draw
-    # uses them until the companion-share flag lands. The golden-digest test is
-    # the other half of this; this half says so in one line.
+def test_nothing_draws_from_the_companion_pool_at_share_zero():
+    # The default is not "a small share", it is off: build_pools may carry other
+    # signals' fragments and no draw touches them. The golden content digest is
+    # the other half of this; this half says so against the real libraries.
     fragments = load_fragments(REAL_MANIFEST, check_cells=False)
     pools = build_pools(fragments, "fever_present", "train")
     assert pools.companion
@@ -2052,6 +2054,28 @@ def test_nothing_draws_from_the_companion_pool_yet():
     examples, _ = generate(pools, count=400, seed=42)
     used = {fid for example in examples for fid in example.meta["fragment_ids"]}
     assert used & companion_ids == set()
+
+
+def test_the_real_libraries_put_other_symptoms_into_fever_nulls():
+    # The deliverable, stated against the tree as committed rather than against a
+    # fixture: a fever_present null example whose text is dense with another
+    # symptom's clinical language. Every null example ever generated before this
+    # paired the absence of fever language with bland filler, which made
+    # "clinical-sounding text -> not null" a perfect rule on our data and a
+    # catastrophic one on real submissions.
+    fragments = load_fragments(REAL_MANIFEST, check_cells=False)
+    pools = build_pools(fragments, "fever_present", "train")
+    examples, _ = generate(pools, count=400, seed=42, companion_share=0.5)
+    origin = {f.fragment_id: f.signal_key for f in fragments}
+
+    with_companions = [
+        example
+        for example in examples
+        if example.labels["fever_present"] is None
+        and any(origin[fid] not in (None, "fever_present") for fid in example.meta["fragment_ids"])
+    ]
+    assert len(with_companions) > 50
+    assert all(example.meta["filler_only"] is False for example in with_companions)
 
 
 # --------------------------------------------------------------------------
@@ -2295,7 +2319,42 @@ def test_cli_still_requires_the_generation_flags_without_lint(tmp_path, librarie
 #: There is no historical reference for this digest -- it was recorded from the
 #: pre-fold-mode code while adding fold mode, and byte-identity against that
 #: code was verified separately at the time.
-GOLDEN_DEFAULT_SPLIT_SHA256 = "5844bc1399fdd7af5526935a9c0301cc6f1d577390708a580c43637427ca686a"
+#:
+#: Re-recorded once, when ``meta`` gained ``filler_only`` and the generator
+#: version went to 3. That moved every byte of every record without moving a
+#: single *choice*, which is why the constant below exists: it is the half of
+#: this test that a metadata addition is not allowed to move, and it was carried
+#: across the companion commit unchanged.
+GOLDEN_DEFAULT_SPLIT_SHA256 = "03e78fe3c47118a17ca5a22c31ce190c9c9066fc7bb329c80ac24064e5f882f8"
+
+#: sha256 of the same dataset projected onto everything the generator *chose* --
+#: the text, the labels, the mode and the fragments, with the bookkeeping keys
+#: dropped. Recorded from the pre-companion code at ``GENERATOR_VERSION`` 2 and
+#: unchanged since: ``--companion-share 0`` draws exactly the sequence it drew
+#: before companions existed, which is the claim DD4 makes and the one that
+#: makes Arm 0 a control rather than a second treatment.
+GOLDEN_DEFAULT_SPLIT_CONTENT_SHA256 = (
+    "ad1bdeb647314967dc6cb96c3f6fe3b3ca895531415c78c6dc335e914be66b22"
+)
+
+
+def _content_digest(path: Path) -> str:
+    """Hash the choices in a dataset, ignoring the bookkeeping around them."""
+    projection = [
+        [
+            record["example_id"],
+            record["split"],
+            record["text"],
+            record["labels"],
+            record["meta"]["label_mode"],
+            record["meta"]["fragment_ids"],
+            record["meta"]["fragment_subclasses"],
+        ]
+        for record in (json.loads(line) for line in path.read_text(encoding="utf-8").splitlines())
+    ]
+    blob = json.dumps(projection, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
 
 FOLDS = 5
 
@@ -2316,6 +2375,7 @@ def test_default_invocation_still_produces_the_golden_dataset(tmp_path, librarie
         == 0
     )
     assert hashlib.sha256(out.read_bytes()).hexdigest() == GOLDEN_DEFAULT_SPLIT_SHA256
+    assert _content_digest(out) == GOLDEN_DEFAULT_SPLIT_CONTENT_SHA256
 
 
 def test_an_empty_salt_reproduces_the_unsalted_digest():
@@ -2690,3 +2750,309 @@ def test_sidecar_provenance_holds_only_the_generated_split(tmp_path, fold_librar
     train_sidecar = _generate_fold(tmp_path, fold_libraries, "train", 2)
     assert set(test_sidecar["fragments"]) & set(train_sidecar["fragments"]) == set()
     assert all(entry["split"] == "train" for entry in train_sidecar["fragments"].values())
+
+
+# --------------------------------------------------------------------------
+# 20. The companion draw (6a, DD5-DD10, DD17)
+#
+# The fixtures below carry a second signal so that companion behaviour can be
+# tested without depending on the real libraries. Everything that must hold
+# *numerically* -- the blindness of the count and of the choice -- is asserted
+# over thousands of examples rather than over a code path: DD5's hole is
+# arithmetic, and a test that only walks the branch would not have caught it.
+# --------------------------------------------------------------------------
+
+OTHER_SIGNAL = "dysuria_present"
+THIRD_SIGNAL = "nocturia_present"
+
+_COMPANION_LIBRARIES = [
+    *_RECOMBINE_LIBRARIES,
+    _entry(
+        "dys_pos",
+        signal_key=OTHER_SIGNAL,
+        fragment_type="positive",
+        null_on={SIGNAL: {"basis": "absent"}},
+    ),
+    _entry(
+        "dys_neg",
+        signal_key=OTHER_SIGNAL,
+        fragment_type="negative",
+        null_on={SIGNAL: {"basis": "absent"}},
+    ),
+    _entry(
+        "noc_pos",
+        signal_key=THIRD_SIGNAL,
+        fragment_type="positive",
+        null_on={SIGNAL: {"basis": "absent"}},
+    ),
+    #: Undeclared on fever, so it may not companion a fever run however much
+    #: fever text it is sitting next to.
+    _entry("noc_neg", signal_key=THIRD_SIGNAL, fragment_type="negative"),
+]
+
+
+@pytest.fixture
+def companion_libraries(tmp_path) -> Path:
+    """``libraries`` plus two foreign signals, one of them partly undeclared."""
+    return _write_manifest(
+        tmp_path,
+        _COMPANION_LIBRARIES,
+        {f"{e['name']}.txt": _spread_lines(e["name"], 60) for e in _COMPANION_LIBRARIES},
+    )
+
+
+def _companion_pools(manifest_path: Path, split: str = "train"):
+    return build_pools(load_fragments(manifest_path), SIGNAL, split)
+
+
+def _origin(manifest_path: Path) -> dict[str, str | None]:
+    return {f.fragment_id: f.signal_key for f in load_fragments(manifest_path)}
+
+
+def _companions(example, origin: dict[str, str | None]) -> list[str]:
+    """The foreign signals this example drew, one entry per companion fragment."""
+    return [
+        str(origin[fid])
+        for fid in example.meta["fragment_ids"]
+        if origin[fid] not in (None, SIGNAL)
+    ]
+
+
+def test_companion_share_zero_is_inert_against_a_pool_that_could_serve_it(companion_libraries):
+    # Not the same test as the golden digest, which runs against a manifest with
+    # no companion pool at all. Here the pool is populated and the flag is off.
+    pools = _companion_pools(companion_libraries)
+    assert pools.companion_signals == (OTHER_SIGNAL, THIRD_SIGNAL)
+    off, _ = generate(pools, count=300, seed=42)
+    explicit, _ = generate(pools, count=300, seed=42, companion_share=0.0)
+    assert [e.text for e in off] == [e.text for e in explicit]
+    origin = _origin(companion_libraries)
+    assert not any(_companions(example, origin) for example in off)
+    assert all(
+        example.meta["filler_only"] is (example.meta["label_mode"] == "null_structural")
+        for example in off
+    )
+
+
+def test_a_non_zero_share_puts_foreign_signals_into_every_label_mode(companion_libraries):
+    pools = _companion_pools(companion_libraries)
+    examples, _ = generate(pools, count=2000, seed=42, companion_share=0.5)
+    origin = _origin(companion_libraries)
+    modes_with_companions = {
+        example.meta["label_mode"] for example in examples if _companions(example, origin)
+    }
+    assert modes_with_companions == set(LABEL_MODES)
+
+
+def test_the_companion_count_does_not_vary_by_label_mode(companion_libraries):
+    # DD5, and the single easiest thing in this feature to get subtly wrong. A
+    # structural null has one more non-decisive slot than every other mode at the
+    # same fragment count, so a per-slot draw over *those* slots would give
+    # structural nulls twice the companions at the default count of two -- and
+    # companion count would become a proxy for the label pointing the wrong way:
+    # more clinical text -> more likely null. A model can learn that without
+    # reading anything, and it would flatter this feature for the wrong reason.
+    pools = _companion_pools(companion_libraries)
+    examples, _ = generate(pools, count=8000, seed=11, companion_share=0.5)
+    origin = _origin(companion_libraries)
+
+    totals: dict[str, list[int]] = {mode: [] for mode in LABEL_MODES}
+    for example in examples:
+        totals[example.meta["label_mode"]].append(len(_companions(example, origin)))
+
+    means = {mode: sum(values) / len(values) for mode, values in totals.items()}
+    assert all(len(values) > 500 for values in totals.values())
+    # Expected 0.75 at the default 2=0.5,3=0.5 mix: (0.5 x 1 + 0.5 x 2) x 0.5.
+    assert max(means.values()) - min(means.values()) < 0.08, means
+
+
+def test_which_companion_is_drawn_does_not_vary_by_label_mode(companion_libraries):
+    # DD6, the same question asked of *which* rather than *how many*. If true
+    # examples drew positive companions more often than null examples did, we
+    # would have replaced "clinical language -> not null" with "clinical language
+    # -> true", which is the same failure wearing a different hat.
+    pools = _companion_pools(companion_libraries)
+    examples, _ = generate(pools, count=8000, seed=11, companion_share=0.5)
+    fragments = load_fragments(companion_libraries)
+    types = {f.fragment_id: f.fragment_type for f in fragments}
+    origin = {f.fragment_id: f.signal_key for f in fragments}
+
+    shares: dict[str, float] = {}
+    for mode in LABEL_MODES:
+        # Companions only. The decisive fragment is positive in every true
+        # example and negative in every false one by construction, and counting
+        # it here would measure that instead of the companion draw.
+        drawn = [
+            types[fid]
+            for example in examples
+            if example.meta["label_mode"] == mode
+            for fid in example.meta["fragment_ids"]
+            if origin[fid] not in (None, SIGNAL)
+        ]
+        assert len(drawn) > 300
+        shares[mode] = sum(1 for t in drawn if t == "positive") / len(drawn)
+    assert max(shares.values()) - min(shares.values()) < 0.1, shares
+
+
+def test_the_primary_signal_never_reaches_a_non_decisive_slot(companion_libraries):
+    # DD6: without this, a fever_null_hedged fragment could land in a fever
+    # structural null, null_structural and null_ambiguous would collapse into
+    # each other, and --null-ambiguous-ratio would stop meaning anything.
+    pools = _companion_pools(companion_libraries)
+    examples, _ = generate(pools, count=2000, seed=42, companion_share=0.8)
+    types = {f.fragment_id: f.fragment_type for f in load_fragments(companion_libraries)}
+    origin = _origin(companion_libraries)
+
+    for example in examples:
+        own = [types[fid] for fid in example.meta["fragment_ids"] if origin[fid] == SIGNAL]
+        expected = 0 if example.meta["label_mode"] == "null_structural" else 1
+        assert len(own) == expected, example.meta
+
+
+def test_no_example_holds_two_fragments_from_one_signal(companion_libraries):
+    # DD8. Two would either agree, doubling the evidence for one claim and
+    # teaching nothing, or disagree, which no single emitted label could describe.
+    pools = _companion_pools(companion_libraries)
+    examples, _ = generate(pools, count=2000, seed=42, companion_share=1.0)
+    origin = _origin(companion_libraries)
+    for example in examples:
+        drawn = _companions(example, origin)
+        assert len(drawn) == len(set(drawn)), example.meta
+
+
+def test_an_undeclared_foreign_library_never_companions(companion_libraries):
+    pools = _companion_pools(companion_libraries)
+    examples, _ = generate(pools, count=2000, seed=42, companion_share=1.0)
+    libraries = {f.fragment_id: f.library for f in load_fragments(companion_libraries)}
+    used = {libraries[fid] for example in examples for fid in example.meta["fragment_ids"]}
+    assert "noc_pos" in used
+    assert "noc_neg" not in used
+
+
+def test_companions_come_from_the_examples_own_split(companion_libraries):
+    # DD9: free today, because build_pools is already split-restricted and
+    # fold_bucket knows nothing about signals. Asserted anyway, because it is
+    # what would silently stop holding if pools were ever built per signal -- and
+    # a fever *test* example holding a dysuria *train* fragment is training text
+    # inside the test set.
+    fragments = load_fragments(companion_libraries)
+    splits = {f.fragment_id: f.split for f in fragments}
+    for split in SPLITS:
+        pools = build_pools(fragments, SIGNAL, split)
+        examples, _ = generate(pools, count=200, seed=42, companion_share=0.8)
+        assert all(
+            splits[fid] == split for example in examples for fid in example.meta["fragment_ids"]
+        )
+
+
+def test_a_structural_null_keeps_at_least_one_filler(companion_libraries):
+    # DD5's other half: the draw runs over fragment_count - 1 slots in every
+    # mode, so a structural null's remaining slot is always filler.
+    pools = _companion_pools(companion_libraries)
+    examples, _ = generate(pools, count=2000, seed=42, companion_share=1.0)
+    types = {f.fragment_id: f.fragment_type for f in load_fragments(companion_libraries)}
+    structural = [e for e in examples if e.meta["label_mode"] == "null_structural"]
+    assert structural
+    for example in structural:
+        assert any(types[fid] == "filler" for fid in example.meta["fragment_ids"])
+
+
+def test_filler_only_marks_the_examples_the_merge_may_still_deduplicate(companion_libraries):
+    # DD10: at share > 0 a structural null is no longer filler-only, so the
+    # merge's structural-null dedup stops firing and the merged tree grows. That
+    # is the compute bill, and this is the fact the merge reads to see it.
+    pools = _companion_pools(companion_libraries)
+    types = {f.fragment_id: f.fragment_type for f in load_fragments(companion_libraries)}
+    for share in (0.0, 0.5):
+        examples, _ = generate(pools, count=1000, seed=42, companion_share=share)
+        for example in examples:
+            derived = all(types[fid] == "filler" for fid in example.meta["fragment_ids"])
+            assert example.meta["filler_only"] is derived
+    structural = [
+        e
+        for e in generate(pools, count=1000, seed=42, companion_share=0.9)[0]
+        if e.meta["label_mode"] == "null_structural"
+    ]
+    assert sum(1 for e in structural if e.meta["filler_only"]) < len(structural) / 4
+
+
+def test_companions_raise_the_fragment_count_ceiling(companion_libraries):
+    # DD17, upward. Three filler libraries in the fixture and two eligible
+    # companion signals, so a four-fragment example is now reachable where it was
+    # not. The lower bound on the companion count is what makes it reachable, and
+    # it is a function of the count and the pool sizes alone -- never of the mode.
+    pools = _companion_pools(companion_libraries)
+    assert len(pools.filler) == 3
+    with pytest.raises(PoolError, match="up to 4"):
+        generate(pools, count=10, seed=42, fragment_counts={4: 1.0})
+    examples, _ = generate(pools, count=200, seed=42, fragment_counts={4: 1.0}, companion_share=0.5)
+    origin = _origin(companion_libraries)
+    assert all(len(e.meta["fragment_ids"]) == 4 for e in examples)
+    assert all(_companions(e, origin) for e in examples)
+
+
+def test_the_ceiling_is_still_a_ceiling(companion_libraries):
+    # Three filler libraries plus two companion signals is five distinct sources,
+    # and one fragment per signal means six fragments cannot be built.
+    pools = _companion_pools(companion_libraries)
+    with pytest.raises(PoolError, match="up to 6"):
+        generate(pools, count=10, seed=42, fragment_counts={6: 1.0}, companion_share=0.5)
+
+
+def test_a_share_above_zero_without_an_eligible_pool_is_an_error(libraries):
+    # Falling back to filler would produce the control arm's dataset under the
+    # treatment arm's flags, and nothing downstream could tell the two apart.
+    pools = _pools(libraries)
+    assert pools.companion == ()
+    with pytest.raises(PoolError, match="companion-share"):
+        generate(pools, count=10, seed=42, companion_share=0.5)
+
+
+def test_a_share_outside_the_unit_interval_is_rejected(companion_libraries):
+    pools = _companion_pools(companion_libraries)
+    with pytest.raises(DistributionError, match="companion-share"):
+        generate(pools, count=10, seed=42, companion_share=1.5)
+
+
+def test_the_cli_threads_the_share_and_the_sidecar_records_it(tmp_path, companion_libraries):
+    out = tmp_path / "out.jsonl"
+    assert (
+        cli_main(
+            _argv(
+                manifest=companion_libraries,
+                ruleset=_write_ruleset(tmp_path),
+                split="train",
+                count=600,
+                companion_share=0.5,
+                out=out,
+            )
+        )
+        == 0
+    )
+    stats = json.loads((tmp_path / "out.jsonl.stats.json").read_text(encoding="utf-8"))
+    assert stats["requested"]["companion_share"] == 0.5
+    assert stats["generator_version"] == 3
+
+    companions = stats["companions"]
+    # String-keyed like every other tally in build_stats: json.dump coerces int
+    # keys silently, and a dict written string-keyed but built int-keyed bites
+    # whoever reads the sidecar back.
+    assert all(isinstance(key, str) for row in companions["count_by_label"].values() for key in row)
+    assert set(companions["signals"]) == {OTHER_SIGNAL, THIRD_SIGNAL}
+    assert set(companions["count_by_label_mode"]) == set(LABEL_MODES)
+
+    # The leak detector, read the way a human would read it: the mean companion
+    # count per example must agree across the four modes.
+    means = {}
+    for mode, row in companions["count_by_label_mode"].items():
+        total = sum(row.values())
+        means[mode] = sum(int(key) * value for key, value in row.items()) / total
+    assert max(means.values()) - min(means.values()) < 0.15, means
+
+    drawn = sum(companions["signals"].values())
+    assert drawn == sum(
+        int(key) * value
+        for row in companions["count_by_label"].values()
+        for key, value in row.items()
+    )
+    assert sum(sum(row.values()) for row in companions["label_mix_by_label"].values()) == drawn

@@ -32,7 +32,11 @@ from .manifest import Fragment, cluster_key
 from .normalise import normalise
 
 #: Bumped when a change to this module would alter the emitted dataset.
-GENERATOR_VERSION = 2
+#: 3 adds the companion draw and ``meta.filler_only``. The draw is inert at
+#: ``--companion-share 0`` -- the fragments chosen for a given seed are exactly
+#: what version 2 chose, pinned by ``GOLDEN_DEFAULT_SPLIT_CONTENT_SHA256`` --
+#: but the extra ``meta`` key moves every byte, so the version moves with it.
+GENERATOR_VERSION = 3
 
 #: How many fragments an example is built from, as a weighted mix. Drawn per
 #: example from **one distribution that knows nothing about the label mode**,
@@ -51,6 +55,17 @@ DEFAULT_FRAGMENT_COUNTS = {2: 0.5, 3: 0.5}
 
 #: Redraws allowed before an example is declared unsatisfiable.
 MAX_ASSEMBLY_RETRIES = 50
+
+#: Share of an example's non-decisive slots that carry another signal's
+#: clinical language instead of filler. 0.0 reproduces every dataset generated
+#: before companions existed, and the whole path is skipped at that value.
+#:
+#: The failure this exists to fix: every ``null`` example ever generated paired
+#: the absence of the signal's language with bland non-clinical filler, so
+#: "clinical-sounding text -> not null" was a perfect rule on our data and a
+#: catastrophic one on real submissions, where the median message asserts
+#: something about two of the six signals.
+DEFAULT_COMPANION_SHARE = 0.0
 
 #: Label prior at training time. Operational cost asymmetry belongs in the
 #: decision threshold at inference, not baked into the dataset.
@@ -152,6 +167,12 @@ class FragmentPools:
             if name == library:
                 return fragments
         raise KeyError(library)
+
+    def companion_pool(self, signal: str, library: str) -> tuple[Fragment, ...]:
+        for candidate, name, fragments in self.companion:
+            if candidate == signal and name == library:
+                return fragments
+        raise KeyError((signal, library))
 
 
 def _parse_weighted_terms(text: str, *, flag: str, term: str) -> dict[str, float]:
@@ -459,8 +480,104 @@ def _draw_filler(rng: random.Random, pools: FragmentPools, exclude: Sequence[str
     return rng.choice(pools.filler_pool(library))
 
 
+def companion_bounds(
+    fragment_count: int, *, filler_libraries: int, companion_signals: int
+) -> tuple[int, int]:
+    """How many companions an example of ``fragment_count`` fragments may hold.
+
+    Takes no label and no label mode, and that is the point (DD5). A structural
+    null has one *more* non-decisive slot than every other mode at the same
+    count, so an independent per-slot draw would give structural nulls twice the
+    companions at the default count of two -- and companion count would become a
+    proxy for the label pointing the wrong way: *more clinical text -> more
+    likely null*. A model can learn that without reading anything, and it would
+    flatter this change for exactly the wrong reason.
+
+    So the draw runs over ``fragment_count - 1`` slots in **every** mode. A
+    structural null's remaining slot is always filler, which also keeps at least
+    one filler fragment in it. The equalisation is by construction rather than by
+    check.
+
+    Both bounds are functions of the count and the pool sizes alone:
+
+    * **Upper** -- one fragment per signal (DD8), so no more companions than
+      there are eligible signals, and never the whole example.
+    * **Lower** -- every filler in an example comes from a different library, so
+      an example wanting more fillers than there are filler libraries must make
+      up the difference in companions. This is what raises the fragment-count
+      ceiling above the number of filler libraries for the first time (DD17);
+      at ``--companion-share 0`` the upper bound is forced to zero and the lower
+      bound must therefore be zero, which is the pre-companion ceiling exactly.
+    """
+    upper = min(fragment_count - 1, companion_signals)
+    lower = max(0, fragment_count - filler_libraries)
+    return lower, upper
+
+
+def sample_companion_count(
+    rng: random.Random, *, bounds: tuple[int, int], companion_share: float
+) -> int:
+    """Draw how many of this example's non-decisive slots carry a companion.
+
+    Deliberately takes no label and no label mode, for the same reason
+    :func:`sample_fragment_count` does not: the distribution must be identical
+    across all four modes or the count becomes a proxy for the label. ``bounds``
+    comes from :func:`companion_bounds`, which is itself label-blind.
+
+    Consumes no randomness at ``companion_share == 0``, so a run at the default
+    draws exactly the sequence it drew before companions existed.
+    """
+    lower, upper = bounds
+    if companion_share <= 0.0:
+        if lower > 0:
+            raise PoolError(
+                f"an example needs at least {lower} companion fragments but --companion-share is 0"
+            )
+        return 0
+    drawn = sum(1 for _ in range(upper) if rng.random() < companion_share)
+    return max(drawn, lower)
+
+
+def _draw_companion(
+    rng: random.Random, pools: FragmentPools, exclude: Sequence[str] = ()
+) -> Fragment:
+    """Pick a foreign signal uniformly, then a library within it, then a fragment.
+
+    Uniform over *signals* rather than over the pooled fragments, for the reason
+    :func:`_draw_filler` picks a library first: pooling would let the largest
+    library speak for its signal. None of the three draws sees the label mode
+    (DD6) -- if they did, companions would be disproportionately ``true`` in
+    ``true`` examples and we would have replaced "clinical language -> not null"
+    with "clinical language -> true", which is the same failure wearing a
+    different hat.
+
+    ``exclude`` carries the signals already drawn for this example, so no example
+    holds two fragments from one signal (DD8). Two would either agree, doubling
+    the evidence for one claim and teaching nothing, or disagree, which no single
+    emitted label could describe.
+
+    The primary signal is not in ``pools.companion`` at all: it enters an example
+    through the decisive slot alone.
+    """
+    signals = [signal for signal in pools.companion_signals if signal not in exclude]
+    if not signals:
+        raise PoolError(
+            f"split {pools.split!r} has no companion signal for {pools.signal_key!r} "
+            f"outside {list(exclude)}"
+        )
+    signal = rng.choice(signals)
+    libraries = [library for candidate, library, _ in pools.companion if candidate == signal]
+    library = rng.choice(libraries)
+    return rng.choice(pools.companion_pool(signal, library))
+
+
 def select_fragments(
-    rng: random.Random, pools: FragmentPools, label_mode: str, fragment_count: int
+    rng: random.Random,
+    pools: FragmentPools,
+    label_mode: str,
+    fragment_count: int,
+    *,
+    companion_share: float = DEFAULT_COMPANION_SHARE,
 ) -> list[Fragment]:
     """Choose exactly ``fragment_count`` fragments for a label mode.
 
@@ -471,7 +588,9 @@ def select_fragments(
     fragment alongside an ambiguous one.
 
     Exactly one decisive fragment at every count (Fine_tuning_plan.md Rule 2 --
-    one signal, one decisive fragment); every additional fragment is filler.
+    one signal, one decisive fragment); every remaining slot is filler, or -- at
+    ``companion_share > 0`` -- another signal's clinical language, which is
+    ``null`` on this signal because the library said so in the manifest.
     """
     signal_pools = {
         "true": pools.positive,
@@ -480,22 +599,42 @@ def select_fragments(
     }
     if label_mode in signal_pools:
         chosen = [rng.choice(signal_pools[label_mode])]
-        fillers_wanted = fragment_count - 1
     elif label_mode == "null_structural":
         chosen = []
-        fillers_wanted = fragment_count
     else:
         raise ValueError(f"unknown label mode {label_mode!r}")
+
+    # Drawn from the count and the pool sizes alone, never from label_mode --
+    # see companion_bounds. At share 0 this consumes no randomness and returns
+    # zero, so the filler loop below draws exactly what it always drew.
+    companions_wanted = sample_companion_count(
+        rng,
+        bounds=companion_bounds(
+            fragment_count,
+            filler_libraries=len(pools.filler),
+            companion_signals=len(pools.companion_signals),
+        ),
+        companion_share=companion_share,
+    )
+    fillers_wanted = fragment_count - len(chosen) - companions_wanted
 
     # Every filler in an example comes from a different library: repeats read
     # as consecutive tangents in the same voice and narrow the distribution for
     # no gain. This is what caps the fragment count at the number of filler
-    # libraries, checked up front in generate().
+    # libraries plus the number of companion signals, checked up front in
+    # generate().
     used_libraries: list[str] = []
     for _ in range(fillers_wanted):
         filler = _draw_filler(rng, pools, exclude=used_libraries)
         used_libraries.append(filler.library)
         chosen.append(filler)
+
+    # One fragment per signal, tracked the way used_libraries tracks filler.
+    used_signals: list[str] = []
+    for _ in range(companions_wanted):
+        companion = _draw_companion(rng, pools, exclude=used_signals)
+        used_signals.append(str(companion.signal_key))
+        chosen.append(companion)
 
     # A decisive fragment must be able to sit in any position.
     rng.shuffle(chosen)
@@ -532,6 +671,7 @@ def generate(
     distribution: dict[str, float] | None = None,
     null_ambiguous_ratio: float = DEFAULT_NULL_AMBIGUOUS_RATIO,
     fragment_counts: Mapping[int, float] | None = None,
+    companion_share: float = DEFAULT_COMPANION_SHARE,
 ) -> tuple[list[AssembledExample], dict]:
     """Generate ``count`` examples for one split, plus generation telemetry.
 
@@ -543,18 +683,48 @@ def generate(
         raise ValueError(f"count must not be negative: {count}")
     if not 0.0 <= null_ambiguous_ratio <= 1.0:
         raise DistributionError(f"null-ambiguous-ratio must be in [0, 1]: {null_ambiguous_ratio}")
+    if not 0.0 <= companion_share <= 1.0:
+        raise DistributionError(f"companion-share must be in [0, 1]: {companion_share}")
     distribution = dict(distribution or DEFAULT_DISTRIBUTION)
     fragment_counts = dict(fragment_counts or DEFAULT_FRAGMENT_COUNTS)
 
+    if companion_share > 0.0 and not pools.companion_signals:
+        # Loud rather than a silent fallback to filler: a run asked for
+        # companions and would otherwise produce the control arm's dataset
+        # under the treatment arm's flags, which nothing downstream could tell
+        # apart from the real thing.
+        raise PoolError(
+            f"--companion-share {companion_share} was requested but split {pools.split!r} has no "
+            f"library declared null_on {pools.signal_key!r} outside that signal's own libraries"
+        )
+
     # Checked here rather than in _check_pools, which cannot know the requested
-    # mix: an N-fragment structural null needs N distinct filler libraries, so
-    # the largest requested count is a hard floor on how many must exist.
+    # mix. An N-fragment example needs N distinct sources: filler libraries, and
+    # -- at companion_share > 0 -- eligible companion signals, at most one
+    # fragment each. At share 0 the companion bound is zero and this is exactly
+    # the pre-companion check: N distinct filler libraries for a structural null.
     largest = max(fragment_counts)
-    if len(pools.filler) < largest:
+    lower, upper = companion_bounds(
+        largest,
+        filler_libraries=len(pools.filler),
+        companion_signals=len(pools.companion_signals) if companion_share > 0.0 else 0,
+    )
+    if lower > upper:
+        needed = (
+            "distinct filler libraries"
+            if companion_share <= 0.0
+            else ("distinct sources (filler libraries plus companion signals, one fragment each)")
+        )
+        available = (
+            f"{len(pools.filler)}: {', '.join(pools.filler_libraries)}"
+            if companion_share <= 0.0
+            else f"{len(pools.filler) + len(pools.companion_signals)}: "
+            f"{', '.join(pools.filler_libraries)} and companions from "
+            f"{', '.join(pools.companion_signals)}"
+        )
         raise PoolError(
             f"--fragment-counts asks for up to {largest} fragments per example, which needs "
-            f"{largest} distinct filler libraries, but split {pools.split!r} has "
-            f"{len(pools.filler)}: {', '.join(pools.filler_libraries)}"
+            f"{largest} {needed}, but split {pools.split!r} has {available}"
             + undeclared_filler_hint(pools)
         )
 
@@ -579,7 +749,13 @@ def generate(
         )
 
         for attempt in range(MAX_ASSEMBLY_RETRIES + 1):
-            fragments = select_fragments(rng, pools, spec.label_mode, spec.fragment_count)
+            fragments = select_fragments(
+                rng,
+                pools,
+                spec.label_mode,
+                spec.fragment_count,
+                companion_share=companion_share,
+            )
             text = assemble_text(fragments)
             key = normalise(text)
             if key not in seen:
@@ -605,6 +781,13 @@ def generate(
                 labels=spec.labels,
                 meta={
                     "label_mode": spec.label_mode,
+                    # DD10: a structural null is no longer filler-only at
+                    # companion_share > 0 -- it keeps its name because it keeps
+                    # its defining property, no fragment decisive for this
+                    # signal. Written once here because the merge's
+                    # structural-null dedup and the report both need it and
+                    # neither should re-derive it from fragment_ids.
+                    "filler_only": all(f.fragment_type == "filler" for f in fragments),
                     "fragment_ids": [f.fragment_id for f in fragments],
                     "fragment_subclasses": [f.subclass for f in fragments],
                     "seed": seed,
@@ -683,6 +866,85 @@ def _fragment_provenance(fragments: Iterable[Fragment], split: str) -> dict[str,
     }
 
 
+#: A companion's own-signal polarity, projected onto the label its own head
+#: would carry. ``filler`` never appears here: a companion is by definition a
+#: fragment from another signal's library.
+_TYPE_TO_LABEL = {
+    "positive": "true",
+    "negative": "false",
+    "ambiguous": "null",
+    "confounder": "null",
+}
+
+
+def _companion_stats(
+    examples: Sequence[AssembledExample],
+    *,
+    fragments: Sequence[Fragment],
+    signal_key: str,
+    max_fragment_count: int,
+) -> dict:
+    """Tally the companion draw: the leak detector for DD5, plus the mix.
+
+    ``count_by_label_mode`` is the row that matters and nothing downstream would
+    surface a violation on its own. A companion count that skews towards
+    ``null_structural`` means companion count has become a proxy for the label,
+    pointing the wrong way -- *more clinical text -> more likely null* -- and the
+    run is void rather than reinterpretable. It would otherwise present as a
+    validation score that looks fine and a model that does not transfer, which
+    is the shape of the failure this whole feature exists to remove.
+
+    ``label_mix_by_label`` is the second half of the same question asked of
+    *which* companion rather than how many: if ``true`` examples drew ``true``
+    companions more often than ``null`` examples did, we would have replaced
+    "clinical language -> not null" with "clinical language -> true".
+
+    Companions are identified from the split's fragment provenance rather than
+    stored per record: a fragment whose ``signal_key`` is neither absent nor the
+    primary signal reached a non-decisive slot, which is what a companion is.
+    """
+    origin = {
+        fragment.fragment_id: (fragment.signal_key, fragment.fragment_type)
+        for fragment in fragments
+    }
+    count_keys = [str(n) for n in range(max_fragment_count)]
+
+    def _empty_counts() -> dict[str, int]:
+        return {key: 0 for key in count_keys}
+
+    def _empty_labels() -> dict[str, int]:
+        return {label: 0 for label in LABELS}
+
+    by_label = {label: _empty_counts() for label in LABELS}
+    by_label_mode = {mode: _empty_counts() for mode in LABEL_MODES}
+    signals: dict[str, int] = {}
+    label_mix = {label: _empty_labels() for label in LABELS}
+
+    for example in examples:
+        label = "null" if example.labels[signal_key] is None else str(example.labels[signal_key])
+        label = label.lower()
+        mode = example.meta["label_mode"]
+        drawn = 0
+        for fragment_id in example.meta["fragment_ids"]:
+            fragment_signal, fragment_type = origin.get(fragment_id, (None, "filler"))
+            if fragment_signal is None or fragment_signal == signal_key:
+                continue
+            drawn += 1
+            signals[fragment_signal] = signals.get(fragment_signal, 0) + 1
+            companion_label = _TYPE_TO_LABEL[fragment_type]
+            label_mix[label][companion_label] += 1
+        count_key = str(drawn)
+        by_label[label][count_key] = by_label[label].get(count_key, 0) + 1
+        by_label_mode[mode][count_key] = by_label_mode[mode].get(count_key, 0) + 1
+
+    return {
+        "count_by_label": by_label,
+        "count_by_label_mode": by_label_mode,
+        "signals": {name: signals[name] for name in sorted(signals)},
+        "label_mix_by_label": label_mix,
+    }
+
+
 def build_stats(
     examples: Sequence[AssembledExample],
     *,
@@ -696,6 +958,7 @@ def build_stats(
     fragment_counts: Mapping[int, float],
     manifest_path: str,
     ruleset_path: str,
+    companion_share: float = DEFAULT_COMPANION_SHARE,
     folds: int | None = None,
     fold_index: int | None = None,
     split_salt: str = "",
@@ -766,6 +1029,7 @@ def build_stats(
             "count": count,
             "distribution": {label: distribution[label] for label in LABELS},
             "null_ambiguous_ratio": null_ambiguous_ratio,
+            "companion_share": companion_share,
             "labels": {label: round(count * distribution[label]) for label in LABELS},
             "fragment_counts": {str(n): fragment_counts[n] for n in sorted(fragment_counts)},
         },
@@ -783,6 +1047,15 @@ def build_stats(
             "by_label": {label: counts_by_label[label] for label in LABELS},
             "by_label_mode": {mode: counts_by_mode[mode] for mode in LABEL_MODES},
         },
+        # The DD5 leak detector, in the same shape as fragment_counts above and
+        # read the same way: the by_label_mode rows must agree with each other.
+        # See _companion_stats for what disagreement means.
+        "companions": _companion_stats(
+            examples,
+            fragments=fragments,
+            signal_key=signal_key,
+            max_fragment_count=max(fragment_counts),
+        ),
         "fragment_pool_sizes": {name: pool_sizes[name] for name in sorted(pool_sizes)},
         # Cluster and library provenance for every fragment this split could
         # draw on. Effective sample size is counted in clusters, and slicing is
@@ -794,6 +1067,9 @@ def build_stats(
             "negative": len(pools.negative),
             "ambiguous_or_confounder": len(pools.ambiguous),
             "filler": {name: len(pool) for name, pool in pools.filler},
+            "companion": {
+                f"{signal}/{library}": len(pool) for signal, library, pool in pools.companion
+            },
         },
         "duplicate_rejections": telemetry["duplicate_rejections"],
         "max_retries_for_one_example": telemetry["max_retries_for_one_example"],

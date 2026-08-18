@@ -10,6 +10,7 @@
         --dist     null=0.60,false=0.25,true=0.15 \\
         --null-ambiguous-ratio 0.5 \\
         --fragment-counts 2=0.5,3=0.5 \\
+        --companion-share 0.0 \\
         --out      data/synthetic/generated/fever_present.train.jsonl
 
 Same seed + same libraries + same flags produces byte-identical output. That
@@ -18,6 +19,15 @@ than taking the platform default: a dataset that differs by line ending
 between a developer's machine and CI is not reproducible in any useful sense.
 
 Every run also writes ``<out>.stats.json``.
+
+``--companion-share`` is the one flag that changes what a non-decisive slot may
+hold: above zero, some of them carry another signal's clinical language instead
+of filler, drawn only from libraries the manifest declares ``null`` on this run's
+signal. It defaults to 0.0 and the path is skipped entirely at that value, so
+every dataset generated before companions existed is still reproducible from its
+seed. Read ``companions.count_by_label_mode`` in the sidecar after any non-zero
+run: those rows must agree, or the companion count has become a proxy for the
+label.
 
 ``--lint`` is a second, generation-free mode: it loads the same libraries and
 prints the hedge-marker, near-duplicate, filler-purity and cross-signal reports.
@@ -46,6 +56,7 @@ from pathlib import Path
 from .lint import render_report
 from .manifest import ManifestError, find_fold_salts, load_fragments
 from .recombine import (
+    DEFAULT_COMPANION_SHARE,
     DEFAULT_NULL_AMBIGUOUS_RATIO,
     DistributionError,
     PoolError,
@@ -120,6 +131,17 @@ def build_parser() -> argparse.ArgumentParser:
         "the number of filler libraries. The mix is applied identically to every label "
         "mode by design -- a count that varied by label would make text length a proxy "
         "for the label",
+    )
+    parser.add_argument(
+        "--companion-share",
+        type=float,
+        default=DEFAULT_COMPANION_SHARE,
+        help="share of an example's non-decisive slots carrying another signal's clinical "
+        "language instead of filler. Eligibility is the library's null_on declaration for "
+        "this run's signal and nothing else. At the default 0.0 the whole path is skipped "
+        "and the output is what it was before companions existed; the count is drawn over "
+        "the same number of slots in every label mode, so it cannot become a proxy for the "
+        "label",
     )
     parser.add_argument("--out", type=Path)
     parser.add_argument(
@@ -266,6 +288,7 @@ def run(args: argparse.Namespace) -> int:
         distribution=distribution,
         null_ambiguous_ratio=args.null_ambiguous_ratio,
         fragment_counts=fragment_counts,
+        companion_share=args.companion_share,
     )
     stats = build_stats(
         examples,
@@ -279,6 +302,7 @@ def run(args: argparse.Namespace) -> int:
         fragment_counts=fragment_counts,
         manifest_path=str(args.manifest),
         ruleset_path=str(args.ruleset),
+        companion_share=args.companion_share,
         folds=options["folds"],
         fold_index=options["fold_index"] if options["folds"] is not None else None,
         split_salt=options["salt"],
