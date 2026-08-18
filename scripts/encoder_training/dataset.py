@@ -31,7 +31,7 @@ labels.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -382,24 +382,41 @@ def _decisive_fragment(
     *,
     example_id: str,
     label_mode: str,
+    label_keys: Collection[str],
     path: Path,
 ) -> FragmentInfo | None:
-    """Return the one non-filler fragment behind an example, or ``None``.
+    """Return the one fragment decisive **for this example's own signal**, or ``None``.
 
     Filler-ness is read from the sidecar's ``fragment_type``, never inferred
     from the library name (DD6). The generator's rule is exactly one decisive
     fragment per example, none for a structural null; both directions are
     checked because a violation would silently mislabel every slice the
     fragment appears in.
+
+    **"Decisive" has always meant decisive for the signal being supervised**, and
+    the companion draw is what made the difference visible. Above
+    ``--companion-share 0`` a non-decisive slot may hold another signal's
+    clinical language, which is non-filler and says nothing about this example's
+    label -- the whole point of it. So the test is the fragment's ``signal_key``
+    against the keys the example actually carries a label for, rather than
+    filler-ness alone. Before companions the two were the same test, because the
+    only non-filler fragment an example could hold was its own.
     """
-    decisive = [fragments[fragment_id] for fragment_id in fragment_ids]
-    decisive = [fragment for fragment in decisive if not fragment.is_filler]
+    held = [fragments[fragment_id] for fragment_id in fragment_ids]
+    decisive = [
+        fragment
+        for fragment in held
+        if not fragment.is_filler and fragment.signal_key in label_keys
+    ]
 
     if len(decisive) > 1:
         names = ", ".join(fragment.fragment_id for fragment in decisive)
         raise DatasetError(
-            f"{path}: example {example_id!r} holds {len(decisive)} decisive fragments ({names}); "
-            "exactly one is the generator's invariant, and two would make its label ambiguous"
+            f"{path}: example {example_id!r} holds {len(decisive)} fragments decisive for the "
+            f"signal(s) it is labelled for ({names}); exactly one is the generator's invariant, "
+            "and two would make its label ambiguous. A dataset from --emit-signals all lands "
+            "here by design: it carries a key for every signal its fragments jointly decide, so "
+            "several fragments are decisive at once and no single-decisive slice describes it"
         )
 
     if label_mode in LABEL_MODES:
@@ -499,7 +516,15 @@ def _build_example(
         classes=classes,
         mask=mask,
         decisive=_decisive_fragment(
-            raw_ids, fragments, example_id=example_id, label_mode=label_mode, path=path
+            raw_ids,
+            fragments,
+            example_id=example_id,
+            label_mode=label_mode,
+            # The example's own keys, not the run's head set: a merged tree's
+            # dysuria example is masked on fever, and the fever companion in it
+            # is decisive for nothing anybody is scoring.
+            label_keys=frozenset(labels),
+            path=path,
         ),
         source_ids=source_ids,
     )

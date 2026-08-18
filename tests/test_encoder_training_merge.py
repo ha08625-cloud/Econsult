@@ -44,7 +44,13 @@ from scripts.encoder_training.merge import (
 SIGNALS = ("fever_present", "dysuria_present", "nocturia_present")
 FOLDS = 2
 SALT = "32"
-GENERATOR_VERSION = 2
+GENERATOR_VERSION = 3
+
+#: The arm the fixture tree belongs to. Zero, because that is the setting under
+#: which every filler-only example is also a ``null_structural`` one and the two
+#: sets the merge could key on coincide; the tests that pull them apart set
+#: ``meta.filler_only`` themselves.
+COMPANION_SHARE = 0.0
 
 #: How many examples of each kind one source split holds. Small enough to read,
 #: and asymmetric so an off-by-one in the interleave cannot pass by luck.
@@ -127,9 +133,13 @@ def _split_fragments(signal: str, split: str, fold_index: int) -> dict[str, dict
 def _records(signal: str, split: str, fold_index: int) -> list[dict]:
     """One source split: this signal's own examples, then the shared nulls.
 
-    The structural nulls carry the same ids, texts and fragment ids for every
+    The filler-only examples carry the same ids, texts and fragment ids for every
     signal, because the real generator's seed derivation does not include the
     signal. That identity is what the union depends on.
+
+    ``meta.filler_only`` is what the merge deduplicates on, so the miniature
+    writes it the way the generator does -- true exactly when every fragment is
+    filler, which at ``--companion-share 0`` is every structural null.
     """
     decisive = _library_fragment_ids(_library(signal), split, fold_index)
     fillers = [_library_fragment_ids(library, split, fold_index)[0] for library in FILLER_LIBRARIES]
@@ -144,6 +154,7 @@ def _records(signal: str, split: str, fold_index: int) -> list[dict]:
                 "labels": {signal: True},
                 "meta": {
                     "label_mode": "true",
+                    "filler_only": False,
                     "fragment_ids": [decisive[index % len(decisive)], fillers[0]],
                     "seed": 42,
                     "generator_version": GENERATOR_VERSION,
@@ -159,6 +170,7 @@ def _records(signal: str, split: str, fold_index: int) -> list[dict]:
                 "labels": {signal: None},
                 "meta": {
                     "label_mode": "null_structural",
+                    "filler_only": True,
                     "fragment_ids": list(fillers),
                     "seed": 42,
                     "generator_version": GENERATOR_VERSION,
@@ -177,6 +189,7 @@ def _stats(signal: str, split: str, fold_index: int) -> dict:
         "folds": FOLDS,
         "fold_index": fold_index,
         "split_salt": SALT,
+        "requested": {"companion_share": COMPANION_SHARE},
         "fragments": _split_fragments(signal, split, fold_index),
     }
 
@@ -341,11 +354,101 @@ def test_structural_nulls_are_kept_once(tmp_path):
     assert len(records) == expected
     assert stats["realised"]["count"] == expected
     assert stats["realised"]["label_modes"]["null_structural"] == STRUCTURAL_PER_SPLIT
-    assert stats["merged_from"]["structural_nulls"] == {
+    assert stats["merged_from"]["filler_only"] == {
         "kept": STRUCTURAL_PER_SPLIT,
         "dropped_as_duplicates": STRUCTURAL_PER_SPLIT * (len(SIGNALS) - 1),
-        "note": stats["merged_from"]["structural_nulls"]["note"],
+        "kept_per_signal": 0,
+        "note": stats["merged_from"]["filler_only"]["note"],
     }
+    assert stats["merged_from"]["companion_share"] == COMPANION_SHARE
+
+
+def _treated(stats):
+    """Mark the fixture tree as the treatment arm, so P > 0 behaviour applies."""
+    stats["requested"]["companion_share"] = 0.5
+
+
+def _companion_in_the_first_structural_null(records, signal):
+    """Give every tree's first structural null a companion, the way P > 0 does.
+
+    A companion is drawn from the *primary* signal's eligible pool, so the text
+    differs by signal and the example stops being one every tree emitted. The
+    generator records that as ``meta.filler_only`` false while the label mode
+    stays ``null_structural``: the example still holds no fragment decisive for
+    its own signal, which is what the mode has always meant.
+    """
+    for record in records:
+        if record["meta"]["label_mode"] == "null_structural":
+            record["meta"]["filler_only"] = False
+            record["text"] = f"a {signal} companion sentence."
+            return
+
+
+def test_a_structural_null_carrying_a_companion_is_kept_per_signal(tmp_path):
+    """DD11's relaxation: the dedup keys on filler_only, not on the label mode.
+
+    Deduplicating on the mode would assert three trees emitted one example that
+    they did not, and would keep whichever arrived first -- the exact silent
+    collapse ``check_structural_nulls`` exists to prevent, arriving through the
+    door the companion draw opened.
+    """
+    write_tree(tmp_path, records=_companion_in_the_first_structural_null)
+    records, stats = merge_split(_sources(tmp_path), name="joint3")
+    indexed = _by_id(records)
+
+    shared_left = STRUCTURAL_PER_SPLIT - 1
+    assert stats["merged_from"]["filler_only"]["kept"] == shared_left
+    assert len(records) == len(SIGNALS) * (OWNED_PER_SPLIT + 1) + shared_left
+
+    for signal in SIGNALS:
+        kept = indexed[f"{signal}:train-{OWNED_PER_SPLIT:06d}"]
+        assert kept["text"] == f"a {signal} companion sentence."
+        assert kept["meta"]["label_mode"] == "null_structural"
+        # Its own head is supervised with null; the others stay masked, exactly
+        # as for any other example only one tree holds.
+        assert kept["labels"] == {signal: None}
+
+    # The mode is still a null_structural for every copy, so a merged tree at
+    # P > 0 is bigger without any head's mix changing shape.
+    assert stats["realised"]["label_modes"]["null_structural"] == (len(SIGNALS) * 1 + shared_left)
+
+
+def test_a_filler_only_example_only_some_sources_emitted_is_kept_per_signal(tmp_path):
+    """The case the real libraries produce at P > 0, and the reason for matching by id.
+
+    ``generate`` redraws an example whose normalised text it has already emitted,
+    on the same per-example RNG, and the ``seen`` set diverges between trees as
+    soon as their companions do -- so one index can come out holding a companion
+    in one tree and filler alone in the next. Measured at
+    ``--companion-share 0.5``: three such examples in a 10,000-example split.
+    Matching by position would call that a hard error; matching by id keeps the
+    1118 the sources agree on and lets the three ride as owned examples.
+    """
+
+    def only_fever_keeps_it(records, signal):
+        if signal == "fever_present":
+            return
+        for record in records:
+            if record["meta"]["label_mode"] == "null_structural":
+                record["meta"]["filler_only"] = False
+                record["text"] = f"a {signal} companion sentence."
+                return
+
+    write_tree(tmp_path, records=only_fever_keeps_it, stats=_treated)
+    records, stats = merge_split(_sources(tmp_path), name="joint3")
+    indexed = _by_id(records)
+
+    disputed = f"train-{OWNED_PER_SPLIT:06d}"
+    assert stats["merged_from"]["filler_only"]["kept"] == STRUCTURAL_PER_SPLIT - 1
+    assert stats["merged_from"]["filler_only"]["kept_per_signal"] == 1
+
+    # fever still holds it as filler-only, and it is kept under fever's own id
+    # rather than as a shared copy asserting null for heads that never saw it.
+    assert f"shared:{disputed}" not in indexed
+    assert indexed[f"fever_present:{disputed}"]["labels"] == {"fever_present": None}
+    assert indexed[f"fever_present:{disputed}"]["meta"]["filler_only"] is True
+    for signal in SIGNALS[1:]:
+        assert indexed[f"{signal}:{disputed}"]["text"] == f"a {signal} companion sentence."
 
 
 def test_records_are_interleaved_so_a_prefix_is_representative(tmp_path):
@@ -372,7 +475,8 @@ def test_merged_sidecar_records_the_sources(tmp_path):
         "path": str(fold_dataset_path(tmp_path, "fever_present", 0, "train")),
         "examples": OWNED_PER_SPLIT + STRUCTURAL_PER_SPLIT,
         "signal_owned": OWNED_PER_SPLIT,
-        "structural_nulls": STRUCTURAL_PER_SPLIT,
+        "filler_only": STRUCTURAL_PER_SPLIT,
+        "companion_share": COMPANION_SHARE,
         "seed": 42,
     }
 
@@ -517,7 +621,7 @@ def test_divergent_structural_nulls_are_a_hard_error(tmp_path):
 
     write_tree(tmp_path, records=diverge)
 
-    with pytest.raises(MergeError, match="structural null 0 disagrees on text"):
+    with pytest.raises(MergeError, match="filler-only example 'train-000003' disagrees on text"):
         merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
 
 
@@ -546,7 +650,9 @@ def test_a_missing_structural_null_is_a_hard_error(tmp_path):
 
     write_tree(tmp_path, records=drop_one)
 
-    with pytest.raises(MergeError, match=r"has 2 structural nulls but 'dysuria_present' has 1"):
+    with pytest.raises(
+        MergeError, match=r"filler-only in some sources and not in others \(train-000003\)"
+    ):
         merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
 
 
@@ -584,6 +690,62 @@ def test_disagreeing_generator_version_is_a_hard_error(tmp_path):
     write_tree(tmp_path, stats=rewind)
 
     with pytest.raises(MergeError, match="disagree on 'generator_version'"):
+        merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
+
+
+def test_disagreeing_companion_share_is_a_hard_error(tmp_path):
+    """One arm's examples must not end up in the other arm's tree.
+
+    Same shape and same reasoning as the ``generator_version`` refusal: a merged
+    tree that is half Arm 0 and half Arm P loads cleanly, trains cleanly, and
+    answers the question the two arms exist to ask with a dataset that is
+    neither of them.
+    """
+
+    def treat(stats):
+        if stats["signal"] == "dysuria_present":
+            stats["requested"]["companion_share"] = 0.5
+
+    write_tree(tmp_path, stats=treat)
+
+    with pytest.raises(MergeError, match=r"disagree on 'requested.companion_share'"):
+        merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
+
+
+def test_a_sidecar_without_a_companion_share_is_refused(tmp_path):
+    """A pre-companion tree is regenerated, not merged on a default of zero."""
+
+    def strip(stats):
+        del stats["requested"]
+
+    write_tree(tmp_path, stats=strip)
+
+    with pytest.raises(MergeError, match=r"no 'requested.companion_share'"):
+        merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
+
+
+def test_a_record_without_filler_only_is_refused(tmp_path):
+    """The key the dedup runs on. Re-deriving it would be right only by luck."""
+
+    def strip(records, signal):
+        for record in records:
+            del record["meta"]["filler_only"]
+
+    write_tree(tmp_path, records=strip)
+
+    with pytest.raises(MergeError, match="no boolean 'meta.filler_only'"):
+        merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
+
+
+def test_a_filler_only_example_that_is_not_a_structural_null_is_refused(tmp_path):
+    """Filler everywhere means nothing decisive, so the two cannot disagree."""
+
+    def relabel(records, signal):
+        records[0]["meta"]["filler_only"] = True
+
+    write_tree(tmp_path, records=relabel)
+
+    with pytest.raises(MergeError, match="is filler-only but has label mode 'true'"):
         merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
 
 

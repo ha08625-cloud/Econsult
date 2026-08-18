@@ -1769,24 +1769,30 @@ ABSENT_PAIR_BASELINE: dict[tuple[str, str], set[str]] = {
         "nocturia_null_metaphor:be836a5b",
     },
     ("recent_uti_null_hedged", "urinary_frequency_present"): {
-        #: The pairs declared ``null_on`` with basis ``policy`` -- the half of the
-        #: guarantee no lexicon can check. Pinned so that adding one is a deliberate
-        #: edit to this list rather than a line in a 1000-line manifest diff, because an
-        #: unchecked claim that nobody notices arriving is the failure mode DD2 exists to
-        #: prevent. Nineteen of the twenty-three are on ``recent_uti_present``, which is
-        #: the expected shape: its lexicon deliberately matches the infection nouns
-        #: every one of these libraries uses while its recency modifiers stop short of
-        #: "last time", "again" and "I'm prone to them".
         "recent_uti_null_hedged:effd92b2",
     },
 }
 
+#: The pairs declared ``null_on`` with basis ``policy`` -- the half of the
+#: guarantee no lexicon can check. Pinned so that adding one is a deliberate
+#: edit to this list rather than a line in a 1000-line manifest diff, because an
+#: unchecked claim that nobody notices arriving is the failure mode DD2 exists to
+#: prevent. Twenty of the twenty-four are on ``recent_uti_present``, which is
+#: the expected shape: its lexicon deliberately matches the infection nouns
+#: every one of these libraries uses while its recency modifiers stop short of
+#: "last time", "again" and "I'm prone to them".
+#:
+#: ``expectations_uti`` is the one entry no lexicon put here: it is declared
+#: ``policy`` because six of its lines discuss a urine infection and its
+#: treatment, and declaring ``absent`` would have recorded the lexicon's silence
+#: as a fact about the text.
 POLICY_PAIRS: frozenset[tuple[str, str]] = frozenset(
     {
         ("dysuria_false", "recent_uti_present"),
         ("dysuria_null_historical", "recent_uti_present"),
         ("dysuria_null_thirdparty", "recent_uti_present"),
         ("expectations", "recent_uti_present"),
+        ("expectations_uti", "recent_uti_present"),
         ("fever_false", "recent_uti_present"),
         ("fever_null_historical", "recent_uti_present"),
         ("fever_true", "recent_uti_present"),
@@ -1892,8 +1898,8 @@ def test_the_undeclared_pairs_are_exactly_the_pinned_ones():
 
 
 def test_every_foreign_pair_is_either_declared_or_deliberately_undeclared():
-    # The deliverable: no pair is in an unconsidered state. 293 = 43 signal
-    # libraries x 6 foreign signals + 5 filler libraries x 7.
+    # The deliverable: no pair is in an unconsidered state. 300 = 43 signal
+    # libraries x 6 foreign signals + 6 filler libraries x 7.
     fragments = _real_fragments()
     declared = {
         (pair.library, pair.signal)
@@ -1913,7 +1919,7 @@ def test_the_real_manifest_declares_only_signals_the_ruleset_sends_to_the_encode
 
 def test_filler_purity_stays_stricter_than_the_declaration():
     # filler_lexicon_hits is deliberately not replaced by absent_pair_hits: the
-    # two filler libraries declared 'policy' on recent_uti_present would stop
+    # three filler libraries declared 'policy' on recent_uti_present would stop
     # being checked, and filler is paired with examples of every label, so a
     # filler line that acquires signal language is worth catching even where the
     # declaration would tolerate it.
@@ -1921,10 +1927,11 @@ def test_filler_purity_stays_stricter_than_the_declaration():
     filler_policy = {
         (pair.library, pair.signal)
         for pair in policy_pairs(fragments)
-        if pair.library in {"expectations", "uti_speculation"}
+        if pair.library in {"expectations", "expectations_uti", "uti_speculation"}
     }
     assert filler_policy == {
         ("expectations", "recent_uti_present"),
+        ("expectations_uti", "recent_uti_present"),
         ("uti_speculation", "recent_uti_present"),
     }
     assert filler_lexicon_hits(fragments) == []
@@ -2015,7 +2022,9 @@ def test_the_companion_pool_holds_declared_foreign_libraries_only():
     # example through the decisive slot alone, or null_structural and
     # null_ambiguous collapse into each other (DD6).
     assert all(signal != "fever_present" for signal, _ in pairs)
-    assert not any(library in {"tangents", "expectations"} for _, library in pairs)
+    assert not any(
+        library in {"tangents", "expectations", "expectations_uti"} for _, library in pairs
+    )
 
     # Declared pairs are in; undeclared ones are out.
     assert ("dysuria_present", "dysuria_true") in pairs

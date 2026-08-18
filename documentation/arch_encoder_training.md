@@ -385,6 +385,31 @@ recombinations of a handful of filler sentences are not thousands of observation
 twenty points under resampling for reasons that have nothing to do with the
 model. **`decisive` drops them and is the slice to read.**
 
+**What "decisive" means, and what companions changed about it.** A fragment is
+decisive for an example when it is not filler **and** its signal is one the
+example carries a label for. Before `--companion-share` (`arch_training.md`
+section 5) those were the same test, because the only non-filler fragment an
+example could hold was its own signal's — so the loader tested filler-ness
+alone. Above zero they come apart: a companion is another signal's clinical
+language, non-filler by construction and saying nothing about the label this
+example is supervised on. Reading only filler-ness there would count every
+companion as a second decisive fragment and refuse to load the dataset at all,
+which is what happened the first time a companion tree was handed to
+`load_folds`. Two consequences worth knowing:
+
+* A structural null may now hold clinical text and still have no decisive
+  fragment, which is exactly what the mode has always meant — no fragment
+  decisive **for this signal**.
+* Structural nulls still share `STRUCTURAL_NULL_UNIT` as one resampling unit,
+  and above zero that is more conservative than it used to be: they are drawn
+  from the companion libraries as well as the filler ones, so they are no longer
+  recombinations of a handful of sentences. Treating them as one unit understates
+  their effective n rather than overstating it, which is the safe direction, so
+  the slice is unchanged.
+* A dataset from `--emit-signals all` carries a key for every signal its
+  fragments jointly decide, so several fragments are decisive at once and it
+  raises here by design. No arm loads one, and `merge-folds` refuses one too.
+
 ---
 
 ## 6. Two dependency tiers, and the boundary is load-bearing
