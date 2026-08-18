@@ -1,6 +1,11 @@
 # Ticket 6 — Multi-symptom recombinations (provisional plan)
 
-**Status: provisional. Nothing here is built and nothing here is agreed.** This is
+**Status: provisional, and superseded.** The step-2 review corrected seven things
+here — see `multi_symptom_recombination_implementation.md`, "What changed from the
+provisional plan". Build from that file; this one is kept for the reasoning behind
+the decisions the review left standing.
+
+**Nothing here is built and nothing here is agreed.** This is
 the step-1 output for `arch_training.md` 12.2–12.5. It records the design
 decisions, the measurements taken while writing it, and the questions that have
 to be answered before it becomes an implementation plan.
