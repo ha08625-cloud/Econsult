@@ -85,8 +85,8 @@ convention, and by which condition it belongs to:
 data/synthetic/
   manifest.json
   filler/                       condition-agnostic, reusable by any condition
-                                four libraries, verified silent on all six
-                                signals that have libraries (section 8)
+                                four libraries, verified silent on all seven
+                                signals (section 8)
   conditions/uti/
     symptoms/fever/             seven libraries, all about fever_present
     symptoms/dysuria/           six libraries, all about dysuria_present
@@ -94,6 +94,7 @@ data/synthetic/
     symptoms/nocturia/          seven libraries, all about nocturia_present
     symptoms/flank_pain/        five libraries, all about flank_pain_present
     symptoms/haematuria/        five libraries, all about haematuria_present
+    symptoms/recent_uti/        six libraries, all about recent_uti_present
     filler/                     one library, UTI-specific filler
   drafts/                       scratch files, deliberately not libraries (section 4)
   generated/                    output, git-ignored
@@ -123,21 +124,25 @@ number on file incomparable. The split belongs with the next change that bumps
 `GENERATOR_VERSION` and regenerates everything anyway. Until then, treat the
 shared filler as "condition-agnostic apart from a quarter of `expectations`".
 
-Note the filler annotation carefully, because it has a sharp edge. The filler
-libraries are verified silent about the **six signals that have libraries** —
-that check is the lint's (section 8), it runs in CI, and it currently passes
-with no baselined exceptions. It says nothing about the seventh.
+The filler libraries are verified silent about **all seven** signals — that
+check is the lint's (section 8), it runs in CI, and it currently passes with no
+baselined exceptions.
 
-`recent_uti_present` is the seventh `send_to_encoder` signal, it has no
-libraries, and so it has no lexicon and nothing checks it. `uti_speculation` is
-full of lines that assert it outright — "I've had them before and this feels
-similar", "I reckon it's another UTI, I'm prone to them", "I had one last year".
-That is not a bug in the lint; it is the gap the lint cannot see, because a
-lexicon is only written for a signal we have decided to train. Whoever closes
-the `recent_uti_present` gap inherits a filler library that is *not* silent on
-it, and `uti_speculation` will need rewriting or relabelling at that point.
-Section 12.5 is what makes silence declarable per signal rather than argued
-paragraph by paragraph.
+**That sentence used to carry a caveat about the seventh signal, and the caveat
+is now discharged.** `recent_uti_present` had no libraries, so it had no lexicon
+and nothing checked it, and this section predicted that whoever closed the gap
+would inherit a `uti_speculation` "full of lines that assert it outright" and
+needing rewriting or relabelling. **That prediction was wrong**, and section 9's
+labelling policy is why: read against its rules, self-diagnosis ("I reckon it's
+another UTI, I'm prone to them") is a guess rather than a diagnosis, recurrence
+with no window marker says nothing about the last 30 days, and "I had one last
+year" places an infection explicitly outside it. Not one of `uti_speculation`'s
+forty lines asserts a urine infection inside the window, the filler-purity check
+returns zero for `recent_uti_present` alongside the other six, and the library
+needed no edit at all. What it does need is a declaration, which is 12.5's
+machinery and the next ticket's work: the pair is a `null_on` with basis
+`policy`, not a leak, and until the manifest can say so the generator still
+treats every foreign library as ineligible.
 
 | Library | Fragments | What it contains |
 |---|---|---|
@@ -178,6 +183,12 @@ paragraph by paragraph.
 | `conditions/uti/symptoms/haematuria/haematuria_null_hedged.txt` | 45 | Genuinely uncertain ("looked a bit pink but I ate beetroot yesterday") |
 | `conditions/uti/symptoms/haematuria/haematuria_null_thirdparty.txt` | 45 | *Someone else* is passing blood |
 | `conditions/uti/symptoms/haematuria/haematuria_null_historical.txt` | 45 | Blood in the urine, but in the past |
+| `conditions/uti/symptoms/recent_uti/recent_uti_true.txt` | 44 | Says a urine infection was diagnosed or treated inside the last 30 days ("I finished a course of nitrofurantoin ten days ago") |
+| `conditions/uti/symptoms/recent_uti/recent_uti_false.txt` | 44 | Denies one across the whole window ("the sample I handed in last week came back clear") |
+| `conditions/uti/symptoms/recent_uti/recent_uti_null_hedged.txt` | 44 | Uncertain whether it was an infection, or certain it was and vague about when ("I had a water infection a while back but I honestly could not tell you when") |
+| `conditions/uti/symptoms/recent_uti/recent_uti_null_historical.txt` | 42 | An infection with a time marker that clears 30 days, and no denial of the window |
+| `conditions/uti/symptoms/recent_uti/recent_uti_null_thirdparty.txt` | 40 | *Someone else* had one |
+| `conditions/uti/symptoms/recent_uti/recent_uti_null_adjacent.txt` | 42 | A recent, diagnosed, antibiotic-treated infection that is not urinary ("the dentist put me on antibiotics for an abscess about ten days ago") |
 | `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
 | `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
 | `filler/emotional.txt` | 60 | Filler: worry and feelings |
@@ -247,13 +258,30 @@ oversights.**
   do. Its raw material is the confidently-attributed half of `hedged` plus the
   colour lines the boundary rule keeps out of `true`.
 
-  Two rules follow from the boundary rule and apply to the null libraries. A
+  Two rules follow from the haematuria boundary rule and apply to its null
+  libraries. A
   `thirdparty` or `historical` fragment must read as decisively `true` if the
   person or the tense is changed and nothing else — "my sister's lad had tea
   coloured pee" is `null` twice over and so measures nothing. And a fragment
   that never mentions blood or urine is not a haematuria fragment under any
   label: seventeen `hedged` drafts were flank pain with no urinary content, and
   are parked in `drafts/` rather than labelled.
+
+* **recent_uti** covers `hedged`, `thirdparty`, `historical` and `adjacent`,
+  and its axes are displaced from the *window* rather than from a symptom,
+  because the question is about an event in the last 30 days rather than about
+  how the patient feels now. `historical` therefore has a sharper job here than
+  anywhere else: it is not "the symptom was in the past" but "the infection is
+  far enough back to be outside the window and the text does not say whether
+  there has been one since", which is why a vague time marker is a `hedged`
+  fragment rather than a `historical` one (section 9, rule 3). `hedged` carries
+  both kinds of doubt the signal admits — doubt about whether it was an
+  infection at all, and doubt about when. `adjacent` is the confounder the whole
+  set is built around: a recent, diagnosed, antibiotic-treated infection that is
+  simply not urinary, where every surface cue points to `true`. There is no
+  `metaphor` library (nobody uses "water infection" figuratively) and no
+  `attribution` library (a diagnosed infection stays a diagnosed infection
+  whatever the patient blames it on, so attribution has nothing to displace).
 
 A signal covering fewer axes measures a model against a narrower set of
 confounders, so its numbers are not comparable sub-class for sub-class with
@@ -270,10 +298,10 @@ about fever, and that guarantee is not written down anywhere the code can check.
 
 **The measurement now exists, and the declaration does not yet.** The lint's
 cross-signal report (section 8) asks the filler-purity question of every library
-rather than only of filler: for each of the 257 (library, foreign signal) pairs
+rather than only of filler: for each of the 293 (library, foreign signal) pairs
 it prints how many of the library's lines read as that signal's language, and
 proposes a pasteable `null_on` declaration for every pair where it finds none.
-**32 pairs across 23 libraries have at least one match.** That report is
+**35 pairs across 25 libraries have at least one match.** That report is
 evidence and a triage list; the manifest field it proposes, and the per-pair
 decisions behind it, are the next ticket's work. Until they land, `build_pools`
 keeps behaving exactly as described above.
@@ -302,10 +330,10 @@ recorded here so they are not rediscovered as mysteries:
   in the lint's trap test now, so a future lexicon cannot quietly re-flag them.
 
 **The filler libraries must contain no signal language whatsoever, for any of
-the six signals with libraries.** A filler fragment can be paired with anything,
+the seven signals.** A filler fragment can be paired with anything,
 including examples labelled "no fever mentioned", so fever language in filler
 would make that example's label a lie — and the same holds for each urinary
-signal. There is an automated check for all six — see section 8. What is still
+signal. There is an automated check for all seven — see section 8. What is still
 missing is 12.5: the lint now *measures* what every signal library says about
 the other six, but nothing lets a library **declare** it, so the generator has
 nothing in the manifest it can rely on. Measuring is done; declaring is the next
@@ -348,6 +376,7 @@ some evidence against it:
 
 | signal | cross-split near-dup pairs | lines | rate |
 |---|---|---|---|
+| `recent_uti` | 19 | 256 | 7.4% |
 | `flank_pain` | 17 | 243 | 7.0% |
 | `nocturia` | 8 | 351 | 2.3% |
 | `fever` | 8 | 463 | 1.7% |
@@ -361,6 +390,18 @@ are raw, so the comparison flatters the untagged ones. `flank_pain` at 7% most
 deserves a re-read. By inspection some untagged libraries do carry families that
 read as one idea: `haematuria_true` describes urine colour by comparison to a
 drink five times (rosé, ribena, cranberry, plum, red wine).
+
+`recent_uti` tops the table and is the one row to read differently. Every
+fragment it holds has to place an infection somewhere in time, so all six
+libraries share the infection nouns *and* the time markers, and that is exactly
+the combination section 8 names as the case where character similarity runs high
+between genuinely distinct ideas. The libraries were written against the count:
+the first drafts of `historical`, `thirdparty` and `adjacent` each ran at three
+to five times the tree's normal within-library rate on one sentence frame apiece,
+and were rewritten as varied structures rather than tagged as clusters. 7.4% is
+where it settled. Whether the residue is frame or vocabulary is not something
+the report can settle, so this signal's absolute numbers are an upper bound by
+at least as much as the other untagged signals'.
 
 Until that is fixed, **the four untagged signals will post better numbers than
 fever partly for reasons that have nothing to do with the symptom, and `dysuria`
@@ -721,23 +762,23 @@ fragment must match one of each:
 | `haematuria` | named urination, bowl, pan, sample | blood and urine colours |
 | `recent_uti` | infection nouns (uti, cystitis, water/urine/bladder/kidney infection) | diagnosis, treatment and recency markers |
 
-`recent_uti_present` is the seventh, added with the cross-signal report below.
-It has no libraries of its own yet, so nothing measures its recall against one —
+`recent_uti_present` is the seventh, added with the cross-signal report below
+and ahead of its libraries. It joined the recall guard the moment they landed
+and with no test edit at all, because
 `test_every_lexicon_reaches_most_of_its_own_library` parametrises over the
-signals that *have* a positive library in the live manifest, which is how the
-new signal joins the guard automatically when its six libraries land rather
-than by somebody remembering to remove an exemption.
+signals that *have* a positive library in the live manifest rather than over a
+hand-maintained list with an exemption to remember to remove. It scores 68%, in
+the middle of the other six.
 
 Its split is the sharpest of the seven, because the question is not "does this
 line name an infection" but "does it put one inside the last 30 days". The
 anchor half alone is the commonest thing said in these libraries:
-`uti_speculation` names an infection on nearly every one of its 40 lines and
-asserts a recent one on none of them. So the recency modifiers deliberately stop
+`uti_speculation` names an infection on nearly every one of its 40 lines and,
+under the section 9 policy, asserts a recent one on none of them. So the recency modifiers deliberately stop
 short of "last time", "last year", "again" and "I'm prone to them" — every one
 of those is how that library talks about the past, none of them places an
-infection inside the window, and the labelling policy those libraries are being
-written against makes all of them `null` (ticket 6, DD18; it lands in section 9
-alongside them). Three lines in the whole tree match: an antibiotics-in-March line in
+infection inside the window, and the labelling policy those libraries are
+written against makes all of them `null` (section 9). Three lines in the whole tree match: an antibiotics-in-March line in
 `dysuria_null_historical`, a third-party UTI in `flank_pain_null_thirdparty`,
 and a ten-years-ago treatment in `haematuria_null_historical`. All three name an
 infection *and* its treatment, which is exactly what the lexicon is for, and all
@@ -765,10 +806,15 @@ What each lexicon catches in its own `positive` library, on the committed tree:
 | `haematuria` | 39/45 | 87% |
 | `flank_pain` | 40/48 | 83% |
 | `nocturia` | 38/54 | 70% |
+| `recent_uti` | 30/44 | 68% |
 | `urinary_frequency` | 27/46 | 59% |
 
 `urinary_frequency` is low because that library leans hardest on euphemism, not
-because its lexicon is weaker. The `negative` libraries run 25 to 45 points
+because its lexicon is weaker. `recent_uti` sits mid-table for a different
+reason: about a third of its positive library is the treatment-proxy family
+(section 9, rule 2), and "I have just come off a week of antibiotics for
+cystitis" carries both halves while "I finished a course of nitrofurantoin ten
+days ago" names no infection at all and is invisible to the lexicon by design. The `negative` libraries run 25 to 45 points
 lower across the board, because negating a symptom drops the words that name it
 ("no blood at all" keeps neither half). `test_every_lexicon_reaches_most_of_its_own_library`
 holds these above 45%, which is a guard against a lexicon quietly narrowed until
@@ -798,7 +844,7 @@ picking between them is a labelling decision rather than a bug:
 A fragment is never checked against its own signal's lexicon: that is the
 lexicon working, and the recall guard above is where it is measured.
 
-**32 of the 257 pairs match, across 23 of the 42 libraries.** The head of the
+**35 of the 293 pairs match, across 25 of the 48 libraries.** The head of the
 list is the nocturia / urinary-frequency pair, which is not a lint fault — "up
 three times in the night for a wee" genuinely asserts both — and is the pair
 predicted to resist any library-level declaration:
@@ -811,8 +857,17 @@ predicted to resist any library-level declaration:
 | `dysuria_null_hedged` | `urinary_frequency_present` | 5/40 | 12% |
 | `urinary_frequency_false` | `nocturia_present` | 5/46 | 11% |
 | `nocturia_null_historical` | `urinary_frequency_present` | 4/46 | 9% |
+| `recent_uti_null_hedged` | `dysuria_present` | 4/44 | 9% |
 
-The remaining 26 pairs run at 1 to 3 lines each; the report prints all 257 rows,
+The `recent_uti_null_hedged` row is the seventh signal's only real contribution
+and it is intrinsic rather than sloppy: a library about *was that an infection or
+not* reaches for the symptom that raised the question, so "I felt a sting when I
+went to the loo last fortnight but I was using new bath salts" carries dysuria
+language while being `null` on dysuria (past tense) and `null` on
+`recent_uti_present` (unresolved). It is a candidate for a `policy` declaration
+rather than for a rewrite.
+
+The remaining 28 pairs run at 1 to 3 lines each; the report prints all 293 rows,
 worst first, with the matched lines under each. The full grid as it stood when
 the report landed, every matched line included, is committed at
 `reports/synthetic_data/2026-08-18-cross-signal-grid.md` — it is the input to
@@ -1613,8 +1668,8 @@ library and clusters per split alongside the raw fragment counts.
 
 ### 12.2 Multi-signal libraries
 
-**Partial status: the libraries for six signals exist (section 3), the engine
-work does not.** A single-signal run against any of them produces a valid
+**Partial status: the libraries for all seven signals exist (section 3), the
+engine work does not.** A single-signal run against any of them produces a valid
 dataset; what does not exist is any way for *one* example to carry more than one
 key.
 

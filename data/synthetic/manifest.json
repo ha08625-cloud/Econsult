@@ -249,6 +249,46 @@
       "subclass": "historical"
     },
     {
+      "name": "recent_uti_true",
+      "file": "conditions/uti/symptoms/recent_uti/recent_uti_true.txt",
+      "signal_key": "recent_uti_present",
+      "fragment_type": "positive"
+    },
+    {
+      "name": "recent_uti_false",
+      "file": "conditions/uti/symptoms/recent_uti/recent_uti_false.txt",
+      "signal_key": "recent_uti_present",
+      "fragment_type": "negative"
+    },
+    {
+      "name": "recent_uti_null_hedged",
+      "file": "conditions/uti/symptoms/recent_uti/recent_uti_null_hedged.txt",
+      "signal_key": "recent_uti_present",
+      "fragment_type": "ambiguous",
+      "subclass": "hedged"
+    },
+    {
+      "name": "recent_uti_null_thirdparty",
+      "file": "conditions/uti/symptoms/recent_uti/recent_uti_null_thirdparty.txt",
+      "signal_key": "recent_uti_present",
+      "fragment_type": "confounder",
+      "subclass": "third_party"
+    },
+    {
+      "name": "recent_uti_null_historical",
+      "file": "conditions/uti/symptoms/recent_uti/recent_uti_null_historical.txt",
+      "signal_key": "recent_uti_present",
+      "fragment_type": "confounder",
+      "subclass": "historical"
+    },
+    {
+      "name": "recent_uti_null_adjacent",
+      "file": "conditions/uti/symptoms/recent_uti/recent_uti_null_adjacent.txt",
+      "signal_key": "recent_uti_present",
+      "fragment_type": "confounder",
+      "subclass": "adjacent"
+    },
+    {
       "name": "tangents",
       "file": "filler/tangents.txt",
       "signal_key": null,
