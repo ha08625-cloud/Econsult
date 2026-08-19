@@ -447,6 +447,29 @@ capture is reported as undefined rather than as a percentage of nothing.
 
 ---
 
+### 4f. Cross-tree evaluation (`--test-dir`)
+
+`finetune --test-dir` trains on `--data-dir`'s train and val splits and scores
+against a *second* tree's test split. It exists for the noise experiment
+(`arch_training.md` 12.6): the interesting cells are the off-diagonal ones —
+train clean, score damaged, and back — and every other path in this package
+trains and scores inside one tree, which can only produce the diagonal.
+
+`dataset.swap_test_split` does the swap, and its checks are the whole point.
+The two folds must agree on signal, fold count, fold index and split salt, they
+must carry the same head set, and their test splits must hold **exactly the same
+example ids and fragment ids**. That is what makes the swapped number a
+comparison — the same held-out clusters in a different surface form — rather
+than a plausible-looking score against an unrelated dataset. Both trees are
+loaded and checked before the encoder is downloaded, so a wrong path costs a
+second rather than an hour of GPU.
+
+Unset, it changes nothing. It is on `finetune` alone: `probe`,
+`compare-models` and `joint-compare` do not need it, and an unused flag on four
+subcommands is four things to keep correct. When it is set, the report header
+carries `test_dataset_dir` and the test tree's `noise` block, and the Arm B
+artefact's dataset block carries `test_dir`.
+
 ## 5. How the numbers are made honest
 
 Four mechanisms, all stdlib, all in `metrics.py` and `report.py`.

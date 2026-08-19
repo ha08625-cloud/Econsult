@@ -669,6 +669,88 @@ def load_fold(
     return Fold(train=loaded["train"], val=loaded["val"], test=loaded["test"])
 
 
+def swap_test_split(fold: Fold, test_fold: Fold) -> Fold:
+    """Keep ``fold``'s train and val splits, take its test split from ``test_fold``.
+
+    This is the whole of the cross-tree evaluation: a model trained on one
+    generated tree, scored on the *same held-out clusters* written a different
+    way -- damaged text against clean, say. Nothing else in this package can
+    express that, because every other path trains and scores inside one
+    ``--data-dir``.
+
+    The checks are what make the swapped number mean anything. The two folds
+    must agree on the signal and on the whole fold configuration, and their test
+    splits must hold **exactly the same example ids and the same fragment ids**.
+    That is the difference between "the same evaluation set in a different
+    surface form" and "some other dataset's test split", and without it pointing
+    ``--test-dir`` at an unrelated tree would produce a plausible-looking score
+    with no interpretation at all.
+
+    The head sets must match too. A test tree missing one of the training
+    tree's signals loads perfectly happily -- a missing label key means
+    "masked", by design -- so the score for that head would silently become an
+    average over nothing.
+    """
+    for field in ("signal", "folds", "fold_index", "split_salt"):
+        left = fold.test.stats.get(field)
+        right = test_fold.test.stats.get(field)
+        if json.dumps(left, sort_keys=True) != json.dumps(right, sort_keys=True):
+            raise DatasetError(
+                f"{test_fold.test.path} cannot supply the test split for {fold.test.path}: they "
+                f"disagree on {field!r} ({left!r} vs {right!r}). They are not two views of one "
+                "partition, so a model trained against one and scored against the other is "
+                "scored on clusters it may have trained on"
+            )
+
+    if fold.signals != test_fold.signals:
+        raise DatasetError(
+            f"{test_fold.test.path} carries signals {test_fold.signals} but the training tree "
+            f"carries {fold.signals}. A signal absent from the test tree reads as masked rather "
+            "than as an error, so the swap would quietly score that head on no examples"
+        )
+
+    _check_same_ids(
+        "example",
+        {example.example_id for example in fold.test.examples},
+        {example.example_id for example in test_fold.test.examples},
+        fold=fold,
+        test_fold=test_fold,
+    )
+    _check_same_ids(
+        "fragment",
+        set(fold.test.fragments),
+        set(test_fold.test.fragments),
+        fold=fold,
+        test_fold=test_fold,
+    )
+
+    return Fold(train=fold.train, val=fold.val, test=test_fold.test)
+
+
+def _check_same_ids(
+    kind: str, expected: Collection[str], found: Collection[str], *, fold: Fold, test_fold: Fold
+) -> None:
+    """Assert two test splits describe the same held-out material."""
+    missing = sorted(set(expected) - set(found))
+    extra = sorted(set(found) - set(expected))
+    if not missing and not extra:
+        return
+    detail = []
+    if missing:
+        detail.append(
+            f"missing {len(missing)} ({', '.join(missing[:5])}{' ...' if len(missing) > 5 else ''})"
+        )
+    if extra:
+        detail.append(
+            f"unexpected {len(extra)} ({', '.join(extra[:5])}{' ...' if len(extra) > 5 else ''})"
+        )
+    raise DatasetError(
+        f"{test_fold.test.path} does not hold the same {kind} ids as {fold.test.path}: "
+        f"{'; '.join(detail)}. A cross-tree evaluation is only meaningful when the two test "
+        "splits are the same held-out clusters differing in surface form"
+    )
+
+
 def fold_dataset_path(directory: Path | str, signal: str, fold_index: int, split: str) -> Path:
     """Where one fold's split lives, by the :data:`FOLD_FILENAME` convention."""
     if split not in SPLITS:

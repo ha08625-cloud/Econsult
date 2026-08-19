@@ -138,7 +138,7 @@ from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
 from scripts.synthetic_data.__main__ import main as generate_main
 
 from .baselines import run_all
-from .dataset import SPLITS, DatasetError, fold_dataset_path, load_folds
+from .dataset import SPLITS, DatasetError, fold_dataset_path, load_folds, swap_test_split
 from .embed import POOLING_MODES, EmbedError
 from .holdout import DEFAULT_HOLDOUT_PATH, HoldoutError, HoldoutSet, encoder_signals, load_holdout
 from .merge import DEFAULT_SIGNALS, MergeError, merge_folds
@@ -318,6 +318,34 @@ def run_merge_folds(args: argparse.Namespace) -> int:
     return 0
 
 
+def _test_tree_header(args: argparse.Namespace, folds) -> dict:
+    """Which tree the test split came from, when it is not the training tree.
+
+    Empty for every run that trains and scores inside one ``--data-dir``, so
+    reports written before ``--test-dir`` existed are unchanged. When the split
+    was swapped this is the first question a reader of the 2x2 asks, so it goes
+    in the header rather than only in the artefact sidecar -- with the noise
+    rate the test tree was written at, which is the axis the cells differ on.
+    """
+    test_dir = getattr(args, "test_dir", None)
+    if test_dir is None:
+        return {}
+    header: dict = {"test_dataset_dir": str(test_dir)}
+    noise = folds[0].test.stats.get("noise")
+    if isinstance(noise, Mapping):
+        requested = noise.get("requested")
+        requested = requested if isinstance(requested, Mapping) else {}
+        header["test_dataset_noise"] = {
+            "requested_rate": requested.get("rate"),
+            "clean_share": requested.get("clean_share"),
+            "freeze_signal_vocabulary": requested.get("freeze_signal_vocabulary"),
+            "seed": noise.get("seed"),
+        }
+    else:
+        header["test_dataset_noise"] = "none -- the test tree carries no noise block"
+    return header
+
+
 def _header(args: argparse.Namespace, folds, extra: dict | None = None) -> dict:
     """Everything needed to reproduce the run, recorded next to its numbers."""
     first = folds[0].train
@@ -332,6 +360,7 @@ def _header(args: argparse.Namespace, folds, extra: dict | None = None) -> dict:
         ),
         "split_salt": first.split_salt,
         "dataset_dir": str(args.data_dir),
+        **_test_tree_header(args, folds),
         "ruleset": str(args.ruleset),
         "ruleset_hash": hash_ruleset_file(args.ruleset),
         "examples_per_fold": {
@@ -763,9 +792,24 @@ def run_arm_b(args: argparse.Namespace) -> int:
     report -- which is what makes a single-signal run's numbers comparable to
     every report committed before this command could merge datasets at all.
     Anything else (a merged tree, or several ``--signals``) takes the joint path.
+
+    ``--test-dir``, when set, replaces every fold's test split with the same
+    fold's test split from a second tree, after checking the two are the same
+    partition down to the example and fragment ids. That is the only way to run
+    the off-diagonal cells of the noise 2x2 -- train clean, score noisy, and
+    back -- and it changes nothing when left unset.
     """
     dataset_name = args.dataset or args.signal
     folds = load_folds(args.data_dir, dataset_name, folds=args.folds)
+    if args.test_dir is not None:
+        # Loaded and checked before the encoder is downloaded and before the
+        # first fold trains: a --test-dir pointing at the wrong tree should cost
+        # a second, not an hour of GPU followed by an uninterpretable number.
+        test_folds = load_folds(args.test_dir, dataset_name, folds=args.folds)
+        folds = tuple(
+            swap_test_split(fold, test_fold)
+            for fold, test_fold in zip(folds, test_folds, strict=True)
+        )
     signals = tuple(args.signals) if args.signals else tuple(folds[0].signals)
 
     if len(signals) == 1 and dataset_name == signals[0]:
@@ -889,6 +933,7 @@ def _run_arm_b_single(args: argparse.Namespace, folds) -> int:
         device=device_facts,
         dataset={
             "dir": str(args.data_dir),
+            "test_dir": None if args.test_dir is None else str(args.test_dir),
             "folds": args.folds,
             "generator_version": folds[0].train.generator_version,
             "generator_base_seed": args.seed,
@@ -1028,6 +1073,7 @@ def _run_arm_b_joint(
         device=device_facts,
         dataset={
             "dir": str(args.data_dir),
+            "test_dir": None if args.test_dir is None else str(args.test_dir),
             "name": dataset_name,
             "folds": args.folds,
             "generator_version": folds[0].train.generator_version,
@@ -2401,6 +2447,17 @@ def build_parser() -> argparse.ArgumentParser:
         "signal on one from merge-folds. Passing the same single value as --signal and --dataset "
         "takes the unchanged single-signal path; anything else takes the joint path, which skips "
         "Arm A and the baselines (both are single-head machinery) and writes one report per head",
+    )
+    finetune.add_argument(
+        "--test-dir",
+        type=Path,
+        default=None,
+        help="score the fine-tuned model against this tree's test split instead of --data-dir's. "
+        "The two trees must be the same partition -- same fold configuration, same example and "
+        "fragment ids in every test split -- so this is the same held-out clusters in a different "
+        "surface form (a noised tree against a clean one, say), and nothing else. Defaults to "
+        "unset, which is today's behaviour exactly. Only on finetune: the 2x2 needs it on the "
+        "Arm B path and nowhere else",
     )
     finetune.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
     finetune.add_argument("--models-dir", type=Path, default=DEFAULT_MODELS_DIR)
