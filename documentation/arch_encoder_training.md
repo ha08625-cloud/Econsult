@@ -404,6 +404,35 @@ That last figure is in the report rather than in a one-off script because a
 companion count that tracked the label mode would mean *more clinical text ⇒
 more likely `null`*, and the arm would be void rather than reinterpretable.
 
+### 4e. Scoring the declared threshold
+
+`score-companions` reads those six reports back and prints the criteria that
+were written down *before* the run, each marked `HELD` or `NOT HELD`
+(`scripts/encoder_training/thresholds.py`). It trains nothing, needs no GPU and
+imports nothing outside the stdlib; the criteria and their limits live in the
+module as constants, so what is being scored is readable without running it.
+
+**The threshold is scored by a program because it is easy to get wrong by
+hand.** The primary criterion is a twenty-point gap on at least four of six
+signals, each signal's figure a mean over five folds in a different file. The
+negative control is a two-point limit read in the direction where *movement is
+the failure* — the synthetic test set cannot contain the failure companions were
+built to fix, so a large gain there is evidence of a new shortcut. Hand
+arithmetic across thirty fold-means, with one of the four criteria pointing
+backwards, is not a check anybody can re-run.
+
+**DD5's leak detector is a gate, not a criterion.** It is scored first, off the
+`companions` block, and a failure marks every criterion `NOT SCORED` and exits
+non-zero rather than printing numbers a reader would use anyway. A run whose
+companion draw correlates with the label did not test what it was built to test;
+its scores are not a weaker answer, they are not an answer. Criteria that are
+merely *not held* exit zero — a recorded failure is the command working.
+
+Arm C is reported without a verdict on purpose. Its criterion asks *how much* of
+Arm P's gain a re-selected margin captured, and a high number is the ticket's
+finding rather than its failure. Where Arm P did not gain on a signal, the
+capture is reported as undefined rather than as a percentage of nothing.
+
 ---
 
 ## 5. How the numbers are made honest
@@ -668,6 +697,8 @@ python -m scripts.encoder_training companion-compare --folds 5 \   # Arm 0, Arm 
   --arm0-dir data/synthetic/generated/arm0 \
   --armp-dir data/synthetic/generated/armp \
   --dataset joint6 --base-model roberta-base
+python -m scripts.encoder_training score-companions            # read those reports, score the
+                                                               # declared threshold, no GPU
 ```
 
 **Python 3.12 or later, in an environment of its own.** Every subcommand imports

@@ -1,6 +1,6 @@
 """Command-line entry point for encoder training and evaluation.
 
-Nine subcommands.
+Eleven subcommands.
 
     python -m scripts.encoder_training generate-folds --folds 5
 
@@ -99,6 +99,28 @@ signal *is* that signal's own examples under the ids they had in its own tree.
 McNemar rows come back as recorded skips rather than as silence, and it is read
 through the pooled cluster interval instead.
 
+    python -m scripts.encoder_training companion-compare --folds 5
+
+The multi-symptom ticket's three arms in one report per signal, stem
+``<signal>.companion_comparison``: Arm 0, the control at ``--companion-share 0``;
+Arm P, the same recipe at a non-zero share; and Arm C, Arm 0's trained heads with
+every margin re-selected on Arm P's validation split. Arm C costs no training and
+is the arm that says whether regenerating the data was necessary at all. The two
+datasets hold different texts under the same example ids, so Arm P pairs with
+nothing on the synthetic test set and the arms are compared on the 67 real-text
+submissions, which every arm scores identically.
+
+    python -m scripts.encoder_training score-companions
+
+Reads those six reports back and scores the threshold declared before the run:
+the twenty-point primary criterion on four of six signals, the accuracy guard,
+the two-point negative control, and how much of Arm P's gain Arm C captured.
+Stdlib only, no GPU, and no interpretation -- it prints ``HELD`` or ``NOT HELD``
+and the numbers behind each. DD5's leak detector is a **gate**: it is checked
+first, and a run whose companion draw correlates with the label is reported void
+rather than scored, because such a run did not test what it was built to test.
+See :mod:`.thresholds`.
+
 No command touches ``app/``, and nothing in ``app/`` imports this. The dependency
 runs one way, and ``tests/test_wiring.py`` asserts it.
 """
@@ -123,6 +145,8 @@ from .merge import DEFAULT_SIGNALS, MergeError, merge_folds
 from .report import BootstrapConfig, build_report, write_report
 from .ruleset_hash import hash_ruleset_file
 from .smoke_cuda import CudaSmokeError, check_device, format_report
+from .thresholds import ThresholdError
+from .thresholds import run as score_companions
 
 # `train` imports torch inside its functions, exactly as `baselines` does with
 # scikit-learn, so importing it here costs nothing on a machine with no ML
@@ -2659,6 +2683,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     companion.set_defaults(handler=run_companion_compare)
 
+    score = subparsers.add_parser(
+        "score-companions",
+        help="read the written companion reports and score the declared threshold: no training, "
+        "no GPU, no interpretation",
+    )
+    score.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT_DIR)
+    score.add_argument(
+        "--signals",
+        nargs="+",
+        default=list(DEFAULT_SIGNALS),
+        help="which signals' reports to score. All six, unless a partial run is being checked",
+    )
+    score.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the scorecard as JSON instead of the table, for pasting into a write-up",
+    )
+    score.set_defaults(handler=score_companions)
+
     return parser
 
 
@@ -2672,6 +2715,7 @@ def main(argv: list[str] | None = None) -> int:
         EmbedError,
         HoldoutError,
         MergeError,
+        ThresholdError,
         TrainError,
     ) as error:
         # The failures a caller can actually fix: an untrustworthy dataset, an
