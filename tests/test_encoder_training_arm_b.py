@@ -39,9 +39,11 @@ from scripts.encoder_training.dataset import (
     CLASS_FALSE,
     CLASS_NULL,
     CLASS_TRUE,
+    DatasetError,
     fold_dataset_path,
     load_fold,
     load_folds,
+    swap_test_split,
 )
 from scripts.encoder_training.decision import DecisionRule
 from scripts.encoder_training.embed import EmbeddingSpec
@@ -1009,6 +1011,141 @@ def test_run_arm_b_dispatches_single_vs_joint_by_dataset_and_signals(tmp_path, m
     main_module.run_arm_b(joint_args)
     assert calls[1].startswith("joint:joint2:")
     assert "fever_present" in calls[1] and "dysuria_present" in calls[1]
+
+
+# --------------------------------------------------------------------------
+# Cross-tree evaluation: --test-dir
+# --------------------------------------------------------------------------
+
+
+def _write_single_fold_tree(directory: Path, *, damage: bool = False) -> Path:
+    """One fold of the fixture trio on disk, optionally with every text damaged.
+
+    Ids, sidecars and fold configuration are identical either way: that is what
+    a noised tree is, and what makes the swap a comparison rather than two
+    unrelated numbers.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    for split, source in (("train", TRAIN), ("val", VAL), ("test", TEST)):
+        destination = fold_dataset_path(directory, SIGNAL, 0, split)
+        records = [
+            json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line
+        ]
+        if damage:
+            for record in records:
+                record["text"] = record["text"] + " teh"
+        destination.write_text(
+            "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+        )
+        stats = json.loads(
+            source.with_name(source.name + ".stats.json").read_text(encoding="utf-8")
+        )
+        stats["folds"] = 1
+        destination.with_name(destination.name + ".stats.json").write_text(
+            json.dumps(stats), encoding="utf-8"
+        )
+    return directory
+
+
+def test_cli_exposes_test_dir_and_defaults_it_off():
+    """Unset is today's behaviour exactly, and the flag is on finetune alone."""
+    assert build_parser().parse_args(["finetune"]).test_dir is None
+    args = build_parser().parse_args(["finetune", "--test-dir", "data/noisy"])
+    assert args.test_dir == Path("data/noisy")
+
+    for command in ("probe", "compare-models", "joint-compare"):
+        parsed = build_parser().parse_args([command])
+        assert not hasattr(parsed, "test_dir"), f"{command} grew an unused --test-dir"
+
+
+def test_test_dir_swaps_the_test_split_and_leaves_training_on_the_training_tree(
+    tmp_path, monkeypatch
+):
+    """The off-diagonal cell of the 2x2: train on one tree, score against another."""
+    import scripts.encoder_training.__main__ as main_module
+
+    seen: list = []
+    monkeypatch.setattr(main_module, "_run_arm_b_single", lambda args, folds: seen.append(folds))
+
+    clean = _write_single_fold_tree(tmp_path / "clean")
+    noisy = _write_single_fold_tree(tmp_path / "noisy", damage=True)
+
+    args = build_parser().parse_args(
+        [
+            "finetune",
+            "--signal",
+            SIGNAL,
+            "--data-dir",
+            str(clean),
+            "--test-dir",
+            str(noisy),
+            "--folds",
+            "1",
+        ]
+    )
+    main_module.run_arm_b(args)
+
+    (folds,) = seen
+    assert all(not example.text.endswith(" teh") for example in folds[0].train.examples)
+    assert all(example.text.endswith(" teh") for example in folds[0].test.examples)
+    assert folds[0].test.path.parent == noisy
+
+
+def test_test_dir_naming_a_tree_missing_a_fold_fails_before_any_gpu_time(tmp_path, monkeypatch):
+    import scripts.encoder_training.__main__ as main_module
+
+    monkeypatch.setattr(
+        main_module,
+        "_run_arm_b_single",
+        lambda args, folds: pytest.fail("the run started against an incomplete test tree"),
+    )
+
+    clean = _write_single_fold_tree(tmp_path / "clean")
+    incomplete = _write_single_fold_tree(tmp_path / "incomplete", damage=True)
+    fold_dataset_path(incomplete, SIGNAL, 0, "test").unlink()
+
+    args = build_parser().parse_args(
+        [
+            "finetune",
+            "--signal",
+            SIGNAL,
+            "--data-dir",
+            str(clean),
+            "--test-dir",
+            str(incomplete),
+            "--folds",
+            "1",
+        ]
+    )
+    with pytest.raises(DatasetError):
+        main_module.run_arm_b(args)
+
+
+def test_the_header_names_the_test_tree_only_when_it_is_not_the_training_tree(tmp_path):
+    """The test tree is the first question anyone reading the 2x2 asks."""
+    import scripts.encoder_training.__main__ as main_module
+
+    clean = _write_single_fold_tree(tmp_path / "clean")
+    noisy = _write_single_fold_tree(tmp_path / "noisy", damage=True)
+    sidecar = fold_dataset_path(noisy, SIGNAL, 0, "test")
+    sidecar = sidecar.with_name(sidecar.name + ".stats.json")
+    stats = json.loads(sidecar.read_text(encoding="utf-8"))
+    stats["noise"] = {"seed": 11, "requested": {"rate": 0.06, "clean_share": 0.25}}
+    sidecar.write_text(json.dumps(stats), encoding="utf-8")
+
+    base = ["finetune", "--signal", SIGNAL, "--data-dir", str(clean), "--folds", "1"]
+    plain = build_parser().parse_args(base)
+    folds = load_folds(clean, SIGNAL, folds=1)
+    assert "test_dataset_dir" not in main_module._header(plain, folds)
+
+    swapped_args = build_parser().parse_args([*base, "--test-dir", str(noisy)])
+    swapped = tuple(
+        swap_test_split(fold, test_fold)
+        for fold, test_fold in zip(folds, load_folds(noisy, SIGNAL, folds=1), strict=True)
+    )
+    header = main_module._header(swapped_args, swapped)
+    assert header["test_dataset_dir"] == str(noisy)
+    assert header["test_dataset_noise"]["requested_rate"] == 0.06
 
 
 # -- torch required: the joint training loop itself -------------------------

@@ -25,11 +25,14 @@ from scripts.encoder_training.dataset import (
     MASKED_CLASS,
     STRUCTURAL_NULL_UNIT,
     DatasetError,
+    fold_dataset_path,
     label_vector,
     load_fold,
+    load_folds,
     load_split,
     mask_vector,
     sidecar_path,
+    swap_test_split,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "encoder_training"
@@ -490,6 +493,104 @@ def test_load_fold_pins_one_signal_set_across_splits(tmp_path):
     fold = load_fold(train, val, test, signals=("fever_present", "dysuria_present"))
 
     assert {split.signals for split in fold.splits} == {("fever_present", "dysuria_present")}
+
+
+# --------------------------------------------------------------------------
+# Swapping the test split for another tree's (--test-dir)
+# --------------------------------------------------------------------------
+
+
+def _write_tree(directory: Path, *, folds: int = 1, damage: bool = False) -> Path:
+    """Write the fixture trio into ``directory`` under the fold-file convention.
+
+    ``damage`` rewrites every example's text without touching a single id, which
+    is what a noised tree is: the same held-out clusters in a different surface
+    form.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    for fold_index in range(folds):
+        for split, source in (("train", TRAIN), ("val", VAL), ("test", TEST)):
+            target = fold_dataset_path(directory, SIGNAL, fold_index, split)
+            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            stats = json.loads(sidecar_path(source).read_text(encoding="utf-8"))
+            stats["folds"] = folds
+            stats["fold_index"] = fold_index
+            sidecar_path(target).write_text(json.dumps(stats, indent=2), encoding="utf-8")
+            if damage:
+                _edit_records(target, lambda record: record.update(text=record["text"] + " teh"))
+    return directory
+
+
+def test_swap_keeps_train_and_val_and_takes_the_test_split_from_the_other_tree(tmp_path):
+    clean = load_folds(_write_tree(tmp_path / "clean"), SIGNAL, folds=1)[0]
+    noisy = load_folds(_write_tree(tmp_path / "noisy", damage=True), SIGNAL, folds=1)[0]
+
+    swapped = swap_test_split(clean, noisy)
+
+    assert swapped.train is clean.train
+    assert swapped.val is clean.val
+    assert swapped.test is noisy.test
+    # Same held-out examples in the same order, different surface form.
+    assert [e.example_id for e in swapped.test.examples] == [
+        e.example_id for e in clean.test.examples
+    ]
+    assert all(e.text.endswith(" teh") for e in swapped.test.examples)
+
+
+def test_swap_rejects_a_test_split_holding_different_examples(tmp_path):
+    clean = load_folds(_write_tree(tmp_path / "clean"), SIGNAL, folds=1)[0]
+    other_dir = _write_tree(tmp_path / "other")
+    _edit_records(
+        fold_dataset_path(other_dir, SIGNAL, 0, "test"),
+        lambda record: record.update(example_id=record["example_id"] + "_x"),
+    )
+    other = load_folds(other_dir, SIGNAL, folds=1)[0]
+
+    with pytest.raises(DatasetError, match="same example ids"):
+        swap_test_split(clean, other)
+
+
+def test_swap_rejects_a_test_split_built_from_different_fragments(tmp_path):
+    clean = load_folds(_write_tree(tmp_path / "clean"), SIGNAL, folds=1)[0]
+    other_dir = _write_tree(tmp_path / "other")
+    sidecar = sidecar_path(fold_dataset_path(other_dir, SIGNAL, 0, "test"))
+    stats = json.loads(sidecar.read_text(encoding="utf-8"))
+    stats["fragments"]["invented_fragment"] = dict(next(iter(stats["fragments"].values())))
+    sidecar.write_text(json.dumps(stats, indent=2), encoding="utf-8")
+    other = load_folds(other_dir, SIGNAL, folds=1)[0]
+
+    with pytest.raises(DatasetError, match="same fragment ids"):
+        swap_test_split(clean, other)
+
+
+def test_swap_rejects_a_tree_split_on_a_different_salt(tmp_path):
+    """A different salt means a different partition, so `test` is not the same clusters."""
+    clean = load_folds(_write_tree(tmp_path / "clean"), SIGNAL, folds=1)[0]
+    other_dir = _write_tree(tmp_path / "other")
+    for split in ("train", "val", "test"):
+        sidecar = sidecar_path(fold_dataset_path(other_dir, SIGNAL, 0, split))
+        stats = json.loads(sidecar.read_text(encoding="utf-8"))
+        stats["split_salt"] = "a-different-salt"
+        sidecar.write_text(json.dumps(stats, indent=2), encoding="utf-8")
+    other = load_folds(other_dir, SIGNAL, folds=1)[0]
+
+    with pytest.raises(DatasetError, match="disagree on 'split_salt'"):
+        swap_test_split(clean, other)
+
+
+def test_swap_rejects_a_test_tree_missing_one_of_the_training_tree_s_heads(tmp_path):
+    """A missing label key reads as masked, so this would score a head on nothing."""
+    clean = load_folds(_write_tree(tmp_path / "clean"), SIGNAL, folds=1)[0]
+    other_dir = _write_tree(tmp_path / "other")
+    for split in ("train", "val", "test"):
+        _edit_records(
+            fold_dataset_path(other_dir, SIGNAL, 0, split),
+            lambda record: record["labels"].setdefault("dysuria_present", None),
+        )
+    other = load_folds(other_dir, SIGNAL, folds=1)[0]
+
+    with pytest.raises(DatasetError, match="carries signals"):
+        swap_test_split(clean, other)
 
 
 # --------------------------------------------------------------------------
