@@ -526,6 +526,26 @@ def score_holdout(
         "overall": _slice_block(pooled, resamples=resamples, seed=seed, alpha=alpha),
         "decisive": _slice_block(_decisive(pooled), resamples=resamples, seed=seed, alpha=alpha),
         "by_signal": by_signal,
+        # Every cell this fold decided, keyed by the id `build_predictions` gave
+        # it. Kept because the aggregate above cannot be paired: two arms scored
+        # on the same 67 submissions differ in *which* submissions they get
+        # right, and a difference in two means says nothing about that. The
+        # report reads these, runs its paired test and drops them -- they are
+        # working data for `report.holdout_comparisons`, not part of the
+        # committed JSON, which is why they are a flat list of triples rather
+        # than a second copy of the per-signal blocks above.
+        "cells": {
+            signal: [
+                {
+                    "id": prediction.example_id,
+                    "unit": prediction.unit,
+                    "truth": prediction.truth,
+                    "predicted": prediction.predicted,
+                }
+                for prediction in per_signal[signal]
+            ]
+            for signal in requested
+        },
         "provenance": PROVENANCE_NOTE,
         "voice": VOICE_NOTE,
         "power": POWER_NOTE,

@@ -350,6 +350,60 @@ report holds no per-example predictions, **A1 is re-run rather than read off
 disk** — the paired test can only be computed inside the invocation that
 produced both arms, and A1 is deterministic from the pinned seeds.
 
+### 4d. The companion comparison: three arms, two trainings
+
+`companion-compare` is the multi-symptom ticket's command. It loads **two**
+merged trees, generated from the same libraries with the same seed, counts, fold
+triple and salt, differing in `--companion-share` and in nothing else.
+
+| arm | what it is | cost |
+|---|---|---|
+| **Arm 0** | `--companion-share 0`, joint six-head. The control, and the regenerated baseline at `GENERATOR_VERSION` 3. | 5 fold-trainings |
+| **Arm P** | the same at a non-zero share. | 5 fold-trainings |
+| **Arm C** | Arm 0's trained heads, every margin re-selected on **Arm P's** validation split. | free |
+
+**Arm C is not a third dataset and not a third training run.** Same weights,
+same raw argmax scores, same test examples; the only thing that moves is the
+threshold each head applies. It runs inside Arm 0's fold loop, while the model
+is still on the device, because reloading five fine-tuned encoders to change a
+threshold would be an hour of I/O to avoid a minute of arithmetic. It exists to
+separate *the training data change helped* from *the margin selection data
+change helped*: the decision rule maximises macro-F1 subject to a `null → true`
+rate no worse than argmax's, and until companions existed no validation split
+contained the case the rule most needs to get right — text dense with another
+symptom's clinical language whose correct answer is still `null`. If Arm C
+captures most of Arm P's gain, the cheap fix was available without regenerating
+anything, and that is the headline.
+
+**Two pairing facts, and they point opposite ways.**
+
+*Arm P cannot be paired on the synthetic test set.* Its examples are different
+texts numbered from zero exactly as Arm 0's are, so the id sets match exactly
+while the texts behind them do not — `compare_models` would pair two different
+texts under one id and report a McNemar test over pairs that do not exist,
+raising only in the lucky case where the two disagree about a truth. Its ids are
+qualified with the arm's label before the report sees them, the same
+`_as_unpaired` guard A2 uses. Arm 0 and Arm C *do* share a test set and are
+paired on it, which is exactly the comparison "did the margin alone move
+anything" needs.
+
+*Every arm pairs on the real text.* The 67 submissions are the same 67 for all
+three, so `holdout_comparisons` runs a paired McNemar per signal — **one test
+per fold, never pooled**. Five folds are five models scored on one sample of 67;
+concatenating them would hand McNemar 335 pairs over 67 observations. This is
+what needed the per-submission decisions to be kept at all: `score_holdout` now
+returns a `cells` block, the report reads it, runs its test and drops it, so the
+committed JSON carries the comparison rather than 6,000 triples.
+
+**One report per signal**, stem `<signal>.companion_comparison`, carrying all
+three arms, the `null → true` cell as the headline of the real-text section, the
+paired real-text tests, and a `companions` block recording each arm's generator
+settings beside its DD5 leak detector — the largest gap between any two label
+modes in mean companions per example, across every training split of that arm.
+That last figure is in the report rather than in a one-off script because a
+companion count that tracked the label mode would mean *more clinical text ⇒
+more likely `null`*, and the arm would be void rather than reinterpretable.
+
 ---
 
 ## 5. How the numbers are made honest
@@ -610,6 +664,10 @@ python -m scripts.encoder_training finetune --folds 5 \       # Arm B, jointly: 
   --dataset joint6 --signals fever_present dysuria_present \  # every signal merge-folds wrote
   flank_pain_present haematuria_present nocturia_present urinary_frequency_present
 python -m scripts.encoder_training compare-models --folds 5   # Arm B over several base encoders
+python -m scripts.encoder_training companion-compare --folds 5 \   # Arm 0, Arm P and Arm C
+  --arm0-dir data/synthetic/generated/arm0 \
+  --armp-dir data/synthetic/generated/armp \
+  --dataset joint6 --base-model roberta-base
 ```
 
 **Python 3.12 or later, in an environment of its own.** Every subcommand imports

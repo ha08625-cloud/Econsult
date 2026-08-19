@@ -106,6 +106,7 @@ runs one way, and ``tests/test_wiring.py`` asserts it.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -139,6 +140,7 @@ from .train import (
     build_joint_metadata,
     build_metadata,
     display_model,
+    remargined_runs,
     resolve_device,
     run_finetune,
     run_finetune_joint,
@@ -1863,6 +1865,320 @@ def _emit_joint_reports(
     return 0
 
 
+# ---------------------------------------------------------------------------
+# The companion comparison (multi-symptom recombinations, task 7)
+# ---------------------------------------------------------------------------
+
+#: What each arm is called in its report and in its artefact directory.
+#:
+#: Arm 0 is the control **and** the regenerated baseline: every number on file
+#: was measured on GENERATOR_VERSION 2 datasets, which this ticket changed, so
+#: there is nothing older to compare against and the control has to be re-run
+#: rather than read off disk.
+COMPANION_ARM0_LABEL = "Arm0_control"
+COMPANION_ARMP_LABEL = "ArmP_companions"
+COMPANION_ARMC_LABEL = "ArmC_remargined"
+
+#: Recorded before the run, as the house rule requires: a result explained after
+#: the fact is an excuse. Reproduced verbatim from the implementation plan so the
+#: report scores them rather than the reader remembering them.
+COMPANION_PREDICTIONS = (
+    "**Primary criterion.** On the 67 hand-written submissions, paired against Arm 0, Arm P's "
+    "`null -> true` rate is at least **20 percentage points lower on at least four of the six "
+    "signals**. That is the cell the 2026-08-17 report put at 47%-89%, and it is the only number "
+    "that can say this worked. The threshold is a judgement recorded in advance so that it can "
+    "be scored, not a derived quantity.",
+    "**Guard.** Arm P's overall real-text accuracy is not below Arm 0's. Clearing the 66.7% "
+    "all-`null` floor is reported as a separate outcome and is **not** the success condition -- "
+    "no arm is expected to clear it.",
+    "**Negative control.** On the synthetic test set, `null -> true` moves by less than 2 points "
+    "in either direction. **A large synthetic gain is suspicious, not encouraging**: the "
+    "synthetic set cannot see this failure, its cell already runs at 0.58%-2.53%, and a big move "
+    "there would suggest companions introduced a new shortcut rather than removing one.",
+    "**Arm C captures a meaningful fraction of Arm P's gain**, because margin selection has "
+    "never had a validation set in which this failure occurs. If it captures nearly all of it, "
+    "the training-data change is not what did the work, and that is the finding.",
+    "**The nocturia/urinary-frequency pair resists.** Their libraries are the two least "
+    "declarable `null_on` each other, so they draw the fewest companions from each other.",
+)
+
+
+def _companion_facts(directory: Path, signals: Sequence[str], folds: Sequence) -> dict:
+    """One arm's generator settings and its DD5 leak detector, for the report.
+
+    Read from the sidecars the datasets were written with rather than from the
+    flags this command was given, for the same reason the fragment provenance
+    is: the libraries and the generator may have moved since, and what belongs
+    beside a number is a description of the data that number came from.
+
+    Every field degrades to ``None`` rather than raising. A missing per-signal
+    sidecar means the leak detector cannot be reported, which is worth saying in
+    the report; it is not worth losing a six-hour sweep over.
+    """
+    merged = folds[0].train.stats.get("merged_from") or {}
+    filler_only = merged.get("filler_only") or {}
+
+    total_companions = 0
+    total_examples = 0
+    worst_spread: float | None = None
+    splits_read = 0
+    for signal in signals:
+        for fold in folds:
+            path = directory / f"{signal}.fold{fold.fold_index}.train.jsonl.stats.json"
+            if not path.exists():
+                continue
+            rows = (json.loads(path.read_text(encoding="utf-8")).get("companions") or {}).get(
+                "count_by_label_mode"
+            )
+            if not rows:
+                continue
+            splits_read += 1
+            means = []
+            for counts in rows.values():
+                examples = sum(counts.values())
+                if not examples:
+                    continue
+                drawn = sum(int(key) * value for key, value in counts.items())
+                total_companions += drawn
+                total_examples += examples
+                means.append(drawn / examples)
+            if len(means) > 1:
+                spread = max(means) - min(means)
+                worst_spread = spread if worst_spread is None else max(worst_spread, spread)
+
+    return {
+        "label": None,
+        "dataset_dir": str(directory),
+        "companion_share": merged.get("companion_share"),
+        "train_examples": len(folds[0].train),
+        "filler_only_kept": filler_only.get("kept"),
+        "companions_per_example": (
+            None if not total_examples else total_companions / total_examples
+        ),
+        "worst_label_mode_spread": worst_spread,
+        "train_splits_read": splits_read,
+    }
+
+
+def run_companion_compare(args: argparse.Namespace) -> int:
+    """Arm 0, Arm P and Arm C, in one report per signal.
+
+    Three arms and **two** trained ones. Arm 0 is the regenerated baseline at
+    `--companion-share 0`; Arm P is the same recipe at a non-zero share; Arm C is
+    Arm 0's trained heads with every margin re-selected on Arm P's validation
+    split, which costs a forward pass rather than a training run and is the arm
+    that says whether the expensive half of the ticket was necessary.
+
+    Two properties of the comparison are enforced here rather than trusted.
+
+    **The arms must differ in their companion share.** Two trees generated at the
+    same share are one arm run twice, and the report would present the difference
+    between two random seeds as the effect of companions.
+
+    **Arm P cannot be paired on the synthetic test set, and is prevented from
+    looking as though it can.** Its examples are different texts numbered from
+    zero exactly as Arm 0's are, so the id sets match exactly while the texts
+    behind them do not; without qualifying its ids, `compare_models` would pair
+    two different texts under one id and report a McNemar test over pairs that do
+    not exist. The real-text holdout is the opposite case -- the same 67
+    submissions for every arm -- and that is where the ticket's question is
+    actually decided.
+    """
+    signals = tuple(args.signals)
+    if len(signals) < 2:
+        raise TrainError(f"a companion comparison needs at least two signals, got {list(signals)}")
+    if Path(args.arm0_dir) == Path(args.armp_dir):
+        raise TrainError(
+            f"--arm0-dir and --armp-dir are the same tree ({args.arm0_dir}). The two arms differ "
+            "in --companion-share and in nothing else, so pointing both at one directory runs the "
+            "same arm twice and reports the difference between two seeds as a companion effect"
+        )
+
+    dataset_name = args.dataset or f"joint{len(signals)}"
+    arm0_folds = load_folds(args.arm0_dir, dataset_name, folds=args.folds)
+    armp_folds = load_folds(args.armp_dir, dataset_name, folds=args.folds)
+    for name, folds in ((args.arm0_dir, arm0_folds), (args.armp_dir, armp_folds)):
+        missing = [signal for signal in signals if signal not in folds[0].signals]
+        if missing:
+            raise TrainError(
+                f"the merged tree {dataset_name!r} under {name} declares "
+                f"{list(folds[0].signals)} and does not carry {missing}. Re-run merge-folds over "
+                "the signals this comparison is about, or pass --signals to match the tree"
+            )
+
+    arm0 = _companion_facts(Path(args.arm0_dir), signals, arm0_folds)
+    armp = _companion_facts(Path(args.armp_dir), signals, armp_folds)
+    arm0["label"], armp["label"] = COMPANION_ARM0_LABEL, COMPANION_ARMP_LABEL
+    if arm0["companion_share"] == armp["companion_share"]:
+        raise TrainError(
+            f"both trees were generated at --companion-share {arm0['companion_share']}. These are "
+            "two runs of one arm, not two arms, and the comparison between them would be a "
+            "comparison of seeds"
+        )
+
+    holdout = _load_holdout(args)
+    cuda_required = not args.allow_cpu and args.device != "cpu"
+    device_facts = check_device(args.device, cuda_required=cuda_required)
+    device = device_facts["device"]
+    for line in format_report(device_facts):
+        print(line)
+
+    factory = _encoder_factory(args, device)
+    config = _finetune_config(args)
+
+    reference = factory()
+    _warn_if_unpinned(reference)
+    encoder_facts = reference.to_dict()
+    encoder_header = {
+        "model_revision": reference.revision,
+        "revision_pinned": reference.revision_pinned,
+        "tokeniser_lowercases": reference.facts.lowercases_input,
+        "tokeniser_vocab_size": reference.facts.vocab_size,
+        "tokeniser_discards_casing": reference.facts.discards_casing,
+    }
+    del reference
+
+    # Arm 0 first, and Arm C falls out of the same five fold-trainings: the
+    # re-margining pass runs while each fold's model is still on the device.
+    print(f"\n=== {COMPANION_ARM0_LABEL}: {args.arm0_dir}, {len(signals)} heads ===", flush=True)
+    arm0_name = f"{ARM_B_NAME}__{_model_slug(COMPANION_ARM0_LABEL)}"
+    arm0_artefacts = Path(args.models_dir) / f"joint{len(signals)}" / arm0_name
+    arm0_runs, arm0_results = run_finetune_joint(
+        arm0_folds,
+        factory,
+        signals=signals,
+        config=config,
+        weights_dir=None if args.no_weights else arm0_artefacts / "weights",
+        holdout=holdout,
+        label=COMPANION_ARM0_LABEL,
+        remargin_folds=armp_folds,
+        remargin_source=f"{args.armp_dir} ({COMPANION_ARMP_LABEL})",
+        progress=args.progress,
+    )
+    armc_runs = remargined_runs(
+        arm0_results,
+        signals=signals,
+        config=config,
+        label=COMPANION_ARMC_LABEL,
+        margin_source=f"`{COMPANION_ARMP_LABEL}`",
+    )
+
+    print(f"\n=== {COMPANION_ARMP_LABEL}: {args.armp_dir}, {len(signals)} heads ===", flush=True)
+    armp_name = f"{ARM_B_NAME}__{_model_slug(COMPANION_ARMP_LABEL)}"
+    armp_artefacts = Path(args.models_dir) / f"joint{len(signals)}" / armp_name
+    armp_runs, armp_results = run_finetune_joint(
+        armp_folds,
+        factory,
+        signals=signals,
+        config=config,
+        weights_dir=None if args.no_weights else armp_artefacts / "weights",
+        holdout=holdout,
+        label=COMPANION_ARMP_LABEL,
+        progress=args.progress,
+    )
+
+    for arm_name, artefact_dir, folds, results, directory in (
+        (arm0_name, arm0_artefacts, arm0_folds, arm0_results, args.arm0_dir),
+        (armp_name, armp_artefacts, armp_folds, armp_results, args.armp_dir),
+    ):
+        metadata = build_joint_metadata(
+            signals=signals,
+            arm=arm_name,
+            encoder_facts=encoder_facts,
+            config=config,
+            device=device_facts,
+            dataset=_dataset_meta(args, folds, directory=Path(directory), name=dataset_name),
+            ruleset=str(args.ruleset),
+            ruleset_hash=hash_ruleset_file(args.ruleset),
+            results=results,
+            control=None,
+        )
+        for path in write_joint_artefacts(
+            artefact_dir, arm=arm_name, metadata=metadata, results=results
+        ):
+            print(f"wrote {path}")
+
+    companions = {
+        "note": (
+            "Two arms, generated from the same libraries with the same seed, the same counts and "
+            "the same fold triple, differing in `--companion-share` and in nothing else. Arm C is "
+            "not a third dataset: it is Arm 0's trained model with its margins re-selected on Arm "
+            "P's validation split."
+        ),
+        "arms": [arm0, armp],
+        "arm_c": (
+            f"`{COMPANION_ARMC_LABEL}` re-selects every head's margin on {armp['dataset_dir']}'s "
+            "validation split and changes nothing else -- same weights, same raw argmax scores, "
+            "same test examples."
+        ),
+        "pairing": (
+            "Arm 0 and Arm C share a test set and are paired on it. Arm P's test examples are "
+            "different texts, so its synthetic comparisons are recorded as skips rather than "
+            "silently paired; the 67 real-text submissions are the same for every arm and are "
+            "where the arms are compared."
+        ),
+        "predictions": list(COMPANION_PREDICTIONS),
+    }
+
+    boot = BootstrapConfig(resamples=args.resamples, seed=args.bootstrap_seed, alpha=args.alpha)
+    for signal in signals:
+        runs = [
+            arm0_runs[signal],
+            armc_runs[signal],
+            _as_unpaired(armp_runs[signal], prefix=COMPANION_ARMP_LABEL),
+        ]
+        per_signal_args = argparse.Namespace(
+            **{**vars(args), "signal": signal, "data_dir": args.arm0_dir}
+        )
+        header = _header(
+            per_signal_args,
+            arm0_folds,
+            extra={
+                "dataset": dataset_name,
+                "joint_signals": list(signals),
+                "arm": ARM_B_NAME,
+                "arms": [COMPANION_ARM0_LABEL, COMPANION_ARMC_LABEL, COMPANION_ARMP_LABEL],
+                "arm0_dir": str(args.arm0_dir),
+                "armp_dir": str(args.armp_dir),
+                "companion_share": f"{arm0['companion_share']} against {armp['companion_share']}",
+                "base_model": args.base_model,
+                "pooling": args.pooling,
+                "max_seq_len": args.max_seq_len,
+                "device": device,
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "lr": args.lr,
+                "warmup_ratio": args.warmup_ratio,
+                "determinism": args.determinism,
+                "train_seed": args.train_seed,
+                "trainable": "all layers unfrozen, shared by every head",
+                "holdout": _holdout_header(holdout),
+                "validation_guided_decisions": list(VALIDATION_GUIDED_DECISIONS),
+                "artefacts": str(Path(args.models_dir) / f"joint{len(signals)}"),
+                **encoder_header,
+            },
+        )
+        report = build_report(
+            runs,
+            header=header,
+            boot=boot,
+            checks=_checks(arm0_folds),
+            fragments=_fragment_provenance(arm0_folds),
+            companions=companions,
+        )
+        json_path, markdown_path = write_report(
+            report,
+            args.report_dir,
+            stem=f"{signal}.companion_comparison",
+            markdown=not args.no_markdown,
+            fragment_rows=args.fragment_rows,
+        )
+        print(f"wrote {json_path}")
+        if markdown_path is not None:
+            print(f"wrote {markdown_path}")
+    return 0
+
+
 def _add_report_args(parser: argparse.ArgumentParser) -> None:
     """Arguments shared by every command that writes an evaluation report."""
     parser.add_argument("--signal", default=DEFAULT_SIGNAL)
@@ -2282,6 +2598,66 @@ def build_parser() -> argparse.ArgumentParser:
         "--progress", action="store_true", help="print per-epoch training loss and validation score"
     )
     joint.set_defaults(handler=run_joint_compare)
+
+    companion = subparsers.add_parser(
+        "companion-compare",
+        help="Arm 0, Arm P and Arm C in one report per signal: the multi-symptom comparison",
+    )
+    _add_report_args(companion)
+    _add_encoder_args(companion)
+    _add_holdout_args(companion)
+    companion.add_argument(
+        "--signals",
+        nargs="+",
+        default=list(DEFAULT_SIGNALS),
+        help="the heads to train and compare, one report each. Defaults to the six merge-folds "
+        "merges by default",
+    )
+    companion.add_argument(
+        "--arm0-dir",
+        type=Path,
+        required=True,
+        help="the control arm's merged fold tree: the same libraries at --companion-share 0, and "
+        "the regenerated baseline every number on file has to be re-measured against",
+    )
+    companion.add_argument(
+        "--armp-dir",
+        type=Path,
+        required=True,
+        help="the companion arm's merged fold tree: identical settings apart from a non-zero "
+        "--companion-share. Its validation splits are also what Arm C's margins are selected on",
+    )
+    companion.add_argument(
+        "--dataset",
+        default=None,
+        help="the merged tree's name in the fold filename, the same in both directories. "
+        "Defaults to joint<N> for N signals, matching merge-folds' own default",
+    )
+    companion.add_argument("--models-dir", type=Path, default=DEFAULT_MODELS_DIR)
+    companion.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    companion.add_argument("--device", default="auto")
+    companion.add_argument("--epochs", type=int, default=FineTuneConfig.epochs)
+    companion.add_argument("--batch-size", type=int, default=FineTuneConfig.batch_size)
+    companion.add_argument("--lr", type=float, default=FineTuneConfig.lr)
+    companion.add_argument("--weight-decay", type=float, default=FineTuneConfig.weight_decay)
+    companion.add_argument("--warmup-ratio", type=float, default=FineTuneConfig.warmup_ratio)
+    companion.add_argument("--max-grad-norm", type=float, default=FineTuneConfig.max_grad_norm)
+    companion.add_argument("--eval-batch-size", type=int, default=FineTuneConfig.eval_batch_size)
+    companion.add_argument(
+        "--determinism", choices=DETERMINISM_MODES, default=FineTuneConfig.determinism
+    )
+    companion.add_argument("--train-seed", type=int, default=FineTuneConfig.seed)
+    companion.add_argument("--allow-cpu", action="store_true")
+    companion.add_argument(
+        "--no-weights",
+        action="store_true",
+        help="do not write the fine-tuned encoders. Two arms of five folds is ~4.4GB; none of it "
+        "is committed and all of it is regenerable from the pinned seeds",
+    )
+    companion.add_argument(
+        "--progress", action="store_true", help="print per-epoch training loss and validation score"
+    )
+    companion.set_defaults(handler=run_companion_compare)
 
     return parser
 
