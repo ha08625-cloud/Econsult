@@ -95,7 +95,14 @@ from .metrics import (
 #: whose runs all share one test set, which is every report written before a
 #: three-arm joint comparison put a differently-generated dataset in the same
 #: report as the one it is being compared against.
-SCHEMA_VERSION = 6
+#:
+#: 7 added `holdout_comparisons` (and `skipped_holdout_comparisons`) -- the
+#: paired McNemar between models on the 67 real-text submissions, fold by fold --
+#: and `companions`, the generator settings behind each arm's dataset. Additive,
+#: and both are empty on any report whose runs did not score the holdout or whose
+#: caller passed no companion block, which is every report written before two
+#: arms differing only in `--companion-share` had to be compared.
+SCHEMA_VERSION = 7
 
 #: Sub-classes the hard `null` libraries carry, across every signal rather than
 #: fever alone. Listed so that a sub-class the manifest declares but no test fold
@@ -726,6 +733,188 @@ def compare_models(
     return comparisons, skipped
 
 
+def _null_to_true_fold_rates(entries: Sequence[Mapping[str, object]]) -> list[float | None]:
+    """One `null -> true` rate per fold, from that fold's own counts."""
+    rates: list[float | None] = []
+    for entry in entries:
+        cell = entry["null_to_true"]
+        support = cell["null_support"]
+        rates.append(None if not support else cell["count"] / support)
+    return rates
+
+
+def _holdout_cells(fold: FoldRun, signal: str) -> list[Prediction] | None:
+    """One fold's real-text decisions for one signal, or ``None`` if unavailable.
+
+    ``None`` covers three different situations on purpose -- the run did not
+    score the holdout, it was scored by code written before the cells were kept,
+    or this signal was not among the heads scored -- because all three mean the
+    same thing to the caller: there is nothing to pair, and the reason belongs
+    in a skip entry rather than in an exception.
+    """
+    block = fold.holdout
+    if not block:
+        return None
+    cells = block.get("cells")
+    if not isinstance(cells, Mapping) or signal not in cells:
+        return None
+    return [
+        Prediction(
+            example_id=str(cell["id"]),
+            truth=int(cell["truth"]),
+            predicted=int(cell["predicted"]),
+            unit=str(cell.get("unit") or cell["id"]),
+        )
+        for cell in cells[signal]
+    ]
+
+
+def _null_to_true_rates(run: ModelRun, signal: str) -> list[float | None]:
+    """Each fold's real-text ``null -> true`` rate for one signal."""
+    rates: list[float | None] = []
+    for fold in run.folds:
+        block = fold.holdout
+        entry = None
+        if block:
+            entry = next(
+                (item for item in block.get("by_signal", ()) if item.get("signal") == signal),
+                None,
+            )
+        if entry is None:
+            rates.append(None)
+            continue
+        cell = entry["null_to_true"]
+        support = cell["null_support"]
+        rates.append(None if not support else cell["count"] / support)
+    return rates
+
+
+def _mean(values: Sequence[float | None]) -> float | None:
+    present = [value for value in values if value is not None]
+    return sum(present) / len(present) if present else None
+
+
+def holdout_comparisons(
+    runs: Sequence[ModelRun], *, signal: str | None
+) -> tuple[list[dict], list[dict]]:
+    """Paired McNemar between every pair of models on the **real-text** holdout.
+
+    This is the comparison the multi-symptom ticket turns on, and it is separate
+    from :func:`compare_models` for a reason that is not presentational. Two arms
+    generated at different companion shares hold *different texts under the same
+    example ids*, so their synthetic test splits cannot be paired at all -- but
+    the holdout is the same 67 submissions for every arm, scored by every fold,
+    and it pairs exactly.
+
+    **Fold by fold, never pooled.** Five folds are five models scored on one
+    sample of 67; concatenating them would hand McNemar 335 pairs over 67
+    observations and report a p-value for a sample size that does not exist. So
+    each fold gets its own test, all five are reported, and the summary counts
+    how many folds moved which way rather than combining them into one number.
+    Even per fold this is a test over *cells*: a submission contributes up to one
+    cell per signal here, and the folds are five models trained on overlapping
+    data, so the five p-values are neither independent of each other nor a
+    confidence statement about new patients.
+
+    ``signal`` is the head this report is about. ``None`` -- a report with no
+    single signal -- returns nothing rather than guessing which head to pair.
+    """
+    if signal is None:
+        return [], []
+    comparable = [run for run in runs if not run.is_control]
+    comparisons: list[dict] = []
+    skipped: list[dict] = []
+    for index, left in enumerate(comparable):
+        for right in comparable[index + 1 :]:
+            if len(left.folds) != len(right.folds):
+                skipped.append(
+                    {
+                        "left": left.name,
+                        "right": right.name,
+                        "signal": signal,
+                        "reason": (
+                            f"{left.name} has {len(left.folds)} folds and {right.name} has "
+                            f"{len(right.folds)}, so there is no fold-for-fold pairing"
+                        ),
+                    }
+                )
+                continue
+
+            rows: list[dict] = []
+            reason: str | None = None
+            for left_fold, right_fold in zip(left.folds, right.folds, strict=True):
+                a = _holdout_cells(left_fold, signal)
+                b = _holdout_cells(right_fold, signal)
+                if a is None or b is None:
+                    reason = (
+                        "one or both runs carry no real-text cells for this signal (not scored, "
+                        "or scored before the per-submission decisions were kept)"
+                    )
+                    break
+                if {prediction.example_id for prediction in a} != {
+                    prediction.example_id for prediction in b
+                }:
+                    reason = (
+                        "the two runs scored different submissions, so the real-text results "
+                        "cannot be paired"
+                    )
+                    break
+                result = mcnemar(a, b)
+                rows.append(
+                    {
+                        "fold": left_fold.fold_index,
+                        "n_pairs": result.n_pairs,
+                        "left_only_correct": result.a_only_correct,
+                        "right_only_correct": result.b_only_correct,
+                        "p_value": result.p_value,
+                    }
+                )
+            if reason is not None:
+                skipped.append(
+                    {"left": left.name, "right": right.name, "signal": signal, "reason": reason}
+                )
+                continue
+
+            left_rates = _null_to_true_rates(left, signal)
+            right_rates = _null_to_true_rates(right, signal)
+            left_mean, right_mean = _mean(left_rates), _mean(right_rates)
+            comparisons.append(
+                {
+                    "left": left.name,
+                    "right": right.name,
+                    "signal": signal,
+                    "n_pairs": rows[0]["n_pairs"] if rows else 0,
+                    "folds": rows,
+                    "left_better_folds": sum(
+                        1 for row in rows if row["left_only_correct"] > row["right_only_correct"]
+                    ),
+                    "right_better_folds": sum(
+                        1 for row in rows if row["right_only_correct"] > row["left_only_correct"]
+                    ),
+                    "null_to_true": {
+                        "left_rates": left_rates,
+                        "right_rates": right_rates,
+                        "left_mean": left_mean,
+                        "right_mean": right_mean,
+                        # Positive means the right-hand run answers `true` on
+                        # truly-null real text less often than the left one --
+                        # the direction the ticket's threshold is written in.
+                        "delta_points": (
+                            None
+                            if left_mean is None or right_mean is None
+                            else 100 * (left_mean - right_mean)
+                        ),
+                    },
+                    "not_pooled": (
+                        "one test per fold over the same 67 submissions, never concatenated: five "
+                        "folds are five models scored on one sample, and pooling would report a "
+                        "p-value for 335 observations that do not exist"
+                    ),
+                }
+            )
+    return comparisons, skipped
+
+
 def _holdout_spread(values: Sequence[float | None]) -> dict:
     """Mean and sd of one holdout statistic across the folds.
 
@@ -821,9 +1010,17 @@ def holdout_summary(run: ModelRun) -> dict | None:
                 name: _holdout_spread([entry["per_class"][name]["recall"] for entry in entries])
                 for name in CLASS_NAMES
             },
+            # The headline of the real-text section, and the cell the
+            # multi-symptom ticket's declared threshold is written against: how
+            # often a model asserts `true` about a signal a real submission
+            # never mentioned. Counts are per fold; the rate and its mean are
+            # derived here so a reader scoring a threshold is not doing
+            # arithmetic across five folds by hand.
             "null_to_true": {
                 "null_support": entries[0]["null_to_true"]["null_support"],
                 "counts": [entry["null_to_true"]["count"] for entry in entries],
+                "rates": _null_to_true_fold_rates(entries),
+                "mean_rate": _mean(_null_to_true_fold_rates(entries)),
             },
         }
         caveats = {entry.get("caveat") for entry in entries if entry.get("caveat")}
@@ -1149,6 +1346,7 @@ def build_report(
     boot: BootstrapConfig = BootstrapConfig(),
     checks: Mapping[str, object] | None = None,
     fragments: Sequence | None = None,
+    companions: Mapping[str, object] | None = None,
 ) -> dict:
     """Assemble the whole report as one JSON-serialisable dict.
 
@@ -1162,6 +1360,10 @@ def build_report(
         fragments or (), signal=header.get("signal") if fragments else None
     )
     comparisons, skipped = compare_models(runs)
+    signal = header.get("signal")
+    real_comparisons, real_skipped = holdout_comparisons(
+        runs, signal=str(signal) if signal else None
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -1180,6 +1382,16 @@ def build_report(
         # tested" and "tested and found nothing" are different statements and a
         # reader must not be able to mistake one for the other.
         "skipped_comparisons": skipped,
+        # The synthetic comparisons above and these are not two views of one
+        # thing. `comparisons` pairs on the recombinations, which two arms
+        # generated at different companion shares do not share; these pair on
+        # the 67 real submissions, which every arm scores identically.
+        "holdout_comparisons": real_comparisons,
+        "skipped_holdout_comparisons": real_skipped,
+        # What generated the data behind each arm in this report. Empty unless
+        # the caller passed it, which is every command whose report holds one
+        # dataset and therefore has nothing to distinguish.
+        "companions": dict(companions or {}),
         "model_movement": model_movement(models),
         "expectations": list(EXPECTATIONS),
         "limitations": list(LIMITATIONS),
@@ -1541,6 +1753,149 @@ def _spread_cell(spread: Mapping[str, object]) -> str:
     return f"{_pct(mean)} +/- {_pct(sd)}"
 
 
+def _render_null_to_true_headline(scored: Sequence[Mapping[str, object]]) -> list[str]:
+    """`null -> true` on real text, per signal and per model, first.
+
+    Promoted above the accuracy tables deliberately. Overall real-text accuracy
+    is dominated by the `null` cells, which a model scores by saying nothing;
+    this cell is the one that invents a symptom into a patient's pre-filled
+    form, and on the 2026-08-17 joint run it sat between 47% and 89% while the
+    accuracy beside it looked survivable.
+    """
+    signals = [entry["signal"] for entry in scored[0]["holdout"]["by_signal"]]
+    if not signals:
+        return []
+    rows = []
+    for signal in signals:
+        cells = [f"`{signal}`"]
+        support = None
+        for model in scored:
+            entry = next(item for item in model["holdout"]["by_signal"] if item["signal"] == signal)
+            support = entry["null_to_true"]["null_support"]
+            cells.append(_pct(entry["null_to_true"]["mean_rate"]))
+        rows.append([cells[0], str(support), *cells[1:]])
+    return [
+        "### `null -> true` on real text -- the headline",
+        "",
+        "How often each model answers `true` about a signal the submission never mentioned, as",
+        "the mean across folds of that fold's own rate. Every other number in this section is",
+        "read against this one: a model can post a respectable overall figure here purely by",
+        "answering `null` everywhere, and it can post a respectable *decisive* figure while still",
+        "inventing symptoms into most of the submissions that never raised them.",
+        "",
+        *_table(
+            ["signal", "null support", *(f"`{model['name']}`" for model in scored)],
+            rows,
+        ),
+    ]
+
+
+def _render_holdout_comparisons(report: Mapping[str, object]) -> list[str]:
+    """The paired real-text tests, and the ones that could not be run."""
+    comparisons = report.get("holdout_comparisons") or []
+    skipped = report.get("skipped_holdout_comparisons") or []
+    if not comparisons and not skipped:
+        return []
+
+    lines = [
+        "## Paired on real text",
+        "",
+        "The 67 submissions are the same 67 for every model here, so unlike the recombination",
+        "test slice they can be paired: the informative quantity is the submissions two models",
+        "disagree about, not the gap between two means. One test per fold, never pooled.",
+        "",
+    ]
+    for entry in comparisons:
+        lines.append(f"### `{entry['left']}` against `{entry['right']}`")
+        lines.append("")
+        lines.extend(
+            _table(
+                ["fold", "pairs", f"only `{entry['left']}`", f"only `{entry['right']}`", "p"],
+                [
+                    [
+                        str(row["fold"]),
+                        str(row["n_pairs"]),
+                        str(row["left_only_correct"]),
+                        str(row["right_only_correct"]),
+                        f"{row['p_value']:.3g}",
+                    ]
+                    for row in entry["folds"]
+                ],
+            )
+        )
+        rate = entry["null_to_true"]
+        delta = rate["delta_points"]
+        lines.append(
+            f"`{entry['left']}` ahead on {entry['left_better_folds']} folds, "
+            f"`{entry['right']}` on {entry['right_better_folds']}. "
+            f"`null -> true` mean: {_pct(rate['left_mean'])} against {_pct(rate['right_mean'])}"
+            + (
+                "."
+                if delta is None
+                else f" -- **{delta:+.1f} points** in favour of `{entry['right']}`."
+            )
+        )
+        lines.append("")
+        lines.append(f"*{_sentence(entry['not_pooled'])}*")
+        lines.append("")
+    for entry in skipped:
+        lines.append(
+            f"* `{entry['left']}` against `{entry['right']}`: not paired -- {entry['reason']}."
+        )
+    if skipped:
+        lines.append("")
+    return lines
+
+
+def _render_companions(report: Mapping[str, object]) -> list[str]:
+    """What generated each arm's data, when the report holds more than one arm."""
+    companions = report.get("companions") or {}
+    arms = companions.get("arms") or []
+    if not arms:
+        return []
+    lines = [
+        "## The datasets behind these arms",
+        "",
+        f"{companions.get('note', '')}".strip(),
+        "",
+        *_table(
+            [
+                "arm",
+                "tree",
+                "companion share",
+                "examples/fold (train)",
+                "filler-only kept",
+                "companions/example",
+                "worst spread by label mode",
+            ],
+            [
+                [
+                    f"`{arm['label']}`",
+                    f"`{arm['dataset_dir']}`",
+                    str(arm["companion_share"]),
+                    str(arm.get("train_examples", DASH)),
+                    str(arm.get("filler_only_kept", DASH)),
+                    DASH
+                    if arm.get("companions_per_example") is None
+                    else f"{arm['companions_per_example']:.3f}",
+                    DASH
+                    if arm.get("worst_label_mode_spread") is None
+                    else f"{arm['worst_label_mode_spread']:.4f}",
+                ]
+                for arm in arms
+            ],
+        ),
+        "**The last column is the leak detector, not a curiosity.** It is the largest gap between",
+        "any two label modes in mean companions per example, across every training split of that",
+        "arm. Companion count is drawn blind to the label mode by construction; if these rows ever",
+        "disagreed, companion count would have become a proxy for the label, pointing the wrong",
+        "way -- more clinical text implying more likely `null` -- and the arm would be void rather",
+        "than reinterpretable.",
+        "",
+    ]
+    return lines
+
+
 def _render_holdout(report: Mapping[str, object]) -> list[str]:
     """The only numbers in this report that speak to real patient text.
 
@@ -1589,6 +1944,8 @@ def _render_holdout(report: Mapping[str, object]) -> list[str]:
             + "."
         )
         lines.append("")
+
+    lines.extend(_render_null_to_true_headline(scored))
 
     for model in scored:
         holdout = model["holdout"]
@@ -2274,6 +2631,8 @@ def render_markdown(
     lines.extend(_render_cluster_tag_coverage(report))
     lines.extend(_render_headline(report))
     lines.extend(_render_holdout(report))
+    lines.extend(_render_holdout_comparisons(report))
+    lines.extend(_render_companions(report))
     lines.extend(_render_ticket_question(report))
     lines.extend(_render_expectations(report))
     lines.extend(_render_checks(report))

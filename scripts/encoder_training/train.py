@@ -394,6 +394,38 @@ class FineTuneFoldResult:
 
 
 @dataclass(frozen=True)
+class RemarginedFoldResult:
+    """One fold's Arm C: the same trained model under a margin chosen elsewhere.
+
+    Holds no weights and no training history because it has none -- it is
+    :class:`JointFineTuneFoldResult`'s own model, re-decided. What it does hold
+    is a full :class:`FoldRun` per head, so the arm drops into a report beside
+    the one it came from with no special case anywhere downstream.
+    """
+
+    fold_index: object
+    signals: tuple[str, ...]
+    #: Where the margins were selected: the fold tree whose validation split was
+    #: used, recorded because "Arm 0's model" and "Arm 0's model under Arm P's
+    #: margin" differ in nothing else and a reader must be able to tell them
+    #: apart six months on.
+    margin_source: str
+    fold_runs: Mapping[str, FoldRun]
+    holdout: Mapping[str, object] | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "fold": self.fold_index,
+            "signals": list(self.signals),
+            "margin_source": self.margin_source,
+            "decision_rules": {
+                signal: fold_run.rule.to_dict() for signal, fold_run in self.fold_runs.items()
+            },
+            "holdout": None if self.holdout is None else dict(self.holdout),
+        }
+
+
+@dataclass(frozen=True)
 class JointFineTuneFoldResult:
     """One fold of a joint multi-head fine-tune: several heads, one shared encoder.
 
@@ -443,6 +475,11 @@ class JointFineTuneFoldResult:
     #: unchanged). Identical across every signal's fanned-out result, because it
     #: is one scoring of one shared encoder against the same 67 submissions.
     holdout: Mapping[str, object] | None = None
+    #: Arm C, when this fold was run with a ``remargin_fold``: the same trained
+    #: heads under margins selected on that other tree's validation split. Never
+    #: a second training run, and ``None`` on every fold that was not asked for
+    #: one.
+    remargined: RemarginedFoldResult | None = None
 
     def for_signal(self, signal: str) -> FineTuneFoldResult:
         """This fold's result, in the single-signal shape a report already reads.
@@ -492,6 +529,7 @@ class JointFineTuneFoldResult:
                 signal: fold_run.rule.to_dict() for signal, fold_run in self.fold_runs.items()
             },
             "holdout": None if self.holdout is None else dict(self.holdout),
+            "remargined": None if self.remargined is None else self.remargined.to_dict(),
             "weights": {
                 "path": self.weights_path,
                 "committed": False,
@@ -1172,6 +1210,55 @@ def select_then_score_multi(
     return rules, test_predictions, realistic
 
 
+def remargin_multi(
+    alt_val_predictions_by_signal: Mapping[str, Sequence[Prediction]],
+    *,
+    raw_by_signal: Mapping[str, Sequence[Prediction]],
+    score_realistic: Callable[[Mapping[str, DecisionRule]], dict | None],
+) -> tuple[dict[str, DecisionRule], dict[str, list[Prediction]], dict | None]:
+    """Re-select every head's margin on a **different** dataset's validation split.
+
+    This is Arm C, and it is the arm that says whether the expensive half of the
+    multi-symptom ticket was necessary. The model is not retrained and not
+    reloaded: the same trained heads keep the same raw argmax scores on the same
+    test examples, and the only thing that changes is the margin the decision
+    rule applies to them -- chosen against validation data drawn from the other
+    arm's generator settings.
+
+    Why that can matter on its own: the decision rule maximises macro-F1 subject
+    to a `null -> true` rate no worse than argmax's, and until companions existed
+    no validation split contained the case the rule most needs to get right --
+    text dense with another symptom's clinical language whose correct answer is
+    still `null`. Margin selection has never been given a fair question to
+    answer, and this asks it one for the cost of a forward pass.
+
+    Pure, and separated from the training loop for that reason: the ordering it
+    encodes -- new rules from the alternate validation split, then the *existing*
+    raw test predictions re-decided, then the real-text holdout last of all -- is
+    the same discipline :func:`select_then_score_multi` states, and a recording
+    fake asserts it on every commit with no GPU in sight.
+    """
+    rules = {
+        signal: select_margin(predictions)
+        for signal, predictions in alt_val_predictions_by_signal.items()
+    }
+    missing = [signal for signal in raw_by_signal if signal not in rules]
+    if missing:
+        raise TrainError(
+            f"no alternate validation predictions for {missing}; every head being re-margined "
+            "needs its own, and a head silently keeping its original margin would be reported "
+            "as a re-margined result that is nothing of the kind"
+        )
+    ruled = {
+        signal: repredict(
+            list(raw_by_signal[signal]), rules[signal].margin, gated_class=rules[signal].gated_class
+        )
+        for signal in raw_by_signal
+    }
+    realistic = score_realistic(rules)
+    return rules, ruled, realistic
+
+
 def _snapshot(encoder: PooledEncoder) -> dict:
     """A CPU copy of the encoder's weights, for restoring the best epoch.
 
@@ -1710,6 +1797,8 @@ def run_finetune_joint_fold(
     weights_dir: Path | str | None = None,
     shuffle_seed: int | None = None,
     holdout: HoldoutSet | None = None,
+    remargin_fold: Fold | None = None,
+    remargin_source: str = "",
     progress: bool = False,
 ) -> JointFineTuneFoldResult:
     """:func:`run_finetune_fold`, generalised to several heads sharing one encoder.
@@ -1801,6 +1890,49 @@ def run_finetune_joint_fold(
     rules, raw_by_signal, realistic = select_then_score_multi(
         val_predictions_by_signal, score_test=score_test, score_realistic=score_realistic
     )
+    # Arm C, while the model is still on the device: the same heads, the same
+    # raw scores, margins re-selected on the other arm's validation split. It
+    # costs one forward pass over 2,000 examples plus a re-scoring of the 67
+    # submissions, and it is what separates "the training data change helped"
+    # from "the *margin selection* data change helped". Done here rather than
+    # from saved weights because reloading five fine-tuned encoders to change a
+    # threshold would be an hour of I/O to avoid a minute of arithmetic.
+    remargined = None
+    if remargin_fold is not None:
+        alt_val_examples = _labelled_any(remargin_fold.val, signals)
+        for signal in signals:
+            if not any(example.is_labelled(signal) for example in alt_val_examples):
+                raise TrainError(
+                    f"{signal!r} has no labelled validation examples in the re-margining fold "
+                    f"{remargin_fold.fold_index}; a margin cannot be honestly re-selected for a "
+                    "head with nothing to select it on"
+                )
+        alt_val_predictions = predict_finetuned_multi(
+            alt_val_examples, encoder, heads, signals=signals, batch_size=config.eval_batch_size
+        )
+        alt_rules, alt_ruled, alt_realistic = remargin_multi(
+            alt_val_predictions, raw_by_signal=raw_by_signal, score_realistic=score_realistic
+        )
+        remargined = RemarginedFoldResult(
+            fold_index=fold.fold_index,
+            signals=signals,
+            margin_source=remargin_source or str(remargin_fold.fold_index),
+            fold_runs={
+                signal: FoldRun.build(
+                    fold_index=fold.fold_index,
+                    n_train=len(train_examples),
+                    n_val=len(alt_val_predictions[signal]),
+                    n_test=len(raw_by_signal[signal]),
+                    rule=alt_rules[signal],
+                    raw=raw_by_signal[signal],
+                    ruled=alt_ruled[signal],
+                    holdout=alt_realistic,
+                )
+                for signal in signals
+            },
+            holdout=alt_realistic,
+        )
+
     # The two closures hold the only other references to the encoder, so they go
     # before it does; see the note beside the `del` at the end of this function.
     del score_test, score_realistic
@@ -1874,6 +2006,7 @@ def run_finetune_joint_fold(
         warmup_steps=warmup_steps,
         weights_path=weights_path,
         holdout=realistic,
+        remargined=remargined,
     )
 
     # Five folds is five 440MB models plus their optimiser state. Dropping each
@@ -1894,6 +2027,8 @@ def run_finetune_joint(
     shuffle_seed: int | None = None,
     holdout: HoldoutSet | None = None,
     label: str | None = None,
+    remargin_folds: Sequence[Fold] | None = None,
+    remargin_source: str = "",
     progress: bool = False,
 ) -> tuple[dict[str, ModelRun], tuple[JointFineTuneFoldResult, ...]]:
     """Run the joint fine-tune across every fold, fanned out into one ModelRun per head.
@@ -1904,6 +2039,20 @@ def run_finetune_joint(
     shaped exactly as a single-signal Arm B run's ``ModelRun`` so it drops into
     that signal's report unchanged (task 3 instruction 5).
     """
+    # Matched by fold *index*, never by position: the two trees are separate
+    # runs of the generator and a caller that loaded one of them in a different
+    # order would otherwise re-margin fold 0 against fold 3's validation split,
+    # whose test clusters are fold 0's training clusters. Nothing downstream
+    # would notice, and the resulting arm would look like a slightly odd Arm C.
+    remargin_by_index = {fold.fold_index: fold for fold in remargin_folds or ()}
+    if remargin_folds is not None:
+        missing = [fold.fold_index for fold in folds if fold.fold_index not in remargin_by_index]
+        if missing:
+            raise TrainError(
+                f"the re-margining tree has no folds {missing}, which the trained tree has. "
+                "Arm C needs the same fold configuration on both sides"
+            )
+
     results: list[JointFineTuneFoldResult] = []
     for fold in folds:
         if progress:
@@ -1917,6 +2066,8 @@ def run_finetune_joint(
                 weights_dir=weights_dir,
                 shuffle_seed=shuffle_seed,
                 holdout=holdout,
+                remargin_fold=remargin_by_index.get(fold.fold_index),
+                remargin_source=remargin_source,
                 progress=progress,
             )
         )
@@ -1949,6 +2100,47 @@ def run_finetune_joint(
         for signal in signals
     }
     return runs, tuple(results)
+
+
+def remargined_runs(
+    results: Sequence[JointFineTuneFoldResult],
+    *,
+    signals: Sequence[str],
+    config: FineTuneConfig,
+    label: str,
+    margin_source: str,
+) -> dict[str, ModelRun]:
+    """Arm C as one :class:`~.report.ModelRun` per head, from an existing sweep.
+
+    Takes no encoder and does no work beyond assembling what
+    :func:`run_finetune_joint_fold` already computed, because Arm C *is* the
+    trained arm -- the same weights, the same argmax scores, a different
+    threshold. Raises rather than returning an empty mapping when the folds were
+    not run with a ``remargin_fold``: an arm silently missing from a three-arm
+    report is the failure mode this whole comparison exists to avoid.
+    """
+    missing = [result.fold_index for result in results if result.remargined is None]
+    if missing:
+        raise TrainError(
+            f"folds {missing} were not run with a re-margining fold, so there is no Arm C for "
+            "them. Pass remargin_folds to run_finetune_joint"
+        )
+    described = ARM_B_DESCRIPTION_TEMPLATE.format(model=f"`{display_model(config.base_model)}`")
+    return {
+        signal: ModelRun(
+            name=arm_run_name(ARM_B_NAME, label),
+            kind="finetune",
+            description=(
+                f"{described} **Margin re-selected, not retrained**: these are the trained heads "
+                f"of the arm above, with every head's decision margin chosen on {margin_source}'s "
+                "validation split instead of their own. Identical weights, identical raw argmax "
+                "scores, identical test examples -- the only difference is the threshold, so a "
+                "gap between this arm and the one it came from is margin selection alone."
+            ),
+            folds=tuple(result.remargined.fold_runs[signal] for result in results),
+        )
+        for signal in signals
+    }
 
 
 # ---------------------------------------------------------------------------
