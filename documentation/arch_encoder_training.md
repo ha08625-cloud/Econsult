@@ -428,6 +428,18 @@ companion draw correlates with the label did not test what it was built to test;
 its scores are not a weaker answer, they are not an answer. Criteria that are
 merely *not held* exit zero — a recorded failure is the command working.
 
+**The collapse check is printed beside the criteria and is not one of them.**
+There are two ways to drive the real-text `null → true` cell to nothing: stop
+inventing symptoms, or stop answering. An arm that says `null` to everything
+scores zero on that cell, clears the primary criterion on every signal, and --
+because the accuracy guard is a comparison against Arm 0 rather than against the
+66.7% all-`null` floor -- clears the guard too whenever Arm 0 sits below that
+floor, which it does. So the scorer prints each arm's real-text accuracy on the
+*decisive* cells alone beside its per-class recall: a collapse reads as decisive
+accuracy falling with `null` recall at 100% and `true`/`false` recall at zero.
+It is not scored, because it was not declared in advance; it is printed so that
+a write-up cannot claim the guard ruled out something the guard does not test.
+
 Arm C is reported without a verdict on purpose. Its criterion asks *how much* of
 Arm P's gain a re-selected margin captured, and a high number is the ticket's
 finding rather than its failure. Where Arm P did not gain on a signal, the
