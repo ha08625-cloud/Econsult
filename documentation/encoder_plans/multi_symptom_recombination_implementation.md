@@ -1,8 +1,17 @@
 # Implementation Plan: Multi-symptom recombinations (ticket 6)
 
-Step-2 output. This is the review-and-correction pass over
-`planned_updates/multi_symptom_recombination.md`, expanded into tasks that can
-each be handed to a fresh chat.
+**Status: complete. Tasks 1-7 landed; the run trained on 2026-08-19.** The
+write-ups are `reports/encoder_training/2026-08-19.md` and
+`2026-08-19-plain-english.md`, and the current state is `arch_training.md`
+section 10. Three of three scored criteria held and the fifth prediction held for
+one of its two signals; `urinary_frequency` is the open item and is now an
+argument for 12.3's per-line label vectors. This document stays on disk as the
+record of what was built and why.
+
+Step-2 output. This is the review-and-correction pass over the provisional plan,
+expanded into tasks that can each be handed to a fresh chat. (The provisional
+plan lived at `planned_updates/multi_symptom_recombination.md`, a path that does
+not exist in this repository; there is nothing on disk to mark superseded.)
 
 Read first: `arch_training.md` sections 2, 3, 5, 7, 8, 9, 12.2–12.5, 12.7, 12.8;
 `arch_encoder_training.md` section 8; `reports/encoder_training/2026-08-17-plain-english.md`

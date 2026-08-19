@@ -33,6 +33,7 @@ from scripts.encoder_training.thresholds import (
     ARMC,
     ARMP,
     ThresholdError,
+    render,
     score_directory,
 )
 
@@ -63,6 +64,8 @@ def _arm(
     real_null_to_true: float,
     accuracy: float,
     synthetic_null_to_true: float,
+    decisive_accuracy: float = 0.62,
+    recall: dict[str, float] | None = None,
 ) -> dict:
     return {
         "name": f"arm_b_finetune@{label}",
@@ -72,6 +75,14 @@ def _arm(
             "by_signal": [
                 {
                     "signal": signal,
+                    "distribution": {"true": 22, "false": 5, "null": 40, "decisive": 27},
+                    "decisive": {"accuracy": {"mean": decisive_accuracy}},
+                    "per_class_recall": {
+                        name: {"mean": value}
+                        for name, value in (
+                            recall or {"true": 0.6, "false": 0.4, "null": 0.5}
+                        ).items()
+                    },
                     "null_to_true": {
                         "null_support": 40,
                         "counts": [0, 0, 0, 0, 0],
@@ -94,6 +105,8 @@ def _write_reports(
     arm0_synthetic: float = 0.012,
     armp_synthetic: float = 0.015,
     label_mode_spread: float = 0.021,
+    armp_decisive_accuracy: float = 0.62,
+    armp_recall: dict[str, float] | None = None,
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     companions = {
@@ -140,6 +153,8 @@ def _write_reports(
                     real_null_to_true=armp_real[signal],
                     accuracy=armp_accuracy,
                     synthetic_null_to_true=armp_synthetic,
+                    decisive_accuracy=armp_decisive_accuracy,
+                    recall=armp_recall,
                 ),
             ],
             "holdout_comparisons": [
@@ -273,3 +288,36 @@ def test_a_report_missing_an_arm_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ThresholdError, match=ARMC):
         score_directory(directory, SIGNALS)
+
+
+def test_the_collapse_check_shows_an_arm_that_stopped_answering(tmp_path: Path) -> None:
+    """The failure both declared criteria pass: `null` to everything.
+
+    An arm that never answers scores 0% on the `null -> true` cell -- clearing
+    the primary criterion on all six signals -- and beats an Arm 0 that is worse
+    than the all-`null` floor, so it clears the accuracy guard too. Only the
+    decisive cells show it, which is why they are printed.
+    """
+    silent = {signal: 0.0 for signal in SIGNALS}
+    card = score_directory(
+        _write_reports(
+            tmp_path / "mute",
+            armp_real=silent,
+            armp_accuracy=0.667,
+            armp_decisive_accuracy=0.0,
+            armp_recall={"true": 0.0, "false": 0.0, "null": 1.0},
+        ),
+        SIGNALS,
+    )
+    verdicts = _verdicts(card)
+    assert verdicts["Primary"] == "HELD"
+    assert verdicts["Guard"] == "HELD"
+
+    # ... and the block that gives it away.
+    for entry in card.signals:
+        assert entry.real_decisive_accuracy[ARMP] == 0.0
+        assert entry.real_recall[ARMP]["null"] == 1.0
+        assert entry.real_decisive_accuracy[ARM0] == pytest.approx(0.62)
+    printed = "\n".join(render(card))
+    assert "Did Arm P win by going quiet?" in printed
+    assert "22/5/40" in printed

@@ -1689,11 +1689,10 @@ generator is now at 3.** Nothing here is comparable with anything generated afte
 the bump, and the difference is not cosmetic: version 3 splits `expectations.txt`
 in two, which takes filler from five libraries to six and therefore changes every
 `_draw_filler` outcome and every generated example, and it adds
-`meta.filler_only` and the companion draw. A regenerated Arm 0 baseline at
-version 3 is what these tables have to be re-measured against before any of them
-can be quoted beside a companion run; until that exists, read the rows below as
-history rather than as the control. Each table carries its own version line for
-the same reason.
+`meta.filler_only` and the companion draw. **The regenerated Arm 0 baseline now
+exists** (2026-08-19, at the end of this section) and is the control any
+companion number is quoted beside; every version 2 table below is history rather
+than a comparator. Each table carries its own version line for the same reason.
 
 The generator, its tests and the lint are complete and merged. Every library
 fills all three of its cells, the lint reports `empty cells: 0`, and the
@@ -1885,6 +1884,75 @@ pair — fell 94.7% → 81.8%, at 41 improved against 38 worsened.
 count, but `null_ambiguous` moved against A3 (p=1e-06), driven entirely by
 `attribution` falling 96.3% → 80.5%. A headline can be null while the slice the
 libraries exist for moves.
+
+**The companion run trained on 2026-08-19, and the multi-symptom
+recombinations fixed the failure they were specified for.** Two arms at
+`GENERATOR_VERSION` 3, identical apart from `--companion-share` (Arm 0 at 0.0,
+Arm P at 0.5), joint six-head `roberta-base`, plus Arm C — Arm 0's trained heads
+with every margin re-selected on Arm P's validation split, no retraining.
+Reports are `<signal>.companion_comparison.json`; the write-ups are
+`reports/encoder_training/2026-08-19.md` and its plain-English pair. The declared
+threshold is re-scorable from the JSON with `score-companions`
+(`arch_encoder_training.md` section 4e).
+
+Measured on `GENERATOR_VERSION` 3 datasets (2026-08-19). **Arm 0 is the
+regenerated baseline** and is not comparable with the 2026-08-17 rows above.
+
+| signal | `null→true` real text, Arm 0 → **Arm P** | Arm C | decisive acc, real text | `null` recall, real text | `null→true`, synthetic |
+|---|---|---|---|---|---|
+| `fever` | 84.1% → **4.5%** | 77.6% | 84.4% → 83.3% | 8.6% → 93.1% | 1.70% → 1.45% |
+| `flank_pain` | 87.5% → **17.7%** | 85.3% | 90.0% → 81.4% | 5.3% → 80.0% | 0.28% → 0.84% |
+| `haematuria` | 80.4% → **12.5%** | 65.7% | 100.0% → 81.8% | 6.1% → 87.5% | 2.27% → 2.26% |
+| `nocturia` | 69.0% → **19.7%** | 53.4% | 86.7% → 75.6% | 13.1% → 78.3% | 2.61% → 2.97% |
+| `dysuria` | 72.7% → **23.6%** | 70.9% | 82.9% → 81.1% | 20.0% → 65.5% | 0.84% → 0.77% |
+| `urinary_frequency` | 25.4% → 6.8% | 20.5% | **71.5% → 41.5%** | 36.6% → 91.7% | 2.44% → 1.84% |
+
+Six facts from it belong here because they are facts about *the data*:
+
+**The declared threshold held on three of three scored criteria.** Primary: the
+real-text `null → true` cell fell by at least 20 points on **five** of six
+signals against a requirement of four. Guard: overall real-text accuracy 36.5% →
+**81.0%**. Negative control: the synthetic cell moved by at most **0.60** points,
+which is the control *passing* — the synthetic set cannot contain this failure,
+so a large gain there would have been evidence of a new shortcut. The DD5 leak
+gate passed at a 0.024 label-mode spread before any of it was read.
+
+**Across the 402 real-text cells, invented symptoms fall from ~191 to ~35 of 268
+`null` cells, against ~13 decisive cells lost of 134.** Arm P is the first model
+on file to beat the 66.7% all-`null` floor on real text, by 14.3 points. Clearing
+that floor was recorded in advance as a bonus and explicitly not the success
+condition.
+
+**It is not a collapse to `null`, and the guard could not have told us that.**
+268 of the 402 cells are `null`, so the guard and the primary criterion are
+driven by the same cells; an arm that went silent would clear both. Decisive-cell
+accuracy is what rules it out, and it stays in the 75–83% band on five of six
+signals while `null` recall rises from 5–37% to 65–92% everywhere.
+
+**`urinary_frequency` absorbed the entire cost.** It is the only signal to miss
+the 20-point bar (+18.5) and the only one to lose real detection: decisive
+accuracy 71.5% → 41.5%, about 8 of its 26 decisive cells, where every other
+signal's loss is one or two cells on a 9-to-18-cell slice. This is the second
+consecutive run in which the `nocturia`/`urinary_frequency` near-synonym pair
+resolves in nocturia's favour at urinary frequency's expense — 2026-08-17 did it
+through joint training, this one through companions. DD1 is the reason: a
+library-level declaration cannot express what those lines do to each other, so
+they stay undeclared and draw the fewest companions from each other. **Per-line
+label vectors (12.3) are what this needs**, and this run is the argument for
+bringing them forward.
+
+**Arm C captured 16% of Arm P's mean gain**, and 37.5% overall real-text accuracy
+against Arm 0's 36.5%. So the training-data change did the work and margin
+re-selection alone was not a substitute — but 16% is free, and no future margin
+should be selected on a validation split in which this failure cannot occur. The
+two signals where Arm C did most (`nocturia` 31%, `urinary_frequency` 26%) are
+the two where Arm P did least.
+
+**Three of six signals still have no `false` example anywhere in the 67
+submissions** (`dysuria`, `nocturia`, `urinary_frequency`), so their decisive
+accuracy *is* `true` recall and Arm P's handling of explicit denial is unmeasured
+on half the set. This was a narrowing of the evidence before; it now blocks
+reading a result.
 
 The `haematuria_present` run starts at all only because of its three null
 libraries: `_check_pools` requires a non-empty

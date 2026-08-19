@@ -34,6 +34,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .dataset import CLASS_NAMES
+
 #: The arm labels as they appear in a report, after ``train.arm_run_name`` has
 #: qualified them (``arm_b_finetune@Arm0_control``). Matched on the suffix so a
 #: report written with a different base arm name still resolves.
@@ -77,6 +79,15 @@ class SignalScore:
     real_null_to_true: dict[str, float | None]
     real_accuracy: dict[str, float | None]
     synthetic_null_to_true: dict[str, float | None]
+    #: Per arm: real-text accuracy on the *decisive* cells alone, and recall for
+    #: each of the three classes. This is what separates "stopped inventing
+    #: symptoms" from "stopped answering", and neither of the two declared
+    #: criteria can tell them apart on its own.
+    real_decisive_accuracy: dict[str, float | None] = field(default_factory=dict)
+    real_recall: dict[str, dict[str, float | None]] = field(default_factory=dict)
+    #: The holdout's own label counts for this signal, which are a property of
+    #: the 67 submissions rather than of any arm.
+    distribution: Mapping[str, int] = field(default_factory=dict)
     #: Per-fold McNemar rows for Arm 0 against Arm P on the 67 submissions.
     paired: Mapping[str, object] | None = None
 
@@ -228,15 +239,32 @@ def read_signal(path: Path) -> SignalScore:
 
     arms = {label: _find_arm(report, label, path=path) for label in (ARM0, ARMP, ARMC)}
     real: dict[str, float | None] = {}
+    decisive: dict[str, float | None] = {}
+    recall: dict[str, dict[str, float | None]] = {}
+    distribution: Mapping[str, int] = {}
     for label, arm in arms.items():
         entry = _holdout_signal_entry(arm, str(signal), path=path)
         real[label] = None if entry is None else (entry.get("null_to_true") or {}).get("mean_rate")
+        decisive[label] = (
+            None
+            if entry is None
+            else ((entry.get("decisive") or {}).get("accuracy") or {}).get("mean")
+        )
+        recall[label] = {
+            name: ((entry or {}).get("per_class_recall") or {}).get(name, {}).get("mean")
+            for name in CLASS_NAMES
+        }
+        if entry is not None and not distribution:
+            distribution = entry.get("distribution") or {}
 
     return SignalScore(
         signal=str(signal),
         real_null_to_true=real,
         real_accuracy={label: _real_accuracy(arm) for label, arm in arms.items()},
         synthetic_null_to_true={label: _synthetic_null_to_true(arm) for label, arm in arms.items()},
+        real_decisive_accuracy=decisive,
+        real_recall=recall,
+        distribution=distribution,
         paired=_paired_row(report),
     )
 
@@ -534,7 +562,67 @@ def render(card: Scorecard) -> list[str]:
     lines.append("  the data was not what did the work, and that is the headline.")
     lines.append("")
 
+    lines.extend(_render_collapse(card))
+    lines.append("")
     lines.extend(_render_paired(card))
+    return lines
+
+
+def _render_collapse(card: Scorecard) -> list[str]:
+    """The check neither declared criterion can make on its own.
+
+    There are two ways to drive the real-text `null -> true` cell to nothing.
+    One is to stop inventing symptoms. The other is to stop answering: a model
+    that says `null` to everything scores 0% on that cell and 66.7% overall, and
+    would pass the primary criterion outright. The accuracy guard is what was
+    written to catch it, and the guard is a *comparison against Arm 0* -- which
+    on this ticket's numbers Arm 0 loses so badly that the guard passes for an
+    arm that could still have gone quiet.
+
+    So this block prints what a collapse would look like: decisive-cell accuracy
+    falling while `null` recall rises to 1.0, and `true`/`false` recall going to
+    zero. It is not a criterion, it is not scored, and it exists so that the
+    write-up cannot claim the guard ruled out something the guard does not test.
+    """
+    rows = []
+    for entry in card.signals:
+        counts = entry.distribution or {}
+        for label in (ARM0, ARMP):
+            recall = entry.real_recall.get(label) or {}
+            rows.append(
+                [
+                    entry.signal if label == ARM0 else "",
+                    label,
+                    _pct(entry.real_decisive_accuracy.get(label)),
+                    _pct(recall.get("true")),
+                    _pct(recall.get("false")),
+                    _pct(recall.get("null")),
+                    "/".join(str(counts.get(name, DASH)) for name in ("true", "false", "null")),
+                ]
+            )
+    lines = ["5. Did Arm P win by going quiet? (not a criterion -- the guard cannot test this)"]
+    lines.extend(
+        "  " + row
+        for row in _table(
+            [
+                "signal",
+                "arm",
+                "decisive acc",
+                "recall true",
+                "recall false",
+                "recall null",
+                "t/f/n",
+            ],
+            rows,
+        )
+    )
+    lines.append(
+        "  A collapse to `null` reads as: decisive accuracy falling, `null` recall at 100%, and"
+    )
+    lines.append(
+        "  `true`/`false` recall at zero. Decisive accuracy holding or rising is the arm still"
+    )
+    lines.append("  answering -- which is the difference between a fix and a mute button.")
     return lines
 
 
@@ -617,6 +705,9 @@ def _as_dict(card: Scorecard) -> dict:
                 "primary_delta_points": entry.primary_delta,
                 "arm_c_delta_points": entry.armc_delta,
                 "arm_c_capture": entry.armc_capture,
+                "real_decisive_accuracy": entry.real_decisive_accuracy,
+                "real_recall": entry.real_recall,
+                "holdout_distribution": dict(entry.distribution),
             }
             for entry in card.signals
         ],
