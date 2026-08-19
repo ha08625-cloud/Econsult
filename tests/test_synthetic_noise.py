@@ -3,18 +3,23 @@
 Pure unit tests on fixed strings -- no manifest, no ruleset, no fold tree, no
 database -- so there is no ``pytestmark``. That the pass is testable this way is
 the point of it being post-processing rather than a generator flag
-(``arch_training.md`` 12.6, DD1).
+(``arch_training.md`` 12.6, DD1). The directory-pass tests at the bottom do
+touch the filesystem, but only a tmp tree they build by hand.
 
 Most of these are volume tests rather than single-draw assertions. The property
 being defended is "this can never happen", and the only honest way to check a
 never against a random process is to run it a few thousand times.
 """
 
+import json
+import re
 import string
 from collections import Counter
 
 import pytest
 
+from scripts.encoder_training import dataset
+from scripts.synthetic_data import noise
 from scripts.synthetic_data.noise import (
     CHARACTER_OPERATIONS,
     DEFAULT_FREEZE_MODE,
@@ -405,3 +410,516 @@ def test_at_most_one_operation_per_word():
             continue
         # One character operation changes the length by at most one.
         assert abs(len(damaged) - len("temperature")) <= 1
+
+
+# ---------------------------------------------------------------------------
+# The directory pass
+#
+# These do touch the filesystem, but only a tmp tree: still no manifest, no
+# ruleset and no database. The fixtures below build a fold tree by hand rather
+# than running the generator, because coupling this suite to the generator is
+# the one thing DD1 exists to prevent.
+# ---------------------------------------------------------------------------
+
+SPLITS = ("train", "val", "test")
+
+#: One word pool for every label. The rate-by-label test rests on this: if the
+#: three classes are written from the same words, any difference in realised
+#: edit density is the pass's doing rather than the vocabulary's.
+WORD_POOL = (
+    "woke",
+    "sweating",
+    "again",
+    "kitchen",
+    "morning",
+    "bins",
+    "collected",
+    "walking",
+    "upstairs",
+    "shivering",
+    "temperature",
+    "burning",
+    "rough",
+    "curtains",
+    "neighbour",
+    "parcel",
+)
+
+#: Which fragment each label mode holds, and whether it is decisive. Mirrors
+#: the generator's invariant, which ``dataset._decisive_fragment`` re-checks:
+#: exactly one decisive fragment, except for a structural null, which has none.
+MODE_FRAGMENTS = {
+    "true": ("pos", "fill"),
+    "false": ("neg", "fill"),
+    "null_ambiguous": ("amb", "fill"),
+    "null_structural": ("fill", "other"),
+}
+
+MODE_LABELS = {
+    "true": True,
+    "false": False,
+    "null_ambiguous": None,
+    "null_structural": None,
+}
+
+
+def fragment_block(split):
+    """Provenance for one split, with fragment ids and clusters unique to it.
+
+    ``load_fold`` asserts that no fragment and no cluster straddles a split
+    boundary, so the fixture has to respect that or the loadability test proves
+    only that the fixture is wrong.
+    """
+    entries = {
+        "pos": ("fever", "positive", SIGNAL),
+        "neg": ("fever", "negative", SIGNAL),
+        "amb": ("fever_adjacent", "ambiguous", SIGNAL),
+        "fill": ("bins", "filler", None),
+        "other": ("weather", "filler", None),
+    }
+    return {
+        f"{split}-{name}": {
+            "library": library,
+            "cluster_key": f"{split}-{name}-cluster",
+            "fragment_type": fragment_type,
+            "split": split,
+            "signal_key": signal_key,
+            "subclass": None,
+        }
+        for name, (library, fragment_type, signal_key) in entries.items()
+    }
+
+
+def example_text(rng, words=12):
+    return " ".join(rng.choice(WORD_POOL) for _ in range(words)).capitalize() + "."
+
+
+def write_split(
+    directory,
+    *,
+    split,
+    count=12,
+    signal=SIGNAL,
+    fold_index=0,
+    folds=5,
+    split_salt="0",
+    seed=1,
+    stats_overrides=None,
+    with_sidecar=True,
+):
+    """Write one split's JSONL and sidecar into ``directory``, and return its path."""
+    import random as _random
+
+    rng = _random.Random(f"{split}|{seed}")
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{signal}.fold{fold_index}.{split}.jsonl"
+
+    modes = list(MODE_FRAGMENTS)
+    records = []
+    for index in range(count):
+        mode = modes[index % len(modes)]
+        fragment_ids = [f"{split}-{name}" for name in MODE_FRAGMENTS[mode]]
+        records.append(
+            {
+                "example_id": f"{signal}-{split}-{index:05d}",
+                "split": split,
+                "text": example_text(rng),
+                "labels": {signal: MODE_LABELS[mode]},
+                "meta": {
+                    "label_mode": mode,
+                    "filler_only": mode == "null_structural",
+                    "fragment_ids": fragment_ids,
+                    "fragment_subclasses": [None, None],
+                    "seed": seed,
+                    "generator_version": "7",
+                },
+            }
+        )
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    if with_sidecar:
+        stats = {
+            "generator_version": "7",
+            "seed": seed,
+            "signal": signal,
+            "split": split,
+            "folds": folds,
+            "fold_index": fold_index,
+            "split_salt": split_salt,
+            "fragments": fragment_block(split),
+            "requested": {"count": count},
+            "realised": {"count": len(records)},
+            "token_counts": {
+                "by_label": {label: {"count": 0} for label in ("true", "false", "null")},
+                "by_label_mode": {mode: {"count": 0} for mode in MODE_FRAGMENTS},
+                "by_fragment_count": {"2": {"count": len(records)}},
+            },
+        }
+        stats.update(stats_overrides or {})
+        sidecar = noise.sidecar_path(path)
+        sidecar.write_text(json.dumps(stats, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def write_tree(directory, *, splits=SPLITS, **kwargs):
+    """A whole fold's three splits, ready for ``dataset.load_fold``."""
+    return [write_split(directory, split=split, **kwargs) for split in splits]
+
+
+def read_records(path):
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+
+@pytest.fixture
+def tree(tmp_path):
+    """A clean input tree, and the root the guards are checked against."""
+    source = tmp_path / "clean"
+    write_tree(source)
+    return source
+
+
+def run_tree(source, target, **kwargs):
+    kwargs.setdefault("rate", 0.2)
+    kwargs.setdefault("root", source.parent)
+    return noise.noise_tree(source, target, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Whole tree in, whole tree out (DD2)
+# ---------------------------------------------------------------------------
+
+
+def test_the_output_tree_keeps_every_filename_and_every_field_but_text(tree, tmp_path):
+    target = tmp_path / "noisy"
+    run_tree(tree, target)
+
+    assert sorted(path.name for path in target.iterdir()) == sorted(
+        path.name for path in tree.iterdir()
+    )
+    changed = 0
+    total = 0
+    for source_path in sorted(tree.glob("*.jsonl")):
+        before = read_records(source_path)
+        after = read_records(target / source_path.name)
+        assert len(before) == len(after)
+        for original, damaged in zip(before, after, strict=True):
+            for key in ("example_id", "split", "labels", "meta"):
+                assert original[key] == damaged[key]
+            assert list(damaged) == list(original), "key order must match to_record"
+            total += 1
+            changed += original["text"] != damaged["text"]
+    # Roughly 1 - clean_share of examples carry damage. Loose bounds: this is a
+    # smoke test that the pass fired, not a check on the rate.
+    assert 0.4 * total < changed < total
+
+
+def test_files_that_are_neither_dataset_nor_sidecar_are_copied_through(tree, tmp_path):
+    (tree / "README.txt").write_text("how this tree was generated\n", encoding="utf-8")
+    target = tmp_path / "noisy"
+    run_tree(tree, target)
+    assert (target / "README.txt").read_text(encoding="utf-8") == "how this tree was generated\n"
+
+
+def test_the_noisy_tree_loads_through_load_fold(tree, tmp_path):
+    """The integration check: no flags changed, no filenames changed."""
+    target = tmp_path / "noisy"
+    run_tree(tree, target)
+    paths = {split: target / f"{SIGNAL}.fold0.{split}.jsonl" for split in SPLITS}
+    fold = dataset.load_fold(paths["train"], paths["val"], paths["test"])
+    assert fold.fold_index == 0
+    assert fold.train.stats["noise"]["requested"]["rate"] == 0.2
+    # And the clean tree still loads, or the comparison proves nothing.
+    clean_paths = {split: tree / f"{SIGNAL}.fold0.{split}.jsonl" for split in SPLITS}
+    dataset.load_fold(clean_paths["train"], clean_paths["val"], clean_paths["test"])
+
+
+# ---------------------------------------------------------------------------
+# Reproducibility (DD3)
+# ---------------------------------------------------------------------------
+
+
+def test_two_runs_write_byte_identical_files(tree, tmp_path):
+    first, second = tmp_path / "one", tmp_path / "two"
+    run_tree(tree, first)
+    run_tree(tree, second)
+    for path in sorted(first.iterdir()):
+        assert path.read_bytes() == (second / path.name).read_bytes(), path.name
+
+
+def test_noising_a_prefix_gives_a_prefix_of_the_noised_whole(tmp_path):
+    """Keying the RNG on the id rather than the line number is what buys this."""
+    long_dir = tmp_path / "long"
+    write_split(long_dir, split="train", count=200)
+    short_dir = tmp_path / "short"
+    write_split(short_dir, split="train", count=200)
+    short_path = short_dir / f"{SIGNAL}.fold0.train.jsonl"
+    lines = short_path.read_text(encoding="utf-8").splitlines()[:100]
+    short_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    long_out, short_out = tmp_path / "long-noisy", tmp_path / "short-noisy"
+    run_tree(long_dir, long_out)
+    run_tree(short_dir, short_out)
+    long_records = read_records(long_out / f"{SIGNAL}.fold0.train.jsonl")
+    short_records = read_records(short_out / f"{SIGNAL}.fold0.train.jsonl")
+    assert len(short_records) == 100
+    assert long_records[:100] == short_records
+
+
+# ---------------------------------------------------------------------------
+# The sidecar (DD7, DD8, DD9)
+# ---------------------------------------------------------------------------
+
+
+def test_the_sidecar_keeps_everything_the_fragments_describe(tree, tmp_path):
+    target = tmp_path / "noisy"
+    run_tree(tree, target)
+    for source_path in sorted(tree.glob("*.jsonl")):
+        before = json.loads(noise.sidecar_path(source_path).read_text(encoding="utf-8"))
+        after = json.loads(
+            noise.sidecar_path(target / source_path.name).read_text(encoding="utf-8")
+        )
+        # DD7: nothing _check_fold_agreement reads may move.
+        for key in ("generator_version", "signal", "folds", "fold_index", "split_salt", "split"):
+            assert after[key] == before[key]
+        # DD8: the fragments were not edited, so the blocks describing them
+        # are passed through; token_counts describes the text and is not.
+        assert after["fragments"] == before["fragments"]
+        assert after["requested"] == before["requested"]
+        assert after["realised"] == before["realised"]
+        assert after["token_counts"] != before["token_counts"]
+        assert set(after["token_counts"]) == set(before["token_counts"])
+        assert after["token_counts"]["by_label"]["true"]["count"] > 0
+
+
+def test_the_noise_block_is_the_marker_that_a_tree_is_noisy(tree, tmp_path):
+    target = tmp_path / "noisy"
+    run_tree(tree, target, rate=0.15, seed=7, clean_share=0.2)
+    for source_path in sorted(tree.glob("*.jsonl")):
+        assert "noise" not in json.loads(
+            noise.sidecar_path(source_path).read_text(encoding="utf-8")
+        )
+        block = json.loads(
+            noise.sidecar_path(target / source_path.name).read_text(encoding="utf-8")
+        )["noise"]
+        assert block["source_dir"] == str(tree)
+        assert block["seed"] == 7
+        assert block["requested"] == {
+            "rate": 0.15,
+            "clean_share": 0.2,
+            "freeze_signal_vocabulary": "short",
+            "operation_weights": {
+                "word": dict(WORD_OPERATION_WEIGHTS),
+                "text": dict(TEXT_OPERATION_WEIGHTS),
+            },
+        }
+        realised = block["realised"]
+        assert set(realised["edits_per_hundred_words"]["by_label"]) == {"true", "false", "null"}
+        assert realised["operations"]
+        words = realised["words"]
+        assert words["total"] > 0
+        assert words["selected"] == words["edited"] + words["rejected_then_left_alone"]
+
+
+def test_the_realised_clean_share_lands_near_the_requested_one(tmp_path):
+    source = tmp_path / "clean"
+    write_split(source, split="train", count=2000)
+    target = tmp_path / "noisy"
+    tally = run_tree(source, target, clean_share=0.25)
+    assert tally.overall_clean_share == pytest.approx(0.25, abs=0.03)
+    for label, share in tally.clean_share().items():
+        assert share == pytest.approx(0.25, abs=0.05), label
+
+
+def test_edit_density_does_not_vary_by_label(tmp_path):
+    """The test that would catch a future change making rejection label-aware.
+
+    Every label's text is drawn from one word pool, so the three classes differ
+    only in the label written beside them -- which nothing in the pass can see.
+    """
+    source = tmp_path / "clean"
+    write_split(source, split="train", count=2000)
+    target = tmp_path / "noisy"
+    tally = run_tree(source, target, rate=0.2)
+
+    rates = tally.by_label_rates()
+    assert all(rate > 0 for rate in rates.values()), rates
+    spread = max(rates.values()) - min(rates.values())
+    assert spread / (sum(rates.values()) / len(rates)) < 0.10, rates
+    assert tally.largest_by_label_gap == pytest.approx(spread, abs=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# The guards. Every one of these fails silently if it is not a startup error.
+# ---------------------------------------------------------------------------
+
+
+def test_an_output_dir_that_is_the_input_dir_is_refused(tree):
+    with pytest.raises(noise.NoiseError, match="never noises a tree in place"):
+        run_tree(tree, tree)
+
+
+@pytest.mark.parametrize("nested", ["child", "parent"])
+def test_nested_input_and_output_directories_are_refused(tree, tmp_path, nested):
+    target = tree / "inside" if nested == "child" else tree.parent
+    with pytest.raises(noise.NoiseError, match="nested"):
+        run_tree(tree, target)
+
+
+def test_a_directory_outside_the_generated_root_is_refused(tree, tmp_path):
+    outside = tmp_path / "elsewhere" / "noisy"
+    with pytest.raises(noise.NoiseError, match="resolves outside"):
+        # The real root, which no tmp path can be inside.
+        noise.noise_tree(tree, outside, rate=0.2)
+
+
+def test_a_non_empty_output_dir_needs_force(tree, tmp_path):
+    target = tmp_path / "noisy"
+    target.mkdir()
+    (target / "leftover.jsonl").write_text("{}\n", encoding="utf-8")
+    with pytest.raises(noise.NoiseError, match="is not empty"):
+        run_tree(tree, target)
+    run_tree(tree, target, force=True)
+    assert (target / f"{SIGNAL}.fold0.train.jsonl").is_file()
+
+
+def test_a_dataset_with_no_sidecar_is_refused(tmp_path):
+    source = tmp_path / "clean"
+    write_tree(source)
+    orphan = write_split(source, split="train", fold_index=1, with_sidecar=False)
+    with pytest.raises(noise.NoiseError, match=re.escape(str(orphan))):
+        run_tree(source, tmp_path / "noisy")
+
+
+def test_a_signal_with_no_frozen_lexicon_is_refused(tmp_path):
+    source = tmp_path / "clean"
+    write_tree(source, signal="not_a_signal")
+    with pytest.raises(noise.NoiseError, match="no frozen lexicon"):
+        run_tree(source, tmp_path / "noisy")
+
+
+def test_an_already_noisy_tree_is_refused(tree, tmp_path):
+    first = tmp_path / "noisy"
+    run_tree(tree, first)
+    with pytest.raises(noise.NoiseError, match="already carries a 'noise' block"):
+        run_tree(first, tmp_path / "noisier")
+
+
+def test_a_half_regenerated_tree_is_refused(tmp_path):
+    source = tmp_path / "clean"
+    write_split(source, split="train")
+    write_split(source, split="val")
+    write_split(source, split="test", stats_overrides={"split_salt": "9"})
+    with pytest.raises(noise.NoiseError, match="disagree on 'split_salt'"):
+        run_tree(source, tmp_path / "noisy")
+
+
+def test_an_empty_input_tree_is_refused(tmp_path):
+    source = tmp_path / "clean"
+    source.mkdir()
+    with pytest.raises(noise.NoiseError, match="no \\*.jsonl files"):
+        run_tree(source, tmp_path / "noisy")
+
+
+def test_a_missing_input_dir_is_refused(tmp_path):
+    with pytest.raises(noise.NoiseError, match="not a directory"):
+        run_tree(tmp_path / "nowhere", tmp_path / "noisy")
+
+
+# ---------------------------------------------------------------------------
+# The CLI
+# ---------------------------------------------------------------------------
+
+
+def test_operation_weights_default_to_the_module_tables():
+    word, text = noise.parse_operation_weights(None)
+    assert word == WORD_OPERATION_WEIGHTS
+    assert text == TEXT_OPERATION_WEIGHTS
+
+
+def test_operation_weights_normalise_word_weights_and_replace_the_table():
+    word, text = noise.parse_operation_weights("drop_letter=3,double_letter=1")
+    assert word == {"drop_letter": 0.75, "double_letter": 0.25}
+    # Naming no whole-text operation leaves that table alone.
+    assert text == TEXT_OPERATION_WEIGHTS
+
+
+def test_whole_text_weights_are_taken_verbatim_because_they_are_not_shares():
+    word, text = noise.parse_operation_weights("drop_space=2.0")
+    assert text == {"drop_space": 2.0}
+    assert word == WORD_OPERATION_WEIGHTS
+
+
+@pytest.mark.parametrize(
+    ("argument", "message"),
+    [
+        ("drop_letter", "malformed"),
+        ("nonsense=1", "unknown operation"),
+        ("drop_letter=1,drop_letter=2", "appears twice"),
+        ("drop_letter=lots", "not a number"),
+        ("drop_letter=-1", "negative"),
+        ("drop_letter=0", "every word operation at zero"),
+    ],
+)
+def test_bad_operation_weights_are_refused(argument, message):
+    with pytest.raises(noise.NoiseError, match=message):
+        noise.parse_operation_weights(argument)
+
+
+def test_main_writes_a_tree_and_reports_the_three_numbers(tree, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(noise, "GENERATED_ROOT", tree.parent)
+    target = tmp_path / "noisy"
+    code = noise.main(
+        ["--in-dir", str(tree), "--out-dir", str(target), "--rate", "0.2", "--seed", "3"]
+    )
+    assert code == 0
+    printed = capsys.readouterr().out
+    assert "edits/100 words=" in printed
+    assert "largest by-label gap=" in printed
+    assert "words left alone after rejection=" in printed
+    assert (target / f"{SIGNAL}.fold0.train.jsonl").is_file()
+
+
+def test_main_reports_a_refusal_rather_than_a_traceback(tree, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(noise, "GENERATED_ROOT", tree.parent)
+    code = noise.main(["--in-dir", str(tree), "--out-dir", str(tree), "--rate", "0.2"])
+    assert code == 2
+    assert "error: " in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("rate", ["0", "1.5", "-0.1"])
+def test_a_rate_outside_the_unit_interval_is_refused_by_argparse(rate):
+    with pytest.raises(SystemExit):
+        noise.build_parser().parse_args(["--in-dir", "a", "--out-dir", "b", "--rate", rate])
+
+
+def test_freeze_all_is_one_flag_away(tmp_path):
+    """The conservative variant of 12.6, which the rate sweep argues against.
+
+    The word pool carries "temperature" and "burning", both damageable under
+    ``short``. Under ``all`` every occurrence must survive every split of a
+    whole tree at rate 1.0 and no clean share -- the freeze mode is the only
+    thing standing between them and an edit.
+    """
+    source = tmp_path / "clean"
+    write_split(source, split="train", count=300)
+    target = tmp_path / "noisy"
+    run_tree(source, target, freeze_mode="all", rate=1.0, clean_share=0.0)
+
+    path = target / f"{SIGNAL}.fold0.train.jsonl"
+    sidecar = json.loads(noise.sidecar_path(path).read_text(encoding="utf-8"))
+    assert sidecar["noise"]["requested"]["freeze_signal_vocabulary"] == "all"
+
+    def tally(records):
+        # Folded, so that dropping the terminal full stop off "temperature."
+        # does not read as a new occurrence of "temperature".
+        return Counter(
+            fold_token(token.word) for record in records for token in split_words(record["text"])
+        )
+
+    before = tally(read_records(source / path.name))
+    after = tally(read_records(path))
+    assert before["temperature"] > 0 and before["burning"] > 0
+    for word in ("temperature", "burning"):
+        assert after[word] == before[word], word
