@@ -69,7 +69,6 @@ data/synthetic/
   conditions/uti/
     symptoms/<signal>/          the seven signals' libraries
     filler/                     UTI-specific filler
-  drafts/                       scratch files, deliberately not libraries (section 4)
   generated/                    output, git-ignored
 ```
 
@@ -243,16 +242,21 @@ these six signals. Tagging the four untagged sets is still outstanding (12.8).
 
 ## 4. The manifest
 
-`data/synthetic/manifest.json` lists every file that is a real fragment library
-and records what it means — signal, polarity, sub-class, and what it declares
-about other signals.
+`data/synthetic/manifest.json` is where a library's *meaning* lives. Per
+library it records the signal, the polarity (`fragment_type`), the hard-case
+sub-class, and — the largest part of the file by a wide margin — the 284
+`null_on` declarations about the other six signals, 24 of which carry a prose
+note. None of that is expressible in a path, and the declarations are the whole
+of the multi-symptom safety mechanism.
 
-The generator reads this list and **only** this list; it never scans for `.txt`
-files. `data/synthetic/drafts/` holds scratch notes and fragments written for
-the wrong signal, all of which a folder scan would feed straight into training
-text and the last of which would look entirely plausible on the way past. Files
-on disk but missing from the manifest are ignored; files in the manifest but
-missing from disk stop the run.
+**Discovery is the manifest, never a glob**, and that is a separate decision
+from what the manifest carries. Under a folder scan the failure modes go quiet
+in both directions: any `.txt` that lands in the tree becomes training text on
+the next run, and renaming `dysuria_null_hedged.txt` silently relabels a library
+rather than failing. With the manifest, a file on disk that nobody declared
+fails CI and a declared file that is missing stops the run — the same posture as
+the four merge guards in section 8, and for the same reason: these faults are
+invisible in a diff.
 
 ### `null_on`: which foreign signals a library is `null` on
 
@@ -996,12 +1000,17 @@ was trained on, and is the only instrument with enough effective n to say
 anything per sub-class. The real set asks whether that register and claim density
 transfer at all. Run both.
 
-**Provenance is unresolved and gates committing the corpus.** They are
-hand-written realistic submissions, written by us and labelled by us. Whether a
-submission is real patient text, clinician-written or generated decides both what
-it is worth as evidence and whether it may live in this repository, and it has to
-be recorded per submission. The labeller and the model can share a blind spot
-that no statistic in any report would reveal.
+**Provenance is recorded, and it bounds every number scored on the set.** The
+corpus is committed at `data/realistic/`, whose `README.md` is the authority on
+what it is and the rules it is used under. Two facts belong beside any figure
+taken from it: the submissions are written to read like real patients rather
+than being real patient text, all by one person, so they carry one person's
+voice; and **the labels were proposed by Claude and reviewed by the
+maintainer**, not produced independently of the models being scored. The
+labeller and the model could share a blind spot that no amount of resampling
+would reveal. Arguable cells were surfaced for arbitration rather than resolved
+silently, which makes it weaker evidence than a clinician's labels and not
+worthless evidence.
 
 ---
 
@@ -1277,10 +1286,9 @@ is the plan of record.
 **The idea is sound only if the unit of work and the unit of splitting both
 become the template rather than the fragment.** Templating multiplies *surface
 forms*, not ideas, and the split is keyed on ideas: cross-multiplying slots is a
-machine for producing near-duplicates. The draft YAML makes the point — eight
-templates expand to about 87 strings against a declared `target_count` of 800,
-and 87 strings is still eight ideas, which at 70/15/15 puts roughly **one
-template in validation**.
+machine for producing near-duplicates. The arithmetic is what settles it: eight
+templates expanding to 800 strings is still eight ideas, which at 70/15/15 puts
+roughly **one template in validation**.
 
 So: aim for 40+ templates per library rather than 8 (writing 40 good templates
 costs about what 40 good fragments cost; what it buys is 15–20 surface forms per

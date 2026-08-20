@@ -302,8 +302,9 @@ def test_empty_library_file_raises(tmp_path):
 
 
 def test_files_on_disk_but_absent_from_the_manifest_are_ignored(tmp_path):
-    # fever_synonyms.jsonl (scratch notes) and fever_true.yaml (a generator
-    # spec) live alongside the libraries and must never reach training text.
+    # Anything that is not a declared library -- scratch notes, a generator
+    # spec, a half-written library -- must never reach training text, whether or
+    # not it is sitting in a folder anyone remembered to exclude.
     manifest_path = _write_manifest(
         tmp_path, [_entry("alpha")], {"alpha.txt": _spread_lines("alpha", 60)}
     )
@@ -2118,7 +2119,9 @@ def test_the_real_libraries_put_other_symptoms_into_fever_nulls():
 DOC = Path(__file__).resolve().parents[1] / "documentation" / "arch_training.md"
 
 #: Directories under data/synthetic/ whose .txt files are not libraries.
-_NON_LIBRARY_DIRS = ("drafts", "generated")
+#: ``drafts/`` used to be here and was deleted once its files were superseded,
+#: which tightens this to "every .txt in the tree is a declared library".
+_NON_LIBRARY_DIRS = ("generated",)
 
 #: A section 3 table row: ``| `conditions/uti/symptoms/fever/fever_true.txt` | 96 | ... |``
 _DOC_ROW = re.compile(r"^\| `([^`]+\.txt)` \| (\d+) \|", re.M)
@@ -2149,6 +2152,28 @@ def test_the_manifest_has_no_duplicate_json_keys():
     assert not offenders, (
         "the manifest has duplicate keys within one object, which means a merge "
         f"fused two library entries and one of them has been lost: {sorted(set(offenders))}"
+    )
+
+
+def test_the_library_tree_contains_nothing_but_libraries_and_the_manifest():
+    # The other direction from the .txt check below: a stray file of any other
+    # extension. Nothing reads one today, because the generator only opens paths
+    # the manifest names -- which is exactly why a half-written library, a
+    # scratch list of synonyms or a template spec can sit in the tree for months
+    # and then be adopted by a future glob, a future tool, or a reader who
+    # assumes everything here is live. The drafts/ folder was three such files.
+    root = REAL_MANIFEST.parent
+    strays = sorted(
+        str(path.relative_to(root))
+        for path in root.rglob("*")
+        if path.is_file()
+        and path.suffix != ".txt"
+        and path != REAL_MANIFEST
+        and not any(part in _NON_LIBRARY_DIRS for part in path.relative_to(root).parts)
+    )
+    assert not strays, (
+        "data/synthetic/ holds files that are neither a fragment library nor the "
+        f"manifest: {strays}. Scratch work belongs outside the library tree."
     )
 
 
