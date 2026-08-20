@@ -2771,3 +2771,51 @@ clinical content at all. A dysuria sentence labelled `fever_present: null` is a
 better structural null than any filler-only recombination, because it is a null
 *with clinical language in it* — which is the case section 9's real submissions
 are full of and the current filler mostly is not.
+
+### 12.9 The nocturia / urinary-frequency pair may not need 12.3
+
+Section 4 files the 14 undeclared `nocturia_present` /
+`urinary_frequency_present` pairs under "per-line facts a library-level field
+cannot state", and points at per-line label vectors (12.3) as what would resolve
+them. `reports/encoder_training/2026-08-19.md` section 8 repeats that as an
+argument for bringing 12.3 forward. **Both may be over-estimating the work**, on
+a clinical claim that has not previously been written down here:
+
+> All nocturia is urinary frequency. Not all urinary frequency is nocturia.
+
+If that holds, then every line of `nocturia_true` asserts
+`urinary_frequency_present: true`, because every line of it asserts nocturia.
+That is a property of the whole library, so it wants a **library-level
+cross-signal assertion** — a field alongside `null_on` — and not the
+JSONL-per-line format 12.3 needs. The remaining 13 pairs are all `null` in one
+direction or the other and are ordinary `policy` declarations today: denying or
+hedging night waking says nothing about daytime frequency, and going often does
+not imply going at night.
+
+Two things make this worth recording rather than leaving as a remark.
+
+**The undeclared pair is a loss mask, not just a smaller companion pool.**
+Section 7's missing-key rule plus `dataset.mask_vector` means the
+`urinary_frequency` head has never seen a training example containing night-time
+voiding language at *any* label, and the nocturia head has never seen a urinary
+frequency one. Nocturia's ~300 lines are also the one large pool
+`urinary_frequency` could not draw companions from, which is a candidate
+explanation for its being the signal that gained least from companions (+18.5
+points against 49–80 elsewhere) and the only one to pay a real detection cost.
+
+**The asymmetry is the point and must not be rounded off.** Only `nocturia_true`
+asserts, and only `true`. `nocturia_false` and the five `nocturia_null_*`
+libraries stay `null` on urinary frequency. The contrapositive —
+`urinary_frequency_false` entailing nocturia `false` — is forced by the rule and
+is the riskiest inference in the set; it is deliberately not assumed here.
+
+The risk this carries is its own: collapsing the two heads onto the same text
+could destroy the frequency-without-nocturia discrimination that motivates the
+change (overactive bladder presents with frequency and rarely nocturia; UTI
+usually with both). The 67 submissions can measure it — 22 of them are
+`urinary_frequency true` with nocturia not `true` — so any run doing this must
+declare a bound on that cell before it trains.
+
+`planned_updates/urinary_frequency_nocturia_labelling.md` is the provisional
+plan, and it is provisional: it carries two unresolved labelling decisions and a
+diagnostic step that could retire most of it.
