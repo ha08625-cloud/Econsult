@@ -13,7 +13,7 @@ So far all the fragment libraries are LLM generated.
 Once we start to include more than one symptom, the number of fragment libraries starts to grow exponentially:
 For two fragments we can have A, B, or A&B, 
 For three fragments we can have A, B, C, A&B, A&C, B&C or A&B&C each with boolean true/false states
-We simply dont have the resources to create that many fragment libraries for 50 conditions, each with ~6 symptoms
+We simply dont have the time to use a LLM to create that many permutations of fragment libraries for 50 conditions, each with ~6 symptoms
 
 Proposed first small step is create sentences that are simple declarative sentences without any confounding element:
 "I have had [SYMPTOM A] and [SYMPTOM B]"
@@ -117,8 +117,14 @@ To ensure the slotted fragments do not break the declarative structure, create a
 4. **Format:** Pass the T cluster to the Array Engine (with `is_positive=True`) and the F cluster to the Array Engine (with `is_positive=False`).
 5. **Inject:** Inject the formatted strings into the corresponding Base Template from Phase 1.
 
+## Open questions
+* Labelling policy
+* Is now the time to switch from txt files to json or jsonl files to make labelling easier?
+
 ## Out of scope
 * Templates that use adjectives instead of nouns e.g. I've been feverish or I havent been urinating frequently
+* Using existing fragment libraries as templates (this might remove the need for cluster marking)
 * Swapping out the first part "I have had" for "I've had" or "I've been having" or "I've got" etc
 * Adding openers like "For the last three days" or "Since I got back from holiday"
 * Null states are also out of scope for now and may be more complex
+* Round robin selection - once a fragment is used, the next time the generation engine picks it up, an altered fragment is used.  e.g. first time round "I have had a fever and dysuria"+"TANGENT", second time round "I've had a high temperature and pain urinating"+"EXPECTATION"
