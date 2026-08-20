@@ -1,17 +1,11 @@
 # Encoder Training Data (Synthetic Generation)
 
-**LLM INSTRUCTIONS:** This document explains, in plain English, how the synthetic
+**LLM INSTRUCTIONS:** This document explains how the synthetic
 training data for the encoder is built and why it is built that way. It is the
-overview and stays at the level of design decisions and data flow. Per-library
-editorial history is deliberately not here — read the libraries themselves. The
-full detail lives in `documentation/encoder/` — read `Fine_tuning_plan.md` for
-the training strategy and `synthetic_recombination_implementation_plan.md` for
-the design decisions behind the generator. Read `scripts/synthetic_data/*.py`
-for implementation specifics.
+overview and stays at the level of design decisions and data flow. 
 
-Sections 1 to 11 describe the system as it is. **Section 12 is work not yet
-built, and not yet agreed** — do not treat it as a description of current
-behaviour.
+Sections 1 to 11 describe the system as it is. **Section 12 is work in progress** — do 
+not treat it as a description of current behaviour.
 
 ---
 
@@ -43,16 +37,13 @@ real patient text could not be used for this without a lot of governance work.
 So we write a few hundred sentence fragments by hand and recombine them into
 thousands of examples.
 
-Everything trained and measured so far covers one signal: `fever_present`, on
+Everything trained and measured so far covers seven signals for symptoms in
 the `urinary_symptoms` condition. It is a proof of concept for the *pipeline*,
 not an attempt to produce clinical-grade training data — see section 9.
 
 ---
 
-## 2. The one idea that matters: label first, then text
-
-This is the most important design decision in the whole pipeline, and everything
-else follows from it.
+## 2. Label first, then text
 
 The generator does **not** write a sentence and then work out what its label
 should be. It does the opposite:
@@ -62,14 +53,7 @@ should be. It does the opposite:
 
 The second step can only draw from a pool that was already sorted by hand. A
 `true` example draws from the "positive" library, which contains only fragments
-that assert a fever. So the label cannot be wrong about the text, because the
-text was chosen to fit the label.
-
-Doing it the other way round — generating text and then labelling it — would
-mean something has to read the text and judge it, and every mistake that
-something makes becomes a permanently wrong label in the training data. Here
-that failure mode does not exist. It is not that we check carefully; it is that
-there is no point in the process where the text could influence the label.
+that assert a fever. 
 
 ---
 
@@ -111,57 +95,15 @@ same flat pile as UTI's.
 The split between the two filler folders is about language, not about which
 condition happens to use a library. `tangents`, `justifiers` and `emotional`
 contain no condition-specific vocabulary at all (checked: zero lexicon hits
-across their 270 lines), so they sit at the top level. `uti_speculation` is
-UTI-specific in 36 of its 40 lines and sits under the condition.
-
-`expectations.txt` was the awkward one, and **it has now been split**. It was
-left whole for as long as it was because splitting it is **not** dataset-neutral:
-`_draw_filler` picks a filler library uniformly and then a fragment within it, so
-going from five filler libraries to six changes every generated example and makes
-every number on file incomparable. That is why the split waited for a
-`GENERATOR_VERSION` bump that regenerated everything anyway, and it landed with
-the one that took the version to 3.
-
-The re-read moved **34 of the 100 lines**, not the 26 this section used to
-estimate. The rule applied is the language one above — the organ, the
-investigation or the drug is specific to the urinary tract — and applying it line
-by line catches families the earlier count missed: kidneys and kidney function
-("check my creatinine levels", "a scan to check my kidneys aren't damaged"),
-renal stones ("an xray to check for stones", "lithotripsy to break it up") and
-the named antibiotics beyond trimethoprim (ciprofloxacin, cefalexin). Sixty-six
-lines stay in `filler/expectations.txt` — generic tests, generic drugs, and the
-whole *who, how and when* half, none of which names a body part at all — and 34
-move to `conditions/uti/filler/expectations_uti.txt`.
-
-**Both halves needed their own declaration, and neither inherited the parent's.**
-The shared half keeps `recent_uti_present` at basis `policy`: eight of its 66
-lines still ask for antibiotics or a check for infection, and none of them dates
-one inside the window. The UTI half is `policy` on the same signal for a
-different reason — **the lexicon finds nothing in it at all**, so it would have
-passed as `absent`, and six of its lines plainly discuss a urine infection and
-its treatment ("I had trimethoprim last time", "ciprofloxacin ... what worked
-last time", "a urine culture ... to identify the bug"). Declaring `absent` there
-would have recorded the lexicon's silence as a fact about the text, which is the
-one thing section 4's two bases exist to keep apart.
+across their 270 lines), so they sit at the top level. `uti_speculation` and `expectations_uti` 
+are largely UTI-specific and sit under the condition.  These uti specific libraries
+have been verified against the signal `recent_uti`.  They may mention
+recent utis or antibiotics for utis, but specifically do not mention a time frame
+so that they do no collide with the fragment libraries for `recent_uti`
 
 The filler libraries are verified silent about **all seven** signals — that
 check is the lint's (section 8), it runs in CI, and it currently passes with no
 baselined exceptions.
-
-**That sentence used to carry a caveat about the seventh signal, and the caveat
-is now discharged.** `recent_uti_present` had no libraries, so it had no lexicon
-and nothing checked it, and this section predicted that whoever closed the gap
-would inherit a `uti_speculation` "full of lines that assert it outright" and
-needing rewriting or relabelling. **That prediction was wrong**, and section 9's
-labelling policy is why: read against its rules, self-diagnosis ("I reckon it's
-another UTI, I'm prone to them") is a guess rather than a diagnosis, recurrence
-with no window marker says nothing about the last 30 days, and "I had one last
-year" places an infection explicitly outside it. Not one of `uti_speculation`'s
-forty lines asserts a urine infection inside the window, the filler-purity check
-returns zero for `recent_uti_present` alongside the other six, and the library
-needed no edit at all. What it needed was a declaration, and it has one: the
-manifest declares the pair `null_on` with basis `policy` and the note quotes the
-rules (section 4). It is not a leak and it never was.
 
 | Library | Fragments | What it contains |
 |---|---|---|
@@ -243,69 +185,6 @@ reason: every surface cue points the wrong way. There is no hedge, no past
 tense and no third party, so a model that has learned "first person + present
 tense + topic vocabulary ⇒ positive" scores well on the other axes and fails
 these completely.
-
-**Which axes exist is per-signal, and the differences are design decisions, not
-oversights.**
-
-* **fever** has all five of `hedged`, `thirdparty`, `historical`, `metaphor`,
-  `attribution`, and is the only fully covered signal.
-* **urinary_frequency** swaps `attribution` for `adjacent`. Frequency is a
-  *rate*, not a disease: a patient going more often because of water tablets or
-  hot weather still **is** going more often, so an attribution library would be
-  labelling `true` fragments `null`. Those fragments live in
-  `urinary_frequency_true` on purpose.
-* **nocturia** keeps all five, but its `attribution` axis is the *reason for
-  waking* rather than the cause of the urine, because the clinical definition of
-  nocturia is waking **because** of the need to void. Waking to void is `true`
-  whatever the patient blames it on; woken by something else and voiding
-  incidentally is `null`; the same sentence with an explicit denial attached is
-  `false` and lives in `nocturia_false`.
-* **flank_pain** covers three axes — `hedged`, `thirdparty`, `historical`. It
-  has no `metaphor` library (the available idioms are not phrasings a patient
-  plausibly uses about their own body) and no `attribution` library, which is a
-  real gap: musculoskeletal flank pain with a named cause is common and has
-  nowhere to live.
-* **haematuria** covers `hedged`, `thirdparty` and `historical`. Its boundary
-  rule is that **red or pink urine is `true`, dark/brown/tea-coloured urine is
-  not** (concentrated urine, bilirubin and rifampicin all look like that, and
-  the text does not say the patient saw blood), and that **blood in the urine is
-  `true`, blood on the toilet paper is not** (paper blood may be vaginal, rectal
-  or perineal in origin). It has no `metaphor` library and no `attribution`
-  library. **`attribution` is the gap that matters, and unlike for
-  urinary_frequency the axis genuinely transfers**: beetroot, rifampicin, a red
-  toilet block or blood from a period all leave the surface facts intact while
-  making the answer something other than `true`, exactly as fever's named causes
-  do. Its raw material is the confidently-attributed half of `hedged` plus the
-  colour lines the boundary rule keeps out of `true`.
-
-  Two rules follow from the haematuria boundary rule and apply to its null
-  libraries. A
-  `thirdparty` or `historical` fragment must read as decisively `true` if the
-  person or the tense is changed and nothing else — "my sister's lad had tea
-  coloured pee" is `null` twice over and so measures nothing. And a fragment
-  that never mentions blood or urine is not a haematuria fragment under any
-  label: seventeen `hedged` drafts were flank pain with no urinary content, and
-  are parked in `drafts/` rather than labelled.
-
-* **recent_uti** covers `hedged`, `thirdparty`, `historical` and `adjacent`,
-  and its axes are displaced from the *window* rather than from a symptom,
-  because the question is about an event in the last 30 days rather than about
-  how the patient feels now. `historical` therefore has a sharper job here than
-  anywhere else: it is not "the symptom was in the past" but "the infection is
-  far enough back to be outside the window and the text does not say whether
-  there has been one since", which is why a vague time marker is a `hedged`
-  fragment rather than a `historical` one (section 9, rule 3). `hedged` carries
-  both kinds of doubt the signal admits — doubt about whether it was an
-  infection at all, and doubt about when. `adjacent` is the confounder the whole
-  set is built around: a recent, diagnosed, antibiotic-treated infection that is
-  simply not urinary, where every surface cue points to `true`. There is no
-  `metaphor` library (nobody uses "water infection" figuratively) and no
-  `attribution` library (a diagnosed infection stays a diagnosed infection
-  whatever the patient blames it on, so attribution has nothing to displace).
-
-A signal covering fewer axes measures a model against a narrower set of
-confounders, so its numbers are not comparable sub-class for sub-class with
-fever's.
 
 ### Cross-signal silence
 
