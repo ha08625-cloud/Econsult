@@ -98,25 +98,27 @@ is.** `arch_training.md` section 10 is the canonical statement of the problem:
 the effective sample size of an evaluation slice is the number of distinct
 fragment *clusters* behind it, not the number of examples.
 
-Under a single 70/15/15 split, a per-sub-class recall figure rests on 2 to 6
-clusters — it can only take the values 0, 0.5 or 1.0 — and carries roughly ±30
-points of uncertainty. That is wider than any effect this work could plausibly
-detect, so as originally specified the ticket could not have answered its own
-question.
+Under a single 70/15/15 split, a per-sub-class recall figure rests on a handful
+of clusters and carries an interval far wider than any effect this work could
+plausibly detect, so as originally specified the ticket could not have answered
+its own question. **`arch_training.md` section 10 has the arithmetic and the
+current cluster counts; they are not repeated here**, because two copies of a
+figure that moves whenever a library is tagged or grown is how the two documents
+came to disagree about it.
 
-Fold mode fixes it for about ten minutes of GPU time. Every cluster is a test
-cluster in exactly one fold, so pooling the five folds makes a sub-class's
-aggregate test set its whole library: 32 to 47 clusters instead of 2 to 6.
+Fold mode fixes it for about ten minutes of GPU time: every cluster is a test
+cluster in exactly one fold, so pooling the five makes a sub-class's aggregate
+test set its whole library.
 
-**State the gain honestly.** Effective n rises 12- to 17-fold; the error bar does
-not. Uncertainty on a proportion falls as 1/√n, so ±30 points becomes about ±8.
-That is the difference between a number that can carry a conclusion and one that
-cannot — a metaphor recall of 0.6 ±0.08 is a finding, 0.5 ±0.30 is noise. Quoting
-the 12–17× figure as though it were the improvement in precision is wrong, and
-the report says so in its own limitations.
+**State the gain honestly.** Effective n rises severalfold; the error bar does
+not fall as fast. Uncertainty on a proportion falls as 1/√n, so pooling roughly
+halves the interval rather than removing it — which is the difference between a
+number that can carry a conclusion and one that cannot, and nothing more.
+Quoting the rise in effective n as though it were the improvement in precision is
+wrong, and the report says so in its own limitations.
 
-Folds create no new ideas. Forty-seven metaphor clusters is forty-seven however
-many folds are run, so `arch_training.md` section 9 applies unchanged.
+Folds create no new ideas. A library's clusters are its clusters however many
+folds are run, so `arch_training.md` section 9 applies unchanged.
 
 **One known and accepted subtlety.** Fold *i*'s validation clusters are fold
 *i+1*'s test clusters. Within a fold that is not leakage — each fold trains its

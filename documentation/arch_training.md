@@ -236,7 +236,7 @@ narrower than the truth. A signal tagged honestly is penalised; one with no
 markers is flattered. The prediction that followed from this was **wrong**: the
 2026-08-16 sweep put fully-tagged `dysuria` second of six and the two weakest
 signals were both untagged. The asymmetry is real; it is not what separates
-these six signals. Tagging the four untagged sets is still outstanding (12.8).
+these six signals. Tagging the five untagged sets is still outstanding (12.8).
 
 ---
 
@@ -245,8 +245,8 @@ these six signals. Tagging the four untagged sets is still outstanding (12.8).
 `data/synthetic/manifest.json` is where a library's *meaning* lives. Per
 library it records the signal, the polarity (`fragment_type`), the hard-case
 sub-class, and — the largest part of the file by a wide margin — the 284
-`null_on` declarations about the other six signals, 24 of which carry a prose
-note. None of that is expressible in a path, and the declarations are the whole
+`null_on` declarations about the other six signals, 42 of which carry a prose
+note (every `policy` pair must; an `absent` pair may). None of that is expressible in a path, and the declarations are the whole
 of the multi-symptom safety mechanism.
 
 **Discovery is the manifest, never a glob**, and that is a separate decision
@@ -477,7 +477,7 @@ land on opposite sides (section 3).
 cluster is a test cluster in exactly one fold**, so running all five and pooling
 predictions makes the whole library the effective test set rather than the
 2-to-6-cluster slices a single split leaves. That is what takes a per-sub-class
-interval from roughly ±30 points to roughly ±8 — uncertainty falls as 1/√n, and
+interval from roughly ±30 points to roughly ±11 — uncertainty falls as 1/√n, and
 folds add no new *ideas* at all, so section 9 applies in full.
 
 Three things to know before using it:
@@ -831,7 +831,7 @@ urgent, must be positive" shortcut. Pairing with filler washes some of it out;
 fixing it properly means splitting those fragments up.
 
 **Claim density, not length, is the gap to real text.** The 67 real submissions
-run 9 to 69 words with a median of 38 and a default example is 28 to 42, so
+run 9 to 80 words with a median of 39 and a default example is 28 to 42, so
 length is not the problem. The median real submission asserts something about
 **two** of the six signals; every generated example carries **exactly one**
 decisive claim by construction. Companions put other signals' language into the
@@ -980,9 +980,11 @@ because register does not track the label; it creates a coverage problem, and an
 aggregate number over the whole set is a number about the tidy register.
 
 **What it can and cannot measure.** Sixty-seven independent observations give
-roughly ±11 points on one overall decisive figure. Per signal it is far thinner —
-about 9 fever positives, 9 haematuria, 6 flank — so any per-signal recall carries
-something like ±30 points, and **fold mode cannot fix it**: there are sixty-seven
+roughly ±12 points on one overall decisive figure. Per signal it is far thinner —
+18 decisive cells for fever, 14 for flank, 6 for `recent_uti` — so a per-signal
+figure carries ±23 to ±40 points (`data/realistic/README.md` has the
+distribution and `arch_encoder_training.md` section 11 the half-widths), and
+**fold mode cannot fix it**: there are sixty-seven
 texts and no mechanism makes more. It is a *validity* instrument, not a
 *precision* one. It can show that 83.5% is really 55%, which is the question that
 matters most and which nothing else answers; it cannot rank two models, and it
@@ -1066,8 +1068,9 @@ two *filler* libraries only):
 | `nocturia` | 7 | 0 / 351 | all 7 |
 | `flank_pain` | 5 | 0 / 243 | all 5 |
 | `haematuria` | 5 | 0 / 225 | all 5 |
+| `recent_uti` | 6 | 0 / 256 | all 6 |
 
-The four untagged signals' effective n equals their fragment count **by claim,
+The five untagged signals' effective n equals their fragment count **by claim,
 not by measurement** (section 3), so their intervals are narrower than the truth.
 The evaluation report computes this table per run and prints the warning above
 its own headline.
@@ -1168,7 +1171,7 @@ do not change register.
 4. **Train a `recent_uti_present` head**, without which nothing is deployable.
 5. **Re-run or retire the outstanding A1/A2/A3 sweep** — its datasets are version
    2 and non-comparable.
-6. **Tag the four untagged library sets**, prioritised by the near-duplicate
+6. **Tag the five untagged library sets**, prioritised by the near-duplicate
    rates in section 3.
 
 ### Effective sample size: count clusters, not examples
@@ -1191,10 +1194,14 @@ or 1.0, carries roughly ±30 points, and cannot separate two models.
 
 **Fold mode is the mitigation and it is built.** Pooling five folds makes every
 cluster a test cluster exactly once, so a sub-class's aggregate test set is its
-whole library — 35 to 63 clusters. Note what that is worth and no more: effective
-n rises 7- to 17-fold, but uncertainty goes as 1/√n, so ±30 points becomes about
-±8. That is the difference between a number that can carry a conclusion and one
-that cannot — 0.6 ±0.08 is a finding, 0.5 ±0.30 is noise. Folds create no new
+whole library rather than the ~15% of it a single split holds — 19 to 63 clusters
+today against a two-to-nine-cluster slice. Note what that is worth and no more:
+effective n rises about sevenfold, and uncertainty goes as 1/√n, so an interval
+near ±30 points comes down to roughly ±11. That is the difference between a
+number that can carry a conclusion and one that cannot. **The `eff n` printed
+beside every slice in the report is the authority**; the cluster range above is
+the current libraries' size, not a property of the method, and it moves whenever
+one is tagged or grown. Folds create no new
 ideas, so section 9 applies unchanged and this remains a library-size problem
 whose real fix is more fragments.
 
@@ -1282,6 +1289,16 @@ only and adds no ideas at all.
 Hand-written templates with slots (`I {verb} {adjective} {synonym}`) expanded
 into fragments. `documentation/encoder_plans/procedural_fragment_generation_implementation.md`
 is the plan of record.
+
+**Read that plan for what it now covers, not for what this subsection says.** It
+was rescoped to build 12.1 and 12.3 together — procedurally generated
+*multi-symptom* fragments — and two of the rules below deliberately do not bind
+there: the cluster key is the asserted label content rather than the template ID
+(because each expansion carries a different label, so hashing the frame would
+collapse a library into two clusters), and the 40-templates-per-library floor is
+replaced by a cap on a library's share of the decisive draw. The rules below
+remain right for the case they were written for — templating one library whose
+lines all share a label, which is where this should start.
 
 **The idea is sound only if the unit of work and the unit of splitting both
 become the template rather than the fragment.** Templating multiplies *surface
@@ -1490,7 +1507,7 @@ criterion and independent per-head margins; the three-arm `joint-compare` report
 the `null_on` declaration pass; `--companion-share`; `--emit-signals all`; the
 seventh signal's libraries; and the noise pass.
 
-**Still blocked:** per-line label vectors (12.3), cluster-tagging the four
+**Still blocked:** per-line label vectors (12.3), cluster-tagging the five
 untagged library sets, and a `recent_uti_present` head.
 
 **The one thing that surprises people about the merge.** Joint training on merged
