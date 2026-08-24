@@ -88,60 +88,41 @@ antibiotics but deliberately name no time frame, so they do not collide with the
 The filler libraries are verified silent about **all seven** signals by the lint
 (section 8), in CI, with no baselined exceptions.
 
-| Library | Fragments | What it contains |
-|---|---|---|
-| `conditions/uti/symptoms/fever/fever_true.txt` | 96 | Says the patient has a fever ("I had a high temperature") |
-| `conditions/uti/symptoms/fever/fever_false.txt` | 98 | Says the patient does not ("no temperature, I checked") |
-| `conditions/uti/symptoms/fever/fever_null_hedged.txt` | 73 | Genuinely uncertain ("I feel a bit off, hard to say") |
-| `conditions/uti/symptoms/fever/fever_null_metaphor.txt` | 55 | Fever words used non-clinically ("burning up with embarrassment") |
-| `conditions/uti/symptoms/fever/fever_null_thirdparty.txt` | 46 | *Someone else* has a fever ("my son has a temperature") |
-| `conditions/uti/symptoms/fever/fever_null_historical.txt` | 45 | A fever, but in the past ("I had one last month") |
-| `conditions/uti/symptoms/fever/fever_null_attribution.txt` | 50 | Hot now, confidently blamed on something that is not a fever ("I get hot flushes with the menopause") |
-| `conditions/uti/symptoms/dysuria/dysuria_true.txt` | 45 | Says it hurts to pass urine ("it burns when I pee") |
-| `conditions/uti/symptoms/dysuria/dysuria_false.txt` | 47 | Says it does not ("weeing itself is fine, no stinging") |
-| `conditions/uti/symptoms/dysuria/dysuria_null_hedged.txt` | 40 | Genuinely uncertain ("might be a slight sting, could be imagining it") |
-| `conditions/uti/symptoms/dysuria/dysuria_null_historical.txt` | 38 | Painful urination, but in the past |
-| `conditions/uti/symptoms/dysuria/dysuria_null_metaphor.txt` | 40 | Burn/sting words that are not about passing urine ("my eyes have been stinging with all the pollen") |
-| `conditions/uti/symptoms/dysuria/dysuria_null_thirdparty.txt` | 46 | *Someone else* has dysuria ("my daughter says it hurts her to wee") |
-| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_true.txt` | 46 | Says they are passing urine more often than usual ("I'm going every twenty minutes or so") |
-| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_false.txt` | 46 | Says they are not ("I go about five times a day and that's exactly what I've always done") |
-| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_hedged.txt` | 42 | Genuinely uncertain ("I might be going more often but I've never counted") |
-| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_historical.txt` | 40 | More often, but in the past |
-| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_metaphor.txt` | 44 | Frequency/flow/urinary words used non-clinically ("a wee bit of a worry", "sales have slowed to a trickle") |
-| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_thirdparty.txt` | 44 | *Someone else* is going more often |
-| `conditions/uti/symptoms/urinary_frequency/urinary_frequency_null_adjacent.txt` | 40 | A different urinary complaint, silent on how often ("the stream is much weaker than it used to be") |
-| `conditions/uti/symptoms/nocturia/nocturia_true.txt` | 54 | Says they wake in the night to pass urine |
-| `conditions/uti/symptoms/nocturia/nocturia_false.txt` | 54 | Says they do not ("I sleep right through") |
-| `conditions/uti/symptoms/nocturia/nocturia_null_hedged.txt` | 47 | Genuinely uncertain |
-| `conditions/uti/symptoms/nocturia/nocturia_null_metaphor.txt` | 52 | Night, sleep, toilet and "wee" words used non-urinary ("up all night worrying") |
-| `conditions/uti/symptoms/nocturia/nocturia_null_thirdparty.txt` | 47 | *Someone else* is up at night |
-| `conditions/uti/symptoms/nocturia/nocturia_null_historical.txt` | 46 | Night voiding, but in the past |
-| `conditions/uti/symptoms/nocturia/nocturia_null_attribution.txt` | 51 | Woken by something that is not a need to void, and voids incidentally |
-| `conditions/uti/symptoms/flank_pain/flank_pain_true.txt` | 48 | Says there is pain in the side/back below the ribs |
-| `conditions/uti/symptoms/flank_pain/flank_pain_false.txt` | 55 | Says there is not |
-| `conditions/uti/symptoms/flank_pain/flank_pain_null_hedged.txt` | 53 | Genuinely uncertain |
-| `conditions/uti/symptoms/flank_pain/flank_pain_null_thirdparty.txt` | 47 | *Someone else* has flank pain |
-| `conditions/uti/symptoms/flank_pain/flank_pain_null_historical.txt` | 40 | Flank pain, but in the past |
-| `conditions/uti/symptoms/haematuria/haematuria_true.txt` | 45 | Says there is visible blood in the urine |
-| `conditions/uti/symptoms/haematuria/haematuria_false.txt` | 45 | Says there is not |
-| `conditions/uti/symptoms/haematuria/haematuria_null_hedged.txt` | 45 | Genuinely uncertain ("looked a bit pink but I ate beetroot yesterday") |
-| `conditions/uti/symptoms/haematuria/haematuria_null_thirdparty.txt` | 45 | *Someone else* is passing blood |
-| `conditions/uti/symptoms/haematuria/haematuria_null_historical.txt` | 45 | Blood in the urine, but in the past |
-| `conditions/uti/symptoms/recent_uti/recent_uti_true.txt` | 44 | Says a urine infection was diagnosed or treated inside the last 30 days ("I finished a course of nitrofurantoin ten days ago") |
-| `conditions/uti/symptoms/recent_uti/recent_uti_false.txt` | 44 | Denies one across the whole window ("the sample I handed in last week came back clear") |
-| `conditions/uti/symptoms/recent_uti/recent_uti_null_hedged.txt` | 44 | Uncertain whether it was an infection, or certain it was and vague about when ("I had a water infection a while back but I honestly could not tell you when") |
-| `conditions/uti/symptoms/recent_uti/recent_uti_null_historical.txt` | 42 | An infection with a time marker that clears 30 days, and no denial of the window |
-| `conditions/uti/symptoms/recent_uti/recent_uti_null_thirdparty.txt` | 40 | *Someone else* had one |
-| `conditions/uti/symptoms/recent_uti/recent_uti_null_adjacent.txt` | 42 | A recent, diagnosed, antibiotic-treated infection that is not urinary ("the dentist put me on antibiotics for an abscess about ten days ago") |
-| `filler/tangents.txt` | 110 | Filler: irrelevant chat ("the parking here is impossible") |
-| `filler/justifiers.txt` | 100 | Filler: why they need an appointment |
-| `filler/emotional.txt` | 60 | Filler: worry and feelings |
-| `filler/expectations.txt` | 66 | Filler: what they want to happen, in vocabulary any condition's patient could use — generic tests and drugs ("a blood test", "antibiotics", "a CT scan") and *who, how and when* (a named regular GP, phone vs face to face, timing) |
-| `conditions/uti/filler/uti_speculation.txt` | 40 | Filler: self-diagnosis ("probably just cystitis") |
-| `conditions/uti/filler/expectations_uti.txt` | 34 | Filler: the same asks in urinary-tract vocabulary — urine culture, cystoscopy, PSA, trimethoprim, kidney stones |
+**The manifest is the inventory, not this document.** Every library's path,
+signal, polarity and sub-class are in `data/synthetic/manifest.json`, and
+`--lint` prints the per-library fragment counts and split coverage (section 8).
+What follows is the shape of the collection, which is a design fact and does not
+move when a library grows.
 
-Every symptom is sized; none is still a seed batch. All the decisive and
-confounder libraries sit at or above the 40–50 band.
+| signal | libraries | hard-case axes it carries |
+|---|---|---|
+| `fever` | 7 | hedged, third-party, historical, metaphor, attribution |
+| `nocturia` | 7 | hedged, third-party, historical, metaphor, attribution |
+| `urinary_frequency` | 7 | hedged, third-party, historical, metaphor, **adjacent** |
+| `dysuria` | 6 | hedged, third-party, historical, metaphor |
+| `recent_uti` | 6 | hedged, third-party, historical, **adjacent** |
+| `flank_pain` | 5 | hedged, third-party, historical |
+| `haematuria` | 5 | hedged, third-party, historical |
+
+Each signal carries a `_true` and a `_false` library alongside those. Six filler
+libraries complete the set: `tangents` (irrelevant chat), `justifiers` (why they
+need an appointment), `emotional` (worry and feelings) and `expectations` (what
+they want to happen, in vocabulary any condition's patient could use) at the top
+level, plus `uti_speculation` (self-diagnosis) and `expectations_uti` (the same
+asks in urinary-tract vocabulary) under the condition.
+
+**Why the axis sets differ is the interesting part**, and each difference is a
+decision: `attribution` exists where a patient can plausibly name a non-clinical
+cause for the surface facts (heat, night waking) and is *wrong* for
+`urinary_frequency`, whose policy makes cause irrelevant (section 9);
+`adjacent` exists where a neighbouring complaint is current, first-person and
+clinical while saying nothing about this question — a weak stream for frequency,
+a non-urinary infection for `recent_uti`; `metaphor` exists only where the
+signal's vocabulary has a live non-clinical use, which "blood in the urine" and
+"pain in the side" largely do not.
+
+Every symptom is sized; none is still a seed batch. Every decisive and
+confounder library sits in or above the 40–50 band, the smallest at 38.
 
 ### The null axes, and why they are separate files
 
@@ -236,7 +217,7 @@ narrower than the truth. A signal tagged honestly is penalised; one with no
 markers is flattered. The prediction that followed from this was **wrong**: the
 2026-08-16 sweep put fully-tagged `dysuria` second of six and the two weakest
 signals were both untagged. The asymmetry is real; it is not what separates
-these six signals. Tagging the four untagged sets is still outstanding (12.8).
+these six signals. Tagging the five untagged sets is still outstanding (12.8).
 
 ---
 
@@ -245,8 +226,8 @@ these six signals. Tagging the four untagged sets is still outstanding (12.8).
 `data/synthetic/manifest.json` is where a library's *meaning* lives. Per
 library it records the signal, the polarity (`fragment_type`), the hard-case
 sub-class, and — the largest part of the file by a wide margin — the 284
-`null_on` declarations about the other six signals, 24 of which carry a prose
-note. None of that is expressible in a path, and the declarations are the whole
+`null_on` declarations about the other six signals, 42 of which carry a prose
+note (every `policy` pair must; an `absent` pair may). None of that is expressible in a path, and the declarations are the whole
 of the multi-symptom safety mechanism.
 
 **Discovery is the manifest, never a glob**, and that is a separate decision
@@ -477,7 +458,7 @@ land on opposite sides (section 3).
 cluster is a test cluster in exactly one fold**, so running all five and pooling
 predictions makes the whole library the effective test set rather than the
 2-to-6-cluster slices a single split leaves. That is what takes a per-sub-class
-interval from roughly ±30 points to roughly ±8 — uncertainty falls as 1/√n, and
+interval from roughly ±30 points to roughly ±11 — uncertainty falls as 1/√n, and
 folds add no new *ideas* at all, so section 9 applies in full.
 
 Three things to know before using it:
@@ -782,12 +763,12 @@ fault list.
 **Split coverage** — how many fragments of each library landed in each split,
 flagging any empty cell (section 10).
 
-### Four guards against a bad merge
+### Three guards against a bad merge
 
-The lint reports; these four tests fail the build. They exist because several
-library tickets landed in quick succession and their merges concatenated
-conflicting edits rather than merging them. They run against the committed tree
-rather than a fixture.
+The lint reports; these tests fail the build. They exist because several library
+tickets landed in quick succession and their merges concatenated conflicting
+edits rather than merging them. They run against the committed tree rather than
+a fixture.
 
 * **No duplicate JSON keys in the manifest.** `json.load` resolves duplicates
   last-wins, so a fused entry made the first library *silently vanish*. Only an
@@ -795,15 +776,16 @@ rather than a fixture.
 * **Every `.txt` on disk is declared in the manifest.** The other half of the
   same fault: `load_fragments` checks only the reverse direction, so a library the
   manifest stops naming quietly stops being training data.
-* **The section 3 table lists every library exactly once** and matches the
-  manifest. A merge once left flank_pain in the table twice with different counts.
-* **Every count in that table matches its file.** These are per-library totals
-  that only a merged tree can compute, so they go stale *on merge* rather than in
-  the PR that moved them — which is why review does not catch it.
+* **Nothing but libraries and the manifest lives in the tree.** A half-written
+  library or a scratch list of synonyms sitting in `data/synthetic/` is invisible
+  today and adopted by the next tool that globs.
 
-`documentation/arch_training.md` is in the `rulesets` path filter in
-`.github/workflows/tests.yml` for the last two. Without it the workflow's
-`'!**/*.md'` exclusion means a PR that rewrites the table runs no job at all.
+**Two further guards were retired with the per-library table this document used
+to carry** — that the table listed every library exactly once and that every
+count in it matched its file. Both existed only to keep a duplicate honest, and
+the duplicate is gone: the manifest is the inventory and the lint prints the
+counts. That is also why `.github/workflows/tests.yml` no longer needs this file
+in its `rulesets` path filter.
 
 ---
 
@@ -831,7 +813,7 @@ urgent, must be positive" shortcut. Pairing with filler washes some of it out;
 fixing it properly means splitting those fragments up.
 
 **Claim density, not length, is the gap to real text.** The 67 real submissions
-run 9 to 69 words with a median of 38 and a default example is 28 to 42, so
+run 9 to 80 words with a median of 39 and a default example is 28 to 42, so
 length is not the problem. The median real submission asserts something about
 **two** of the six signals; every generated example carries **exactly one**
 decisive claim by construction. Companions put other signals' language into the
@@ -934,9 +916,13 @@ submissions, where the cue and the fact come apart.
 ### What sixty-seven real submissions show
 
 Sixty-seven UTI free-text submissions are the held-out evaluation set, and are
-now the instrument every real-text number in section 10 comes from. What follows
-is what *reading* them says about the libraries — the cheaper half of their
-value, available before any model touched them.
+now the instrument every real-text number in section 10 comes from.
+**`data/realistic/README.md` is the authority on what the set is, the rules it
+is used under, its label distribution and its limitations** — including the
+label provenance and the one-person voice, both of which bound every number
+scored on it. What follows is only what *reading* the submissions says about the
+libraries: the cheaper half of their value, available before any model touched
+them, and recorded nowhere else.
 
 **The class prior was a good bet.** Hand-labelling fever gives roughly 9 `true`,
 9 `false`, 49 `null` — 13/13/73 against the generator's 15/25/60. Explicit
@@ -979,38 +965,21 @@ register than the libraries deliberately aim at. That creates no label shortcut,
 because register does not track the label; it creates a coverage problem, and an
 aggregate number over the whole set is a number about the tidy register.
 
-**What it can and cannot measure.** Sixty-seven independent observations give
-roughly ±11 points on one overall decisive figure. Per signal it is far thinner —
-about 9 fever positives, 9 haematuria, 6 flank — so any per-signal recall carries
-something like ±30 points, and **fold mode cannot fix it**: there are sixty-seven
-texts and no mechanism makes more. It is a *validity* instrument, not a
-*precision* one. It can show that 83.5% is really 55%, which is the question that
-matters most and which nothing else answers; it cannot rank two models, and it
-must not be used to select anything.
+**It is a validity instrument, not a precision one, and it does not replace the
+held-out fragment split.** Sixty-seven texts and no mechanism makes more, so
+fold mode cannot widen them; the per-signal intervals are wide enough
+(`arch_encoder_training.md` section 11 has the half-widths) that it cannot rank
+two models and must not be used to select anything. What it can do is show that
+83.5% is really 55%, which is the question that matters most and which nothing
+else answers. The fold-pooled test set asks the different question — does the
+model generalise to *ideas* it has not seen, in the register it was trained on —
+and is the only instrument with the effective n to answer it per sub-class. Run
+both.
 
-**Three of six signals have no `false` submission anywhere in the set**
-(`dysuria`, `nocturia`, `urinary_frequency`), so their decisive accuracy *is*
-`true` recall and explicit-denial handling is unmeasured on half the evidence.
-This used to narrow a result; since 2026-08-19 it blocks reading one, and writing
-those submissions is the standing next ticket.
-
-**It does not replace the held-out fragment split.** The fold-pooled test set
-asks whether the model generalises to *ideas* it has not seen in the register it
-was trained on, and is the only instrument with enough effective n to say
-anything per sub-class. The real set asks whether that register and claim density
-transfer at all. Run both.
-
-**Provenance is recorded, and it bounds every number scored on the set.** The
-corpus is committed at `data/realistic/`, whose `README.md` is the authority on
-what it is and the rules it is used under. Two facts belong beside any figure
-taken from it: the submissions are written to read like real patients rather
-than being real patient text, all by one person, so they carry one person's
-voice; and **the labels were proposed by Claude and reviewed by the
-maintainer**, not produced independently of the models being scored. The
-labeller and the model could share a blind spot that no amount of resampling
-would reveal. Arguable cells were surfaced for arbitration rather than resolved
-silently, which makes it weaker evidence than a clinician's labels and not
-worthless evidence.
+**One of the README's limitations changed status here.** Three of six signals
+have no `false` submission anywhere in the set, so their decisive accuracy *is*
+`true` recall. That used to narrow a result; since 2026-08-19 it blocks reading
+one, and writing those submissions is the standing next ticket.
 
 ---
 
@@ -1066,8 +1035,9 @@ two *filler* libraries only):
 | `nocturia` | 7 | 0 / 351 | all 7 |
 | `flank_pain` | 5 | 0 / 243 | all 5 |
 | `haematuria` | 5 | 0 / 225 | all 5 |
+| `recent_uti` | 6 | 0 / 256 | all 6 |
 
-The four untagged signals' effective n equals their fragment count **by claim,
+The five untagged signals' effective n equals their fragment count **by claim,
 not by measurement** (section 3), so their intervals are narrower than the truth.
 The evaluation report computes this table per run and prints the warning above
 its own headline.
@@ -1100,55 +1070,40 @@ training's gains are not gradient steps; and the near-synonym ambiguity resolved
 
 **2026-08-19, the companion run (version 3, the current baseline).** Arm 0 and
 Arm P as above, plus Arm C — Arm 0's trained heads with every margin re-selected
-on Arm P's validation split, no retraining. Write-up:
-`reports/encoder_training/2026-08-19.md`; the declared threshold is re-scorable
-from the JSON with `score-companions`.
+on Arm P's validation split, no retraining. **The numbers are in
+`reports/encoder_training/2026-08-19.md` and the six
+`*.companion_comparison.json` files beside it**; the declared threshold is
+re-scorable from the JSON with `score-companions`. Five findings are facts about
+the *data* rather than about a model, and the design above now rests on them:
 
-| signal | `null→true` real text, Arm 0 → **Arm P** | Arm C | decisive acc, real text | `null` recall, real text | `null→true`, synthetic |
-|---|---|---|---|---|---|
-| `fever` | 84.1% → **4.5%** | 77.6% | 84.4% → 83.3% | 8.6% → 93.1% | 1.70% → 1.45% |
-| `flank_pain` | 87.5% → **17.7%** | 85.3% | 90.0% → 81.4% | 5.3% → 80.0% | 0.28% → 0.84% |
-| `haematuria` | 80.4% → **12.5%** | 65.7% | 100.0% → 81.8% | 6.1% → 87.5% | 2.27% → 2.26% |
-| `nocturia` | 69.0% → **19.7%** | 53.4% | 86.7% → 75.6% | 13.1% → 78.3% | 2.61% → 2.97% |
-| `dysuria` | 72.7% → **23.6%** | 70.9% | 82.9% → 81.1% | 20.0% → 65.5% | 0.84% → 0.77% |
-| `urinary_frequency` | 25.4% → 6.8% | 20.5% | **71.5% → 41.5%** | 36.6% → 91.7% | 2.44% → 1.84% |
-
-Six things follow, and they are what the design above now rests on:
-
-* **Companions fixed the failure they were specified for.** Across the 402
-  real-text cells, invented symptoms fall from ~191 to ~35 of the 268 `null`
-  cells against ~13 decisive cells lost of 134. Arm P is the first model on file
-  to beat the 66.7% all-`null` floor on real text (81.0%), which was recorded in
-  advance as a bonus and explicitly not the success condition.
-* **The declared threshold held on three of three scored criteria**, scored as
-  written before the run: primary (≥20 points on ≥4 of 6 signals — five held),
-  guard (real-text accuracy not below Arm 0 — 36.5% → 81.0%), negative control
-  (synthetic cell moves <2 points — largest 0.60). The DD5 leak gate passed at a
-  0.024 label-mode spread before any of it was read.
+* **Companions fixed the failure they were specified for.** The real-text
+  `null → true` cell — inventing a symptom the patient never mentioned — falls by
+  a large margin on five of six signals, at a small cost in decisive cells. Arm P
+  is the first model on file to beat the all-`null` floor on real text, which was
+  recorded in advance as a bonus and explicitly not the success condition.
 * **The negative control passing is the good outcome, not a weak result.** The
   synthetic test set cannot contain the failure companions were built to fix, so
   a large synthetic gain would have meant a new shortcut rather than a removed
   one. Nothing moved. That is the second time on file that the 67 submissions
   have seen something no amount of generated data could.
 * **It is not a collapse to `null`, and the guard could not have told us that.**
-  268 of 402 cells are `null`, so guard and primary are driven by the same cells
-  and a silent arm would clear both. Decisive-cell accuracy is what rules it out:
-  it stays in the 75–83% band on five of six signals while `null` recall rises
-  from 5–37% to 65–92% everywhere.
+  Two thirds of the real-text cells are `null`, so guard and primary criterion are
+  driven by the same cells and a silent arm would clear both. Decisive-cell
+  accuracy is what rules it out: it holds on five of six signals while `null`
+  recall rises sharply everywhere.
 * **`urinary_frequency` absorbed the entire cost** — the only signal to miss the
-  bar (+18.5) and the only one to lose real detection (71.5% → 41.5% decisive, ~8
-  of 26 cells). A model catching 41.5% of patients reporting they are going more
-  often is not usable for that question. This is the second consecutive run in
-  which the near-synonym pair resolves in nocturia's favour at urinary
-  frequency's expense — 2026-08-17 through joint training, this one through
-  companions. The cause is structural: those 14 pairs are undeclared (section 4),
-  so the two signals draw the fewest companions from each other and each head has
-  never seen the other's language at any label. **Per-line expression is what
-  this needs** (12.3), or the library-level assertion 12.9 proposes.
-* **Arm C captured 16% of Arm P's mean gain** (37.5% real-text accuracy against
-  Arm 0's 36.5%), so the training-data change did the work and margin
-  re-selection was not a substitute — but 16% is free, and no future margin
-  should be selected on a validation split in which this failure cannot occur.
+  bar and the only one to lose real detection, badly enough that it is not usable
+  for that question. This is the second consecutive run in which the near-synonym
+  pair resolves in nocturia's favour at urinary frequency's expense — 2026-08-17
+  through joint training, this one through companions. The cause is structural:
+  those 14 pairs are undeclared (section 4), so the two signals draw the fewest
+  companions from each other and each head has never seen the other's language at
+  any label. **Per-line expression is what this needs** (12.3), or the
+  library-level assertion 12.9 proposes.
+* **Margin re-selection captured a small share of Arm P's gain**, so the
+  training-data change did the work and Arm C was not a substitute — but it is
+  free, and no future margin should be selected on a validation split in which
+  this failure cannot occur.
 
 **What 2026-08-19 does not establish**, beyond the standing limits above: every
 margin in it was selected on a sibling fold's test clusters, so no absolute
@@ -1168,7 +1123,7 @@ do not change register.
 4. **Train a `recent_uti_present` head**, without which nothing is deployable.
 5. **Re-run or retire the outstanding A1/A2/A3 sweep** — its datasets are version
    2 and non-comparable.
-6. **Tag the four untagged library sets**, prioritised by the near-duplicate
+6. **Tag the five untagged library sets**, prioritised by the near-duplicate
    rates in section 3.
 
 ### Effective sample size: count clusters, not examples
@@ -1191,10 +1146,14 @@ or 1.0, carries roughly ±30 points, and cannot separate two models.
 
 **Fold mode is the mitigation and it is built.** Pooling five folds makes every
 cluster a test cluster exactly once, so a sub-class's aggregate test set is its
-whole library — 35 to 63 clusters. Note what that is worth and no more: effective
-n rises 7- to 17-fold, but uncertainty goes as 1/√n, so ±30 points becomes about
-±8. That is the difference between a number that can carry a conclusion and one
-that cannot — 0.6 ±0.08 is a finding, 0.5 ±0.30 is noise. Folds create no new
+whole library rather than the ~15% of it a single split holds — 19 to 63 clusters
+today against a two-to-nine-cluster slice. Note what that is worth and no more:
+effective n rises about sevenfold, and uncertainty goes as 1/√n, so an interval
+near ±30 points comes down to roughly ±11. That is the difference between a
+number that can carry a conclusion and one that cannot. **The `eff n` printed
+beside every slice in the report is the authority**; the cluster range above is
+the current libraries' size, not a property of the method, and it moves whenever
+one is tagged or grown. Folds create no new
 ideas, so section 9 applies unchanged and this remains a library-size problem
 whose real fix is more fragments.
 
@@ -1231,24 +1190,24 @@ python -m scripts.synthetic_data.noise --in-dir <tree> --out-dir <tree>-noisy \
     --rate 0.02 --seed 42
 ```
 
-**The constraints worth knowing:**
+**The constraints worth knowing.** The generator validates its own flags and
+refuses to start rather than failing partway through a 10,000-example run —
+`--help` and the error messages are the authority on the rules. What is not
+obvious from a help string is *why* they exist:
 
-* `--fragment-counts` weights must sum to 1.0, every count must be at least 2,
-  and the largest may not exceed the number of distinct sources the split can
-  serve (section 5). The generator refuses to start rather than failing partway
-  through a 10,000-example run. **The mix applies identically to every label
-  class and there is deliberately no per-class version** — nor of
-  `--companion-share`, and for the same reason.
-* `--companion-share` defaults to 0.0 and is skipped entirely there. Above zero,
-  a run whose split has no library declared `null_on` this signal refuses rather
-  than quietly producing the zero-share dataset under a non-zero flag. Read
-  `companions.count_by_label_mode` afterwards — that is the check, not an
+* **There is deliberately no per-label-class version of `--fragment-counts` or
+  `--companion-share`.** Both are the safety argument of section 5: a mix that
+  differed by class would make length or companion density a proxy for the
+  label.
+* **`--companion-share` above zero refuses a split with no eligible library**
+  rather than quietly producing the zero-share dataset under a non-zero flag.
+  Read `companions.count_by_label_mode` afterwards — that is the check, not an
   optional extra.
-* `--emit-signals` defaults to `primary` and is byte-identical to the
+* **`--fold` and the salt require `--folds`.** `--fold 3` alone would silently
+  generate the default bands, and salting the default bands would move the split
+  of every dataset generated so far.
+* **`--emit-signals` defaults to `primary`** and is byte-identical to the
   pre-flag generator. `all` produces a tree nothing downstream consumes yet.
-* `--fold` and the salt may not be given without `--folds`: `--fold 3` alone
-  would silently generate the default bands, and salting the default bands would
-  move the split of every dataset generated so far. `--folds` must be at least 3.
 * **An arm is 105 invocations** (seven signals × five folds × three splits) and
   the two arms differ in `--companion-share` and in **nothing else** — same seed,
   counts, fold triple, salt and libraries. If anything else differs the
@@ -1282,6 +1241,16 @@ only and adds no ideas at all.
 Hand-written templates with slots (`I {verb} {adjective} {synonym}`) expanded
 into fragments. `documentation/encoder_plans/procedural_fragment_generation_implementation.md`
 is the plan of record.
+
+**Read that plan for what it now covers, not for what this subsection says.** It
+was rescoped to build 12.1 and 12.3 together — procedurally generated
+*multi-symptom* fragments — and two of the rules below deliberately do not bind
+there: the cluster key is the asserted label content rather than the template ID
+(because each expansion carries a different label, so hashing the frame would
+collapse a library into two clusters), and the 40-templates-per-library floor is
+replaced by a cap on a library's share of the decisive draw. The rules below
+remain right for the case they were written for — templating one library whose
+lines all share a label, which is where this should start.
 
 **The idea is sound only if the unit of work and the unit of splitting both
 become the template rather than the fragment.** Templating multiplies *surface
@@ -1369,16 +1338,17 @@ letters, keyboard-neighbour substitutions, transpositions, dropped spaces,
 missing apostrophes, folded case. The libraries' error profile is whatever a
 handful of authors produced while concentrating, which is much cleaner than what
 a patient types into a phone at eleven at night.
+`documentation/encoder_plans/random_error_generation_implementation.md` is the
+plan of record and carries the operation list, the rejected alternatives and the
+task breakdown. Four things decide whether this is safe or useful:
 
 **It is post-processing over the JSONL, not a generator flag.** The generator
 stays byte-identical, so every dataset generated so far is still reproducible;
-the pass unit-tests against fixed strings with no manifest, pools or ruleset; one
-generation run yields both a clean and a noisy tree from identical fragments,
+one generation run yields both a clean and a noisy tree from identical fragments,
 which is what the experiment needs; and deduplication keeps operating on clean
 text, so damage can never be what makes two identical examples look distinct. It
 works on a **directory with filenames preserved**, because the training tooling
-locates data by `--data-dir` plus a fixed filename pattern — a
-`...train.noisy.jsonl` beside the clean file would be invisible to it.
+locates data by `--data-dir` plus a fixed filename pattern.
 
 **The label-safety question is the whole of the risk.** This is the one step that
 edits text after the label is fixed, so for the first time a mechanical step
@@ -1389,20 +1359,11 @@ and the null axes hang on short words like `my`, `his`, `had` and `was`. The
 decision is a **frozen lexicon enforced in both directions** — never damage a
 frozen token and never *produce* one, redrawing instead — built from structural
 words (negation, person, tense, modality) plus the signal's own vocabulary out of
-`SIGNAL_LEXICONS`, which is why it covers all seven signals rather than the
-fever-only stopgap originally proposed. Shape-preserving operations (apostrophes,
-case) may apply to anything, because they cannot change which word a token is,
-and they carry roughly half the weight because they are what a phone keyboard
-actually produces. Rejection is tested against the lexicon only and **nothing in
-that test can see the label**, so rejection rates vary by word and never by class.
-
-Two alternatives were rejected, and one keeps coming back. **Accepting the label
-noise and quantifying it** is defensible arithmetic but leaves permanently wrong
-labels in the data with nothing recording which ones — the exact failure section
-2 exists to make impossible. **Editing only words of five characters or more**
-protects almost everything with no lexicon, but real typists hit short words too,
-so the model would learn that short words are always spelled correctly: a new
-artefact traded for an old one.
+`SIGNAL_LEXICONS`, which is why it covers all seven signals. Shape-preserving
+operations (apostrophes, case) may apply to anything, because they cannot change
+which word a token is. Rejection is tested against the lexicon only and
+**nothing in that test can see the label**, so rejection rates vary by word and
+never by class.
 
 **The rate must not vary by label and the sidecar proves it** — a `noise` block
 reports edits per hundred words by label and by label mode, exactly as the
@@ -1435,29 +1396,34 @@ half of the problem and should be described that way. The cheapest operations �
 missing apostrophes and casing — are the ones most worth having, and section 8
 already records a case where casing alone separated a whole library perfectly.
 
-### 12.7 Sequencing
+### 12.7 Order of work
 
-1. ~~Fragments for the blocked `fever_null` libraries, and the proof-of-concept
-   run.~~ **Done.**
-2. ~~Fold mode and the sidecar provenance block.~~ **Done** (sections 6, 7).
-3. ~~Label vectors and declared silence with the lint check.~~ **Done at library
-   level** (sections 4, 7, 8). Per-line vectors are not built.
-4. ~~Companions, and the two-arm measurement.~~ **Done** — built, generated,
-   trained and scored on 2026-08-19 (section 10). This is the step the list
-   existed to reach.
-5. ~~The random-error pass.~~ **Built** (12.6); **the 2×2 has not run**, so the
-   knob exists and nobody can yet decide whether to turn it.
-6. **Fix `urinary_frequency`** — 12.9's diagnostic first, then either a
-   library-level cross-signal assertion or 12.3.
-7. **Write the missing `false` submissions**, which now block reading a result
-   rather than merely narrowing one.
-8. Template the filler libraries (12.1) and add the templates-per-library lint
+**Section 10's "Outstanding" is the live list**; this subsection is only what
+the order depends on. Steps 1 to 5 of the original sequence — the blocked
+`fever_null` libraries and the proof-of-concept run, fold mode and the sidecar
+provenance block, library-level label vectors and declared silence, companions
+and the two-arm measurement, and the random-error pass — are all built. The
+companion step is the one the list existed to reach.
+
+Section 10's outstanding items come first — fixing `urinary_frequency` and
+writing the missing `false` submissions both block reading a result. After
+those, the forward plan runs in the order its dependencies force:
+
+1. **Run the noise 2×2** (12.6). The knob exists and nobody can yet decide
+   whether to turn it.
+2. Template the filler libraries (12.1) and add the templates-per-library lint
    report. Note this does *not* raise the fragment-count ceiling: that counts
    *sources*, not their size (section 5).
-9. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
+3. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
    library format.
-10. Use `--emit-signals all` (12.2), and template the clinical libraries once
-    there are enough distinct templates per library for the split arithmetic.
+4. Use `--emit-signals all` (12.2), and template the clinical libraries once
+   there are enough distinct templates per library for the split arithmetic.
+
+**The step numbers changed** when the completed steps came off this list. Plans
+written against the old numbering map on as: old step 5 (templated filler) is
+item 2, old step 7 (multi-symptom and out-of-scope fragments) is item 3, and old
+step 8 (templated clinical libraries) is item 4. Anything cited as an old step 1
+to 4 is built.
 
 **Writing the `true`/`null` labelling policy down (section 9) belongs with any
 library work**, not after it. It is the same kind of work as declared silence —
@@ -1474,36 +1440,27 @@ whether generated data was where the limit is. That has now been answered twice 
 2026-08-17 said the data was the limit, 2026-08-19 said a data change fixed it —
 so the constraint on the remaining steps is compute and attention rather than
 missing evidence. What has not changed is that the 67 submissions are the only
-instrument that has ever detected either failure, and every step below is
+instrument that has ever detected either failure, and every step above is
 measured against them.
 
-### 12.8 What is landed and what is still blocked
+### 12.8 Two things that surprise people
 
-`documentation/encoder_plans/multi_symptom_recombination_implementation.md` is
-the record of the companion ticket; the folder holds the other encoder plans.
+`documentation/encoder_plans/` holds the plans of record for the steps above;
+`multi_symptom_recombination_implementation.md` is the companion ticket's.
+Section 10 says what exists and what is outstanding. Two consequences of the
+design are worth stating because they are counter-intuitive from here.
 
-**Landed:** the condition-layer folder restructure (dataset-neutral in fact, not
-only in principle — splits regenerated byte-identical after the move); the
-generalised filler lint; six single-signal runs; the realistic held-out
-evaluation; `merge-folds`; joint multi-head training with one shared epoch
-criterion and independent per-head margins; the three-arm `joint-compare` report;
-the `null_on` declaration pass; `--companion-share`; `--emit-signals all`; the
-seventh signal's libraries; and the noise pass.
-
-**Still blocked:** per-line label vectors (12.3), cluster-tagging the four
-untagged library sets, and a `recent_uti_present` head.
-
-**The one thing that surprises people about the merge.** Joint training on merged
-single-signal datasets needs *no* part of 12.5. `fold_bucket` is a pure hash of
-the cluster key and salt with no knowledge of signals, so cluster disjointness
-survives concatenation; and each example still carries only its own signal's key,
-which section 7 defines as "no claim, mask the loss" rather than as a `null`
-assertion. No silence is declared, so none needs checking. **The exception is the
-structural nulls**: labelling one filler-only example `null` for six signals *is*
-a silence assertion about the filler libraries, and the generalised filler lint
-is what makes it checkable. Note what that licenses — the filler *libraries* are
-silent, which is exactly the guarantee the union needs, and it says nothing about
-whether a *signal* library is silent about the others.
+**Joint training on merged single-signal datasets needs *no* part of 12.5.**
+`fold_bucket` is a pure hash of the cluster key and salt with no knowledge of
+signals, so cluster disjointness survives concatenation; and each example still
+carries only its own signal's key, which section 7 defines as "no claim, mask
+the loss" rather than as a `null` assertion. No silence is declared, so none
+needs checking. **The exception is the structural nulls**: labelling one
+filler-only example `null` for six signals *is* a silence assertion about the
+filler libraries, and the generalised filler lint is what makes it checkable.
+Note what that licenses — the filler *libraries* are silent, which is exactly the
+guarantee the union needs, and it says nothing about whether a *signal* library
+is silent about the others.
 
 **Structural nulls should shrink as 12.2 and 12.3 grow.** They are the least
 realistic example type in the dataset: patients rarely submit free text with no
