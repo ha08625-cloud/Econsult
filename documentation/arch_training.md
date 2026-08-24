@@ -1269,6 +1269,16 @@ removes the warning light rather than the fault. The lint should report template
 per library alongside raw fragment counts, so a dataset cannot *look* richer than
 its template count says it is.
 
+**A second, different mechanism has been proposed under this heading and is
+planned separately**: expanding the *existing* library lines by swapping parts
+of them out ("fever" for "temperature", "I've had" for "I have had") rather than
+authoring new templates. It shares the surface-forms-not-ideas arithmetic above,
+but its purpose is decorrelating vocabulary from label — the fault section 8
+records twice and cannot check for — rather than volume, so it is measured
+differently and sequenced differently.
+`documentation/encoder_plans/lexical_variant_expansion_provisional.md` is the
+provisional plan.
+
 ### 12.2 Multi-signal libraries — built, not measured
 
 The libraries exist for all seven signals and `--emit-signals all` emits a key
