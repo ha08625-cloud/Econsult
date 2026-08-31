@@ -30,9 +30,13 @@ from scripts.training_gui.catalogue import (
 )
 from scripts.training_gui.gitops import (
     GitOpsError,
+    GitResult,
+    GitStep,
+    _porcelain_paths,
     branch_name,
     commit_message,
     compare_url,
+    default_runner,
     save_run_to_branch,
     update_from_github,
 )
@@ -43,8 +47,11 @@ from scripts.training_gui.runner import (
     STATUS_RUNNING,
     STATUS_STOPPED,
     STATUS_SUCCEEDED,
+    ChangedPath,
+    RunHandle,
     Runner,
     RunnerBusy,
+    RunnerError,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -861,6 +868,45 @@ def test_update_refuses_a_reports_only_dirty_tree_with_the_branch_message(tmp_pa
     assert git.commands == ["git status"]
 
 
+def test_a_modified_file_keeps_its_first_character(tmp_path):
+    """``git status --porcelain`` puts the status in the first two columns, so a
+    modified-not-staged line begins with a space. Trimming it upstream shifted
+    every path left by one, which named ``eports/x`` in a guard message and put a
+    reports-only dirty tree on the wrong branch of the update message."""
+    git = FakeGit()
+    git.responses[("git", "status")] = (0, "M reports/encoder_training/2026-08-31/summary.json")
+
+    result = update_from_github(repo_root=tmp_path, run_command=git)
+
+    assert result.blocking_paths == ("reports/encoder_training/2026-08-31/summary.json",)
+    assert "Save this run to a branch first" in result.message
+
+
+def test_the_real_git_runner_does_not_trim_the_porcelain_status_column(tmp_path):
+    """The same bug at its source: a runner that ``strip()``s its output eats the
+    leading column. Against a real repository, because that is the only place the
+    leading space actually exists."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for argv in (
+        ["git", "init", "-q"],
+        ["git", "config", "user.email", "t@example.com"],
+        ["git", "config", "user.name", "t"],
+    ):
+        subprocess.run(argv, cwd=repo, check=True, capture_output=True)
+    tracked = repo / "tracked.txt"
+    tracked.write_text("one\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-qm", "first"], cwd=repo, check=True, capture_output=True)
+    tracked.write_text("two\n", encoding="utf-8")
+
+    exit_code, output = default_runner(repo)(["git", "status", "--porcelain"])
+
+    assert exit_code == 0
+    assert output.startswith(" M ")
+    assert list(_porcelain_paths(output)) == ["tracked.txt"]
+
+
 def test_update_refuses_other_dirt_with_a_commit_or_stash_message(tmp_path):
     git = FakeGit()
     git.responses[("git", "status")] = (0, " M app/main.py\n")
@@ -915,3 +961,408 @@ def test_compare_url_handles_both_remote_forms(remote):
 )
 def test_compare_url_returns_none_rather_than_guessing(remote):
     assert compare_url(remote, "training/x") is None
+
+
+# ---------------------------------------------------------------------------
+# the HTTP layer
+#
+# TestClient against fakes: no subprocess, no repository, no network. What is
+# actually being tested here is the boundary DD4 describes -- that an id and a
+# set of enumerated strings are the only things a request can influence -- so the
+# id and parameter rejections are asserted at this layer as well as in the
+# catalogue, and each one also asserts the runner was never reached.
+# ---------------------------------------------------------------------------
+
+
+try:
+    from fastapi.testclient import TestClient
+
+    from scripts.training_gui.server import GitOps, create_app
+except ImportError:  # pragma: no cover - a machine without the console's deps
+    TestClient = None
+    GitOps = None
+    create_app = None
+
+requires_fastapi = pytest.mark.skipif(
+    TestClient is None, reason="fastapi and httpx are needed for the HTTP tests"
+)
+
+
+class FakeRunner:
+    """Mirrors the real runner's surface, resolving argv exactly as it does.
+
+    ``start`` running the catalogue's own ``resolve`` is the point: the argv the
+    fake records is the argv a real run would execute, so an assertion about what
+    the runner received is an assertion about what would have run.
+    """
+
+    def __init__(self, manifest=None):
+        self.manifest = manifest or {"status": STATUS_IDLE, "run_id": None}
+        self.started = []
+        self.argvs = None
+        self.busy = False
+        self.stopped = False
+        self.log_reads = []
+        self.changed = ()
+
+    def start(self, entry, values):
+        if self.busy:
+            raise RunnerBusy("run 20260831-120000-finetune is already running")
+        self.started.append((entry.id, dict(values)))
+        self.argvs = [list(argv) for argv in resolve(entry, values)]
+        return RunHandle(
+            run_id="20260831-120000-" + entry.id,
+            entry_id=entry.id,
+            log_path=Path("log"),
+            manifest_path=Path("manifest"),
+        )
+
+    def stop(self):
+        if not self.busy:
+            raise RunnerError("no run is active")
+        self.stopped = True
+
+    def status(self):
+        return self.manifest
+
+    def read_log(self, run_id, offset=0):
+        self.log_reads.append((run_id, offset))
+        return "tail\n", offset + 5
+
+    def changed_paths(self):
+        return self.changed
+
+
+class FakeGitOps:
+    def __init__(self, save_result=None, update_result=None):
+        self.save_result = save_result or GitResult(ok=True, message="Saved.")
+        self.update_result = update_result or GitResult(ok=True, message="Already up to date.")
+        self.saved = []
+        self.updated = 0
+
+    def save_run_to_branch(self, manifest):
+        self.saved.append(manifest)
+        return self.save_result
+
+    def update_from_github(self):
+        self.updated += 1
+        return self.update_result
+
+
+def client_for(runner=None, git=None, catalogue=None):
+    runner = runner or FakeRunner()
+    git = git or FakeGitOps()
+    app = create_app(runner, catalogue or load_catalogue(), git)
+    return TestClient(app), runner, git
+
+
+@requires_fastapi
+def test_the_catalogue_endpoint_returns_every_committed_entry():
+    client, _, _ = client_for()
+
+    body = client.get("/api/catalogue").json()
+
+    committed = load_catalogue()
+    assert [entry["id"] for entry in body["runs"]] == [entry.id for entry in committed]
+    finetune = next(entry for entry in body["runs"] if entry["id"] == "finetune")
+    assert [parameter["name"] for parameter in finetune["parameters"]] == ["signal", "base_model"]
+    assert finetune["parameters"][0]["default"] == "fever_present"
+    # The command line shown before the click is the one that would run.
+    assert finetune["commands"] == [
+        "python -u -m scripts.encoder_training finetune --folds 5 "
+        "--signal fever_present --base-model roberta-base"
+    ]
+
+
+@requires_fastapi
+def test_an_unknown_id_is_a_404_and_never_reaches_the_runner():
+    client, runner, _ = client_for()
+
+    response = client.post("/api/run", json={"id": "rm-rf", "parameters": {}})
+
+    assert response.status_code == 404
+    assert runner.started == []
+
+
+@requires_fastapi
+def test_a_parameter_outside_the_choices_is_a_400_and_never_reaches_the_runner():
+    client, runner, _ = client_for()
+
+    response = client.post(
+        "/api/run",
+        json={"id": "finetune", "parameters": {"signal": "fever_present; rm -rf /"}},
+    )
+
+    assert response.status_code == 400
+    assert runner.started == []
+
+
+@requires_fastapi
+def test_a_parameter_naming_nothing_declared_is_a_400():
+    client, runner, _ = client_for()
+
+    response = client.post(
+        "/api/run", json={"id": "finetune", "parameters": {"output_dir": "/etc"}}
+    )
+
+    assert response.status_code == 400
+    assert runner.started == []
+
+
+@requires_fastapi
+def test_a_non_string_parameter_value_is_a_400():
+    client, runner, _ = client_for()
+
+    response = client.post("/api/run", json={"id": "finetune", "parameters": {"signal": 7}})
+
+    assert response.status_code == 400
+    assert runner.started == []
+
+
+@requires_fastapi
+def test_a_valid_body_starts_the_run_and_hands_the_runner_the_resolved_argv():
+    client, runner, _ = client_for()
+
+    response = client.post(
+        "/api/run",
+        json={
+            "id": "finetune",
+            "parameters": {"signal": "dysuria_present", "base_model": "bert-base-uncased"},
+        },
+    )
+
+    assert response.status_code == 202
+    assert runner.argvs == [
+        [
+            "-m",
+            "scripts.encoder_training",
+            "finetune",
+            "--folds",
+            "5",
+            "--signal",
+            "dysuria_present",
+            "--base-model",
+            "bert-base-uncased",
+        ]
+    ]
+    assert response.json()["run_id"] == "20260831-120000-finetune"
+
+
+@requires_fastapi
+def test_an_omitted_parameter_takes_its_declared_default():
+    client, runner, _ = client_for()
+
+    client.post("/api/run", json={"id": "finetune", "parameters": {}})
+
+    assert "--signal" in runner.argvs[0]
+    assert runner.argvs[0][runner.argvs[0].index("--signal") + 1] == "fever_present"
+
+
+@requires_fastapi
+def test_starting_a_second_run_while_one_is_active_is_a_409():
+    runner = FakeRunner()
+    runner.busy = True
+    client, _, _ = client_for(runner=runner)
+
+    response = client.post("/api/run", json={"id": "smoke-cuda", "parameters": {}})
+
+    assert response.status_code == 409
+
+
+@requires_fastapi
+def test_status_reports_the_step_number_and_the_current_command():
+    manifest = {
+        "run_id": "20260831-120000-finetune",
+        "entry_name": "Arm B: fine-tune one signal",
+        "status": STATUS_RUNNING,
+        "steps": [
+            {"index": 1, "command": "python -u -m a", "status": STATUS_SUCCEEDED, "exit_code": 0},
+            {"index": 2, "command": "python -u -m b", "status": STATUS_RUNNING, "exit_code": None},
+            {"index": 3, "command": "python -u -m c", "status": "pending", "exit_code": None},
+        ],
+    }
+    client, _, _ = client_for(runner=FakeRunner(manifest))
+
+    body = client.get("/api/status").json()
+
+    assert body["status"] == STATUS_RUNNING
+    assert (body["step_index"], body["step_count"]) == (2, 3)
+    assert body["command"] == "python -u -m b"
+
+
+@requires_fastapi
+def test_status_is_idle_with_no_run():
+    client, _, _ = client_for()
+
+    body = client.get("/api/status").json()
+
+    assert body["status"] == STATUS_IDLE
+    assert body["step_index"] is None
+
+
+@requires_fastapi
+def test_the_log_endpoint_passes_the_offset_through_and_returns_the_next_one():
+    runner = FakeRunner({"run_id": "20260831-120000-finetune", "status": STATUS_RUNNING})
+    client, _, _ = client_for(runner=runner)
+
+    body = client.get("/api/log", params={"offset": 120}).json()
+
+    assert runner.log_reads == [("20260831-120000-finetune", 120)]
+    assert body == {"text": "tail\n", "next_offset": 125, "run_id": "20260831-120000-finetune"}
+
+
+@requires_fastapi
+def test_the_log_endpoint_is_empty_rather_than_an_error_before_any_run():
+    client, _, _ = client_for()
+
+    assert client.get("/api/log?offset=0").json() == {
+        "text": "",
+        "next_offset": 0,
+        "run_id": None,
+    }
+
+
+@requires_fastapi
+def test_stopping_with_nothing_running_is_a_409():
+    client, runner, _ = client_for()
+
+    response = client.post("/api/stop")
+
+    assert response.status_code == 409
+    assert not runner.stopped
+
+
+@requires_fastapi
+def test_stopping_an_active_run_reaches_the_runner():
+    runner = FakeRunner()
+    runner.busy = True
+    client, _, _ = client_for(runner=runner)
+
+    assert client.post("/api/stop").status_code == 200
+    assert runner.stopped
+
+
+@requires_fastapi
+def test_changes_lists_what_the_run_wrote():
+    runner = FakeRunner()
+    runner.changed = (
+        ChangedPath(path="reports/encoder_training/2026-08-31-noise/summary.json", status="??"),
+        ChangedPath(path="models/fever_present/config.json", status="M"),
+    )
+    client, _, _ = client_for(runner=runner)
+
+    body = client.get("/api/changes").json()
+
+    assert [item["path"] for item in body["changed"]] == [
+        "reports/encoder_training/2026-08-31-noise/summary.json",
+        "models/fever_present/config.json",
+    ]
+    assert body["changed"][0]["untracked"] is True
+    assert body["changed"][1]["untracked"] is False
+
+
+@requires_fastapi
+def test_save_branch_hands_the_manifest_over_and_returns_the_branch():
+    manifest = run_manifest()
+    git = FakeGitOps(
+        save_result=GitResult(
+            ok=True,
+            message="Saved to branch training/2026-08-31-x.",
+            branch="training/2026-08-31-x",
+            compare_url="https://github.com/o/r/compare/training/2026-08-31-x?expand=1",
+        )
+    )
+    client, _, _ = client_for(runner=FakeRunner(manifest), git=git)
+
+    body = client.post("/api/save-branch").json()
+
+    assert git.saved == [manifest]
+    assert body["ok"] is True
+    assert body["branch"] == "training/2026-08-31-x"
+    assert body["compare_url"].endswith("?expand=1")
+
+
+@requires_fastapi
+def test_save_branch_surfaces_the_failed_step_raw_and_invents_no_success():
+    git = FakeGitOps(
+        save_result=GitResult(
+            ok=False,
+            message="git push failed.",
+            steps=[
+                GitStep(argv=("git", "fetch", "origin"), exit_code=0, output=""),
+                GitStep(
+                    argv=("git", "push", "-u", "origin", "training/x"),
+                    exit_code=128,
+                    output="error: failed to push some refs",
+                ),
+            ],
+            branch="training/x",
+        )
+    )
+    client, _, _ = client_for(runner=FakeRunner(run_manifest()), git=git)
+
+    body = client.post("/api/save-branch").json()
+
+    assert body["ok"] is False
+    failed = [step for step in body["steps"] if step["exit_code"] != 0]
+    assert failed[-1]["output"] == "error: failed to push some refs"
+    assert failed[-1]["argv"] == ["git", "push", "-u", "origin", "training/x"]
+
+
+@requires_fastapi
+def test_save_branch_with_no_run_is_a_409():
+    client, _, git = client_for()
+
+    assert client.post("/api/save-branch").status_code == 409
+    assert git.saved == []
+
+
+@requires_fastapi
+def test_save_branch_while_the_run_is_still_going_is_a_409():
+    manifest = run_manifest(status=STATUS_RUNNING)
+    client, _, git = client_for(runner=FakeRunner(manifest))
+
+    assert client.post("/api/save-branch").status_code == 409
+    assert git.saved == []
+
+
+@requires_fastapi
+def test_update_carries_no_payload_and_returns_the_result():
+    git = FakeGitOps(update_result=GitResult(ok=False, message="git fetch origin failed."))
+    client, _, _ = client_for(git=git)
+
+    body = client.post("/api/update").json()
+
+    assert git.updated == 1
+    assert body == {
+        "ok": False,
+        "message": "git fetch origin failed.",
+        "steps": [],
+        "branch": None,
+        "compare_url": None,
+        "nothing_to_commit": False,
+        "blocking_paths": [],
+    }
+
+
+@requires_fastapi
+def test_the_page_is_served_at_the_root():
+    client, _, _ = client_for()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Encoder training console" in response.text
+
+
+@requires_fastapi
+def test_no_endpoint_takes_a_path_or_a_branch_name_from_the_browser():
+    """DD4 as a property of the app: the only body field any endpoint reads
+    besides ``id`` is ``parameters``, and the git routes read nothing at all."""
+    client, runner, git = client_for()
+
+    client.post("/api/update", json={"branch": "main", "force": True})
+    client.post("/api/save-branch", json={"branch": "../../etc"})
+
+    assert git.updated == 1
+    assert git.saved == []

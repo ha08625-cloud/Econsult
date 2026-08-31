@@ -123,7 +123,10 @@ def default_runner(repo_root: Path | str = REPO_ROOT) -> CommandRunner:
             text=True,
             check=False,
         )
-        return completed.returncode, (completed.stdout + completed.stderr).strip()
+        # rstrip only. `git status --porcelain` puts the status in the first two
+        # columns, so a modified-not-staged file's line begins with a space --
+        # and stripping that shifts every path in the output left by one.
+        return completed.returncode, (completed.stdout + completed.stderr).rstrip()
 
     return run
 
@@ -142,7 +145,15 @@ def _porcelain_paths(output: str) -> Iterator[str]:
     for line in output.splitlines():
         if not line.strip():
             continue
-        path = line[3:] if len(line) > 3 else ""
+        # XY<space>path. Tolerate a line whose leading status column has already
+        # been trimmed by something upstream: reading "M reports/x" as a path of
+        # "eports/x" turns a correct guard message into a wrong one.
+        if line[2:3] == " ":
+            path = line[3:]
+        elif line[1:2] == " ":
+            path = line[2:]
+        else:
+            continue
         if not path:
             continue
         for part in path.split(" -> "):
