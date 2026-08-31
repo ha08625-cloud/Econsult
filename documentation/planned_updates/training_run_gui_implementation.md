@@ -1,13 +1,5 @@
 # Implementation plan: a local run console for encoder training
 
-Expands `training_run_gui_provisional.md` after review. The provisional plan's
-scope and DD1–DD9 stand except where amended below; read it first for *why* the
-console exists. This document is the buildable version: it corrects four claims
-about the repository that the provisional plan got wrong, settles the five open
-questions, and splits the work into four tasks of one chat each.
-
----
-
 # Scope
 
 **In scope**
@@ -22,7 +14,7 @@ questions, and splits the work into four tasks of one chat each.
   branch with one click, and being handed the branch name and a compare link.
 - `git pull --ff-only` from the page, guarded against a dirty tree.
 
-**Out of scope, unchanged from the provisional plan**
+**Out of scope**
 
 - Interpreting a result. The console shows that a run finished and where the JSON
   landed, never what the JSON says.
@@ -46,7 +38,7 @@ tools/train-gui.bat
 tests/test_training_gui.py
 ```
 
-**Key files (modified)**
+**Key files (modified) **
 
 `requirements-ml.txt`, `documentation/architecture.md`,
 `documentation/file_structure.md`, `documentation/arch_testing.md`,
