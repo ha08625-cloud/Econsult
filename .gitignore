@@ -11,3 +11,4 @@ data/synthetic/generated/
 # Copied from app/core/ at build time (Dockerfile) and by the CI type check;
 # never committed here.
 frontend/consultation_outcomes.json
+gpu_queue/runner.log

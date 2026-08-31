@@ -1,0 +1,25 @@
+# Closes section 6 of reports/encoder_training/2026-08-31-noise-2x2.md:
+# does a model trained at one damage rate cope with another?
+#
+# Rename to 01-noise-transfer.sh (drop .example) to arm it.
+
+set -euo pipefail
+
+# The comparability constraint: the other thirteen cells ran on 5.14.1.
+pip install -q 'transformers==5.14.1'
+python -c "import transformers; assert transformers.__version__ == '5.14.1'"
+
+for r in 06 12; do
+  python -m scripts.encoder_training finetune \
+    --signal fever_present \
+    --data-dir   data/synthetic/generated/noise/fever-r03 \
+    --test-dir   data/synthetic/generated/noise/fever-r${r} \
+    --report-dir reports/encoder_training/noise/r03-on-r${r} \
+    --models-dir models/encoder-noise/r03-on-r${r} \
+    --train-seed 1234 --determinism strict \
+    --no-weights --no-probe --no-baselines --no-control
+done
+
+echo "--- results ---"
+grep -hE '^\| `arm_b_finetune` \| finetune' \
+  reports/encoder_training/noise/r03-on-r{06,12}/fever_present.arm_b_finetune.md

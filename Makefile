@@ -37,6 +37,20 @@
 #
 # The sandbox is never deployed to Railway or used in CI.
 # ---------------------------------------------------------------------------
+#
+# Overnight GPU job queue (local development only — see gpu_queue/README.md)
+#
+# Drain the queue and exit:
+#     make queue-run
+#
+# Stay up and wait for new jobs (add them from another terminal):
+#     make queue-watch
+#
+# What ran last night:
+#     make queue-status
+#
+# The queue is never deployed to Railway or used in CI.
+# ---------------------------------------------------------------------------
 
 include .env
 export
@@ -84,3 +98,17 @@ sandbox-check:
 	     --cert   sandbox/certs/sandbox_client.pem \
 	     --key    sandbox/certs/sandbox_client.key \
 	     https://localhost:8700/health
+
+.PHONY: queue-run queue-watch queue-status
+
+queue-run:
+	./gpu_queue/run.sh
+
+queue-watch:
+	./gpu_queue/run.sh --watch
+
+queue-status:
+	@echo "queued:"; ls gpu_queue/jobs/*.sh 2>/dev/null || echo "  (none)"
+	@echo "running:"; ls gpu_queue/running/*.sh 2>/dev/null || echo "  (none)"
+	@echo "done:"; ls gpu_queue/done/*.sh 2>/dev/null || echo "  (none)"
+	@echo "failed:"; ls gpu_queue/failed/*.sh 2>/dev/null || echo "  (none)"
