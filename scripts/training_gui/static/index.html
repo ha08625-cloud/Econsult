@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Encoder training console</title>
+<!-- Inline empty icon: the browser asks for /favicon.ico otherwise, and a 404 in
+     the console of a page whose job is showing errors is a distraction. -->
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --ink: #1c1c1c;
+    --muted: #5f6b7a;
+    --line: #d8dee6;
+    --panel: #ffffff;
+    --page: #f4f6f8;
+    --good: #0f7b3f;
+    --bad: #a3160b;
+    --neutral: #46536a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--page);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--muted); }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  .run { border-top: 1px solid var(--line); padding: 14px 0; }
+  .run:first-of-type { border-top: none; padding-top: 0; }
+  .run-head { display: flex; gap: 16px; align-items: baseline; justify-content: space-between; }
+  .run-name { font-weight: 600; }
+  .run-desc { color: var(--muted); margin: 4px 0 10px; max-width: 70ch; }
+  .params { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+  .param { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+  select, button { font: inherit; }
+  select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff;
+           color: var(--ink); }
+  button {
+    padding: 6px 14px; border: 1px solid var(--line); border-radius: 4px;
+    background: #eef1f5; color: var(--ink); cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: #e2e7ee; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button.stop { background: #fdeceb; border-color: #f0b7b2; color: var(--bad); }
+  pre, code, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+  }
+  .commands { margin: 0; padding: 0; list-style: none; }
+  .commands li {
+    background: #f7f9fb; border: 1px solid var(--line); border-radius: 4px;
+    padding: 6px 8px; margin-bottom: 4px; overflow-x: auto; white-space: pre;
+  }
+  .statusline { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+  .verdict { font-size: 22px; font-weight: 700; letter-spacing: .02em; }
+  .verdict.succeeded { color: var(--good); }
+  .verdict.failed { color: var(--bad); }
+  .verdict.stopped, .verdict.interrupted, .verdict.idle { color: var(--neutral); }
+  .verdict.running { color: var(--ink); }
+  .step { color: var(--muted); }
+  #log {
+    height: 420px; overflow: auto; background: #12161c; color: #dde3ea;
+    border-radius: 6px; padding: 12px; margin: 0; white-space: pre-wrap; word-break: break-word;
+  }
+  .files { margin: 0; padding: 0; list-style: none; }
+  .files li { padding: 3px 0; border-bottom: 1px solid #f0f2f5; }
+  .files .flag { display: inline-block; width: 3.5em; color: var(--muted); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .branch { font-size: 20px; font-weight: 700; word-break: break-all; }
+  .message { margin: 10px 0 0; }
+  .message.bad { color: var(--bad); }
+  .message.good { color: var(--good); }
+  .raw {
+    background: #12161c; color: #dde3ea; border-radius: 6px; padding: 10px;
+    overflow-x: auto; white-space: pre-wrap; margin: 8px 0 0;
+  }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Encoder training console</h1>
+<p class="sub">Runs what the catalogue allows, on this machine, and shows what it wrote.
+  It does not interpret a result.</p>
+
+<section id="runs-section">
+  <h2>Runs</h2>
+  <div id="runs" class="empty">Loading the catalogue&hellip;</div>
+</section>
+
+<section>
+  <h2>Live log</h2>
+  <div class="statusline">
+    <span id="verdict" class="verdict idle">Idle</span>
+    <span id="step" class="step"></span>
+    <button id="stop" class="stop" hidden>Stop</button>
+  </div>
+  <div id="command" class="mono step"></div>
+  <pre id="log"></pre>
+</section>
+
+<section>
+  <h2>Changed files under reports/ and models/</h2>
+  <div class="row">
+    <button id="refresh-changes">Refresh</button>
+  </div>
+  <ul id="changes" class="files"></ul>
+  <p id="changes-empty" class="empty">Nothing changed yet.</p>
+</section>
+
+<section>
+  <h2>Git</h2>
+  <div class="row">
+    <button id="save" class="primary">Save this run to a branch</button>
+    <button id="update">Update from GitHub</button>
+  </div>
+  <div id="git-result"></div>
+</section>
+
+<script>
+"use strict";
+
+// All state comes from /api/status and /api/log. The page holds nothing across a
+// reload but the log offset, which it re-derives from zero -- so reloading while
+// a run is going reattaches to it rather than losing it.
+let catalogue = [];
+let logOffset = 0;
+let logRunId = null;
+let lastStatus = null;
+let busy = false;
+
+const $ = (id) => document.getElementById(id);
+const logBox = $("log");
+
+// Display only, never parsed back. Mirrors shlex.quote closely enough that the
+// line on the page is the line a human would type.
+const SAFE = /^[A-Za-z0-9_@%+=:,.\/-]+$/;
+function quote(word) {
+  return SAFE.test(word) ? word : "'" + word.replace(/'/g, "'\\''") + "'";
+}
+
+function substitute(element, values) {
+  return element.replace(/\{([a-z][a-z0-9_]*)\}/g, (whole, name) =>
+    Object.prototype.hasOwnProperty.call(values, name) ? values[name] : whole);
+}
+
+function selectedValues(entry) {
+  const values = {};
+  for (const parameter of entry.parameters) {
+    const field = $(`param-${entry.id}-${parameter.name}`);
+    values[parameter.name] = field ? field.value : parameter.default;
+  }
+  return values;
+}
+
+function renderCommands(entry) {
+  const values = selectedValues(entry);
+  const list = $(`commands-${entry.id}`);
+  list.innerHTML = "";
+  for (const step of entry.steps) {
+    const item = document.createElement("li");
+    item.textContent = "python -u " + step.map((e) => quote(substitute(e, values))).join(" ");
+    list.appendChild(item);
+  }
+}
+
+function renderCatalogue() {
+  const container = $("runs");
+  container.className = "";
+  container.innerHTML = "";
+  for (const entry of catalogue) {
+    const row = document.createElement("div");
+    row.className = "run";
+
+    const head = document.createElement("div");
+    head.className = "run-head";
+    const name = document.createElement("div");
+    name.className = "run-name";
+    name.textContent = entry.name;
+    const button = document.createElement("button");
+    button.className = "primary run-button";
+    button.textContent = "Run";
+    button.onclick = () => startRun(entry);
+    head.append(name, button);
+
+    const description = document.createElement("p");
+    description.className = "run-desc";
+    description.textContent = entry.description;
+
+    const params = document.createElement("div");
+    params.className = "params";
+    for (const parameter of entry.parameters) {
+      const wrap = document.createElement("label");
+      wrap.className = "param";
+      wrap.textContent = parameter.label;
+      const select = document.createElement("select");
+      select.id = `param-${entry.id}-${parameter.name}`;
+      for (const choice of parameter.choices) {
+        const option = document.createElement("option");
+        option.value = choice;
+        option.textContent = choice;
+        option.selected = choice === parameter.default;
+        select.appendChild(option);
+      }
+      select.onchange = () => renderCommands(entry);
+      wrap.appendChild(select);
+      params.appendChild(wrap);
+    }
+
+    const commands = document.createElement("ul");
+    commands.className = "commands";
+    commands.id = `commands-${entry.id}`;
+
+    row.append(head, description);
+    if (entry.parameters.length) row.append(params);
+    row.append(commands);
+    container.appendChild(row);
+    renderCommands(entry);
+  }
+  applyBusy();
+}
+
+function applyBusy() {
+  for (const button of document.querySelectorAll(".run-button")) button.disabled = busy;
+  $("save").disabled = busy;
+  $("update").disabled = busy;
+  $("stop").hidden = !busy;
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  let body = null;
+  try { body = await response.json(); } catch (error) { body = null; }
+  if (!response.ok) {
+    const detail = body && body.detail ? body.detail : `${response.status} ${response.statusText}`;
+    throw new Error(detail);
+  }
+  return body;
+}
+
+async function startRun(entry) {
+  const body = { id: entry.id, parameters: selectedValues(entry) };
+  try {
+    // A fresh run means a fresh log; the offset resets before the first poll so
+    // nothing of the previous run is left on screen.
+    logOffset = 0;
+    logRunId = null;
+    logBox.textContent = "";
+    $("git-result").innerHTML = "";
+    await api("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    alert("Could not start the run: " + error.message);
+  }
+  await poll();
+}
+
+async function stopRun() {
+  try {
+    await api("/api/stop", { method: "POST" });
+  } catch (error) {
+    alert("Could not stop the run: " + error.message);
+  }
+}
+
+const VERDICTS = {
+  idle: "Idle",
+  running: "Running",
+  succeeded: "Succeeded",
+  failed: "Failed",
+  stopped: "Stopped",
+  interrupted: "Interrupted",
+};
+
+function renderStatus(status) {
+  const state = status.status || "idle";
+  const verdict = $("verdict");
+  verdict.className = "verdict " + state;
+  verdict.textContent = VERDICTS[state] || state;
+
+  const stepLine = [];
+  if (status.entry_name) stepLine.push(status.entry_name);
+  if (status.step_index && status.step_count) {
+    stepLine.push(`step ${status.step_index} of ${status.step_count}`);
+  }
+  $("step").textContent = stepLine.join(" — ");
+  $("command").textContent = status.command || "";
+
+  const wasBusy = busy;
+  busy = state === "running";
+  applyBusy();
+  // The run just ended: the file list is the first thing wanted next.
+  if (wasBusy && !busy) refreshChanges();
+}
+
+async function poll() {
+  let status;
+  try {
+    status = await api("/api/status");
+  } catch (error) {
+    return;
+  }
+  lastStatus = status;
+  renderStatus(status);
+
+  try {
+    // A different run id means a different log file; start reading it from zero.
+    if (status.run_id && status.run_id !== logRunId) {
+      logRunId = status.run_id;
+      logOffset = 0;
+      logBox.textContent = "";
+    }
+    const chunk = await api(`/api/log?offset=${logOffset}`);
+    if (chunk.run_id !== logRunId) return;
+    if (chunk.text) {
+      // Follow the tail unless the reader has scrolled up to look at something.
+      const following = logBox.scrollHeight - logBox.scrollTop - logBox.clientHeight < 40;
+      logBox.textContent += chunk.text;
+      if (following) logBox.scrollTop = logBox.scrollHeight;
+    }
+    logOffset = chunk.next_offset;
+  } catch (error) {
+    /* a poll that fails is retried a second later; nothing to say about it */
+  }
+}
+
+async function refreshChanges() {
+  const list = $("changes");
+  const empty = $("changes-empty");
+  try {
+    const body = await api("/api/changes");
+    list.innerHTML = "";
+    for (const item of body.changed) {
+      const line = document.createElement("li");
+      const flag = document.createElement("span");
+      flag.className = "flag mono";
+      flag.textContent = item.untracked ? "new" : item.status;
+      const path = document.createElement("span");
+      path.className = "mono";
+      path.textContent = item.path;
+      line.append(flag, path);
+      list.appendChild(line);
+    }
+    empty.textContent = body.changed.length ? "" : "Nothing changed yet.";
+    empty.hidden = body.changed.length > 0;
+  } catch (error) {
+    list.innerHTML = "";
+    empty.hidden = false;
+    empty.textContent = "Could not read the working tree: " + error.message;
+  }
+}
+
+function renderGitResult(result) {
+  const box = $("git-result");
+  box.innerHTML = "";
+
+  if (result.ok && result.branch) {
+    const branch = document.createElement("div");
+    branch.className = "branch mono";
+    branch.textContent = result.branch;
+    box.appendChild(branch);
+    if (result.compare_url) {
+      const link = document.createElement("p");
+      const anchor = document.createElement("a");
+      anchor.href = result.compare_url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener";
+      anchor.textContent = "Open the compare view on GitHub";
+      link.appendChild(anchor);
+      box.appendChild(link);
+    }
+  }
+
+  const message = document.createElement("p");
+  message.className = "message " + (result.ok ? "good" : "bad");
+  message.textContent = result.message;
+  box.appendChild(message);
+
+  if (result.blocking_paths && result.blocking_paths.length) {
+    const list = document.createElement("ul");
+    list.className = "files";
+    for (const path of result.blocking_paths) {
+      const line = document.createElement("li");
+      line.className = "mono";
+      line.textContent = path;
+      list.appendChild(line);
+    }
+    box.appendChild(list);
+  }
+
+  // On failure, the raw output of the step that stopped the sequence, with no
+  // interpretation and no offer to retry differently. The honest next move at
+  // that point is to bring the error to a chat.
+  if (!result.ok) {
+    const failed = (result.steps || []).filter((step) => step.exit_code !== 0).pop();
+    if (failed) {
+      const raw = document.createElement("pre");
+      raw.className = "raw";
+      raw.textContent = failed.argv.join(" ") + "\n\n" + (failed.output || "(no output)");
+      box.appendChild(raw);
+    }
+  }
+}
+
+async function gitAction(path, button, label) {
+  const previous = button.textContent;
+  button.textContent = label;
+  button.disabled = true;
+  try {
+    renderGitResult(await api(path, { method: "POST" }));
+  } catch (error) {
+    renderGitResult({ ok: false, message: error.message, steps: [] });
+  } finally {
+    button.textContent = previous;
+    button.disabled = false;
+    applyBusy();
+    refreshChanges();
+  }
+}
+
+$("stop").onclick = stopRun;
+$("refresh-changes").onclick = refreshChanges;
+$("save").onclick = (event) => gitAction("/api/save-branch", event.target, "Saving…");
+$("update").onclick = (event) => gitAction("/api/update", event.target, "Updating…");
+
+(async function start() {
+  try {
+    const body = await api("/api/catalogue");
+    catalogue = body.runs;
+    renderCatalogue();
+  } catch (error) {
+    $("runs").textContent = "Could not load the catalogue: " + error.message;
+  }
+  await poll();
+  await refreshChanges();
+  setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>
