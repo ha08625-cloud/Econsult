@@ -1341,7 +1341,7 @@ we still choose the target vector first, then filter each pool down to compatibl
 fragments, then draw. Filtering before drawing rather than drawing and rejecting
 also keeps generation deterministic and avoids quietly skewing the mix.
 
-### 12.6 Random character-level errors — built, experiment not run
+### 12.6 Random character-level errors — built and measured
 
 `scripts/synthetic_data/noise.py` damages a finished tree: dropped and doubled
 letters, keyboard-neighbour substitutions, transpositions, dropped spaces,
@@ -1350,7 +1350,8 @@ handful of authors produced while concentrating, which is much cleaner than what
 a patient types into a phone at eleven at night.
 `documentation/encoder_plans/random_error_generation_implementation.md` is the
 plan of record and carries the operation list, the rejected alternatives and the
-task breakdown. Four things decide whether this is safe or useful:
+task breakdown; `reports/encoder_training/2026-08-31-noise-2x2.md` and its
+plain-english twin are the results of record and carry every number.
 
 **It is post-processing over the JSONL, not a generator flag.** The generator
 stays byte-identical, so every dataset generated so far is still reproducible;
@@ -1362,49 +1363,87 @@ locates data by `--data-dir` plus a fixed filename pattern.
 
 **The label-safety question is the whole of the risk.** This is the one step that
 edits text after the label is fixed, so for the first time a mechanical step
-could make text stop matching its label: one substitution turns `hot` into `not`;
-`no` is two characters, so any edit inside it is proportionally enormous;
-dropping a space welds a negation to its neighbour into a single unknown token;
+could make text stop matching its label: one substitution turns `hot` into `not`,
 and the null axes hang on short words like `my`, `his`, `had` and `was`. The
 decision is a **frozen lexicon enforced in both directions** — never damage a
-frozen token and never *produce* one, redrawing instead — built from structural
-words (negation, person, tense, modality) plus the signal's own vocabulary out of
-`SIGNAL_LEXICONS`, which is why it covers all seven signals. Shape-preserving
-operations (apostrophes, case) may apply to anything, because they cannot change
-which word a token is. Rejection is tested against the lexicon only and
-**nothing in that test can see the label**, so rejection rates vary by word and
-never by class.
+frozen token and never *produce* one, redrawing up to three times and then
+leaving the word alone. It is built from structural words (negation, person,
+tense, modality) plus the signal's own vocabulary out of `SIGNAL_LEXICONS`, which
+is why it covers all seven signals.
 
-**The rate must not vary by label and the sidecar proves it** — a `noise` block
-reports edits per hundred words by label and by label mode, exactly as the
-fragment-count mix is measured despite holding by construction. The rate is per
-*word*, not per example, and a share of examples is left completely clean,
-because a dataset where every example carries the same error density is its own
-kind of unrealistic.
+The lexicon is **two lists, not one**, and the distinction is what makes the pass
+worth running. Signal words of five characters or fewer are frozen, because a
+single edit inside a short word is proportionally enormous and that is where the
+flip risk lives. Signal words of six or more are damageable once — no
+single-character edit turns `temperature` into a negation, and being able to read
+`temprature` is the headline claim the exercise tests. **Shape-preserving
+operations are exempt from the frozen rule entirely**: dropping an apostrophe or
+folding case cannot change which word a token is, so `dont` and `Ive` are
+reachable, and those are the cheapest and most realistic operations there are.
+Space deletion carries its own rule — **never delete a space adjacent to a frozen
+token**, in either direction — so `no fever` stays two words while `on the toilet
+again` may weld freely. Rejection is tested against the lexicon only and
+**nothing in that test can see the label**.
 
-**What remains is the experiment, and it is what decides whether to use any of
-this.** Noising all three splits and reading one number cannot answer it: noise
-makes the test set harder at the same time as it makes the training set richer.
-What answers it is a **2×2** — train on clean and on noisy, evaluate each against
-a clean and a noisy test set (`--test-dir` exists for the cross-tree cell) —
-across the same fold configuration, which makes it twenty runs rather than four,
-and at **two or three rates**, because "noise helps" and "a little noise helps
-and more does not" are different findings and one run cannot distinguish them.
+**The edit rate is not equal by label, and the sidecar measures it rather than
+assuming it.** The `noise` block reports edits per hundred words by label and by
+label mode on every run. The earlier claim that equality holds *by construction*
+was too strong and is withdrawn: the lexicon guarantees no rejection is
+label-aware, but it cannot equalise aggregate rates, because the three classes
+are made of different words. `null` examples are filler carrying no signal
+vocabulary, so nothing is refused and they take the most damage — measurably, in
+20 of 20 fold files. What matters is the weaker and sufficient property, which
+holds: `true` and `false` show no consistent ordering, so the two classes that
+must be separated on evidence carry no density difference. Three pre-registered
+checks confirm the trained models do not exploit the gap; they are scored in the
+2026-08-31 report. The rate is per *word*, not per example, and a share of
+examples is left completely clean, because a dataset where every example carries
+the same error density is its own kind of unrealistic.
+
+**The experiment has been run and it is positive.** A 2×2 with a rate sweep,
+thirteen cells over five folds on `fever_present`: clean plus three damage rates,
+each model scored against its own tree and the clean one via `--test-dir`. Cells
+are (train tree × test tree) and training depends only on the training tree, so
+this is **twenty training runs and forty evaluations**, not one run per cell — the
+arithmetic that bought a rate sweep instead of paying twice for four cells. Noise
+creates no clusters, so effective n is identical in every cell and a gain can only
+ever mean robustness to damaged surface, never better coverage.
+
+A clean-trained model loses **8.5 points** of decisive accuracy on text damaged at
+12% per word (93.3% → 84.8%). A rate-matched model recovers essentially all of it
+(93.3%) and costs nothing on clean text. Nothing degrades across the rates tested,
+so the finding is "noise helps" rather than "a little noise helps". The failure
+damage causes has a direction worth knowing: decisive recall drains into `null` —
+`true` recall falls 90.5% → 65.3% while `null → true` *falls* — so a typo'd
+message is silently dropped rather than misread. **The open question is whether
+one rate covers another**: every noise-trained model was scored only at its own
+rate, and until that is closed the claim is robustness at a matched rate.
+
+**`--freeze-signal-vocabulary` was measured, not asserted.** The conservative
+variant (`all`, freezing every signal word) damages a clean-trained model by an
+identical amount and recovers less of it — 91.7% against `short`'s 92.8%, and
+lower on clean text too. Intervals overlap, so this is "no reason to prefer
+`all`" rather than a win, which is enough: **`short` stays the default.**
 
 **What it is worth, stated the way section 9 states things.** It **adds no ideas
 and effective sample size is unchanged**: sixty-six fragments damaged four ways
-is sixty-six ideas. There are two reasons the honest outcome may be "no
-measurable benefit". A subword tokenizer shatters a misspelt word into pieces
-carrying little of the original meaning, so above some rate this is training on
-noise rather than on harder text. And the free-text box is a plain `<textarea>`
-with browser spellcheck on, over a phone keyboard with autocorrect: a large share
-of the nonword typos this pass generates would never reach us, and the errors
-that *survive* that filter are disproportionately **real-word** errors —
-autocorrect substitutions, homophones, a dropped word — which are a different
-generator and probably the more valuable one. Character-level damage is the cheap
-half of the problem and should be described that way. The cheapest operations —
-missing apostrophes and casing — are the ones most worth having, and section 8
-already records a case where casing alone separated a whole library perfectly.
+is sixty-six ideas, and the noisy tree carries the same `fragments` provenance
+block with the same cluster keys, so the honest count still comes from there.
+What it buys is robustness to surface damage, which the run now shows is real and
+free. The limit on its value is unchanged and is now the argument for the next
+generator: the free-text box is a plain `<textarea>` with browser spellcheck on,
+over a phone keyboard with autocorrect, so a large share of the nonword typos
+this pass generates would never reach us, and the errors that *survive* that
+filter are disproportionately **real-word** errors — autocorrect substitutions,
+homophones, a dropped word. Character-level damage is the cheap half of the
+problem and should be described that way. The cheapest operations — missing
+apostrophes and casing — are the ones most worth having, and section 8 already
+records a case where casing alone separated a whole library perfectly.
+
+**Migration.** The frozen lexicon is hard-coded in `noise.py` and the pass guards
+on "a non-empty lexicon exists for this signal". Both come out at 12.5 / step 3,
+when the lexicon moves into the manifest; two lists in two modules drifting apart
+is the outcome that guard exists to postpone, not to prevent.
 
 ### 12.7 Order of work
 
@@ -1419,8 +1458,10 @@ Section 10's outstanding items come first — fixing `urinary_frequency` and
 writing the missing `false` submissions both block reading a result. After
 those, the forward plan runs in the order its dependencies force:
 
-1. **Run the noise 2×2** (12.6). The knob exists and nobody can yet decide
-   whether to turn it.
+1. **Close the noise 2×2's one open cell** (12.6). The sweep has run and is
+   positive; what is missing is whether a model trained at one damage rate copes
+   with another, which is two evaluations and no new dataset. The decision to
+   adopt a noised training tree for the other six signals waits on it.
 2. Template the filler libraries (12.1) and add the templates-per-library lint
    report. Note this does *not* raise the fragment-count ceiling: that counts
    *sources*, not their size (section 5).
