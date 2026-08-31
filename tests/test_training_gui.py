@@ -28,6 +28,14 @@ from scripts.training_gui.catalogue import (
     load_catalogue,
     resolve,
 )
+from scripts.training_gui.gitops import (
+    GitOpsError,
+    branch_name,
+    commit_message,
+    compare_url,
+    save_run_to_branch,
+    update_from_github,
+)
 from scripts.training_gui.runner import (
     STATUS_FAILED,
     STATUS_IDLE,
@@ -574,3 +582,336 @@ def test_fastapi_and_uvicorn_pins_match():
     ml = _pins(REPO_ROOT / "requirements-ml.txt", packages)
     assert set(runtime) == packages, runtime
     assert ml == runtime
+
+
+# ---------------------------------------------------------------------------
+# git operations (Task 2)
+#
+# No network and no real repository mutation: the command runner is injected, so
+# these assert on assembled argv and sequencing -- which is the whole risk in a
+# module whose job is to issue a fixed list of commands in a fixed order.
+# ---------------------------------------------------------------------------
+
+
+BASE_SHA = "a" * 40
+
+
+class FakeGit:
+    """Records every argv and replies from a scripted table.
+
+    ``responses`` maps a command prefix (as a tuple, e.g. ``("git", "push")``) to
+    an ``(exit_code, output)`` pair. Anything unscripted succeeds silently, so a
+    test only has to say what it is actually about.
+    """
+
+    def __init__(self, **responses):
+        self.calls: list[list[str]] = []
+        self.responses: dict[tuple[str, ...], tuple[int, str]] = {}
+        for key, value in responses.items():
+            self.responses[tuple(key.split("_"))] = value
+
+    def __call__(self, argv):
+        argv = list(argv)
+        self.calls.append(argv)
+        for length in range(len(argv), 0, -1):
+            reply = self.responses.get(tuple(argv[:length]))
+            if reply is not None:
+                return reply
+        return 0, ""
+
+    @property
+    def commands(self) -> list[str]:
+        """``git fetch``-style labels, for readable sequencing assertions."""
+        return [" ".join(call[:2]) for call in self.calls]
+
+    def call(self, *prefix: str) -> list[str] | None:
+        for argv in self.calls:
+            if tuple(argv[: len(prefix)]) == prefix:
+                return argv
+        return None
+
+
+def run_manifest(**overrides) -> dict:
+    manifest = {
+        "run_id": "20260831-120000-noise-2x2",
+        "entry_id": "noise-2x2",
+        "entry_name": "Noise sweep 2x2",
+        "parameters": {"tree": "fever", "noise": "0.1"},
+        "commit": BASE_SHA,
+        "status": "succeeded",
+        "started_at": "2026-08-31T12:00:00+00:00",
+        "ended_at": "2026-08-31T13:00:00+00:00",
+        "steps": [
+            {
+                "index": 1,
+                "argv": ["-m", "scripts.encoder_training", "finetune"],
+                "command": "python -u -m scripts.encoder_training finetune",
+                "status": "succeeded",
+                "exit_code": 0,
+            }
+        ],
+    }
+    manifest.update(overrides)
+    return manifest
+
+
+@pytest.fixture
+def run_files(tmp_path):
+    """A state dir holding a run's log and manifest, as Task 1's runner leaves it."""
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    run_id = run_manifest()["run_id"]
+    (state_dir / f"{run_id}.log").write_text("output\n", encoding="utf-8")
+    (state_dir / f"{run_id}.manifest.json").write_text(json.dumps(run_manifest()), encoding="utf-8")
+    return state_dir
+
+
+def save(tmp_path, run_files, git, manifest=None):
+    return save_run_to_branch(
+        manifest or run_manifest(),
+        repo_root=tmp_path / "repo",
+        state_dir=run_files,
+        run_command=git,
+    )
+
+
+# -- the happy path ---------------------------------------------------------
+
+
+def test_save_issues_the_fixed_sequence_in_order(tmp_path, run_files):
+    """Two guards, then fetch, checkout, add, commit, push -- and only then the
+    remote lookup that turns the branch into a compare link."""
+    git = FakeGit()
+    git.responses[("git", "rev-parse")] = (0, BASE_SHA)
+    git.responses[("git", "remote")] = (0, "git@github.com:ha08625-cloud/econsult.git")
+
+    result = save(tmp_path, run_files, git)
+
+    assert result.ok, result.message
+    assert git.commands == [
+        "git status",
+        "git rev-parse",
+        "git fetch",
+        "git checkout",
+        "git add",
+        "git commit",
+        "git push",
+        "git remote",
+    ]
+
+
+def test_save_branches_from_the_manifest_sha_not_a_remote_branch(tmp_path, run_files):
+    """AD6: the base is the commit the run was produced by."""
+    git = FakeGit()
+    git.responses[("git", "rev-parse")] = (0, BASE_SHA)
+
+    result = save(tmp_path, run_files, git)
+
+    branch = "training/2026-08-31-20260831-120000-noise-2x2"
+    assert result.branch == branch
+    assert git.call("git", "checkout") == ["git", "checkout", "-b", branch, BASE_SHA]
+    assert git.call("git", "push") == ["git", "push", "-u", "origin", branch]
+
+
+def test_save_stages_only_the_two_prefixes_and_never_dash_a(tmp_path, run_files):
+    """The assertion that keeps a stray file out of a run branch."""
+    git = FakeGit()
+    git.responses[("git", "rev-parse")] = (0, BASE_SHA)
+
+    save(tmp_path, run_files, git)
+
+    assert git.call("git", "add") == ["git", "add", "--", "reports", "models"]
+    for argv in git.calls:
+        assert "-A" not in argv
+        assert "--all" not in argv
+        assert not {"merge", "rebase", "reset"} & set(argv)
+        assert "--force" not in argv and "-f" not in argv
+        assert "--amend" not in argv
+
+
+def test_save_copies_the_log_and_manifest_into_the_reports_tree(tmp_path, run_files):
+    """AD5: the branch carries the commands that produced the reports, not just
+    the reports."""
+    git = FakeGit()
+    git.responses[("git", "rev-parse")] = (0, BASE_SHA)
+
+    save(tmp_path, run_files, git)
+
+    run_id = run_manifest()["run_id"]
+    destination = tmp_path / "repo" / "reports" / "training_runs" / run_id
+    assert (destination / f"{run_id}.log").read_text(encoding="utf-8") == "output\n"
+    assert (
+        json.loads((destination / f"{run_id}.manifest.json").read_text(encoding="utf-8"))["run_id"]
+        == run_id
+    )
+
+
+def test_commit_message_records_the_base_sha_parameters_and_steps(tmp_path, run_files):
+    git = FakeGit()
+    git.responses[("git", "rev-parse")] = (0, BASE_SHA)
+
+    save(tmp_path, run_files, git)
+
+    message = git.call("git", "commit")[3]
+    assert message.splitlines()[0] == "training run: Noise sweep 2x2 (2026-08-31)"
+    assert BASE_SHA in message
+    assert "tree=fever" in message
+    assert "python -u -m scripts.encoder_training finetune" in message
+    assert "exit 0" in message
+
+
+# -- failures stop the sequence ---------------------------------------------
+
+
+def test_a_failed_fetch_stops_before_anything_mutating(tmp_path, run_files):
+    git = FakeGit()
+    git.responses[("git", "rev-parse")] = (0, BASE_SHA)
+    git.responses[("git", "fetch")] = (128, "fatal: unable to access origin")
+
+    result = save(tmp_path, run_files, git)
+
+    assert not result.ok
+    assert git.commands == ["git status", "git rev-parse", "git fetch"]
+    assert "unable to access origin" in result.steps[-1].output
+
+
+def test_a_failed_push_is_the_last_thing_attempted(tmp_path, run_files):
+    git = FakeGit()
+    git.responses[("git", "rev-parse")] = (0, BASE_SHA)
+    git.responses[("git", "push")] = (1, "error: failed to push some refs")
+
+    result = save(tmp_path, run_files, git)
+
+    assert not result.ok
+    assert git.commands[-1] == "git push"
+    assert "error: failed to push some refs" in result.steps[-1].output
+    # The remedy for the usual cause is in the message, not only in the raw error.
+    assert BASE_SHA in result.message
+
+
+def test_nothing_to_commit_is_reported_plainly_and_never_pushed(tmp_path, run_files):
+    git = FakeGit()
+    git.responses[("git", "rev-parse")] = (0, BASE_SHA)
+    git.responses[("git", "commit")] = (1, "nothing to commit, working tree clean")
+
+    result = save(tmp_path, run_files, git)
+
+    assert not result.ok
+    assert result.nothing_to_commit
+    assert "changed nothing" in result.message
+    assert "git push" not in git.commands
+
+
+# -- guards ------------------------------------------------------------------
+
+
+def test_a_dirty_path_outside_reports_blocks_the_whole_sequence(tmp_path, run_files):
+    git = FakeGit()
+    git.responses[("git", "status")] = (0, " M app/services/triage.py\n?? reports/new.json\n")
+
+    result = save(tmp_path, run_files, git)
+
+    assert not result.ok
+    assert result.blocking_paths == ("app/services/triage.py",)
+    assert "app/services/triage.py" in result.message
+    assert git.commands == ["git status"]
+
+
+def test_a_head_that_moved_since_the_run_blocks_the_sequence(tmp_path, run_files):
+    git = FakeGit()
+    git.responses[("git", "rev-parse")] = (0, "b" * 40)
+
+    result = save(tmp_path, run_files, git)
+
+    assert not result.ok
+    assert "moved since this run" in result.message
+    assert git.commands == ["git status", "git rev-parse"]
+
+
+def test_a_manifest_without_a_commit_cannot_be_saved(tmp_path, run_files):
+    git = FakeGit()
+
+    result = save(tmp_path, run_files, git, manifest=run_manifest(commit=None))
+
+    assert not result.ok
+    assert git.calls == []
+
+
+def test_branch_name_requires_a_run_id():
+    with pytest.raises(GitOpsError):
+        branch_name({"started_at": "2026-08-31T12:00:00+00:00"})
+
+
+def test_commit_message_survives_a_manifest_without_parameters():
+    message = commit_message(run_manifest(parameters={}, steps=[]))
+    assert message.startswith("training run: Noise sweep 2x2 (2026-08-31)")
+
+
+# -- update from GitHub ------------------------------------------------------
+
+
+def test_update_refuses_a_reports_only_dirty_tree_with_the_branch_message(tmp_path):
+    git = FakeGit()
+    git.responses[("git", "status")] = (0, "?? reports/encoder_training/2026-08-31-noise/\n")
+
+    result = update_from_github(repo_root=tmp_path, run_command=git)
+
+    assert not result.ok
+    assert "Save this run to a branch first" in result.message
+    assert git.commands == ["git status"]
+
+
+def test_update_refuses_other_dirt_with_a_commit_or_stash_message(tmp_path):
+    git = FakeGit()
+    git.responses[("git", "status")] = (0, " M app/main.py\n")
+
+    result = update_from_github(repo_root=tmp_path, run_command=git)
+
+    assert not result.ok
+    assert "Commit or stash" in result.message
+
+
+def test_update_fetches_then_pulls_ff_only_on_a_clean_tree(tmp_path):
+    git = FakeGit()
+    git.responses[("git", "pull")] = (0, "Fast-forward")
+
+    result = update_from_github(repo_root=tmp_path, run_command=git)
+
+    assert result.ok
+    assert git.commands == ["git status", "git fetch", "git pull"]
+    assert git.call("git", "pull") == ["git", "pull", "--ff-only"]
+
+
+def test_update_stops_when_the_fetch_fails(tmp_path):
+    git = FakeGit()
+    git.responses[("git", "fetch")] = (1, "fatal: could not read from remote")
+
+    result = update_from_github(repo_root=tmp_path, run_command=git)
+
+    assert not result.ok
+    assert git.commands == ["git status", "git fetch"]
+
+
+# -- compare url -------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "remote",
+    [
+        "git@github.com:ha08625-cloud/econsult.git",
+        "https://github.com/ha08625-cloud/econsult.git",
+        "https://github.com/ha08625-cloud/econsult",
+    ],
+)
+def test_compare_url_handles_both_remote_forms(remote):
+    assert compare_url(remote, "training/2026-08-31-run") == (
+        "https://github.com/ha08625-cloud/econsult/compare/training/2026-08-31-run?expand=1"
+    )
+
+
+@pytest.mark.parametrize(
+    "remote",
+    ["git@gitlab.com:owner/repo.git", "/srv/mirrors/econsult.git", ""],
+)
+def test_compare_url_returns_none_rather_than_guessing(remote):
+    assert compare_url(remote, "training/x") is None
