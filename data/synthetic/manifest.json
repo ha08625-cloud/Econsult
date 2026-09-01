@@ -1321,6 +1321,13 @@
           "note": "Declared policy rather than absent even though the recent_uti lexicon finds nothing here, because six of these 34 lines plainly discuss a urine infection and its treatment -- two ask for a urine culture, three name a previous antibiotic course ('I had trimethoprim last time', 'ciprofloxacin ... what worked last time', 'trimethoprim doesn't seem to help me anymore') and one asks for urology because 'this keeps coming back'. Declaring absent would be recording the lexicon's silence as a fact about the text. None of the six carries a window marker: 'last time' and 'keeps coming back' are rule 6, and no line dates a diagnosis or a course inside 30 days, so every line is null under the section 9 policy (rules 1, 3 and 6)."
         }
       }
+    },
+    {
+      "name": "declarative_v1",
+      "file": "conditions/uti/declarative/declarative_v1.jsonl",
+      "format": "jsonl",
+      "signal_key": null,
+      "fragment_type": "declarative"
     }
   ]
 }

@@ -43,7 +43,7 @@ import textwrap
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from .manifest import SPLITS, Fragment, NullOn
+from .manifest import DECLARATIVE_TYPE, SPLITS, Fragment, NullOn
 from .normalise import normalise
 
 #: Uncertainty language, reported in ``positive`` and ``negative`` libraries only.
@@ -656,6 +656,31 @@ class CrossSignalCell:
         return self.matched == 0
 
 
+def is_generated(fragment: Fragment) -> bool:
+    """Whether a fragment came from a procedurally generated library.
+
+    Three of the reports below treat such a library differently, and all three
+    for one reason: a generated library states its meaning **per line** and has
+    no library-level declaration to check. Its ``null_on`` block is empty by
+    construction (a JSONL library may not declare one), and the character
+    similarity between its lines is the expected output of a fixed frame rather
+    than evidence of anything.
+    """
+    return fragment.fragment_type == DECLARATIVE_TYPE
+
+
+def generated_libraries(fragments: Iterable[Fragment]) -> dict[str, tuple[int, int]]:
+    """Return ``{library: (lines, clusters)}`` for the generated libraries."""
+    lines: dict[str, int] = {}
+    clusters: dict[str, set[str]] = {}
+    for fragment in fragments:
+        if not is_generated(fragment):
+            continue
+        lines[fragment.library] = lines.get(fragment.library, 0) + 1
+        clusters.setdefault(fragment.library, set()).add(fragment.cluster_id or fragment.text)
+    return {library: (lines[library], len(clusters[library])) for library in sorted(lines)}
+
+
 def cross_signal_cells(
     fragments: Iterable[Fragment], signals: Iterable[str] | None = None
 ) -> list[CrossSignalCell]:
@@ -665,6 +690,13 @@ def cross_signal_cells(
     pairs too, and a report that silently omitted the libraries the existing
     check already covers would leave a reader guessing which half they were
     looking at.
+
+    Every library except a generated one. The grid exists to drive ``null_on``
+    authoring -- it puts a lexicon's opinion beside a library-level declaration
+    so a human can decide the pair -- and a generated library has no such
+    declaration to decide: each of its lines states its own vector, and lexicon
+    language it asserts is the whole point of it. Including it would add rows
+    that read as unconsidered pairs and can never be considered.
 
     Sorted by matched count descending, then library, then signal -- the pairs
     that need a human decision first, and the long tail of zero-hit pairs after
@@ -676,6 +708,8 @@ def cross_signal_cells(
     by_library: dict[str, list[Fragment]] = {}
     own_signal: dict[str, str | None] = {}
     for fragment in members:
+        if is_generated(fragment):
+            continue
         by_library.setdefault(fragment.library, []).append(fragment)
         own_signal[fragment.library] = fragment.signal_key
 
@@ -796,11 +830,17 @@ def undeclared_pairs(fragments: Iterable[Fragment]) -> list[tuple[str, str]]:
     The default state, and the one worth printing: an undeclared pair is a
     library that cannot be used as a companion in that signal's run, so the list
     is the cost of every decision deliberately left unmade.
+
+    Generated libraries are excluded, as they are from the cross-signal grid and
+    for the same reason: their eligibility is decided per line by the line's own
+    vector, so a library-level pair there is not a decision anyone can make.
     """
     members = list(fragments)
     own: dict[str, str | None] = {}
     declared: dict[str, set[str]] = {}
     for fragment in members:
+        if is_generated(fragment):
+            continue
         own[fragment.library] = fragment.signal_key
         declared[fragment.library] = {entry.signal for entry in fragment.null_on}
     return sorted(
@@ -812,7 +852,10 @@ def undeclared_pairs(fragments: Iterable[Fragment]) -> list[tuple[str, str]]:
 
 
 def cross_split_near_duplicates(
-    fragments: Iterable[Fragment], threshold: float = NEAR_DUPLICATE_THRESHOLD
+    fragments: Iterable[Fragment],
+    threshold: float = NEAR_DUPLICATE_THRESHOLD,
+    *,
+    include_generated: bool = False,
 ) -> list[NearDuplicate]:
     """Report similar within-library fragment pairs that straddle a split.
 
@@ -820,9 +863,19 @@ def cross_split_near_duplicates(
     let a validation example borrow lexical content from a training example,
     which is the failure this exists to surface. Roughly 4,500 comparisons for
     a 96-fragment library, so no indexing scheme is warranted.
+
+    Generated libraries are skipped unless ``include_generated`` asks for them
+    (DD16). The report's purpose is *unintended* twinning in hand-written
+    libraries; in a generated one, two lines from different clusters share a
+    frame and most of a sentence by construction, so the pairs carry no
+    information -- and there are tens of thousands of them, which buries every
+    other library's rows and costs a minute of wall clock to produce. The
+    generated libraries are named in their own section of the report instead.
     """
     by_library: dict[str, list[Fragment]] = {}
     for fragment in fragments:
+        if is_generated(fragment) and not include_generated:
+            continue
         by_library.setdefault(fragment.library, []).append(fragment)
 
     pairs: list[NearDuplicate] = []
@@ -890,6 +943,18 @@ def render_report(fragments: Sequence[Fragment]) -> list[str]:
             f"    ... and {len(duplicates) - NEAR_DUPLICATE_DETAIL_LIMIT} more, "
             "counted above but not shown"
         )
+
+    generated = generated_libraries(fragments)
+    lines += [
+        "",
+        f"Generated libraries (not compared above): {len(generated)}",
+        "  A fixed frame makes near-duplicate text the expected output, so pairs "
+        "here carry no signal; the cluster count is what to read instead.",
+    ]
+    if not generated:
+        lines.append("  (none)")
+    for library, (count, clusters) in generated.items():
+        lines.append(f"  {library}: {count} lines across {clusters} clusters")
 
     lines += [
         "",
