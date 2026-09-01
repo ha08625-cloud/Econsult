@@ -73,6 +73,12 @@ jobs:
       - name: Validate synthetic fragment libraries
         run: python -m pytest tests/test_synthetic_recombination.py -v
 
+      # Same reasoning for the generated declarative library and the inventory
+      # it is built from: both live under data/, so an edit to either skips the
+      # unit job and would otherwise never meet the regeneration check.
+      - name: Validate the generated declarative library
+        run: python -m pytest tests/test_synthetic_declarative.py -v
+
       # Same reasoning for the realistic held-out set. Its guards are about the
       # committed data/realistic/ files -- that every submission id still lines
       # up with its line in the source file, that no cell is blank, and that the
@@ -107,6 +113,13 @@ jobs:
         run: |
           ruff check .
           ruff format --check .
+
+      # The committed declarative library is a build artefact of the phrase
+      # inventory, and the two drifting apart would mean the sentences a human
+      # read are not the sentences being trained on. Regenerating is cheap and
+      # writes nothing in --check mode. Stdlib-only.
+      - name: Check the generated declarative library is up to date
+        run: python -m scripts.synthetic_data --build-declarative --check
 
       - name: Run Python unit tests
         run: python -m pytest tests/ -m "not integration" -v

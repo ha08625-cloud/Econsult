@@ -31,6 +31,7 @@ from scripts.synthetic_data.lint import (
     undeclared_pairs,
 )
 from scripts.synthetic_data.manifest import (
+    DECLARATIVE_TYPE,
     SPLITS,
     UNDECLARED,
     Fragment,
@@ -1467,8 +1468,12 @@ def test_filler_purity_is_the_cross_signal_check_restricted_to_filler():
 
 
 def test_the_grid_covers_every_library_against_every_foreign_signal():
+    # Every library that has a library-level declaration to make, which is
+    # every hand-written one. A generated library states its meaning per line
+    # and never carries a null_on block, so a row for it would read as an
+    # unconsidered pair that nobody can ever consider.
     fragments = _real_fragments()
-    libraries = {f.library: f.signal_key for f in fragments}
+    libraries = {f.library: f.signal_key for f in fragments if f.fragment_type != DECLARATIVE_TYPE}
     expected = {
         (library, signal)
         for library, own in libraries.items()
@@ -2166,11 +2171,13 @@ def test_the_library_tree_contains_nothing_but_libraries_and_the_manifest():
     # and then be adopted by a future glob, a future tool, or a reader who
     # assumes everything here is live. The drafts/ folder was three such files.
     root = REAL_MANIFEST.parent
+    declared = {entry["file"] for entry in json.loads(REAL_MANIFEST.read_text())["libraries"]}
     strays = sorted(
         str(path.relative_to(root))
         for path in root.rglob("*")
         if path.is_file()
         and path.suffix != ".txt"
+        and str(path.relative_to(root)) not in declared
         and path != REAL_MANIFEST
         and not _is_declared_non_library(path.relative_to(root))
         and not any(part in _NON_LIBRARY_DIRS for part in path.relative_to(root).parts)
@@ -2225,12 +2232,15 @@ def test_the_declarative_inventory_is_well_formed_and_never_repeats_a_library_li
 def test_every_library_file_on_disk_is_declared_in_the_manifest():
     # The other half of the same fault. A library the manifest no longer names
     # is not an error anywhere -- load_fragments only checks the reverse
-    # direction -- so it would quietly stop being training data.
+    # direction -- so it would quietly stop being training data. Both formats
+    # are swept: a generated .jsonl library dropped from the manifest is exactly
+    # as invisible as a hand-written .txt one.
     declared = {entry["file"] for entry in json.loads(REAL_MANIFEST.read_text())["libraries"]}
     root = REAL_MANIFEST.parent
     on_disk = {
         str(path.relative_to(root))
-        for path in root.rglob("*.txt")
+        for suffix in ("*.txt", "*.jsonl")
+        for path in root.rglob(suffix)
         if not any(part in _NON_LIBRARY_DIRS for part in path.relative_to(root).parts)
     }
     assert on_disk == declared, (
@@ -3558,6 +3568,12 @@ def test_every_existing_library_derives_the_vector_label_vector_computes():
     assert len(fragments) > 2000
 
     for fragment in fragments:
+        if fragment.fragment_type == DECLARATIVE_TYPE:
+            # A generated line's vector is not derived from anything: it is
+            # authored by the generator before the text exists, which is the
+            # whole reason the JSONL format is here. There is no second
+            # representation to disagree with.
+            continue
         if fragment.signal_key is not None:
             primary = fragment.signal_key
             polarity = FRAGMENT_TYPE_LABELS[fragment.fragment_type]

@@ -769,6 +769,14 @@ declared `policy` would otherwise stop being checked at all, and filler is paire
 with examples of *every* label. A test pins that the two checks differ on exactly
 those two pairs.
 
+**A generated library sits outside two of these reports.** The cross-signal grid
+and the undeclared-pairs list both exist to drive `null_on` authoring — they put
+a lexicon's opinion beside a library-level declaration so a human can decide the
+pair — and a JSONL library has no such declaration to decide: every line states
+its own vector, and the lexicon language it asserts is the point of it. Rows for
+it would read as unconsidered pairs that nobody can ever consider, so it is
+excluded from both and the 300-pair arithmetic below is unchanged by its arrival.
+
 **Cross-split near-duplicates** — pairs of similar fragments in different splits,
 i.e. section 6's leakage. This is the report that catches a library written as
 one sentence frame with the slots swapped, and it caught exactly that in several
@@ -778,6 +786,15 @@ effective n halved. Two caveats on the count: it is **within-library by
 construction**, so a library part-written by adapting a sibling signal's scores
 clean; and libraries sharing a small vocabulary run high on character similarity
 between genuinely distinct ideas, so chasing it to zero is partly chasing noise.
+
+Generated libraries are **excluded from the pair listing** and named in a
+section of their own with their line and cluster counts. Two lines of a generated
+library share a frame and most of a sentence by construction, so a high character
+similarity between two of them is the expected output rather than evidence of
+anything — and there are tens of thousands of such pairs in a 1,000-line library,
+enough to bury every other library's rows and to cost a minute of wall clock
+producing them. The cluster count is the number to read there instead: it is what
+the split actually partitions on.
 
 Two faults the report **cannot** see, both of which have happened:
 
@@ -1045,6 +1062,10 @@ strength of one manifest happening to make them agree.
   base seed 42, salt 0, no `PoolExhaustedError` anywhere.
 * Both companion arms at version 3 (Arm 0 at `--companion-share 0.0`, Arm P at
   0.5, identical in everything else), each merged into a six-head `joint6` tree.
+* One generated library — `declarative_v1`, 1,000 multi-symptom lines across 316
+  clusters, built from an authored phrase inventory (12.3). It is committed, in
+  the manifest and drawn from only above `--declarative-share 0`, which no
+  measured arm has used: **no trained arm has seen a declarative fragment.**
 * Six trained heads. `recent_uti_present` has libraries and a fold tree but **no
   trained head**, and `EncoderOutput.validate_against` requires all seven keys —
   so nothing produced so far is deployable.
@@ -1219,6 +1240,11 @@ python -m scripts.synthetic_data --folds 5 --fold 0 --split test --count 2000 \
 python -m scripts.synthetic_data --split train --count 10000 \
     --companion-share 0.5 --emit-signals all --out ...
 
+# rebuild the generated declarative library from the phrase inventory,
+# and the check CI runs (regenerates in memory, writes nothing, exits 1 on drift)
+python -m scripts.synthetic_data --build-declarative
+python -m scripts.synthetic_data --build-declarative --check
+
 # reports, no output: library health, and a salt search
 python -m scripts.synthetic_data --lint
 python -m scripts.synthetic_data --folds 5 --find-fold-salt
@@ -1352,7 +1378,7 @@ unrelated to reading the text. The question a multi-key arm can answer is "does
 more label per example buy training efficiency?", which is not the question
 companions were built to answer.
 
-### 12.3 Multi-symptom fragments — not built
+### 12.3 Multi-symptom fragments — built, not measured
 
 Fragments asserting more than one signal in a clause: "I had a fever and it's
 been burning when I urinate." These are closer to how patients write than
@@ -1386,9 +1412,71 @@ never draws a declarative fragment: a fixed frame cannot produce a hedge, so
 everything generated is an easy case and the hard-case libraries stay the only
 source of hard ones.
 
-What does not exist yet is **the generator that writes such a library**, and
-therefore any declarative data at all: `--declarative-share` above zero is an
-error until one exists, because the pool it names is empty.
+**The generator now exists too**, and so does the library it writes:
+`data/synthetic/conditions/uti/declarative/declarative_v1.jsonl`, 1,000 lines
+across 316 clusters. What has *not* happened is a training run that draws from
+it — every arm measured so far is at `--declarative-share 0`.
+
+`scripts/synthetic_data/declarative.py` composes it out of two things:
+
+* **An authored phrase inventory**,
+  `data/synthetic/conditions/uti/declarative/phrases.json`, keyed by signal.
+  Each phrase carries a bare and a negated surface form, because the obvious
+  derivation ships broken English — "a fever" negates to "any fever", not "any a
+  fever". Six signals; `recent_uti_present` is excluded, because its label turns
+  on a 30-day window and the section 9 policy rules and no frame here can place
+  an infection inside one. A phrase is admitted only if its label is unambiguous
+  under section 9, which makes the labelling policy a per-*phrase* decision made
+  once rather than a per-line one — and is also why nothing generated here is a
+  hard case.
+* **Two sentence bases**, "I have had …" and "I have not had …", each with a
+  mixed variant ("…, but not …" / "…, but I have had …"). The symptoms in a
+  sentence are sorted into a true block and a false block, so an interleaved
+  "A, but not B, and C" is unreachable by construction rather than by a rule
+  rejecting it; which base opens the sentence is decided by which block leads,
+  drawn on a fair coin, so the frame does not follow from the label.
+
+**A line's label is drawn before its text exists.** The sampler draws an arity,
+then that many distinct signals, then a polarity for each, then a phrase for
+each, then the leading block and the Oxford comma — all from one seeded
+`random.Random`, in a fixed order. The vector is computed from the drawn
+polarities: asserted signals take theirs, every other in-scope signal is `null`,
+and the nocturia / urinary-frequency partner of an asserted-but-unmentioned
+signal is **omitted** rather than nulled, because whether one of that pair says
+anything about the other is exactly the question section 4 leaves undecided.
+
+**The cluster key is the asserted label content** — `decl:dysuria-fever+haematuria+`
+— not the frame. Two lines in one cluster differ only in phrasing and comma
+style, which is what a cluster is for; hashing the frame instead would collapse
+the whole library into two clusters and make its split meaningless. That is the
+rule of 12.1 that deliberately does not bind here.
+
+**Volume is capped and stratified by arity**, `--target-count 1000` split
+0.5 / 0.35 / 0.15 across two-, three- and four-symptom sentences. Uncapped
+enumeration is tens of thousands of lines against 2,503 hand-written ones, which
+would make a stiff generated sentence the *typical* decisive fragment. The cap
+and `--declarative-share` are separate knobs on purpose: one is how much text
+exists, the other is how much of a dataset it is.
+
+**The library is a committed build artefact, not a runtime expansion.**
+`--build-declarative` writes it and the file is reviewed and committed;
+`--build-declarative --check` regenerates in memory and fails if the committed
+file differs, and CI runs that in both the unit job and the data-only job. The
+round trip through disk is what lets a human read the sentences before they
+become training text, and it keeps ids, clusters and splits flowing through the
+same machinery as every other library.
+
+**What it does not buy.** At `--emit-signals primary` a line asserting three
+signals still emits one key and the other two assertions are discarded; banking
+them needs `--emit-signals all` and a `merge-folds` that accepts a multi-key tree
+(12.2). And nothing generated here is a hard case, so a dataset that grows in
+line count has not grown in difficulty.
+
+One caveat on the DD7 leak check. `declarative.frame_by_label_mode` cannot show
+*equal* rows for the decisive slot, and should not be read as if it could: a
+`neg_base` line asserts nothing true, so it can never be the decisive fragment of
+a `true` example. What the rows can show is the mixed frames drifting apart, and
+that the negative base is not carrying the whole `false` class on its own.
 
 ### 12.4 Out-of-scope symptom mentions — not built
 
@@ -1549,7 +1637,9 @@ those, the forward plan runs in the order its dependencies force:
    report. Note this does *not* raise the fragment-count ceiling: that counts
    *sources*, not their size (section 5).
 3. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
-   library format.
+   library format. The multi-symptom half is now **built but unmeasured**: the
+   library exists and no arm draws from it, so what remains here is a
+   `--declarative-share` sweep scored on the 67 submissions, and 12.4.
 4. Use `--emit-signals all` (12.2), and template the clinical libraries once
    there are enough distinct templates per library for the split arithmetic.
 
