@@ -35,14 +35,54 @@ import hashlib
 import json
 import re
 from collections import defaultdict
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from .normalise import normalise
 
 #: Permitted values for a library's ``fragment_type``.
-FRAGMENT_TYPES = frozenset({"positive", "negative", "ambiguous", "confounder", "filler"})
+#:
+#: ``declarative`` is the JSONL-only member (:data:`LIBRARY_FORMATS`). Unlike
+#: every other type it says nothing about what a line asserts: a declarative
+#: library's lines each carry their own label vector, because a fragment
+#: asserting fever true and dysuria false has no single polarity a filename
+#: could carry.
+FRAGMENT_TYPES = frozenset(
+    {"positive", "negative", "ambiguous", "confounder", "filler", "declarative"}
+)
+
+#: The fragment type a JSONL library must declare, and the one type a text
+#: library may not.
+DECLARATIVE_TYPE = "declarative"
+
+#: Permitted values for a library's ``format``. ``text`` is the default and the
+#: 49 hand-written libraries stay on it: their ``fragment_id`` hashes the text
+#: and their split hashes the cluster key, so a format change that moved either
+#: would move every dataset ever generated, and a single-signal library's vector
+#: is already derivable from ``fragment_type`` plus ``null_on``.
+LIBRARY_FORMATS = frozenset({"text", "jsonl"})
+
+#: A fragment's own-signal polarity, projected onto the label its own head would
+#: carry. It lives here rather than in the recombiner because it is now half of
+#: how a text library's per-line vector is *derived* (:func:`derive_labels`), and
+#: a derivation reading its table from the module that does the drawing would be
+#: a second source for a fact the manifest already states.
+#:
+#: ``filler`` and ``declarative`` never appear. Neither has an own signal: a
+#: filler fragment's contribution to any signal comes from its ``null_on``
+#: declaration, and a declarative line's comes from the line.
+#:
+#: ``ambiguous`` and ``confounder`` both map to ``None`` rather than being
+#: absent, which is the point of the ``null_ambiguous`` mode: a confounder
+#: *asserts* that the correct label is "not mentioned", it does not decline to
+#: say.
+FRAGMENT_TYPE_LABELS: Mapping[str, bool | None] = {
+    "positive": True,
+    "negative": False,
+    "ambiguous": None,
+    "confounder": None,
+}
 
 #: Permitted values for a ``null_on`` entry's ``basis``, and the whole of the
 #: distinction the lint acts on.
@@ -64,6 +104,18 @@ NULL_ON_BASES = frozenset({"absent", "policy"})
 #: typo ("notes") is an error instead of a note that silently does not exist.
 _NULL_ON_KEYS = frozenset({"basis", "note"})
 
+#: Keys permitted on one JSONL library line. Closed for the reason
+#: :data:`_NULL_ON_KEYS` is: a typo has to be an error rather than a field that
+#: silently does not exist.
+_JSONL_KEYS = frozenset({"text", "labels", "cluster", "meta"})
+
+#: The keys a JSONL line may not omit. ``cluster`` is required rather than
+#: optional because a generated library's lines are near-duplicates of their
+#: siblings by construction, so an untagged line would be split on its own text
+#: and scatter a cluster across the train/val boundary.
+_JSONL_REQUIRED_KEYS = frozenset({"text", "labels", "cluster"})
+
+
 #: Split names, in band order.
 SPLITS = ("train", "val", "test")
 
@@ -76,6 +128,23 @@ _CLUSTER_MARKER = re.compile(r"^\[([A-Za-z0-9_]+)\]\s+")
 
 class ManifestError(ValueError):
     """Raised when the manifest, or the libraries it declares, are invalid."""
+
+
+class _Undeclared:
+    """The type of :data:`UNDECLARED`; not instantiated anywhere else."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "UNDECLARED"
+
+
+#: What :meth:`Fragment.value_for` returns for a signal a fragment says nothing
+#: about, and deliberately **not** ``None``. The whole of section 7's
+#: missing-key-versus-``null`` distinction rides on those two being different: a
+#: missing key masks that head's loss, and ``None`` supervises it towards "not
+#: mentioned". Compare with ``is``; it has no meaningful truthiness.
+UNDECLARED = _Undeclared()
 
 
 @dataclass(frozen=True)
@@ -116,6 +185,33 @@ class LibrarySpec:
     #: Sorted by signal, so two manifests that declare the same pairs in a
     #: different order produce identical specs.
     null_on: tuple[NullOn, ...] = ()
+    #: One of :data:`LIBRARY_FORMATS`. Defaults to ``text``, so an entry written
+    #: before the field existed means what it always meant.
+    format: str = "text"
+
+
+def derive_labels(
+    *, signal_key: str | None, fragment_type: str, null_on: Iterable[NullOn]
+) -> dict[str, bool | None]:
+    """Return the label vector every line of a *text* library carries.
+
+    The two facts the manifest already states, read in one place: the library's
+    own signal takes its value from ``fragment_type``, and every foreign signal
+    it declares is ``null``. Anything else is absent from the result, which is
+    what :data:`UNDECLARED` means.
+
+    Sorted, so a vector's iteration order never depends on the order a manifest
+    listed its ``null_on`` pairs in.
+    """
+    labels: dict[str, bool | None] = {entry.signal: None for entry in null_on}
+    if signal_key is not None:
+        if fragment_type not in FRAGMENT_TYPE_LABELS:
+            raise ManifestError(
+                f"fragment_type {fragment_type!r} carries a signal_key {signal_key!r} but has "
+                "no own-signal polarity; only a per-line vector can say what it asserts"
+            )
+        labels[signal_key] = FRAGMENT_TYPE_LABELS[fragment_type]
+    return dict(sorted(labels.items()))
 
 
 @dataclass(frozen=True)
@@ -136,6 +232,44 @@ class Fragment:
     #: for the same reason it rejects a second provenance block: the two can
     #: drift and only one of them is right.
     null_on: tuple[NullOn, ...] = ()
+    #: This fragment's per-line label vector: every signal it has a known status
+    #: for, mapped to ``True`` / ``False`` / ``None``. A signal *absent* from it
+    #: is undeclared, and that is not the same as ``None`` -- see
+    #: :meth:`value_for`.
+    #:
+    #: Passed ``None`` by a caller that has not got one, which is every text
+    #: library: the vector is then derived by :func:`derive_labels` from
+    #: ``(signal_key, fragment_type, null_on)``, so the two representations agree
+    #: by construction rather than by maintenance. A JSONL library passes the
+    #: line's own vector instead. It is one field either way, so nothing
+    #: downstream has to know which format a fragment came from. Never ``None``
+    #: after construction.
+    labels: Mapping[str, bool | None] | None = None
+
+    def __post_init__(self) -> None:
+        if self.labels is None:
+            object.__setattr__(
+                self,
+                "labels",
+                derive_labels(
+                    signal_key=self.signal_key,
+                    fragment_type=self.fragment_type,
+                    null_on=self.null_on,
+                ),
+            )
+
+    def value_for(self, signal: str) -> bool | None | _Undeclared:
+        """Return this fragment's value for ``signal``, or :data:`UNDECLARED`.
+
+        Four states, not three: ``True`` and ``False`` are assertions, ``None``
+        is a declared silence that supervises a head towards "not mentioned",
+        and :data:`UNDECLARED` is "nobody has decided", which earns no key at
+        all. Returning ``None`` for the last of those would teach every head to
+        answer "not mentioned" to every question it was never trained on.
+        """
+        if self.labels is not None and signal in self.labels:
+            return self.labels[signal]
+        return UNDECLARED
 
     def null_on_basis(self, signal: str) -> str | None:
         """Return the declared basis for ``signal``, or ``None`` if undeclared."""
@@ -317,7 +451,17 @@ def parse_manifest(payload: dict, *, signals: Collection[str] | None = None) -> 
 
     Checks that do not need the filesystem happen here: permitted
     ``fragment_type``, unique ``name``, ``signal_key``/``fragment_type``
-    agreement, and the ``null_on`` block (:func:`parse_null_on`).
+    agreement, the ``format`` field and what it excludes, and the ``null_on``
+    block (:func:`parse_null_on`).
+
+    **Format and label source are one decision.** A ``jsonl`` library must
+    declare ``fragment_type: "declarative"`` and must declare neither
+    ``signal_key`` nor ``null_on``, because both are library-*level* statements
+    about what every line means and a declarative library's lines each state
+    that for themselves. Permitting both would be two sources for one value,
+    which is the reason section 4 gives for not letting a library declare
+    ``null_on`` for its own signal: two sources can disagree, and only one of
+    them is right.
     """
     libraries = payload.get("libraries")
     if not isinstance(libraries, list) or not libraries:
@@ -345,17 +489,45 @@ def parse_manifest(payload: dict, *, signals: Collection[str] | None = None) -> 
                 f"(permitted: {permitted})"
             )
 
+        library_format = entry.get("format", "text")
+        if library_format not in LIBRARY_FORMATS:
+            permitted = ", ".join(sorted(LIBRARY_FORMATS))
+            raise ManifestError(
+                f"library {name!r} has unknown format {library_format!r} (permitted: {permitted})"
+            )
+
         signal_key = entry.get("signal_key")
-        if fragment_type == "filler" and signal_key is not None:
-            raise ManifestError(
-                f"library {name!r} is filler but declares signal_key {signal_key!r}; "
-                "filler fragments carry no signal"
-            )
-        if fragment_type != "filler" and signal_key is None:
-            raise ManifestError(
-                f"library {name!r} has fragment_type {fragment_type!r} but no signal_key; "
-                "only filler libraries may omit one"
-            )
+        if library_format == "jsonl":
+            if fragment_type != DECLARATIVE_TYPE:
+                raise ManifestError(
+                    f"library {name!r} has format 'jsonl' but fragment_type "
+                    f"{fragment_type!r}; a JSONL library's lines carry a label vector each, "
+                    f"so its only permitted fragment_type is {DECLARATIVE_TYPE!r}"
+                )
+            for field in ("signal_key", "null_on"):
+                if entry.get(field) is not None:
+                    raise ManifestError(
+                        f"library {name!r} has format 'jsonl' and also declares {field!r}; "
+                        "that is a library-level statement about every line, and this "
+                        "library's lines each carry their own label vector"
+                    )
+        else:
+            if fragment_type == DECLARATIVE_TYPE:
+                raise ManifestError(
+                    f"library {name!r} has fragment_type {DECLARATIVE_TYPE!r} but format "
+                    "'text'; a text line has nowhere to carry a label vector, so the type "
+                    "is only meaningful with format 'jsonl'"
+                )
+            if fragment_type == "filler" and signal_key is not None:
+                raise ManifestError(
+                    f"library {name!r} is filler but declares signal_key {signal_key!r}; "
+                    "filler fragments carry no signal"
+                )
+            if fragment_type != "filler" and signal_key is None:
+                raise ManifestError(
+                    f"library {name!r} has fragment_type {fragment_type!r} but no signal_key; "
+                    "only filler libraries may omit one"
+                )
 
         specs.append(
             LibrarySpec(
@@ -371,6 +543,7 @@ def parse_manifest(payload: dict, *, signals: Collection[str] | None = None) -> 
                     own_signal=signal_key,
                     signals=signals,
                 ),
+                format=library_format,
             )
         )
     return specs
@@ -426,6 +599,134 @@ def read_library(
     return fragments
 
 
+def parse_jsonl_labels(
+    payload: object, *, where: str, signals: Collection[str] | None
+) -> dict[str, bool | None]:
+    """Validate one JSONL line's ``labels`` object and return it sorted by signal.
+
+    Three states are expressible and the fourth is expressed by omission:
+    ``true`` and ``false`` assert, ``null`` declares the line silent on that
+    signal, and a signal the object does not name is undeclared -- exactly as in
+    ``null_on`` (section 4), and earning no key downstream for the same reason.
+
+    ``signals`` is the run's encoder signals when they are known; a line naming
+    anything else is an error, since a misspelled signal is otherwise
+    indistinguishable from one nobody declared. It is optional because the
+    reporting tools load the manifest without a ruleset.
+    """
+    if not isinstance(payload, dict):
+        raise ManifestError(
+            f"{where} has a 'labels' that is not an object keyed by signal: {payload!r}"
+        )
+    if not payload:
+        raise ManifestError(
+            f"{where} has an empty 'labels'; a line that states nothing about any signal is "
+            "filler, and filler belongs in a filler library"
+        )
+
+    labels: dict[str, bool | None] = {}
+    for signal, value in payload.items():
+        if signals is not None and signal not in signals:
+            raise ManifestError(
+                f"{where} labels {signal!r}, which the ruleset does not send to the encoder "
+                f"(known: {', '.join(sorted(signals))})"
+            )
+        if value is not None and not isinstance(value, bool):
+            raise ManifestError(
+                f"{where} has a non-boolean, non-null value for {signal!r}: {value!r} "
+                "(true asserts, false denies, null declares the line silent, and omitting "
+                "the signal leaves it undeclared)"
+            )
+        labels[signal] = value
+    return dict(sorted(labels.items()))
+
+
+def read_jsonl_library(
+    spec: LibrarySpec,
+    base_dir: Path,
+    *,
+    folds: int | None = None,
+    fold_index: int = 0,
+    salt: str = "",
+    signals: Collection[str] | None = None,
+) -> list[Fragment]:
+    """Read one JSONL library into fragments, split already assigned.
+
+    One JSON object per line; blank lines are skipped. The line's ``labels``
+    become the fragment's vector directly -- nothing about a JSONL fragment's
+    meaning is read from its library, which is the whole reason the format
+    exists.
+
+    ``fragment_id``, ``cluster_id`` and the split are computed exactly as they
+    are for a text library (:func:`read_library`): the id hashes the normalised
+    text, the cluster is namespaced ``{library}:{tag}`` as a ``[c01]`` marker is,
+    and the split hashes the cluster key. A generated library is a committed
+    build artefact and the machinery must not be able to tell it apart.
+    """
+    path = base_dir / spec.file
+    if not path.is_file():
+        raise ManifestError(f"library {spec.name!r} declares missing file: {path}")
+
+    fragments: list[Fragment] = []
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not raw.strip():
+            continue
+        where = f"library {spec.name!r} line {number}"
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ManifestError(f"{where} is not valid JSON: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ManifestError(f"{where} is not a JSON object: {payload!r}")
+
+        unknown = sorted(set(payload) - _JSONL_KEYS)
+        if unknown:
+            raise ManifestError(
+                f"{where} has unknown key(s) {', '.join(unknown)} "
+                f"(permitted: {', '.join(sorted(_JSONL_KEYS))})"
+            )
+        missing = sorted(_JSONL_REQUIRED_KEYS - set(payload))
+        if missing:
+            raise ManifestError(f"{where} is missing required key(s) {', '.join(missing)}")
+
+        text = payload["text"]
+        if not isinstance(text, str) or not normalise(text):
+            raise ManifestError(f"{where} has a blank or non-string 'text': {text!r}")
+
+        cluster = payload["cluster"]
+        if not isinstance(cluster, str) or not cluster.strip():
+            raise ManifestError(f"{where} has a blank or non-string 'cluster': {cluster!r}")
+
+        meta = payload.get("meta", {})
+        if not isinstance(meta, dict):
+            raise ManifestError(f"{where} has a 'meta' that is not an object: {meta!r}")
+
+        labels = parse_jsonl_labels(payload["labels"], where=where, signals=signals)
+        cluster_id = f"{spec.name}:{cluster.strip()}"
+        key = cluster_key(cluster_id, text)
+        fragments.append(
+            Fragment(
+                fragment_id=make_fragment_id(spec.name, text),
+                text=text,
+                library=spec.name,
+                # A declarative fragment has no *one* signal, so the scalar stays
+                # empty and everything downstream reads the vector instead.
+                signal_key=None,
+                fragment_type=spec.fragment_type,
+                subclass=spec.subclass,
+                category=spec.category,
+                cluster_id=cluster_id,
+                split=assign_split(key, folds=folds, fold_index=fold_index, salt=salt),
+                null_on=(),
+                labels=labels,
+            )
+        )
+
+    if not fragments:
+        raise ManifestError(f"library {spec.name!r} resolved to zero non-blank lines: {path}")
+    return fragments
+
+
 def deduplicate(fragments: list[Fragment]) -> list[Fragment]:
     """Drop repeated normalised texts, globally rather than per library.
 
@@ -450,6 +751,16 @@ def deduplicate(fragments: list[Fragment]) -> list[Fragment]:
                 f"text appears in {existing.library!r} as {existing.fragment_type!r} and in "
                 f"{fragment.library!r} as {fragment.fragment_type!r}, so it carries two "
                 f"conflicting labels: {fragment.text!r}"
+            )
+        if existing.labels != fragment.labels:
+            # Two declarative lines share a fragment_type, so the check above
+            # cannot see a collision between them. Their vectors are the whole
+            # of what they claim, and first-wins on a disagreement is how a
+            # dataset acquires a wrong label.
+            raise ManifestError(
+                f"text appears in {existing.library!r} with labels {dict(existing.labels)} "
+                f"and in {fragment.library!r} with labels {dict(fragment.labels)}, so it "
+                f"carries two conflicting labels: {fragment.text!r}"
             )
     return result
 
@@ -520,9 +831,21 @@ def load_fragments(
     base_dir = manifest_path.parent
     fragments: list[Fragment] = []
     for spec in specs:
-        fragments.extend(
-            read_library(spec, base_dir, folds=folds, fold_index=fold_index, salt=salt)
-        )
+        if spec.format == "jsonl":
+            fragments.extend(
+                read_jsonl_library(
+                    spec,
+                    base_dir,
+                    folds=folds,
+                    fold_index=fold_index,
+                    salt=salt,
+                    signals=signals,
+                )
+            )
+        else:
+            fragments.extend(
+                read_library(spec, base_dir, folds=folds, fold_index=fold_index, salt=salt)
+            )
 
     fragments = deduplicate(fragments)
     if check_cells:

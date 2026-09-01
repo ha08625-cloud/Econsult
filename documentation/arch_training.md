@@ -239,6 +239,37 @@ fails CI and a declared file that is missing stops the run — the same posture 
 the four merge guards in section 8, and for the same reason: these faults are
 invisible in a diff.
 
+### Two library formats
+
+A library entry carries an optional `format`: `text` (the default, and what all
+49 hand-written libraries use) or `jsonl`. The formats differ in **where a
+line's label comes from**, and nowhere else — a JSONL library gets its
+`fragment_id`, its namespaced cluster and its split from the same functions a
+text library does, because a generated library is a committed build artefact and
+the split machinery must not be able to tell it apart.
+
+* **`text`** — one fragment per line, optionally cluster-marked. The line's
+  label vector is *derived*: the library's own signal takes its value from
+  `fragment_type`, every signal it declares `null_on` is `null`, and every other
+  signal is undeclared.
+* **`jsonl`** — one JSON object per line (`text`, `labels`, `cluster`, optional
+  `meta`), and `labels` **is** the vector. `true`/`false` assert, `null` declares
+  the line silent, and a signal the object omits is undeclared, exactly as in
+  `null_on`. Such a library must declare `fragment_type: "declarative"` and must
+  declare neither `signal_key` nor `null_on`: both are library-level statements
+  about every line, and these lines each state it for themselves. Two sources for
+  one value is one that can disagree with itself.
+
+Both end up in the same `Fragment.labels` field, so nothing downstream has to
+know which format a fragment came from; `Fragment.value_for(signal)` returns
+`True`/`False`/`None` or the `UNDECLARED` sentinel, and that fourth state is
+deliberately not `None` (section 7).
+
+**No migration is planned.** A text library's `fragment_id` hashes its text and
+its split hashes its cluster key, so re-expressing it as JSONL would move every
+dataset ever generated, and its vector is already derivable from what the
+manifest states.
+
 ### `null_on`: which foreign signals a library is `null` on
 
 For every (library, foreign signal) pair, the library either declares that the
@@ -1315,6 +1346,12 @@ manifest declaring which format each library uses. **This is what the
 nocturia / urinary-frequency pair is waiting on** (section 10), unless 12.9 is
 right that a library-level assertion covers it.
 
+**The format itself now exists** (section 4): the manifest can declare a
+`jsonl` library, its lines carry per-line vectors, and every fragment exposes
+one. What does not exist yet is anything that *draws* on such a fragment — the
+pools still select on `(signal_key, fragment_type)`, so a declarative library
+would load and then never be chosen — nor the generator that would write one.
+
 ### 12.4 Out-of-scope symptom mentions — not built
 
 Fragments mentioning a symptom outside the ruleset: "I had a fever and a cough."
@@ -1328,8 +1365,12 @@ more places, which mildly counteracts section 9's urgency-language leak.
 
 The mechanism 12.2 to 12.4 need. The manifest carries `null_on` (section 4), the
 lint checks the half a lexicon can check (section 8), and `--emit-signals all`
-composes the vector (section 7). **What is not built is the per-line vector**, so
-cross-signal `true`/`false` remains inexpressible.
+composes the vector (section 7). The per-line vector is now **expressible** — a
+`jsonl` library's lines each carry one, and a text library's is derived from
+`fragment_type` plus `null_on` so the two agree by construction — but nothing
+consumes it yet: pool selection, the one-assertion-per-signal rule and
+`label_vector` still read the scalar `signal_key`, so cross-signal
+`true`/`false` cannot yet reach an example.
 
 Combination is validated on the vector rather than the primary signal: silent
 plus asserted yields the assertion, silent plus silent yields `null`, and the

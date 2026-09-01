@@ -28,7 +28,10 @@ import random
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from .manifest import Fragment, cluster_key
+# ``FRAGMENT_TYPE_LABELS`` is re-exported rather than redefined: it is now
+# also how a text library's per-line label vector is derived, and one table
+# read from two places is one that can disagree with itself.
+from .manifest import FRAGMENT_TYPE_LABELS, Fragment, cluster_key
 from .normalise import normalise
 
 #: Bumped when a change to this module would alter the emitted dataset.
@@ -96,21 +99,6 @@ LABEL_MODES = ("true", "false", "null_structural", "null_ambiguous")
 EMIT_SIGNALS_MODES = ("primary", "all")
 
 DEFAULT_EMIT_SIGNALS = "primary"
-
-#: A fragment's own-signal polarity, projected onto the label its own head would
-#: carry. ``filler`` never appears: a filler fragment has no signal of its own,
-#: and its contribution to any signal comes from its ``null_on`` declaration.
-#:
-#: ``ambiguous`` and ``confounder`` both map to ``None`` rather than being
-#: absent, and that is the point of the ``null_ambiguous`` mode: a confounder
-#: *asserts* that the correct label is "not mentioned", it does not decline to
-#: say.
-FRAGMENT_TYPE_LABELS: Mapping[str, bool | None] = {
-    "positive": True,
-    "negative": False,
-    "ambiguous": None,
-    "confounder": None,
-}
 
 _TERMINAL_PUNCTUATION = ".!?"
 
