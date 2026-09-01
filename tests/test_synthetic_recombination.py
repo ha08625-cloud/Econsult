@@ -32,6 +32,7 @@ from scripts.synthetic_data.lint import (
 )
 from scripts.synthetic_data.manifest import (
     SPLITS,
+    UNDECLARED,
     Fragment,
     LibrarySpec,
     ManifestError,
@@ -44,6 +45,7 @@ from scripts.synthetic_data.manifest import (
     find_fold_salts,
     fold_bucket,
     load_fragments,
+    make_fragment_id,
     parse_line,
     parse_manifest,
     read_library,
@@ -3436,3 +3438,304 @@ def test_the_cli_rejects_an_unknown_emit_signals_choice(tmp_path, vector_librari
         )
     assert excinfo.value.code == 2
     assert set(EMIT_SIGNALS_MODES) == {"primary", "all"}
+
+
+# --------------------------------------------------------------------------
+# 17. Per-line label vectors and the JSONL format (12.3, Task 1)
+# --------------------------------------------------------------------------
+#
+# The format exists because a fragment asserting fever true and dysuria false
+# has no single polarity a filename could carry. Everything here is about the
+# two representations agreeing: a text library's vector is *derived* from the
+# facts the manifest already states, and a JSONL library's is stated per line.
+
+
+def _declarative_entry(name: str, **overrides) -> dict:
+    entry = {
+        "name": name,
+        "file": f"{name}.jsonl",
+        "fragment_type": "declarative",
+        "format": "jsonl",
+    }
+    entry.update(overrides)
+    return entry
+
+
+def _declarative_line(text: str, labels: dict, cluster: str, **extra) -> str:
+    return json.dumps({"text": text, "labels": labels, "cluster": cluster, **extra})
+
+
+def _spread_declarative_lines(count: int) -> list[str]:
+    """Lines whose clusters land in all three splits, so the guard stays quiet."""
+    return [
+        _declarative_line(
+            f"I have had a fever and blood in my wee number {i}",
+            {SIGNAL: True, "haematuria_present": True},
+            f"decl:fever+haematuria+{i}",
+        )
+        for i in range(count)
+    ]
+
+
+def _write_declarative(base: Path, lines: list[str], **entry_overrides) -> Path:
+    entry = _declarative_entry("declarative", **entry_overrides)
+    (base / entry["file"]).write_text("\n".join(lines) + "\n", encoding="utf-8")
+    manifest_path = base / "manifest.json"
+    manifest_path.write_text(json.dumps({"version": 1, "libraries": [entry]}), encoding="utf-8")
+    return manifest_path
+
+
+# --- The derivation, checked against what the recombiner computes today ----
+
+
+def test_every_existing_library_derives_the_vector_label_vector_computes():
+    # The important one. `labels` is a second representation of a fact the
+    # manifest already stated, and a second representation that can disagree
+    # with the first is worse than none: it would relabel training text
+    # silently. Checked over the real libraries rather than a fixture, because
+    # the fixture is the thing that would be got wrong in the same way.
+    fragments = load_fragments(REAL_MANIFEST, check_cells=False)
+    assert len(fragments) > 2000
+
+    for fragment in fragments:
+        if fragment.signal_key is not None:
+            primary = fragment.signal_key
+            polarity = FRAGMENT_TYPE_LABELS[fragment.fragment_type]
+            mode = {True: "true", False: "false"}.get(polarity, "null_ambiguous")
+        else:
+            # Filler: it asserts nothing, so any signal it declares serves as
+            # the primary for a one-fragment structural null.
+            primary = fragment.null_on[0].signal
+            mode = "null_structural"
+        computed = label_vector([fragment], signal_key=primary, label_mode=mode)
+        assert dict(fragment.labels) == computed, fragment.fragment_id
+
+
+def test_a_declared_null_and_an_undeclared_signal_are_different_answers():
+    # The distinction the whole of section 7 rides on. A declared null
+    # supervises a head towards "not mentioned"; undeclared masks it.
+    fragment = _fragment(
+        "the weather is awful",
+        null_on=(NullOn(signal=SIGNAL, basis="absent"),),
+    )
+    assert fragment.value_for(SIGNAL) is None
+    assert fragment.value_for(OTHER_SIGNAL) is UNDECLARED
+    assert UNDECLARED is not None
+
+
+def test_an_asserting_fragments_own_signal_takes_its_polarity_from_its_type():
+    fragment = _fragment(
+        "i had a fever",
+        signal_key=SIGNAL,
+        fragment_type="negative",
+        null_on=(NullOn(signal=OTHER_SIGNAL, basis="absent"),),
+    )
+    assert fragment.value_for(SIGNAL) is False
+    assert fragment.value_for(OTHER_SIGNAL) is None
+    assert dict(fragment.labels) == {SIGNAL: False, OTHER_SIGNAL: None}
+
+
+def test_a_type_with_no_own_polarity_may_not_carry_a_signal_key():
+    with pytest.raises(ManifestError, match="no own-signal polarity"):
+        _fragment("i had a fever and burning", signal_key=SIGNAL, fragment_type="declarative")
+
+
+# --- The JSONL round trip --------------------------------------------------
+
+
+def test_a_jsonl_library_carries_its_lines_own_vectors(tmp_path):
+    text = "I have had a fever and blood in my wee, but not any pain when I pee."
+    labels = {SIGNAL: True, "haematuria_present": True, OTHER_SIGNAL: False}
+    manifest_path = _write_declarative(
+        tmp_path,
+        [
+            _declarative_line(text, labels, "decl:dysuria-fever+haematuria+"),
+            *_spread_declarative_lines(60),
+        ],
+    )
+    fragment = next(f for f in load_fragments(manifest_path) if f.text == text)
+
+    assert dict(fragment.labels) == labels
+    assert fragment.value_for(SIGNAL) is True
+    assert fragment.value_for(OTHER_SIGNAL) is False
+    # Undeclared, not null: the line says nothing about flank pain, so an
+    # example holding it is not entitled to a key for it.
+    assert fragment.value_for("flank_pain_present") is UNDECLARED
+    # A declarative fragment has no *one* signal, and nothing about it is a
+    # library-level fact.
+    assert fragment.signal_key is None
+    assert fragment.null_on == ()
+    assert fragment.fragment_type == "declarative"
+
+
+def test_a_jsonl_fragment_is_identified_and_split_exactly_as_a_text_one(tmp_path):
+    # A generated library is a committed build artefact and the split machinery
+    # must not be able to tell it apart.
+    text = "I have had a fever and blood in my wee, but not any pain when I pee."
+    manifest_path = _write_declarative(
+        tmp_path,
+        [
+            _declarative_line(text, {SIGNAL: True}, "c01"),
+            _declarative_line(f"{text} Really.", {SIGNAL: True}, "c01"),
+            *_spread_declarative_lines(60),
+        ],
+    )
+    fragments = load_fragments(manifest_path)
+    clustered = [f for f in fragments if f.cluster_id == "declarative:c01"]
+
+    assert len(clustered) == 2
+    assert len({f.split for f in clustered}) == 1
+    assert clustered[0].split == assign_split("declarative:c01")
+    fragment = next(f for f in clustered if f.text == text)
+    assert fragment.fragment_id == make_fragment_id("declarative", text)
+    assert fragment.text == text  # verbatim, never normalised
+
+
+def test_a_jsonl_line_may_declare_a_signal_silent(tmp_path):
+    manifest_path = _write_declarative(
+        tmp_path,
+        [
+            _declarative_line(
+                "I have had a fever and stinging when I pass urine",
+                {SIGNAL: True, OTHER_SIGNAL: True, "flank_pain_present": None},
+                "decl:dysuria+fever+",
+            ),
+            *_spread_declarative_lines(60),
+        ],
+    )
+    fragment = next(f for f in load_fragments(manifest_path) if "stinging" in f.text)
+    assert fragment.value_for("flank_pain_present") is None
+    assert fragment.value_for("nocturia_present") is UNDECLARED
+
+
+def test_blank_lines_in_a_jsonl_library_are_skipped(tmp_path):
+    manifest_path = _write_declarative(tmp_path, ["", *_spread_declarative_lines(60), "  "])
+    assert len(load_fragments(manifest_path)) == 60
+
+
+def test_a_jsonl_library_naming_an_unknown_signal_raises(tmp_path):
+    manifest_path = _write_declarative(
+        tmp_path,
+        [
+            _declarative_line("I have had a fevre", {"fevre_present": True}, "c01"),
+            *_spread_declarative_lines(60),
+        ],
+    )
+    with pytest.raises(ManifestError, match="fevre_present"):
+        load_fragments(manifest_path, check_cells=False, signals=[SIGNAL, OTHER_SIGNAL])
+
+
+@pytest.mark.parametrize(
+    ("line", "match"),
+    [
+        ("{not json", "not valid JSON"),
+        ('["a list"]', "not a JSON object"),
+        ('{"text": "x", "labels": {"fever_present": true}}', "missing required key"),
+        ('{"labels": {"fever_present": true}, "cluster": "c01"}', "missing required key"),
+        (
+            '{"text": "x", "labels": {"fever_present": true}, "cluster": "c01", "note": "hi"}',
+            "unknown key",
+        ),
+        ('{"text": "  ", "labels": {"fever_present": true}, "cluster": "c01"}', "'text'"),
+        ('{"text": "x", "labels": {"fever_present": true}, "cluster": " "}', "'cluster'"),
+        ('{"text": "x", "labels": [], "cluster": "c01"}', "not an object"),
+        ('{"text": "x", "labels": {}, "cluster": "c01"}', "empty 'labels'"),
+        (
+            '{"text": "x", "labels": {"fever_present": "yes"}, "cluster": "c01"}',
+            "non-boolean, non-null",
+        ),
+        (
+            '{"text": "x", "labels": {"fever_present": true}, "cluster": "c01", "meta": 3}',
+            "'meta' that is not an object",
+        ),
+    ],
+)
+def test_a_malformed_jsonl_line_raises(tmp_path, line, match):
+    manifest_path = _write_declarative(tmp_path, [line, *_spread_declarative_lines(60)])
+    with pytest.raises(ManifestError, match=match):
+        load_fragments(manifest_path, check_cells=False)
+
+
+def test_a_jsonl_error_names_the_library_and_the_line(tmp_path):
+    manifest_path = _write_declarative(tmp_path, [*_spread_declarative_lines(3), '{"text": "x"}'])
+    with pytest.raises(ManifestError) as excinfo:
+        load_fragments(manifest_path, check_cells=False)
+    assert "'declarative' line 4" in str(excinfo.value)
+
+
+# --- What the manifest may and may not say about a format ------------------
+
+
+def test_an_unknown_format_raises():
+    with pytest.raises(ManifestError, match="unknown format"):
+        parse_manifest({"libraries": [_declarative_entry("decl", format="yaml")]})
+
+
+def test_a_jsonl_library_must_be_declarative():
+    with pytest.raises(ManifestError, match="only permitted fragment_type"):
+        parse_manifest(
+            {"libraries": [_declarative_entry("decl", fragment_type="positive", signal_key=SIGNAL)]}
+        )
+
+
+def test_a_text_library_may_not_be_declarative():
+    with pytest.raises(ManifestError, match="nowhere to carry a label vector"):
+        parse_manifest({"libraries": [_entry("alpha", fragment_type="declarative")]})
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("signal_key", SIGNAL), ("null_on", {"fever_present": {"basis": "absent"}})],
+)
+def test_a_jsonl_library_may_not_make_a_library_level_claim(field, value):
+    # Two sources for one value is one that can disagree with itself -- the
+    # reason section 4 gives for not letting a library declare null_on for its
+    # own signal, applied to a library whose lines each state their own.
+    with pytest.raises(ManifestError, match=field):
+        parse_manifest({"libraries": [_declarative_entry("decl", **{field: value})]})
+
+
+def test_a_library_that_declares_no_format_is_text():
+    spec = parse_manifest({"libraries": [_entry("alpha")]})[0]
+    assert spec.format == "text"
+
+
+# --- Deduplication over vectors --------------------------------------------
+
+
+def test_two_declarative_lines_with_the_same_text_and_different_labels_raise():
+    # The fragment_type check cannot see this: both lines are declarative, and
+    # their vectors are the whole of what they claim.
+    first = _fragment(
+        "i have had a fever and burning when i pee",
+        library="decl_a",
+        fragment_type="declarative",
+        labels={SIGNAL: True, OTHER_SIGNAL: True},
+    )
+    second = _fragment(
+        "I have had a fever and burning when I pee.",
+        library="decl_b",
+        fragment_type="declarative",
+        labels={SIGNAL: True, OTHER_SIGNAL: False},
+    )
+    with pytest.raises(ManifestError, match="conflicting labels"):
+        deduplicate([first, second])
+
+
+def test_two_declarative_lines_agreeing_on_the_vector_keep_the_first():
+    labels = {SIGNAL: True, OTHER_SIGNAL: True}
+    fragments = [
+        _fragment(
+            "i had a fever and burning",
+            library="decl_a",
+            fragment_type="declarative",
+            labels=labels,
+        ),
+        _fragment(
+            "I had a fever and burning!",
+            library="decl_b",
+            fragment_type="declarative",
+            labels=labels,
+        ),
+    ]
+    assert [f.library for f in deduplicate(fragments)] == ["decl_a"]
