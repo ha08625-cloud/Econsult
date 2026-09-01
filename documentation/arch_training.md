@@ -599,9 +599,16 @@ arguments above:
   constraint and not only the head, and a head supervised on 4% of the tree looks
   identical to one supervised on all of it once three label counts are normalised.
 * `fragments` — for every fragment in the split: `library`, `cluster_key`,
-  `fragment_type`, `signal_key`, `subclass`, `split`. Without it **nothing in a
-  generated dataset says which fragments are the same idea**, and computing
-  effective sample size needs exactly that. Re-reading the libraries at training
+  `fragment_type`, `signal_key`, `signals`, `labels`, `subclass`, `split`.
+  **`signals` is the field to read, not `signal_key`.** It is every signal the
+  fragment decides — what it asserts, plus its own signal where it has one, so
+  an *ambiguous* fragment still counts as its signal's. For a text fragment that
+  is exactly `[signal_key]`; a declarative line decides two to four at once and
+  has no scalar key, so `signal_key` is `null` on it rather than being made to
+  pick one of four. `labels` is the whole per-line vector, including the signals
+  the line declares itself silent on, which `signals` cannot express. Without
+  this block **nothing in a generated dataset says which fragments are the same
+  idea**, and computing effective sample size needs exactly that. Re-reading the libraries at training
   time is rejected because it fails *silently*: edit a library after generating
   and the cluster grouping is quietly wrong, producing confidence intervals that
   are too narrow with nothing raised anywhere.
@@ -1552,10 +1559,14 @@ The mechanism 12.2 to 12.4 need. The manifest carries `null_on` (section 4), the
 lint checks the half a lexicon can check (section 8), and `--emit-signals all`
 composes the vector (section 7). The per-line vector is now **expressible** — a
 `jsonl` library's lines each carry one, and a text library's is derived from
-`fragment_type` plus `null_on` so the two agree by construction — but nothing
-consumes it yet: pool selection, the one-assertion-per-signal rule and
-`label_vector` still read the scalar `signal_key`, so cross-signal
-`true`/`false` cannot yet reach an example.
+`fragment_type` plus `null_on` so the two agree by construction — and it is now
+what the pipeline reads end to end. Pool selection, the one-assertion-per-signal
+rule and `label_vector` all read the vector, and so does the training loader:
+the sidecar's `signals` list is what decides which fragment is decisive for a
+head, in place of the scalar `signal_key` a declarative line does not have.
+Cross-signal `true`/`false` therefore reaches an example, but only through a
+declarative library — a text library's vector still states one assertion, which
+is what its `fragment_type` means.
 
 Combination is validated on the vector rather than the primary signal: silent
 plus asserted yields the assertion, silent plus silent yields `null`, and the

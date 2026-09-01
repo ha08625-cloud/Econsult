@@ -598,11 +598,18 @@ def cluster_tag_coverage(fragments: Sequence, *, signal: str | None = None) -> d
     never a decisive fragment, so they never appear in the ``by_library`` slice
     this annotates; listing them here would put five permanently-0% rows above
     a warning that is about something else.
+
+    The restriction is over ``signals``, not the scalar ``signal_key``, because
+    a declarative fragment decides several signals and carries no scalar. Read
+    the old way it would be dropped from every signal's table while still
+    appearing in that signal's ``by_library`` rows -- a library posting numbers
+    with no coverage line under them, which is the one thing this table exists
+    to prevent.
     """
     tagged: dict[str, int] = {}
     total: dict[str, int] = {}
     for fragment in fragments:
-        if signal is not None and fragment.signal_key != signal:
+        if signal is not None and signal not in (fragment.signals or ()):
             continue
         if fragment.is_filler:
             continue
@@ -1716,6 +1723,12 @@ def _render_headline(report: Mapping[str, object]) -> list[str]:
     )
     lines.append("high too.")
     lines.append("")
+    # The named sub-classes only. Everything the manifest gives no sub-class to
+    # -- structural nulls, and every declarative fragment (DD3: nothing a fixed
+    # frame generates is a hard case) -- groups under ``None`` and is not a
+    # column here. That slice grows with --declarative-share while this table
+    # stays the same width, so a reader comparing arms should read it against
+    # the per-class tables above rather than as a share of the dataset.
     subclass_names = list(NULL_SUBCLASSES)
     rows = []
     for model in report["models"]:

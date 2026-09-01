@@ -1162,6 +1162,22 @@ def _fragment_provenance(fragments: Iterable[Fragment], split: str) -> dict[str,
     Only the generated split's fragments are recorded, because only they can
     appear in the JSONL. ``split`` is kept on every entry regardless, so blocks
     merged across a fold's three sidecars stay unambiguous.
+
+    **``signals`` is the field a consumer should read, not ``signal_key``.**
+    A declarative line has no one signal, so its ``signal_key`` is ``null`` and
+    the scalar cannot say which head the line is decisive for. ``signals`` is
+    :func:`occupied_signals` -- everything the line asserts, plus its own signal
+    where it has one -- which for every text fragment is exactly the
+    one-element ``[signal_key]`` the loader used to test against, and for a
+    declarative line is the two to four signals it actually decides.
+    ``signal_key`` stays populated for text libraries so that nothing reading
+    the older field breaks, and it is deliberately *not* synthesised for a
+    declarative line: a scalar that had to pick one of four assertions would be
+    a second source of a fact the vector already states, and the wrong one.
+
+    ``labels`` carries the whole per-line vector (DD2), including the signals
+    the line declares itself silent on, which ``signals`` cannot express. A
+    signal absent from it is undeclared, exactly as in the library.
     """
     return {
         fragment.fragment_id: {
@@ -1169,6 +1185,8 @@ def _fragment_provenance(fragments: Iterable[Fragment], split: str) -> dict[str,
             "cluster_key": cluster_key(fragment.cluster_id, fragment.text),
             "fragment_type": fragment.fragment_type,
             "signal_key": fragment.signal_key,
+            "signals": list(occupied_signals(fragment)),
+            "labels": dict(fragment.labels or {}),
             "subclass": fragment.subclass,
             "split": fragment.split,
         }

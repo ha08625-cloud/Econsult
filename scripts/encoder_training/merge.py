@@ -288,8 +288,13 @@ def _check_record(record: Mapping[str, object], *, signal: str, split: str, path
     if set(labels) != {signal}:
         raise MergeError(
             f"{path}: example {example_id!r} carries labels for {sorted(labels)!r}, but this tree "
-            f"is {signal!r}'s. Merging a tree that already holds several signals would build the "
-            "merged label vectors on an assumption that is false"
+            f"is {signal!r}'s. The merge builds each example's vector by asserting null for every "
+            "signal the source tree did not emit a key for, and an example that already emits "
+            "several keys makes that assumption false. This is about the keys an example emits, "
+            "not about how many signals its fragments decide: a tree generated at "
+            "--declarative-share above zero holds fragments asserting three or four signals each "
+            "and is still a single-key tree, because --emit-signals primary emits one. It is "
+            "--emit-signals all that lands here, and 12.2 is what it is waiting on"
         )
 
     meta = record.get("meta")
