@@ -2126,6 +2126,7 @@ def test_the_real_libraries_put_other_symptoms_into_fever_nulls():
 #: which tightens this to "every .txt in the tree is a declared library".
 _NON_LIBRARY_DIRS = ("generated",)
 
+
 #: Files under data/synthetic/ that are neither a library nor the manifest and
 #: are nonetheless meant to be here. Today this is the declarative phrase
 #: inventory: not scratch work, but the authored input the ``build-declarative``
@@ -2136,7 +2137,6 @@ _NON_LIBRARY_DIRS = ("generated",)
 #: is what stops this one sitting here unread.
 def _is_declared_non_library(relative: Path) -> bool:
     return relative.parts[-2:] == ("declarative", "phrases.json")
-
 
 
 def test_the_manifest_has_no_duplicate_json_keys():
@@ -2194,7 +2194,8 @@ def test_the_declarative_inventory_is_well_formed_and_never_repeats_a_library_li
     # "reads correctly after both bases"; the negated form is exempt from it
     # because "any " is usually prepended.
     root = REAL_MANIFEST.parent
-    inventory = json.loads((root / "conditions" / "uti" / "declarative" / "phrases.json").read_text())
+    inventory_path = root / "conditions" / "uti" / "declarative" / "phrases.json"
+    inventory = json.loads(inventory_path.read_text())
     assert inventory, "the declarative phrase inventory is empty"
 
     library_lines = {
