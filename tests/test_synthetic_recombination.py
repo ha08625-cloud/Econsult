@@ -2126,6 +2126,18 @@ def test_the_real_libraries_put_other_symptoms_into_fever_nulls():
 #: which tightens this to "every .txt in the tree is a declared library".
 _NON_LIBRARY_DIRS = ("generated",)
 
+#: Files under data/synthetic/ that are neither a library nor the manifest and
+#: are nonetheless meant to be here. Today this is the declarative phrase
+#: inventory: not scratch work, but the authored input the ``build-declarative``
+#: generator composes into a committed JSONL library. It is exempted by exact
+#: path shape rather than by suffix, so a second stray .json anywhere in the
+#: tree still fails the guard below, and
+#: ``test_the_declarative_inventory_is_well_formed_and_never_repeats_a_library_line``
+#: is what stops this one sitting here unread.
+def _is_declared_non_library(relative: Path) -> bool:
+    return relative.parts[-2:] == ("declarative", "phrases.json")
+
+
 
 def test_the_manifest_has_no_duplicate_json_keys():
     # The fault that made the manifest invalid: a merge fused two entries into
@@ -2160,12 +2172,53 @@ def test_the_library_tree_contains_nothing_but_libraries_and_the_manifest():
         if path.is_file()
         and path.suffix != ".txt"
         and path != REAL_MANIFEST
+        and not _is_declared_non_library(path.relative_to(root))
         and not any(part in _NON_LIBRARY_DIRS for part in path.relative_to(root).parts)
     )
     assert not strays, (
         "data/synthetic/ holds files that are neither a fragment library nor the "
         f"manifest: {strays}. Scratch work belongs outside the library tree."
     )
+
+
+def test_the_declarative_inventory_is_well_formed_and_never_repeats_a_library_line():
+    # The inventory is exempt from the stray-file guard, so this is the check
+    # that earns the exemption. Nothing reads the file until build-declarative
+    # lands, which is exactly the state the guard exists to be suspicious of.
+    #
+    # The collision half is the load-bearing one: the phrases are *written*, not
+    # lifted out of the _true.txt libraries, because a phrase that reproduced a
+    # whole library line would put train text inside a generated val fragment.
+    # Vocabulary overlap across splits is unavoidable and always has been; whole
+    # lines are not. The four-word cap on the bare form is the mechanical half of
+    # "reads correctly after both bases"; the negated form is exempt from it
+    # because "any " is usually prepended.
+    root = REAL_MANIFEST.parent
+    inventory = json.loads((root / "conditions" / "uti" / "declarative" / "phrases.json").read_text())
+    assert inventory, "the declarative phrase inventory is empty"
+
+    library_lines = {
+        normalise(line)
+        for path in root.rglob("*.txt")
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    }
+    faults: list[str] = []
+    for signal, spec in inventory.items():
+        phrases = spec["phrases"]
+        assert phrases, f"{signal} declares no phrases"
+        for phrase in phrases:
+            bare, negated = phrase["text"], phrase["negated"]
+            if len(bare.split()) > 4:
+                faults.append(f"{signal}: over four words: {bare!r}")
+            for form in (bare, negated):
+                if normalise(form) in library_lines:
+                    faults.append(f"{signal}: repeats a library line verbatim: {form!r}")
+    assert not faults, faults
+
+    # recent_uti_present is excluded by design: its label turns on a 30-day
+    # window and six policy rules, so a declarative frame cannot state it.
+    assert "recent_uti_present" not in inventory
 
 
 def test_every_library_file_on_disk_is_declared_in_the_manifest():
