@@ -263,7 +263,13 @@ the split machinery must not be able to tell it apart.
 Both end up in the same `Fragment.labels` field, so nothing downstream has to
 know which format a fragment came from; `Fragment.value_for(signal)` returns
 `True`/`False`/`None` or the `UNDECLARED` sentinel, and that fourth state is
-deliberately not `None` (section 7).
+deliberately not `None` (section 7). `build_pools` reads exactly that, which is
+what makes one code path serve both formats: for a text library the vector and
+the `(signal_key, fragment_type)` pair are the same fact, so every pool comes out
+with the same members it always had. A JSONL line's `meta` is carried onto the
+fragment too, because a generated library records its frame there and the stats
+sidecar's `declarative.frame_by_label_mode` is the check that frame identity does
+not correlate with the label.
 
 **No migration is planned.** A text library's `fragment_id` hashes its text and
 its split hashes its cluster key, so re-expressing it as JSONL would move every
@@ -1023,7 +1029,12 @@ Generator versions are not comparable with each other: version 3 split
 `expectations.txt` in two, which changes every `_draw_filler` outcome and
 therefore every generated example, and added `meta.filler_only` and the companion
 draw. **Every measurement before 2026-08-19 was made at version 2 and is history
-rather than a comparator.**
+rather than a comparator.** Version 4 computes pool membership from a fragment's
+label vector and adds `--declarative-share`; both are inert at the default, and
+a version-4 default run's *content* is identical to a version-3 one — only
+`meta.generator_version` moves. It is still a different version line, because a
+dataset whose pools were computed a different way is not comparable on the
+strength of one manifest happening to make them agree.
 
 ### What exists
 
@@ -1346,11 +1357,28 @@ manifest declaring which format each library uses. **This is what the
 nocturia / urinary-frequency pair is waiting on** (section 10), unless 12.9 is
 right that a library-level assertion covers it.
 
-**The format itself now exists** (section 4): the manifest can declare a
-`jsonl` library, its lines carry per-line vectors, and every fragment exposes
-one. What does not exist yet is anything that *draws* on such a fragment — the
-pools still select on `(signal_key, fragment_type)`, so a declarative library
-would load and then never be chosen — nor the generator that would write one.
+**The format and the draw now both exist** (section 4). The manifest can declare
+a `jsonl` library, its lines carry per-line vectors, every fragment exposes one,
+and since generator version 4 a fragment's *pool* is decided by that vector
+rather than by its `(signal_key, fragment_type)` pair. A declarative line
+asserting the run's signal goes into a `declarative_positive` /
+`declarative_negative` pool held apart from the hand-written one, and
+`--declarative-share` is the probability that a `true` or `false` example's
+decisive fragment comes from there. It defaults to 0.0, the draw is skipped
+entirely at that value, and the generated content of a default run is unchanged
+— checked against the golden digest and against the real libraries.
+
+Two rules come with it. A declarative line that is `null` on the run's signal is
+an eligible **companion** at any share, filed under every signal it asserts; and
+no example may assert one signal twice, so the companion draw now excludes every
+signal the decisive fragment asserts rather than only its own. `null_ambiguous`
+never draws a declarative fragment: a fixed frame cannot produce a hedge, so
+everything generated is an easy case and the hard-case libraries stay the only
+source of hard ones.
+
+What does not exist yet is **the generator that writes such a library**, and
+therefore any declarative data at all: `--declarative-share` above zero is an
+error until one exists, because the pool it names is empty.
 
 ### 12.4 Out-of-scope symptom mentions — not built
 

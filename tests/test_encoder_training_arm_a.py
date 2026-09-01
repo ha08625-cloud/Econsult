@@ -1036,3 +1036,33 @@ def test_embedding_a_text_is_independent_of_its_batch(transformers_module, tmp_p
     alone = encoder.embed(["no temperature ."])
     batched = encoder.embed(["no temperature .", "i have a fever . i have a fever ."])
     assert alone[0].allclose(batched[0], atol=1e-5)
+
+
+def test_generate_folds_forwards_the_declarative_share_and_omits_it_at_zero(monkeypatch):
+    """The flag reaches the generator, and does not reach it at the default.
+
+    ``generate_folds`` builds a fixed argv list with no passthrough, which is why
+    ``--companion-share`` never reached it either. Without forwarding, running
+    the two arms of the declarative comparison is fifteen invocations of the
+    generator by hand rather than one command each. Omitting the flag at zero is
+    not tidiness: it is what keeps a default tree byte-identical to one generated
+    before the flag existed.
+    """
+    import scripts.encoder_training.__main__ as cli
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(cli, "generate_main", lambda argv: seen.append(argv) or 0)
+
+    parser = cli.build_parser()
+    args = parser.parse_args(["generate-folds", "--folds", "1", "--train-count", "1"])
+    assert args.declarative_share == 0.0
+    assert cli.generate_folds(args) == 0
+    assert seen and all("--declarative-share" not in argv for argv in seen)
+
+    seen.clear()
+    args = parser.parse_args(
+        ["generate-folds", "--folds", "1", "--train-count", "1", "--declarative-share", "0.3"]
+    )
+    assert cli.generate_folds(args) == 0
+    for argv in seen:
+        assert argv[argv.index("--declarative-share") + 1] == "0.3"

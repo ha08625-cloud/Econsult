@@ -11,6 +11,7 @@
         --null-ambiguous-ratio 0.5 \\
         --fragment-counts 2=0.5,3=0.5 \\
         --companion-share 0.0 \\
+        --declarative-share 0.0 \\
         --emit-signals primary \\
         --out      data/synthetic/generated/fever_present.train.jsonl
 
@@ -28,6 +29,18 @@ signal. It defaults to 0.0 and the path is skipped entirely at that value, so
 every dataset generated before companions existed is still reproducible from its
 seed. Read ``companions.count_by_label_mode`` in the sidecar after any non-zero
 run: those rows must agree, or the companion count has become a proxy for the
+label.
+
+``--declarative-share`` is the second: above zero, a share of the *decisive*
+fragments in ``true`` and ``false`` examples are procedurally generated
+multi-symptom sentences -- "I have had a fever and blood in my wee, but not any
+pain when I pee" -- each carrying a per-line label vector, rather than the
+one-claim hand-written lines. It exists as a share rather than as a merged pool
+because the generated library is larger than any hand-written one and would
+otherwise become the *typical* decisive sentence, trading the one-claim prior
+for a one-frame prior. It defaults to 0.0 and the draw is skipped entirely at
+that value. Read ``declarative.frame_by_label_mode`` in the sidecar after any
+non-zero run: those rows must agree, or the frame has become a cue for the
 label.
 
 ``--emit-signals all`` widens ``labels`` from the run's own signal to every
@@ -66,6 +79,7 @@ from .lint import render_report
 from .manifest import ManifestError, find_fold_salts, load_fragments
 from .recombine import (
     DEFAULT_COMPANION_SHARE,
+    DEFAULT_DECLARATIVE_SHARE,
     DEFAULT_EMIT_SIGNALS,
     DEFAULT_NULL_AMBIGUOUS_RATIO,
     EMIT_SIGNALS_MODES,
@@ -153,6 +167,19 @@ def build_parser() -> argparse.ArgumentParser:
         "and the output is what it was before companions existed; the count is drawn over "
         "the same number of slots in every label mode, so it cannot become a proxy for the "
         "label",
+    )
+    parser.add_argument(
+        "--declarative-share",
+        type=float,
+        default=DEFAULT_DECLARATIVE_SHARE,
+        help="share of true/false examples whose decisive fragment is drawn from the "
+        "declarative library -- procedurally generated multi-symptom sentences carrying a "
+        "per-line label vector -- rather than from the hand-written pool for the same "
+        "label. At the default 0.0 the draw is skipped entirely and the output is what it "
+        "was before declarative fragments existed. It governs the decisive slot only: a "
+        "declarative fragment that is null on this run's signal is an eligible companion at "
+        "any share. null_ambiguous never draws from it -- a fixed frame cannot express a "
+        "hedge, so every generated line is an easy case",
     )
     parser.add_argument(
         "--emit-signals",
@@ -312,6 +339,7 @@ def run(args: argparse.Namespace) -> int:
         null_ambiguous_ratio=args.null_ambiguous_ratio,
         fragment_counts=fragment_counts,
         companion_share=args.companion_share,
+        declarative_share=args.declarative_share,
         emit_signals=args.emit_signals,
     )
     stats = build_stats(
@@ -327,6 +355,7 @@ def run(args: argparse.Namespace) -> int:
         manifest_path=str(args.manifest),
         ruleset_path=str(args.ruleset),
         companion_share=args.companion_share,
+        declarative_share=args.declarative_share,
         emit_signals=args.emit_signals,
         folds=options["folds"],
         fold_index=options["fold_index"] if options["folds"] is not None else None,

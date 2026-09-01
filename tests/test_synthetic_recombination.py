@@ -2329,19 +2329,25 @@ def test_cli_still_requires_the_generation_flags_without_lint(tmp_path, librarie
 #: pre-fold-mode code while adding fold mode, and byte-identity against that
 #: code was verified separately at the time.
 #:
-#: Re-recorded once, when ``meta`` gained ``filler_only`` and the generator
-#: version went to 3. That moved every byte of every record without moving a
-#: single *choice*, which is why the constant below exists: it is the half of
-#: this test that a metadata addition is not allowed to move, and it was carried
-#: across the companion commit unchanged.
-GOLDEN_DEFAULT_SPLIT_SHA256 = "03e78fe3c47118a17ca5a22c31ce190c9c9066fc7bb329c80ac24064e5f882f8"
+#: Re-recorded twice, and only ever for a version bump: when ``meta`` gained
+#: ``filler_only`` and the version went to 3, and when pool membership started
+#: being computed from the label vector and the version went to 4. Each moved
+#: every byte of every record without moving a single *choice*, which is why the
+#: constant below exists: it is the half of this test that a metadata addition
+#: is not allowed to move, and it has been carried across both commits
+#: unchanged.
+GOLDEN_DEFAULT_SPLIT_SHA256 = "68efe64863c964e369f32fd5dd753744168b235a92f16bbb352951a342d3122b"
 
 #: sha256 of the same dataset projected onto everything the generator *chose* --
 #: the text, the labels, the mode and the fragments, with the bookkeeping keys
 #: dropped. Recorded from the pre-companion code at ``GENERATOR_VERSION`` 2 and
 #: unchanged since: ``--companion-share 0`` draws exactly the sequence it drew
 #: before companions existed, which is the claim DD4 makes and the one that
-#: makes Arm 0 a control rather than a second treatment.
+#: makes Arm 0 a control rather than a second treatment. Carried unchanged
+#: through the vector refactor as well: ``build_pools`` reads a fragment's value
+#: for the run's signal instead of its ``(signal_key, fragment_type)`` pair, and
+#: for a text library those are the same fact, so every pool comes out with the
+#: same members in the same order.
 GOLDEN_DEFAULT_SPLIT_CONTENT_SHA256 = (
     "ad1bdeb647314967dc6cb96c3f6fe3b3ca895531415c78c6dc335e914be66b22"
 )
@@ -3040,7 +3046,7 @@ def test_the_cli_threads_the_share_and_the_sidecar_records_it(tmp_path, companio
     )
     stats = json.loads((tmp_path / "out.jsonl.stats.json").read_text(encoding="utf-8"))
     assert stats["requested"]["companion_share"] == 0.5
-    assert stats["generator_version"] == 3
+    assert stats["generator_version"] == 4
 
     companions = stats["companions"]
     # String-keyed like every other tally in build_stats: json.dump coerces int
@@ -3739,3 +3745,415 @@ def test_two_declarative_lines_agreeing_on_the_vector_keep_the_first():
         ),
     ]
     assert [f.library for f in deduplicate(fragments)] == ["decl_a"]
+
+
+# --------------------------------------------------------------------------
+# 19. The declarative draw (12.3 / 12.1, Task 2)
+#
+# A declarative fragment is one whose *label vector* decides which pool it
+# belongs in, because its polarity varies per line: one line asserts fever true
+# and dysuria false, the next asserts neither. Everything below is about the two
+# claims that make the draw safe to turn on. The first is that it is genuinely
+# off at zero -- a treatment arm that cannot be turned off has no control. The
+# second is DD5: at most one *assertion per signal* per example, which the
+# companion draw used to get for free from "one fragment, one signal" and now
+# has to be told.
+# --------------------------------------------------------------------------
+
+#: A decisive fever fragment that also denies dysuria, and a decisive fever
+#: denial that also asserts nocturia. Both are two-claim sentences, which is the
+#: whole point: nothing in the hand-written libraries can say two things.
+_DECL_TRUE_LABELS = {SIGNAL: True, OTHER_SIGNAL: False}
+_DECL_FALSE_LABELS = {SIGNAL: False, THIRD_SIGNAL: True}
+#: Silent on fever, so it is a companion rather than a decisive fragment -- and
+#: it spends two foreign signals on the one slot it occupies.
+_DECL_COMPANION_LABELS = {SIGNAL: None, OTHER_SIGNAL: True, THIRD_SIGNAL: False}
+
+
+def _decl_lines(labels: dict, cluster: str, count: int, frame: str) -> list[str]:
+    """``count`` lines sharing one label vector, one per cluster.
+
+    A cluster per line rather than one cluster for the lot, because a library
+    whose fragments all share a cluster lands entirely in one split and the
+    empty-cell guard rejects it.
+    """
+    return [
+        _declarative_line(
+            f"{cluster} sentence number {i}",
+            labels,
+            f"{cluster}-{i}",
+            meta={"frame": frame, "arity": len(labels)},
+        )
+        for i in range(count)
+    ]
+
+
+_DECLARATIVE_LINES = [
+    *_decl_lines(_DECL_TRUE_LABELS, "decl:dysuria-fever+", 20, "pos_base_mixed"),
+    *_decl_lines(_DECL_FALSE_LABELS, "decl:fever-nocturia+", 20, "neg_base_mixed"),
+    *_decl_lines(_DECL_COMPANION_LABELS, "decl:dysuria+nocturia-", 20, "pos_base_mixed"),
+]
+
+_DECLARATIVE_LIBRARIES = [*_COMPANION_LIBRARIES, _declarative_entry("decl")]
+
+
+def _write_declarative_manifest(base: Path, entries=None, lines=None) -> Path:
+    entries = list(entries or _DECLARATIVE_LIBRARIES)
+    files = {
+        f"{e['name']}.txt": _spread_lines(e["name"], 60)
+        for e in entries
+        if e.get("format", "text") == "text"
+    }
+    path = _write_manifest(base, entries, files)
+    for entry in entries:
+        if entry.get("format") == "jsonl":
+            (base / entry["file"]).write_text(
+                "\n".join(lines if lines is not None else _DECLARATIVE_LINES) + "\n",
+                encoding="utf-8",
+            )
+    return path
+
+
+@pytest.fixture
+def declarative_libraries(tmp_path) -> Path:
+    """``companion_libraries`` plus a JSONL library of two- and three-claim lines."""
+    return _write_declarative_manifest(tmp_path)
+
+
+def _decl_ids(manifest_path: Path) -> set[str]:
+    return {
+        f.fragment_id for f in load_fragments(manifest_path) if f.fragment_type == "declarative"
+    }
+
+
+# --- The pools -------------------------------------------------------------
+
+
+def test_a_declarative_line_lands_in_the_pool_its_own_vector_names(declarative_libraries):
+    pools = _companion_pools(declarative_libraries)
+    fragments = {f.fragment_id: f for f in load_fragments(declarative_libraries)}
+
+    # Held apart from the hand-written pools rather than merged into them, so
+    # the share flag has something to be a share *of*.
+    assert pools.declarative_positive
+    assert pools.declarative_negative
+    assert not {f.fragment_id for f in pools.positive} & {
+        f.fragment_id for f in pools.declarative_positive
+    }
+    assert all(f.value_for(SIGNAL) is True for f in pools.declarative_positive)
+    assert all(f.value_for(SIGNAL) is False for f in pools.declarative_negative)
+
+    # The fever-silent lines are companions, and they are filed under *both*
+    # signals they assert -- either is a reason to draw one.
+    filed = {signal for signal, library, pool in pools.companion if library == "decl" and pool}
+    assert filed == {OTHER_SIGNAL, THIRD_SIGNAL}
+    companions = {
+        f.fragment_id for _, library, pool in pools.companion if library == "decl" for f in pool
+    }
+    assert companions
+    assert all(fragments[fid].value_for(SIGNAL) is None for fid in companions)
+
+    # An ambiguous fever fragment is not a declarative one, whatever its vector
+    # looks like: the hard-case libraries stay the only source of hard cases.
+    assert all(f.fragment_type != "declarative" for f in pools.ambiguous)
+
+
+def test_a_declarative_line_undeclared_on_the_signal_is_ineligible(tmp_path):
+    # Undeclared is not null: a line that says nothing about fever cannot stand
+    # in a fever example at all, decisively or otherwise.
+    manifest_path = _write_declarative_manifest(
+        tmp_path,
+        lines=_decl_lines({OTHER_SIGNAL: True, THIRD_SIGNAL: False}, "decl:dys+noc-", 20, "f"),
+    )
+    pools = _companion_pools(manifest_path)
+    assert pools.declarative_positive == ()
+    assert pools.declarative_negative == ()
+    assert not [library for _, library, _ in pools.companion if library == "decl"]
+
+
+# --- Inertness at zero -----------------------------------------------------
+
+
+def test_declarative_share_zero_is_inert_against_a_pool_that_could_serve_it(
+    tmp_path, declarative_libraries
+):
+    # The DD8 claim, and the reason an arm at 0.0 is a control rather than a
+    # second treatment. Not the same test as the golden digest, which runs
+    # against a manifest holding no declarative library at all: here the pool is
+    # populated and the flag is off, so the draw must be *skipped* rather than
+    # taken with probability zero. Taken, it would consume a random() and move
+    # every draw after it.
+    pools = _companion_pools(declarative_libraries)
+    off, _ = generate(pools, count=300, seed=42)
+    explicit, _ = generate(pools, count=300, seed=42, declarative_share=0.0)
+    assert [e.text for e in off] == [e.text for e in explicit]
+
+    # And the stronger claim: the same seed against a manifest with no
+    # declarative library at all produces the same examples, so adding the
+    # library to the manifest moves nothing until the flag is turned up.
+    without = tmp_path / "without"
+    without.mkdir()
+    baseline_pools = build_pools(
+        load_fragments(_write_declarative_manifest(without, entries=_COMPANION_LIBRARIES)),
+        SIGNAL,
+        "train",
+    )
+    baseline, _ = generate(baseline_pools, count=300, seed=42)
+    assert [e.text for e in off] == [e.text for e in baseline]
+
+    decl = _decl_ids(declarative_libraries)
+    assert not any(set(e.meta["fragment_ids"]) & decl for e in off)
+
+
+# --- Above zero ------------------------------------------------------------
+
+
+def _decisive_share(examples, decl: set[str]) -> float:
+    """Share of decisive examples whose fragments include a declarative one."""
+    decisive = [e for e in examples if e.meta["label_mode"] in ("true", "false")]
+    drawn = [e for e in decisive if set(e.meta["fragment_ids"]) & decl]
+    return len(drawn) / len(decisive)
+
+
+def test_a_non_zero_share_draws_the_decisive_fragment_at_about_that_rate(declarative_libraries):
+    pools = _companion_pools(declarative_libraries)
+    decl = _decl_ids(declarative_libraries)
+    examples, _ = generate(pools, count=3000, seed=42, declarative_share=0.5)
+    # Companions are off, so a declarative fragment in an example can only have
+    # arrived through the decisive slot.
+    assert _decisive_share(examples, decl) == pytest.approx(0.5, abs=0.05)
+
+    everything, _ = generate(pools, count=1000, seed=42, declarative_share=1.0)
+    assert _decisive_share(everything, decl) == 1.0
+
+
+def test_the_declarative_draw_never_serves_a_null_example(declarative_libraries):
+    # DD3: every generated line is an easy, unhedged claim, so null_ambiguous
+    # keeps drawing from the hand-written confounders and null_structural still
+    # holds no decisive fragment at all. A generated hedge is not a thing a
+    # fixed frame can produce, and pretending otherwise would quietly empty
+    # --null-ambiguous-ratio of meaning.
+    pools = _companion_pools(declarative_libraries)
+    decl = _decl_ids(declarative_libraries)
+    examples, _ = generate(pools, count=2000, seed=42, declarative_share=1.0)
+    nulls = [e for e in examples if e.meta["label_mode"].startswith("null")]
+    assert nulls
+    assert not any(set(e.meta["fragment_ids"]) & decl for e in nulls)
+
+
+def test_a_declarative_examples_primary_label_is_still_the_spec(declarative_libraries):
+    pools = _companion_pools(declarative_libraries)
+    examples, _ = generate(pools, count=1000, seed=42, declarative_share=1.0)
+    for example in examples:
+        expected = {"true": True, "false": False}.get(example.meta["label_mode"])
+        if example.meta["label_mode"] in ("true", "false"):
+            assert example.labels[SIGNAL] is expected
+
+
+# --- DD5: one assertion per signal -----------------------------------------
+
+
+def test_a_multi_claim_decisive_fragment_excludes_every_signal_it_asserts(declarative_libraries):
+    # The rule the companion draw used to get for free from "one fragment, one
+    # signal". A fever/dysuria decisive fragment must never sit beside a dysuria
+    # companion: the example would assert dysuria twice, and no single emitted
+    # label could describe that.
+    pools = _companion_pools(declarative_libraries)
+    fragments = {f.fragment_id: f for f in load_fragments(declarative_libraries)}
+    examples, _ = generate(
+        pools, count=2000, seed=42, declarative_share=1.0, companion_share=1.0, emit_signals="all"
+    )
+    assert any(
+        fragments[fid].fragment_type == "declarative"
+        for e in examples
+        for fid in e.meta["fragment_ids"]
+    )
+    for example in examples:
+        asserted: list[str] = []
+        for fid in example.meta["fragment_ids"]:
+            asserted += [
+                signal
+                for signal, value in (fragments[fid].labels or {}).items()
+                if value is not None
+            ]
+        assert len(asserted) == len(set(asserted)), example.meta["fragment_ids"]
+
+
+def test_the_vector_of_a_multi_claim_example_carries_every_claim(tmp_path):
+    # DD18, and the reason this whole ticket is worth building: one fragment now
+    # asserts two things, and --emit-signals all is what banks the second. Run
+    # against the vector libraries rather than the companion ones because every
+    # fragment in an example must be *declared* on dysuria before a dysuria key
+    # can be emitted -- the companion fixture's filler is undeclared on it, so
+    # the key would be masked, which is right and is tested elsewhere.
+    manifest_path = _write_declarative_manifest(
+        tmp_path, entries=[*_VECTOR_LIBRARIES, _declarative_entry("decl")]
+    )
+    pools = build_pools(load_fragments(manifest_path), SIGNAL, "train")
+    examples, _ = generate(
+        pools,
+        count=500,
+        seed=42,
+        declarative_share=1.0,
+        emit_signals="all",
+        distribution={"true": 1.0, "false": 0.0, "null": 0.0},
+    )
+    assert all(example.labels[SIGNAL] is True for example in examples)
+    assert any(example.labels.get(OTHER_SIGNAL) is False for example in examples)
+
+
+def test_label_vector_reads_a_multi_signal_fragment():
+    decisive = _fragment(
+        "I have had a fever and blood in my wee, but not any pain when I pee",
+        library="decl",
+        fragment_type="declarative",
+        labels={SIGNAL: True, OTHER_SIGNAL: False},
+    )
+    filler = _fragment(
+        "the weather is awful",
+        null_on=(
+            NullOn(signal=SIGNAL, basis="absent"),
+            NullOn(signal=OTHER_SIGNAL, basis="absent"),
+        ),
+    )
+    assert label_vector([decisive, filler], signal_key=SIGNAL, label_mode="true") == {
+        SIGNAL: True,
+        OTHER_SIGNAL: False,
+    }
+    # The filler is undeclared on the third signal, so nothing is emitted for it
+    # -- masked, not null.
+    assert THIRD_SIGNAL not in label_vector(
+        [decisive, filler], signal_key=SIGNAL, label_mode="true"
+    )
+
+
+def test_two_fragments_asserting_one_signal_raise_and_name_it():
+    # The backstop, and the only thing standing between an eligibility bug and a
+    # permanently wrong training label. It has to keep firing now that the
+    # assertion can come from a vector rather than from signal_key.
+    decisive = _fragment(
+        "i had a fever and burning",
+        library="decl",
+        fragment_type="declarative",
+        labels={SIGNAL: True, OTHER_SIGNAL: True},
+    )
+    companion = _fragment(
+        "i had no burning",
+        library="dys_neg",
+        signal_key=OTHER_SIGNAL,
+        fragment_type="negative",
+        null_on=(NullOn(signal=SIGNAL, basis="absent"),),
+    )
+    with pytest.raises(AssertionError, match=OTHER_SIGNAL):
+        label_vector([decisive, companion], signal_key=SIGNAL, label_mode="true")
+
+
+def test_a_three_signal_companion_does_not_exhaust_the_run(tmp_path):
+    # companion_bounds counts *slots*, and a declarative companion spends two to
+    # four signals on one of them, so the signals can run out before the slots
+    # do. The slot falls back to filler rather than failing the run: a slightly
+    # filler-heavier example, not a wrong one, and never a mid-run PoolError.
+    manifest_path = _write_declarative_manifest(
+        tmp_path,
+        lines=_decl_lines(
+            {SIGNAL: None, OTHER_SIGNAL: True, THIRD_SIGNAL: False}, "decl:dys+noc-", 20, "f"
+        ),
+    )
+    pools = build_pools(load_fragments(manifest_path), SIGNAL, "train")
+    assert pools.companion_signals == (OTHER_SIGNAL, THIRD_SIGNAL)
+    examples, _ = generate(
+        pools,
+        count=500,
+        seed=42,
+        companion_share=1.0,
+        fragment_counts={3: 1.0},
+        emit_signals="all",
+    )
+    assert all(len(e.meta["fragment_ids"]) == 3 for e in examples)
+    fragments = {f.fragment_id: f for f in load_fragments(manifest_path)}
+    # The fallback is only interesting if the pool it exhausts was reached.
+    assert any(
+        fragments[fid].fragment_type == "declarative"
+        for e in examples
+        for fid in e.meta["fragment_ids"]
+    )
+
+
+# --- The flag, the errors and the sidecar ----------------------------------
+
+
+def test_a_share_above_zero_without_a_declarative_pool_raises(companion_libraries):
+    # Loud rather than a silent fallback to the hand-written pool: a run asked
+    # for declarative fragments and would otherwise produce the control arm's
+    # dataset under the treatment arm's flags.
+    pools = _companion_pools(companion_libraries)
+    with pytest.raises(PoolError, match="declarative-share"):
+        generate(pools, count=10, seed=42, declarative_share=0.5)
+
+
+def test_a_share_above_zero_is_fine_when_the_absent_mode_is_never_drawn(tmp_path):
+    # An empty declarative pool is a normal state, so the check is per label
+    # mode and only where the distribution asks for that mode.
+    manifest_path = _write_declarative_manifest(
+        tmp_path, lines=_decl_lines(_DECL_TRUE_LABELS, "decl:dysuria-fever+", 20, "f")
+    )
+    pools = build_pools(load_fragments(manifest_path), SIGNAL, "train")
+    assert pools.declarative_negative == ()
+    with pytest.raises(PoolError, match="false"):
+        generate(pools, count=10, seed=42, declarative_share=0.5)
+    generate(
+        pools,
+        count=10,
+        seed=42,
+        declarative_share=0.5,
+        distribution={"true": 0.4, "false": 0.0, "null": 0.6},
+    )
+
+
+def test_a_declarative_share_outside_the_unit_interval_is_rejected(declarative_libraries):
+    pools = _companion_pools(declarative_libraries)
+    with pytest.raises(DistributionError, match="declarative-share"):
+        generate(pools, count=10, seed=42, declarative_share=1.5)
+
+
+def test_the_cli_threads_the_declarative_share_and_the_sidecar_records_it(
+    tmp_path, declarative_libraries
+):
+    out = tmp_path / "out.jsonl"
+    assert (
+        cli_main(
+            _argv(
+                manifest=declarative_libraries,
+                ruleset=_write_ruleset(tmp_path, _VECTOR_SIGNALS),
+                split="train",
+                count=600,
+                declarative_share=0.5,
+                out=out,
+            )
+        )
+        == 0
+    )
+    stats = json.loads((tmp_path / "out.jsonl.stats.json").read_text(encoding="utf-8"))
+    assert stats["requested"]["declarative_share"] == 0.5
+    assert stats["split_pool_sizes"]["declarative_positive"] > 0
+
+    declarative = stats["declarative"]
+    assert set(declarative["count_by_label_mode"]) == set(LABEL_MODES)
+    # String-keyed like every other tally in build_stats: json.dump coerces int
+    # keys silently, and a dict written string-keyed but built int-keyed bites
+    # whoever reads the sidecar back.
+    assert all(
+        isinstance(key, str) for row in declarative["count_by_label"].values() for key in row
+    )
+
+    # DD7's leak detector. Each frame generates every polarity, so a frame that
+    # appeared in one label mode and not another would mean frame identity is a
+    # cue for the label and the run is void rather than reinterpretable. Read as
+    # a human would: both frames present in both decisive modes.
+    frames = declarative["frame_by_label_mode"]
+    assert set(frames["true"]) == {"pos_base_mixed", "neg_base_mixed"}
+    assert frames["true"]["pos_base_mixed"] > 0
+    assert frames["false"]["neg_base_mixed"] > 0
+    # And nothing generated reaches a null example at all.
+    assert sum(frames["null_ambiguous"].values()) == 0
+    assert declarative["decisive_by_label_mode"]["null_structural"] == 0
