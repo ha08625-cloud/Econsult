@@ -1445,7 +1445,11 @@ on "a non-empty lexicon exists for this signal". Both come out at 12.5 / step 3,
 when the lexicon moves into the manifest; two lists in two modules drifting apart
 is the outcome that guard exists to postpone, not to prevent.
 
-### 12.7 Order of work
+### 12.7 Random autocorrect errors
+
+Still needs thinking about.  Robustness to random noise is good but in reality phones autocorrect rather than leaving spelling errors, so we should aim to introduce this error pattern too
+
+### 12.8 Order of work
 
 **Section 10's "Outstanding" is the live list**; this subsection is only what
 the order depends on. Steps 1 to 5 of the original sequence — the blocked
