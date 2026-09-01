@@ -1318,8 +1318,18 @@ authoring new templates. It shares the surface-forms-not-ideas arithmetic above,
 but its purpose is decorrelating vocabulary from label — the fault section 8
 records twice and cannot check for — rather than volume, so it is measured
 differently and sequenced differently.
-`documentation/encoder_plans/lexical_variant_expansion_provisional.md` is the
-provisional plan.
+`documentation/encoder_plans/lexical_variant_expansion_implementation.md` is
+the plan of record; the provisional plan and the review that corrected it sit
+beside it. **The mechanism is not what the provisional plan proposed.** Editing
+a library line changes its cluster key -- `cluster_key` is `cluster_id or
+normalise(text)` -- and therefore its split, so expanding the libraries
+repartitions the data silently. It is built instead as post-processing over the
+generated JSONL, in this section's own shape (12.6): no library file is touched,
+no split moves, the generator stays byte-identical, and every expanded example
+is paired by `example_id` with its clean original, which is what makes the
+decision metric a paired statistic. Two gates come before any of it -- a
+per-token label-association lint report and a paraphrase-flip diagnostic -- and
+both are designed to be allowed to fail.
 
 ### 12.2 Multi-signal libraries — built, not measured
 
