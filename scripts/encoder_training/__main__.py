@@ -136,6 +136,7 @@ from pathlib import Path
 
 from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
 from scripts.synthetic_data.__main__ import main as generate_main
+from scripts.synthetic_data.recombine import DEFAULT_DECLARATIVE_SHARE
 
 from .baselines import run_all
 from .dataset import SPLITS, DatasetError, fold_dataset_path, load_folds, swap_test_split
@@ -256,6 +257,14 @@ def generate_folds(args: argparse.Namespace) -> int:
     the thing that catches a bad fold index, and routing through its ``main``
     means this wrapper cannot drift into a second, laxer interpretation of the
     same flags.
+
+    ``--declarative-share`` is forwarded, and omitted from the argv at zero. The
+    omission is not tidiness: a fifteen-run tree generated at the default must
+    stay byte-identical to one generated before the flag existed, and the surest
+    way to keep it so is for the generator never to see the flag. Forwarding it
+    at all is what makes the two arms of the declarative comparison one command
+    each differing in one flag, rather than fifteen invocations of the generator
+    by hand.
     """
     written = 0
     for fold_index in range(args.folds):
@@ -283,6 +292,8 @@ def generate_folds(args: argparse.Namespace) -> int:
                 "--out",
                 str(out_path),
             ]
+            if args.declarative_share:
+                argv += ["--declarative-share", str(args.declarative_share)]
             status = generate_main(argv)
             if status != 0:
                 print(f"error: generating fold {fold_index} {split} failed", file=sys.stderr)
@@ -2332,6 +2343,14 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     generate.add_argument("--ruleset", type=Path, default=DEFAULT_RULESET)
     generate.add_argument("--out-dir", type=Path, default=DEFAULT_DATA_DIR)
+    generate.add_argument(
+        "--declarative-share",
+        type=float,
+        default=DEFAULT_DECLARATIVE_SHARE,
+        help="forwarded to the generator: share of true/false examples whose decisive "
+        "fragment is a procedurally generated multi-symptom sentence. At the default 0.0 "
+        "the flag is not passed on at all and every fold is what it was before it existed",
+    )
     for split, default in DEFAULT_COUNTS.items():
         generate.add_argument(f"--{split}-count", type=int, default=default)
     generate.set_defaults(handler=generate_folds)

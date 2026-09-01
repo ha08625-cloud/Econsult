@@ -36,7 +36,7 @@ import json
 import re
 from collections import defaultdict
 from collections.abc import Collection, Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .normalise import normalise
@@ -245,6 +245,13 @@ class Fragment:
     #: downstream has to know which format a fragment came from. Never ``None``
     #: after construction.
     labels: Mapping[str, bool | None] | None = None
+    #: The line's ``meta`` object for a JSONL library, empty for a text one.
+    #: Carried rather than dropped because a generated library's ``meta`` names
+    #: the frame that produced the line, and ``declarative.frame_by_label_mode``
+    #: in the stats sidecar is the check that frame identity does not correlate
+    #: with the label (DD7). A leak detector that cannot see the frame is not a
+    #: leak detector.
+    meta: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.labels is None:
@@ -719,6 +726,7 @@ def read_jsonl_library(
                 split=assign_split(key, folds=folds, fold_index=fold_index, salt=salt),
                 null_on=(),
                 labels=labels,
+                meta=meta,
             )
         )
 
