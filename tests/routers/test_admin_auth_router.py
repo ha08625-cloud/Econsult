@@ -231,6 +231,37 @@ class TestLogin(unittest.TestCase):
         self.assertEqual(res.status_code, 422)
         self.assertEqual(res.json()["error"]["code"], "INVALID_CREDENTIALS")
 
+    def test_over_length_password_returns_422_not_500(self):
+        """
+        A login password longer than bcrypt's 72-byte limit must fail as a
+        normal credential mismatch.
+
+        bcrypt 5.x raises ValueError on over-length input, so the raw
+        password must never reach checkpw — otherwise this unauthenticated
+        endpoint returns a 500 to anyone who posts a long string.
+        """
+        repo, _ = self._valid_user_repo()
+        client = self._make_client(auth_repo=repo)
+        res = client.post(
+            "/admin/auth/login",
+            json={"email": "admin@nhs.net", "password": "A" * 200},
+        )
+        self.assertEqual(res.status_code, 422)
+        self.assertEqual(res.json()["error"]["code"], "INVALID_CREDENTIALS")
+
+    def test_over_length_password_does_not_record_failed_attempt(self):
+        """
+        Over-length is a fast-fail gate, like the cooldown and lockout gates,
+        so it must not consume one of the user's three password attempts.
+        """
+        repo, _ = self._valid_user_repo()
+        client = self._make_client(auth_repo=repo)
+        client.post(
+            "/admin/auth/login",
+            json={"email": "admin@nhs.net", "password": "A" * 200},
+        )
+        self.assertEqual(len(repo.failed_attempts_recorded), 0)
+
     def test_wrong_password_records_failed_attempt(self):
         repo, _ = self._valid_user_repo()
         client = self._make_client(auth_repo=repo)
@@ -609,6 +640,64 @@ class TestSetPassword(unittest.TestCase):
             json={"token": raw_token, "password": "short"},
         )
         self.assertEqual(res.status_code, 422)
+
+    def test_password_at_byte_limit_is_accepted(self):
+        """72 UTF-8 bytes is bcrypt's hard input limit and must be allowed."""
+        repo, raw_token = self._valid_token_repo()
+        client = self._make_client(auth_repo=repo)
+        password = "CorrectHorseBatteryStaple1!AnotherTrombonePillowJourney2?Quiet-Marmalade"
+        self.assertEqual(len(password.encode()), 72)
+
+        res = client.post(
+            "/admin/auth/set-password",
+            json={"token": raw_token, "password": password},
+        )
+
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(repo.passwords_set), 1)
+
+    def test_password_over_byte_limit_returns_422(self):
+        """
+        One byte past bcrypt's 72-byte limit must be a clean 422, not a 500.
+
+        bcrypt 5.x raises ValueError on over-length input instead of
+        silently truncating, so the length gate has to run before hashpw.
+        """
+        repo, raw_token = self._valid_token_repo()
+        client = self._make_client(auth_repo=repo)
+        password = "CorrectHorseBatteryStaple1!AnotherTrombonePillowJourney2?Quiet-Marmalade!"
+        self.assertEqual(len(password.encode()), 73)
+
+        res = client.post(
+            "/admin/auth/set-password",
+            json={"token": raw_token, "password": password},
+        )
+
+        self.assertEqual(res.status_code, 422)
+        self.assertEqual(res.json()["error"]["code"], "INVALID_PAYLOAD")
+        self.assertEqual(len(repo.passwords_set), 0)
+
+    def test_password_limit_counts_bytes_not_characters(self):
+        """
+        A multi-byte password within 72 characters can still exceed 72 bytes.
+
+        Each of these characters is 2 bytes in UTF-8, so 40 characters is
+        80 bytes — under any character-based limit, over the byte limit.
+        """
+        repo, raw_token = self._valid_token_repo()
+        client = self._make_client(auth_repo=repo)
+        password = "é" * 40
+        self.assertLess(len(password), 72)
+        self.assertGreater(len(password.encode()), 72)
+
+        res = client.post(
+            "/admin/auth/set-password",
+            json={"token": raw_token, "password": password},
+        )
+
+        self.assertEqual(res.status_code, 422)
+        self.assertEqual(res.json()["error"]["code"], "INVALID_PAYLOAD")
+        self.assertEqual(len(repo.passwords_set), 0)
 
     def test_whitespace_is_not_stripped_before_hashing(self):
         """

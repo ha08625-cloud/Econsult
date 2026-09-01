@@ -14,7 +14,8 @@
  * - "New password" input with a zxcvbn-powered strength meter and
  *   actionable suggestions.
  * - "Confirm password" input.
- * - Submit button disabled until: password >= 12 chars, zxcvbn score >= 3,
+ * - Submit button disabled until: password >= 12 chars, <= 72 UTF-8 bytes
+ *   (bcrypt's hard limit, enforced server-side too), zxcvbn score >= 3,
  *   and the two fields match.
  *
  * On success: shows a confirmation message with a button to return to login.
@@ -46,6 +47,13 @@ interface Props {
 
 const MIN_LENGTH = 12;
 const MIN_SCORE = 3;
+
+// bcrypt hashes at most the first 72 bytes of a password and the server
+// rejects anything longer (see _PASSWORD_MAX_BYTES in auth_service.py).
+// Measured in UTF-8 bytes, not characters, so non-ASCII costs more than one.
+const MAX_BYTES = 72;
+const passwordByteLength = (value: string): number =>
+  new TextEncoder().encode(value).length;
 
 // Strength meter colours indexed by zxcvbn score (0–4).
 const SCORE_COLORS: Record<number, string> = {
@@ -79,11 +87,13 @@ export default function SetPasswordView({ onComplete }: Props) {
   const warning: string = result?.feedback?.warning ?? "";
 
   const passwordLongEnough = password.length >= MIN_LENGTH;
+  const passwordTooLong = passwordByteLength(password) > MAX_BYTES;
   const passwordStrongEnough = score >= MIN_SCORE;
   const passwordsMatch = password === confirm && confirm.length > 0;
   const canSubmit =
     !isSubmitting &&
     passwordLongEnough &&
+    !passwordTooLong &&
     passwordStrongEnough &&
     passwordsMatch;
 
@@ -229,6 +239,12 @@ export default function SetPasswordView({ onComplete }: Props) {
             >
               {SCORE_LABELS[score]}
             </p>
+            {passwordTooLong && (
+              <p style={{ fontSize: 12, marginTop: 2, color: "#e53e3e" }}>
+                Password is too long. The limit is {MAX_BYTES} characters —
+                accented characters and emoji count as more than one.
+              </p>
+            )}
             {/* Show warning or first suggestion as actionable feedback. */}
             {(warning || suggestions.length > 0) && (
               <p style={{ fontSize: 12, marginTop: 2, color: "#718096" }}>

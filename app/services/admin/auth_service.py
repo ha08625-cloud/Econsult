@@ -30,7 +30,14 @@ called immediately after bcrypt, before any branching on the outcome.
 This means bcrypt's CPU cost is always accounted for within the minimum
 response window, regardless of which path was taken.
 
-bcrypt note:
+bcrypt note (72-byte limit):
+bcrypt only reads the first 72 bytes of a password, and bcrypt 5.x raises
+ValueError instead of silently truncating longer input. Passwords are
+therefore capped at 72 UTF-8 bytes when set, and an over-length password
+submitted at login is swapped for _DUMMY_PASSWORD before the checkpw call
+so that it fails as a normal credential mismatch rather than a 500.
+
+bcrypt note (blocking):
 bcrypt.hashpw and bcrypt.checkpw are blocking CPU-bound operations. The
 async router now wraps every entry point into this module in
 starlette.concurrency.run_in_threadpool, so bcrypt (and the rest of this
@@ -82,8 +89,14 @@ _PASSWORD_MAX_FAILED_ATTEMPTS = 3
 _PASSWORD_LOCKOUT_MINUTES = 15
 
 # Password length constraints.
+# The maximum is a byte limit, not a character limit: bcrypt only reads the
+# first 72 bytes of a password, and bcrypt 5.x raises ValueError rather than
+# silently truncating anything longer. Capping at 72 bytes therefore loses no
+# security (bytes beyond 72 never contributed to the hash) and keeps every
+# accepted password hashable. Non-ASCII characters cost more than one byte,
+# so the effective character limit is lower for those passwords.
 _PASSWORD_MIN_LENGTH = 12
-_PASSWORD_MAX_LENGTH = 128
+_PASSWORD_MAX_BYTES = 72
 
 # Minimum zxcvbn score (0–4). Score 3 = "good", score 4 = "very strong".
 _PASSWORD_MIN_ZXCVBN_SCORE = 3
@@ -97,6 +110,13 @@ _RESET_TOKEN_EXPIRY_HOURS = 1
 # The specific string hashed is arbitrary — it must never appear in any
 # real code or password path.
 _DUMMY_HASH: str = bcrypt.hashpw(b"__dummy_hash_input__", bcrypt.gensalt()).decode()
+
+# Password bytes fed to the single bcrypt call in verify_login_credentials
+# when a fast check has already failed. A submitted password over
+# _PASSWORD_MAX_BYTES cannot be passed to bcrypt at all (5.x raises
+# ValueError), so this stand-in keeps the bcrypt call — and therefore the
+# timing profile — identical on that path.
+_DUMMY_PASSWORD: bytes = b"__dummy_password_input__"
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +311,7 @@ def verify_login_credentials(
     Raises INVALID_CREDENTIALS (APIError -> 422) on any failure.
     All failure paths raise the same generic error to prevent an attacker
     from learning which gate failed (user not found, wrong password, locked,
-    no password set, cooldown).
+    no password set, cooldown, over-length password).
 
     Returns the user dict on success.
     """
@@ -305,10 +325,20 @@ def verify_login_credentials(
     should_use_real_hash = True
     failure_reason: str | None = None
 
+    # Over-length password: no stored hash can ever match one, because
+    # set_new_password rejects anything over _PASSWORD_MAX_BYTES. bcrypt
+    # would raise ValueError on it, so substitute the dummy password to keep
+    # the bcrypt call below unconditional.
+    password_bytes = password.encode()
+    if len(password_bytes) > _PASSWORD_MAX_BYTES:
+        password_bytes = _DUMMY_PASSWORD
+        should_use_real_hash = False
+        failure_reason = "password_too_long"
+
     if user is None:
         should_use_real_hash = False
-        failure_reason = "user_not_found"
-    else:
+        failure_reason = failure_reason or "user_not_found"
+    elif should_use_real_hash:
         # Cooldown check: re-use the admin_auth_codes table's
         # last_requested_at field. A code requested within the cooldown
         # window means step 1 is already in-flight; block further attempts.
@@ -341,7 +371,7 @@ def verify_login_credentials(
     # Single bcrypt call — always executes, against real or dummy hash.
     # ------------------------------------------------------------------
     candidate_hash = user["hashed_password"] if should_use_real_hash else _DUMMY_HASH
-    password_correct = bcrypt.checkpw(password.encode(), candidate_hash.encode())
+    password_correct = bcrypt.checkpw(password_bytes, candidate_hash.encode())
 
     # ------------------------------------------------------------------
     # Fixed delay — applied immediately after bcrypt, before branching.
@@ -474,7 +504,9 @@ def set_new_password(
     let a user set a password they could never successfully retype.
 
     Validation steps:
-    1. Enforce length constraints (12–128 characters).
+    1. Enforce length constraints: at least 12 characters, and no more than
+       72 bytes once UTF-8 encoded (bcrypt's hard input limit — see
+       _PASSWORD_MAX_BYTES).
     2. Run zxcvbn strength check — require score >= _PASSWORD_MIN_ZXCVBN_SCORE.
        If the score is too low, raise WEAK_PASSWORD with the first actionable
        suggestion zxcvbn provides.
@@ -490,8 +522,8 @@ def set_new_password(
 
     if len(password) < _PASSWORD_MIN_LENGTH:
         raise INVALID_PAYLOAD(f"Password must be at least {_PASSWORD_MIN_LENGTH} characters.")
-    if len(password) > _PASSWORD_MAX_LENGTH:
-        raise INVALID_PAYLOAD(f"Password must not exceed {_PASSWORD_MAX_LENGTH} characters.")
+    if len(password.encode()) > _PASSWORD_MAX_BYTES:
+        raise INVALID_PAYLOAD(f"Password must not exceed {_PASSWORD_MAX_BYTES} bytes.")
 
     result = zxcvbn(password)
     if result["score"] < _PASSWORD_MIN_ZXCVBN_SCORE:
