@@ -46,6 +46,49 @@ The Vite dev server proxies `/admin` requests to port 8000 automatically.
 
 Admin token: any non-empty bearer token in DEV_MODE (ADMIN_TOKEN not set)
 
+## Start the training run console (offline tooling)
+
+Nothing to do with the app above. This is the local console for the encoder
+training runs documented in `arch_encoder_training.md` section 10, and it runs in
+the ML environment (`requirements-ml.txt`), not the `econsult` one.
+
+From Windows: double-click (or pin to the taskbar) `tools\train-gui.bat`.
+
+From a WSL/Linux shell:
+
+```bash
+tools/train-gui.sh
+```
+
+Either way the script finds the repository root from its own path, activates the
+training conda environment, checks FastAPI is importable, serves the console on
+http://127.0.0.1:8765/ and opens a browser at it.
+
+| What it says | What to do |
+|---|---|
+| `fastapi and uvicorn are not importable in this environment` | `pip install -r requirements-ml.txt` in the training environment |
+| `could not activate the 'econsult-ml' conda environment` | Warning only. If yours is named differently, `export TRAIN_GUI_CONDA_ENV=<name>` (or start the script from that environment) |
+| `127.0.0.1:8765 is already in use` | A console is probably already running — open the URL, or stop the other one |
+| `could not open a browser` | Go to the printed URL yourself |
+
+Closing the terminal (or the window `train-gui.bat` opened) stops the console
+**and** any run it started. Closing the browser tab does not.
+
+On the page: pick a run's parameters from its dropdowns, press **Run**, and watch
+the log — it shows which step of the run is executing and the literal command line
+it is running. **Stop** ends it. A failed step aborts the rest of the run. When it finishes, "Save this run to
+a branch" commits what it wrote under `reports/` and `models/`, plus that run's log
+and manifest, to a new branch cut from the commit the run was produced by, and
+hands you the branch name and a compare link. **Update from GitHub** does a
+`git fetch` and a `git pull --ff-only`, and refuses on any dirty tree — including
+one dirty only with a run's fresh reports, which is a prompt to save that run to a
+branch first.
+
+What the console does **not** do: it never interprets a result, and it does not
+touch the write-up obligations in `reports/encoder_training/README.md`. It saves
+the mechanical minutes per run and the mis-commits that come with them; it does
+not make a run worth having.
+
 ## .env reference
 
 ```

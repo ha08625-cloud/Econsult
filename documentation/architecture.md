@@ -106,6 +106,15 @@ When modifying or adding features, locate the relevant capability below to ident
 * **Domain Doc:** `docs/arch_encoder_training.md`
 * **Key Files:** `scripts/encoder_training/*.py`, `requirements-ml.txt`, `.dockerignore`, `models/encoder/<signal>/<arm>/` (head artefacts and metadata sidecars; Arm B's ~440MB weights are git-ignored), `reports/encoder_training/`, `data/realistic/` (the permanently held-out real-text evaluation set)
 
+### 3.17 Training Run Console (Local GUI)
+* **Scope:** A local, browser-based console for starting the runs documented in `arch_encoder_training.md` section 10, watching their output live, stopping them, and putting the reports, models, log and manifest they produced on a new GitHub branch. Offline only, `127.0.0.1` only, no authentication. It types the documented commands; it does not know what training is, and it never interprets a result.
+* **Domain Doc:** none of its own — this entry plus the module docstrings in `scripts/training_gui/`.
+* **Key Files:** `scripts/training_gui/runs.json` (the catalogue of runnable commands), `catalogue.py`, `runner.py`, `gitops.py`, `server.py`, `static/index.html`, `tools/train-gui.sh`, `tools/train-gui.bat`, `tests/test_training_gui.py`
+* **Invariants:**
+  * The console never imports `scripts/encoder_training` or `scripts/synthetic_data`; it invokes them as subprocesses, so a change to a training command is a change in one place. `app/` never imports the console (asserted by `tests/test_encoder_training_dataset.py::test_app_never_imports_the_offline_tooling`, which covers any `scripts.*` import).
+  * The browser can *name* a run; it cannot *compose* one. Every request carries a catalogue id and, per declared parameter, one string that must exactly match a `choices` member committed in `runs.json`. No endpoint accepts a command, an argument, a path or a branch name.
+* **What it does not do:** it saves the mechanical minutes per run and the mis-commits that come with them. It does not touch the write-up obligations in `reports/encoder_training/README.md`, and it does not make a run worth having.
+
 ## 4. Other reference files
 
 ### 4.1 nhs_integration_reference.md
