@@ -678,7 +678,11 @@ direction — so it is counted and warned about rather than raised.
 ## 8. The lint
 
 `python -m scripts.synthetic_data --lint` reports on library health without
-generating or editing anything. Six reports.
+generating or editing anything. Eight reports, seven of which decide nothing and
+change nothing. The eighth, the phrase inventory, is the exception: its rules are
+mechanical and **`--lint` exits non-zero on a fault in it**, because the
+inventory is composed into a thousand committed lines and a fault there is a
+fault in every line that used the phrase.
 
 **Signal language in filler** — the one with real teeth. Any filler fragment
 reading as an assertion about one of the seven signals is flagged, grouped by the
@@ -815,7 +819,61 @@ fragments open with uncertainty and then resolve it. It is a reading list, not a
 fault list.
 
 **Split coverage** — how many fragments of each library landed in each split,
-flagging any empty cell (section 10).
+flagging any empty cell (section 10). Each cell is printed as **lines over
+clusters**, with the library's **frame count** beside it. The cluster is the unit
+the split is assigned in, so a cell whose two numbers are far apart holds fewer
+ideas than lines; and 12.1 asks for the frame count next to the line count
+because a generated library's lines are its frames multiplied by something, and
+reading the first without the second is how a library comes to look richer than
+it is. A hand-written library shows `-` rather than `1`: "no frames" and "one
+frame" are opposite claims about a library.
+
+**What a generated library is made of** — its lines, clusters, arity mix, frame
+mix, and the min/median/max lines per cluster. This is what replaces the
+near-duplicate pairs it is excluded from. It is also the only place DD15's budget
+can be read: one so small that most clusters are empty and one so large that
+every cluster carries a dozen near-identical siblings both look like a
+four-figure line count and are told apart only here. Today: 1,000 lines, 316
+clusters, arities 500/350/150, all four frames used, median 2 lines per cluster.
+
+**Generated vectors against the lexicons** — the one check a lexicon can make on
+a *per-line* label vector, and it is one-sided: it can say the text reads as a
+signal the vector is silent about, never that the vector is right. An asserted
+signal is skipped for the same reason a library is never checked against its own
+signal. The two silent states are reported apart because only one of them is a
+claim: `null` supervises a head towards "not mentioned" and so is contradicted by
+the text, while an *undeclared* signal earns no key and teaches nothing.
+
+**557 of the 1,000 lines hit, and none of them is a labelling fault.** 294 are
+the nocturia / urinary-frequency pair reading as each other, which is DD14
+arriving exactly where it was predicted: a line naming one of the pair says
+nothing about the other, and no lexicon can tell "extra toilet trips" from
+"night-time toilet trips". The other 263 are the third family of section 4's
+lexicon over-reach — a urinary anchor in one clause pairing with a flank-pain
+modifier in another ("blood in my wee … pain in my side") — which a sentence
+naming four symptoms makes far likelier than a hand-written line does. The
+baseline pins the counts *and* the shape: **every hit is an anchor+modifier
+pair**, and a hit where a lexicon names the signal in a word of its own would be
+a line whose text asserts what its vector calls silence, which is a wrong label
+rather than over-reach. That is the assertion worth keeping; the counts move
+whenever the inventory or the budget does.
+
+**The phrase inventory** — the authored input the generated library is composed
+from, and the only report here that fails. Four mechanical rules (12.3 DD10): the
+signal is a Boolean encoder signal in the ruleset and is not one no frame can
+state (`recent_uti_present`); it declares at least three phrases, below which the
+phrase becomes a proxy for the cluster; each bare form is at most four words; and
+**no form reproduces a hand-written library line verbatim**. The last is the
+load-bearing one — vocabulary overlap across splits is unavoidable and always has
+been, whole lines are not, and a phrase lifted from a train library would arrive
+inside a generated val fragment. The other half of DD10, that the phrase reads
+correctly after both bases and that its label is unambiguous under section 9, is
+review; no lint can do it.
+
+Its cross-lexicon rows are a report like the others: **10 rows, all of them the
+nocturia / urinary-frequency pair in both directions**, which is the same
+undecided overlap seen one level further upstream. A row for any other pair is a
+phrase to re-read, because a phrase that names two signals labels only one.
 
 ### Three guards against a bad merge
 
@@ -1333,9 +1391,10 @@ unit of thought). **Emit the template ID as a cluster marker** — machine-emitt
 IDs and hand-tagged `[c01]` markers are the same mechanism, so no change to the
 splitter is needed. **Start with the filler libraries**, which carry no label
 weight. And **never use it to fill an empty split cell** (section 10): that
-removes the warning light rather than the fault. The lint should report templates
-per library alongside raw fragment counts, so a dataset cannot *look* richer than
-its template count says it is.
+removes the warning light rather than the fault. The lint reports frames per
+library alongside lines and clusters (section 8), so a dataset cannot *look*
+richer than its frame count says it is; that half is built and applies to any
+templated library that follows.
 
 **A second, different mechanism has been proposed under this heading and is
 planned separately**: expanding the *existing* library lines by swapping parts
@@ -1633,8 +1692,8 @@ those, the forward plan runs in the order its dependencies force:
    positive; what is missing is whether a model trained at one damage rate copes
    with another, which is two evaluations and no new dataset. The decision to
    adopt a noised training tree for the other six signals waits on it.
-2. Template the filler libraries (12.1) and add the templates-per-library lint
-   report. Note this does *not* raise the fragment-count ceiling: that counts
+2. Template the filler libraries (12.1). The templates-per-library half of the
+   lint report is already built as frames-per-library (section 8). Note this does *not* raise the fragment-count ceiling: that counts
    *sources*, not their size (section 5).
 3. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
    library format. The multi-symptom half is now **built but unmeasured**: the
