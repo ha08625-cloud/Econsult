@@ -76,7 +76,7 @@ import sys
 from pathlib import Path
 
 from . import declarative
-from .lint import render_report
+from .lint import inventory_report_faults, render_report
 from .manifest import ManifestError, find_fold_salts, load_fragments
 from .recombine import (
     DEFAULT_COMPANION_SHARE,
@@ -220,8 +220,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--lint",
         action="store_true",
         help="report library health instead of generating: hedge markers, "
-        "cross-split near-duplicates, every signal's language in filler, and the "
-        "full (library, foreign signal) grid with its paste-ready null_on block",
+        "cross-split near-duplicates, every signal's language in filler, the "
+        "full (library, foreign signal) grid with its paste-ready null_on block, "
+        "what each generated library is made of, and the phrase inventory. Exits "
+        "non-zero on an inventory fault and on nothing else",
+    )
+    parser.add_argument(
+        "--inventory",
+        type=Path,
+        default=None,
+        help="the declarative phrase inventory --lint checks and --build-declarative "
+        f"composes (default {str(declarative.DEFAULT_INVENTORY)!r})",
     )
     parser.add_argument(
         "--build-declarative",
@@ -300,12 +309,33 @@ def split_options(args: argparse.Namespace) -> dict:
 
 
 def run_lint(args: argparse.Namespace) -> int:
-    """Print the library health reports. Never modifies a library."""
+    """Print the library health reports. Never modifies a library.
+
+    Exits non-zero on an inventory fault and on nothing else. Every other report
+    here is a prompt to re-read something, and a lint that failed on those would
+    be a lint nobody could run; an inventory fault is different in kind, because
+    the inventory is composed into hundreds of committed lines and a phrase
+    lifted from a library puts train text inside a generated val fragment (DD10).
+    """
     # check_cells=False: the empty-cell guard is generation's, and a lint that
     # aborts on unbalanced libraries cannot report on unbalanced libraries.
     fragments = load_fragments(args.manifest, check_cells=False, **split_options(args))
-    for line in render_report(fragments):
+    if not args.ruleset.is_file():
+        raise RulesetError(f"ruleset not found: {args.ruleset}")
+    signals = encoder_signals(json.loads(args.ruleset.read_text(encoding="utf-8")))
+    inventory_path = declarative.DEFAULT_INVENTORY if args.inventory is None else args.inventory
+
+    for line in render_report(fragments, inventory_path=inventory_path, encoder_signals=signals):
         print(line)
+
+    faults = inventory_report_faults(inventory_path, fragments, signals)
+    if faults:
+        print(
+            f"error: the declarative phrase inventory has {len(faults)} fault(s); "
+            "see the inventory section above",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -341,6 +371,9 @@ def run_build_declarative(args: argparse.Namespace) -> int:
     """
     out_path = declarative.DEFAULT_OUT if args.out is None else args.out
     lines, content = declarative.build(
+        inventory_path=(
+            declarative.DEFAULT_INVENTORY if args.inventory is None else args.inventory
+        ),
         target_count=args.target_count,
         arity_weights=args.arity_weights,
         seed=args.seed,

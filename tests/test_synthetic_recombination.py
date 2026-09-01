@@ -14,17 +14,27 @@ import pytest
 
 from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
 from scripts.synthetic_data.__main__ import main as cli_main
+from scripts.synthetic_data.declarative import Phrase
 from scripts.synthetic_data.lint import (
+    MIN_PHRASES_PER_SIGNAL,
     NULL_ON_BLOCK_HEADER,
     SIGNAL_LEXICONS,
     absent_pair_hits,
+    clusters_by_split,
     cross_signal_cells,
     cross_split_near_duplicates,
+    declarative_vector_hits,
     declared_pairs,
     filler_lexicon_hits,
+    frames_by_library,
+    generated_libraries,
     hedge_marker_hits,
+    inventory_faults,
+    inventory_lexicon_hits,
+    is_generated,
     lexicon_matches,
     policy_pairs,
+    read_inventory,
     render_cross_signal_report,
     render_report,
     signal_language_hits,
@@ -4227,3 +4237,348 @@ def test_the_cli_threads_the_declarative_share_and_the_sidecar_records_it(
     # And nothing generated reaches a null example at all.
     assert sum(frames["null_ambiguous"].values()) == 0
     assert declarative["decisive_by_label_mode"]["null_structural"] == 0
+
+
+# --------------------------------------------------------------------------
+# 22. The lint over the generated library and the phrase inventory (Task 5)
+#
+# Three jobs, and they fail differently on purpose. The near-duplicate filter is
+# a *silence* test: prediction 5 says the hand-written libraries' pairs do not
+# move by so much as a row, so the test compares the whole result against the
+# result over hand-written fragments only. The inventory checks are errors,
+# because the inventory is composed into a thousand committed lines. The
+# generated-vector check is a baseline, because every hit in it today is lexicon
+# over-reach across a comma and pinning it is how a hit that is not stays
+# visible.
+# --------------------------------------------------------------------------
+
+REAL_INVENTORY = REAL_MANIFEST.parent / "conditions" / "uti" / "declarative" / "phrases.json"
+
+
+def _inventory(base: Path, payload: dict) -> Path:
+    path = base / "phrases.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _phrase_spec(*texts: str) -> dict:
+    return {"phrases": [{"text": text, "negated": f"any {text}"} for text in texts]}
+
+
+def _generated_fragment(text: str, **overrides) -> Fragment:
+    fields = {
+        "fragment_id": f"gen:{text[:8]}",
+        "text": text,
+        "library": "gen",
+        "signal_key": None,
+        "fragment_type": DECLARATIVE_TYPE,
+        "subclass": None,
+        "category": None,
+        "cluster_id": "gen:decl:fever+",
+        "split": "train",
+        "labels": {"fever_present": True},
+        "meta": {"frame": "pos_base", "arity": 2},
+    }
+    fields.update(overrides)
+    return Fragment(**fields)
+
+
+def test_the_generated_library_does_not_move_the_near_duplicate_report():
+    # Prediction 5, and the whole of DD16's cost: the report exists to find
+    # unintended twinning in hand-written libraries, and a generated library
+    # would emit thousands of pairs that are the frame working. Compared as
+    # whole result objects rather than as counts, so a pair that changed
+    # libraries or ratios fails too.
+    real = _real_fragments()
+    assert any(is_generated(fragment) for fragment in real), (
+        "no generated library in the tree, so this test is checking nothing"
+    )
+    hand_written = [fragment for fragment in real if not is_generated(fragment)]
+    assert cross_split_near_duplicates(real) == cross_split_near_duplicates(hand_written)
+
+
+def test_a_generated_library_is_compared_only_when_asked():
+    # The escape hatch, on a fixture rather than the real library: the real one
+    # is 1,000 lines and half a million difflib comparisons.
+    twins = [
+        _generated_fragment("I have had a fever and blood in my wee", fragment_id="gen:a"),
+        _generated_fragment(
+            "I have had a fever and blood in my urine", fragment_id="gen:b", split="val"
+        ),
+    ]
+    assert cross_split_near_duplicates(twins) == []
+    (pair,) = cross_split_near_duplicates(twins, include_generated=True)
+    assert {pair.left.fragment_id, pair.right.fragment_id} == {"gen:a", "gen:b"}
+
+
+def test_a_generated_library_is_reported_with_its_shape():
+    # What replaces the pairs: the counts DD15's budget is read in. A cluster
+    # count far below the line count, or an arity mix that is not the declared
+    # one, is visible here and nowhere else.
+    (summary,) = generated_libraries(_real_fragments()).values()
+    assert summary.library == "declarative_v1"
+    assert summary.lines == 1000
+    assert sum(summary.by_arity.values()) == summary.lines
+    assert sum(summary.by_frame.values()) == summary.lines
+    # DEFAULT_ARITY_WEIGHTS, allocated deterministically (DD15).
+    assert summary.by_arity == {"2": 500, "3": 350, "4": 150}
+    # Four frames from two bases (DD7), and every one of them used.
+    assert set(summary.by_frame) == {
+        "neg_base",
+        "neg_base_mixed",
+        "pos_base",
+        "pos_base_mixed",
+    }
+    assert summary.clusters == len(summary.cluster_sizes)
+    assert sum(summary.cluster_sizes) == summary.lines
+
+
+def test_frames_are_counted_for_generated_libraries_and_nobody_else():
+    # "One frame" and "no frames" are opposite claims about a library, so a
+    # hand-written library gets an empty mapping rather than a one.
+    fragments = [
+        _fragment("the parking at the surgery is impossible"),
+        _generated_fragment("I have had a fever and blood in my wee"),
+        _generated_fragment(
+            "I have not had a fever", fragment_id="gen:c", meta={"frame": "neg_base", "arity": 2}
+        ),
+    ]
+    assert frames_by_library(fragments) == {
+        "lib": {},
+        "gen": {"neg_base": 1, "pos_base": 1},
+    }
+
+
+def test_clusters_are_counted_per_split_in_the_units_the_split_was_assigned_in():
+    # Two lines sharing a cluster marker are one cluster, and the split is
+    # assigned to the cluster -- so the pair can only ever be one cell.
+    fragments = [
+        _fragment("first line", fragment_id="lib:a", cluster_id="lib:c01"),
+        _fragment("second line", fragment_id="lib:b", cluster_id="lib:c01"),
+        _fragment("third line", fragment_id="lib:c", split="val"),
+    ]
+    assert clusters_by_split(fragments) == {"lib": {"train": 1, "val": 1, "test": 0}}
+
+
+# --------------------------------------------------------------------------
+# The inventory (DD10, DD11)
+# --------------------------------------------------------------------------
+
+
+def test_the_real_inventory_has_no_faults():
+    inventory, structural = read_inventory(REAL_INVENTORY)
+    assert structural == []
+    faults = inventory_faults(
+        inventory,
+        library_lines=[f.text for f in _real_fragments() if not is_generated(f)],
+        encoder_signals=encoder_signals(json.loads(REAL_RULESET.read_text(encoding="utf-8"))),
+    )
+    assert faults == [], [f"{fault.signal} {fault.form!r}: {fault.reason}" for fault in faults]
+    assert len(inventory) == 6 and "recent_uti_present" not in inventory
+
+
+def test_a_phrase_that_reproduces_a_library_line_is_a_fault():
+    # The load-bearing rule. A phrase lifted whole out of a train library would
+    # arrive inside a generated val fragment; vocabulary overlap across splits
+    # is unavoidable and always has been, whole lines are not. Matched after
+    # normalise(), so punctuation and case cannot smuggle one past.
+    line = "A High Temperature!"
+    inventory = {
+        "fever_present": (
+            Phrase("a high temperature", "any high temperature"),
+            Phrase("a fever", "any fever"),
+            Phrase("the shivers", "any shivers"),
+        )
+    }
+    (fault,) = inventory_faults(inventory, library_lines=[line], encoder_signals={"fever_present"})
+    assert (fault.signal, fault.form) == ("fever_present", "a high temperature")
+    assert "reproduces a hand-written library line" in fault.reason
+
+
+def test_the_inventory_rules_each_produce_their_own_fault():
+    signals = {"fever_present", "dysuria_present"}
+    inventory = {
+        # Two phrases, one of them five words: two faults, not one.
+        "fever_present": (
+            Phrase("a fever that will not shift", "any fever"),
+            Phrase("a temperature", "any temperature"),
+        ),
+        # A signal the ruleset does not send to the encoder.
+        "sore_throat_present": (
+            Phrase("a sore throat", "any sore throat"),
+            Phrase("a scratchy throat", "any scratchy throat"),
+            Phrase("a raw throat", "any raw throat"),
+        ),
+        # A signal no declarative frame can state at all (DD9).
+        "recent_uti_present": (
+            Phrase("a recent infection", "any recent infection"),
+            Phrase("a water infection", "any water infection"),
+            Phrase("a bladder infection", "any bladder infection"),
+        ),
+    }
+    reasons = {
+        (fault.signal, fault.form): fault.reason
+        for fault in inventory_faults(inventory, library_lines=[], encoder_signals=signals)
+    }
+    assert "over 4 words" in reasons[("fever_present", "a fever that will not shift")]
+    assert f"fewer than the {MIN_PHRASES_PER_SIGNAL}" in reasons[("fever_present", "")]
+    assert "not a Boolean signal" in reasons[("sore_throat_present", "")]
+    assert "30-day window" in reasons[("recent_uti_present", "")]
+    # recent_uti_present is refused for being unstateable, not for being unknown
+    # to the ruleset: it is in the ruleset, and reporting both would read as two
+    # different problems.
+    assert "not a Boolean signal" not in reasons[("recent_uti_present", "")]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"fever_present": {"phrases": "a fever"}},
+        {"fever_present": {"phrases": [{"text": "a fever"}]}},
+        {"fever_present": {"phrases": [{"text": "", "negated": "any fever"}]}},
+    ],
+)
+def test_a_malformed_inventory_is_reported_rather_than_raised(tmp_path, payload):
+    # The generator raises on the first structural fault, which is right for a
+    # build and wrong for a report: a lint that aborts on the inventory prints
+    # nothing about the fifty libraries either.
+    _, structural = read_inventory(_inventory(tmp_path, payload))
+    assert structural
+
+
+def test_an_unreadable_inventory_is_a_fault_not_a_crash(tmp_path):
+    path = tmp_path / "phrases.json"
+    path.write_text("{not json", encoding="utf-8")
+    inventory, (fault,) = read_inventory(path)
+    assert inventory == {}
+    assert "cannot be read" in fault.reason
+
+
+def test_the_inventory_phrases_reading_as_another_signal_are_the_undecided_pair():
+    # DD14, seen from the inventory: the two signals said in the same words are
+    # exactly the two whose overlap nobody has decided. A row for any other pair
+    # is a phrase to re-read, which is why this is pinned rather than counted.
+    inventory, _ = read_inventory(REAL_INVENTORY)
+    pairs = {(hit.signal, hit.foreign_signal) for hit in inventory_lexicon_hits(inventory)}
+    assert pairs == {
+        ("nocturia_present", "urinary_frequency_present"),
+        ("urinary_frequency_present", "nocturia_present"),
+    }
+
+
+def test_the_inventory_lexicon_check_is_not_run_against_a_phrases_own_signal():
+    # Every phrase matches its own lexicon by design -- that is what makes it a
+    # phrase for that signal -- so reporting it would drown the rows that mean
+    # something.
+    inventory = {"fever_present": (Phrase("a fever", "any fever"),)}
+    assert [hit.foreign_signal for hit in inventory_lexicon_hits(inventory)] == []
+
+
+# --------------------------------------------------------------------------
+# The generated library's per-line vectors (DD14, instruction 4)
+# --------------------------------------------------------------------------
+
+#: ``(library, signal, state) -> lines`` for every generated line whose vector
+#: asserts nothing about a signal in text the lexicon reads as that signal.
+#:
+#: Two families, and neither is a labelling fault. The ``undeclared`` rows are
+#: DD14 exactly: a line naming one of the nocturia / urinary-frequency pair says
+#: nothing about the other, emits no key for it, and is read as the other by a
+#: lexicon that cannot tell "extra toilet trips" from "night-time toilet trips"
+#: -- which is why the overlap is left undecided rather than decided inside a
+#: generator. The ``dysuria_present`` rows are the third family named in
+#: ``ABSENT_PAIR_BASELINE``: a urinary anchor in one clause pairing with a
+#: flank-pain modifier in another ("blood in my wee ... pain in my side"), which
+#: a four-symptom sentence makes far likelier than a hand-written line does.
+#:
+#: The counts move whenever the inventory or the budget moves, and re-pinning
+#: them is normal. What is not normal is the companion assertion below: a hit
+#: where the lexicon named the signal in a word of its own, rather than by
+#: pairing two clauses, is a line whose text says a signal its vector is silent
+#: about, and that is a wrong label rather than lexicon over-reach.
+DECLARATIVE_VECTOR_BASELINE: dict[tuple[str, str, str], int] = {
+    ("declarative_v1", "dysuria_present", "null"): 263,
+    ("declarative_v1", "nocturia_present", "undeclared"): 130,
+    ("declarative_v1", "urinary_frequency_present", "undeclared"): 164,
+}
+
+
+def test_the_generated_vectors_are_silent_only_where_the_lexicon_over_reaches():
+    hits = declarative_vector_hits(_real_fragments())
+    counts: dict[tuple[str, str, str], int] = {}
+    for hit in hits:
+        key = (hit.library, hit.signal, hit.state)
+        counts[key] = counts.get(key, 0) + 1
+    assert counts == DECLARATIVE_VECTOR_BASELINE, (
+        "the generated library's per-line vectors have moved against the "
+        "lexicons. If the inventory or the budget changed, re-pin; if neither "
+        "did, a line is labelled silent about a signal its text asserts"
+    )
+
+    named = [hit for hit in hits if any("+" not in term for term in hit.terms)]
+    assert named == [], (
+        "a generated line names a signal outright in text whose vector says "
+        "nothing about it, which is a wrong label rather than the lexicon "
+        "pairing two clauses across a comma: "
+        + "; ".join(f"{hit.fragment_id} {hit.signal} {hit.terms} {hit.text}" for hit in named)
+    )
+
+
+def test_an_asserted_signal_is_never_reported_against_its_own_lexicon():
+    # The same exemption signal_language_hits makes for a library's own signal:
+    # a line asserting dysuria matching the dysuria lexicon is the lexicon
+    # working. Only silence can be contradicted.
+    asserted = _generated_fragment(
+        "I have had burning when I pee",
+        labels={"dysuria_present": True, "fever_present": None},
+    )
+    silent = _generated_fragment(
+        "I have had burning when I pee",
+        fragment_id="gen:silent",
+        labels={"dysuria_present": None, "fever_present": None},
+    )
+    assert declarative_vector_hits([asserted]) == []
+    (hit,) = declarative_vector_hits([silent])
+    assert (hit.signal, hit.state) == ("dysuria_present", "null")
+
+
+def test_an_undeclared_signal_is_reported_apart_from_a_declared_silence():
+    # Undeclared earns no key and teaches nothing; null supervises the head
+    # towards "not mentioned". Collapsing them would hide the one that is a
+    # claim behind the one that is not.
+    fragment = _generated_fragment(
+        "I have had burning when I pee",
+        labels={"fever_present": None},
+    )
+    (hit,) = declarative_vector_hits([fragment])
+    assert (hit.signal, hit.state) == ("dysuria_present", "undeclared")
+
+
+# --------------------------------------------------------------------------
+# The report and the exit code
+# --------------------------------------------------------------------------
+
+
+def test_the_lint_reports_the_generated_library_and_the_inventory(capsys):
+    assert cli_main(["--lint", "--manifest", str(REAL_MANIFEST)]) == 0
+    out = capsys.readouterr().out
+    assert "Generated libraries (not compared above)" in out
+    assert "declarative_v1: 1000 lines across" in out
+    assert "arity 2: 500 lines" in out
+    assert "Declarative phrase inventory" in out
+    assert "faults (a failure): 0" in out
+    # Lines over clusters, and the frame count 12.1 asks for beside them.
+    assert "Split coverage" in out
+    assert "frames" in out
+
+
+def test_the_lint_exits_non_zero_on_an_inventory_fault(tmp_path, capsys):
+    # The one thing in the lint that is a failure rather than a prompt. Every
+    # other report here is a judgement call, and a lint that failed on those
+    # would be a lint nobody runs.
+    bad = _inventory(tmp_path, {"fever_present": _phrase_spec("a fever")})
+    assert cli_main(["--lint", "--manifest", str(REAL_MANIFEST), "--inventory", str(bad)]) == 1
+    captured = capsys.readouterr()
+    assert "faults (a failure): 1" in captured.out
+    assert "inventory has 1 fault" in captured.err
