@@ -387,3 +387,68 @@ So the next run can be scored against it rather than rationalised, as
   confident `true` predictions on truly-`null` text. Watch that cell — it is the
   one that invents a symptom into a patient's form — and be ready for the
   decision rule to have to work harder.
+
+---
+
+## 8. The declarative phrase inventory (not a library, and not fever-only)
+
+`data/synthetic/conditions/uti/declarative/phrases.json` is authored under a
+different set of rules from §§4–6, and this section exists so the difference is
+on the record rather than inferred from the file.
+
+**What it is.** Six signals — `fever_present`, `dysuria_present`,
+`urinary_frequency_present`, `nocturia_present`, `flank_pain_present`,
+`haematuria_present` — each with four to five short noun or gerund phrases, each
+phrase carrying a bare and a negated surface form. It is not a fragment library:
+nothing in it is ever emitted as written. The `build-declarative` generator
+composes the phrases into whole sentences whose label vector is fixed before the
+text exists, so the label-first guarantee (`arch_training.md` §2) holds by
+construction rather than by the author's judgement.
+
+`recent_uti_present` is deliberately absent. Its label turns on a 30-day window
+and the six policy rules in `arch_training.md` §9, and a declarative frame cannot
+place an infection inside a window.
+
+**Why the drafting risks of §1 come out differently here.** Idea diversity is
+*not* what a phrase adds — the generator's ideas are the label combinations, and
+phrase count only multiplies surface forms inside a cluster. Six phrases per
+signal is a ceiling, not a target: a seventh phrase adds near-identical siblings
+to clusters that already have enough. Register drift is a real risk and is
+handled at the frame level, not here; the phrases themselves are deliberately
+plain, because a phrase has to read correctly in four different sentence
+positions and colour costs it that.
+
+**The four rules, all checkable.**
+
+1. **Grammatical in all four positions.** Every phrase is read in each of
+   `I have had X.`, `I have not had X_negated.`, `…, but not X_negated.` and
+   `…, but I have had X.` before it is committed. This is what excludes the most
+   natural nocturia phrase in English — *getting up in the night* — because
+   "I have not had any getting up in the night" is not a sentence a patient
+   would write. A four-word ceiling on the bare form enforces the spirit of this
+   mechanically; the negated form is exempt because "any " is often prepended.
+2. **Policy-free.** A phrase is admitted only where its label under both bases is
+   unambiguous under `arch_training.md` §9. The six undeclared policies are the
+   list to check against, and each one excluded something real here: chills with
+   no stated heat (no "hot and cold", no "the shivers"); sub-threshold numbers
+   (no numeric temperatures at all); confident hedges (nothing of the "pretty
+   sure" family); unlateralised lower back (so `flank_pain_present` carries
+   "one-sided back pain" and "pain in my side", never a bare "lower back pain");
+   particulate urine (no "specks", no "bits" — only frank blood and the
+   red/pink colour words); and discomfort short of pain (so `dysuria_present`
+   uses pain, burning and stinging, and never soreness or discomfort).
+3. **Never a library line.** No `text` or `negated` may equal an existing library
+   line after `normalise()`. Phrases are *written*, not lifted out of the
+   `_true.txt` files — those were read for vocabulary only. Whole-line overlap
+   would put train text inside val fragments; vocabulary overlap across splits
+   is unavoidable and always has been.
+4. **The nocturia / urinary-frequency pair is kept apart.** A frequency phrase
+   must not imply the night and a nocturia phrase must not imply the day, because
+   the generator emits no key for whichever of the pair a line does not mention
+   (DD14). "Extra toilet trips" is a frequency phrase and "night-time toilet
+   trips" a nocturia one for exactly this reason.
+
+**Before committing a change to the inventory**, run the Task 5 lint checks —
+whole-line collision in particular — and re-read the four sentence positions for
+every phrase touched. There is no fold salt or cluster-marker consequence: the
+inventory is not split, and only the generated library it feeds is.
