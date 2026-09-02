@@ -5,7 +5,11 @@
       "name": "CUDA smoke test",
       "description": "Torch and the GPU only: a real matmul on the device, plus torch.version.cuda beside the compute capability. Ten seconds, and the first thing to run on a new machine or after any driver or wheel change.",
       "steps": [
-        ["-m", "scripts.encoder_training", "smoke-cuda"]
+        [
+          "-m",
+          "scripts.encoder_training",
+          "smoke-cuda"
+        ]
       ]
     },
     {
@@ -13,7 +17,11 @@
       "name": "Score the companion thresholds",
       "description": "Reads the six companion-comparison reports back and scores the criterion declared before the run. Stdlib only, no GPU, seconds: the cheapest end-to-end check that the console can run something real.",
       "steps": [
-        ["-m", "scripts.encoder_training", "score-companions"]
+        [
+          "-m",
+          "scripts.encoder_training",
+          "score-companions"
+        ]
       ]
     },
     {
@@ -36,7 +44,15 @@
         }
       ],
       "steps": [
-        ["-m", "scripts.encoder_training", "generate-folds", "--folds", "5", "--signal", "{signal}"]
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "{signal}"
+        ]
       ]
     },
     {
@@ -44,7 +60,13 @@
       "name": "Merge the six fold trees",
       "description": "Reads the six per-signal fold trees and writes one merged tree beside them, ready for joint multi-head training. Nothing is regenerated. Stdlib only.",
       "steps": [
-        ["-m", "scripts.encoder_training", "merge-folds", "--folds", "5"]
+        [
+          "-m",
+          "scripts.encoder_training",
+          "merge-folds",
+          "--folds",
+          "5"
+        ]
       ]
     },
     {
@@ -85,6 +107,417 @@
           "{signal}",
           "--base-model",
           "{base_model}"
+        ]
+      ]
+    },
+    {
+      "id": "decl-generate-folds",
+      "name": "Declarative sweep: generate folds for one signal",
+      "description": "One cell of the declarative comparison, for one signal. The two shares name the cell and the cell names every directory, so no two cells can overwrite each other. Stdlib only, no GPU, about a minute. Both shares at 0.0 is the control and is byte-identical to a tree generated before either flag existed.",
+      "parameters": [
+        {
+          "name": "signal",
+          "label": "Signal",
+          "choices": [
+            "fever_present",
+            "dysuria_present",
+            "flank_pain_present",
+            "haematuria_present",
+            "nocturia_present",
+            "urinary_frequency_present"
+          ],
+          "default": "fever_present"
+        },
+        {
+          "name": "companion_share",
+          "label": "Companion share",
+          "choices": [
+            "0.0",
+            "0.5"
+          ],
+          "default": "0.0"
+        },
+        {
+          "name": "declarative_share",
+          "label": "Declarative share",
+          "choices": [
+            "0.0",
+            "0.3",
+            "0.6"
+          ],
+          "default": "0.0"
+        }
+      ],
+      "steps": [
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "{signal}",
+          "--companion-share",
+          "{companion_share}",
+          "--declarative-share",
+          "{declarative_share}",
+          "--out-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}"
+        ]
+      ]
+    },
+    {
+      "id": "decl-generate-folds-all",
+      "name": "Declarative sweep: generate folds for all six signals",
+      "description": "The same cell across all six trainable signals, as six steps under one run. recent_uti_present is excluded: its label turns on a 30-day window and six written policy rules, which no declarative frame can state. Stdlib only, no GPU.",
+      "parameters": [
+        {
+          "name": "companion_share",
+          "label": "Companion share",
+          "choices": [
+            "0.0",
+            "0.5"
+          ],
+          "default": "0.0"
+        },
+        {
+          "name": "declarative_share",
+          "label": "Declarative share",
+          "choices": [
+            "0.0",
+            "0.3",
+            "0.6"
+          ],
+          "default": "0.0"
+        }
+      ],
+      "steps": [
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "fever_present",
+          "--companion-share",
+          "{companion_share}",
+          "--declarative-share",
+          "{declarative_share}",
+          "--out-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "dysuria_present",
+          "--companion-share",
+          "{companion_share}",
+          "--declarative-share",
+          "{declarative_share}",
+          "--out-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "flank_pain_present",
+          "--companion-share",
+          "{companion_share}",
+          "--declarative-share",
+          "{declarative_share}",
+          "--out-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "haematuria_present",
+          "--companion-share",
+          "{companion_share}",
+          "--declarative-share",
+          "{declarative_share}",
+          "--out-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "nocturia_present",
+          "--companion-share",
+          "{companion_share}",
+          "--declarative-share",
+          "{declarative_share}",
+          "--out-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "urinary_frequency_present",
+          "--companion-share",
+          "{companion_share}",
+          "--declarative-share",
+          "{declarative_share}",
+          "--out-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}"
+        ]
+      ]
+    },
+    {
+      "id": "decl-finetune",
+      "name": "Declarative sweep: train and score one signal",
+      "description": "Arm B against one cell's folds, five folds, roughly ten minutes on a 12GB card. Generate the cell first -- this reads the tree, it does not build it. Weights are not written (~440MB a fold, all regenerable); the negative control and Arm A are skipped. The real-text holdout is scored, which is the point of the run.",
+      "parameters": [
+        {
+          "name": "signal",
+          "label": "Signal",
+          "choices": [
+            "fever_present",
+            "dysuria_present",
+            "flank_pain_present",
+            "haematuria_present",
+            "nocturia_present",
+            "urinary_frequency_present"
+          ],
+          "default": "fever_present"
+        },
+        {
+          "name": "companion_share",
+          "label": "Companion share",
+          "choices": [
+            "0.0",
+            "0.5"
+          ],
+          "default": "0.0"
+        },
+        {
+          "name": "declarative_share",
+          "label": "Declarative share",
+          "choices": [
+            "0.0",
+            "0.3",
+            "0.6"
+          ],
+          "default": "0.0"
+        }
+      ],
+      "steps": [
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "5",
+          "--signal",
+          "{signal}",
+          "--data-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}",
+          "--report-dir",
+          "reports/encoder_training/decl/c{companion_share}-d{declarative_share}",
+          "--models-dir",
+          "models/encoder-decl/c{companion_share}-d{declarative_share}",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe"
+        ]
+      ]
+    },
+    {
+      "id": "decl-finetune-all",
+      "name": "Declarative sweep: train and score all six signals",
+      "description": "One cell end to end: six signals, five folds each, roughly an hour on a 12GB card. A failing step aborts the rest, so a half-finished cell is visible rather than quietly partial. Run one cell at a time -- two at once contend for the GPU.",
+      "parameters": [
+        {
+          "name": "companion_share",
+          "label": "Companion share",
+          "choices": [
+            "0.0",
+            "0.5"
+          ],
+          "default": "0.0"
+        },
+        {
+          "name": "declarative_share",
+          "label": "Declarative share",
+          "choices": [
+            "0.0",
+            "0.3",
+            "0.6"
+          ],
+          "default": "0.0"
+        }
+      ],
+      "steps": [
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "5",
+          "--signal",
+          "fever_present",
+          "--data-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}",
+          "--report-dir",
+          "reports/encoder_training/decl/c{companion_share}-d{declarative_share}",
+          "--models-dir",
+          "models/encoder-decl/c{companion_share}-d{declarative_share}",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "5",
+          "--signal",
+          "dysuria_present",
+          "--data-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}",
+          "--report-dir",
+          "reports/encoder_training/decl/c{companion_share}-d{declarative_share}",
+          "--models-dir",
+          "models/encoder-decl/c{companion_share}-d{declarative_share}",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "5",
+          "--signal",
+          "flank_pain_present",
+          "--data-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}",
+          "--report-dir",
+          "reports/encoder_training/decl/c{companion_share}-d{declarative_share}",
+          "--models-dir",
+          "models/encoder-decl/c{companion_share}-d{declarative_share}",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "5",
+          "--signal",
+          "haematuria_present",
+          "--data-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}",
+          "--report-dir",
+          "reports/encoder_training/decl/c{companion_share}-d{declarative_share}",
+          "--models-dir",
+          "models/encoder-decl/c{companion_share}-d{declarative_share}",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "5",
+          "--signal",
+          "nocturia_present",
+          "--data-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}",
+          "--report-dir",
+          "reports/encoder_training/decl/c{companion_share}-d{declarative_share}",
+          "--models-dir",
+          "models/encoder-decl/c{companion_share}-d{declarative_share}",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "5",
+          "--signal",
+          "urinary_frequency_present",
+          "--data-dir",
+          "data/synthetic/generated/decl/c{companion_share}-d{declarative_share}",
+          "--report-dir",
+          "reports/encoder_training/decl/c{companion_share}-d{declarative_share}",
+          "--models-dir",
+          "models/encoder-decl/c{companion_share}-d{declarative_share}",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe"
         ]
       ]
     }

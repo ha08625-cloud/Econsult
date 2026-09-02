@@ -137,7 +137,7 @@ from pathlib import Path
 
 from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
 from scripts.synthetic_data.__main__ import main as generate_main
-from scripts.synthetic_data.recombine import DEFAULT_DECLARATIVE_SHARE
+from scripts.synthetic_data.recombine import DEFAULT_COMPANION_SHARE, DEFAULT_DECLARATIVE_SHARE
 
 from .baselines import run_all
 from .dataset import SPLITS, DatasetError, fold_dataset_path, load_folds, swap_test_split
@@ -266,6 +266,8 @@ def generate_folds(args: argparse.Namespace) -> int:
                 "--out",
                 str(out_path),
             ]
+            if args.companion_share:
+                argv += ["--companion-share", str(args.companion_share)]
             if args.declarative_share:
                 argv += ["--declarative-share", str(args.declarative_share)]
             status = generate_main(argv)
@@ -2318,6 +2320,17 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     generate.add_argument("--ruleset", type=Path, default=DEFAULT_RULESET)
     generate.add_argument("--out-dir", type=Path, default=DEFAULT_DATA_DIR)
+    generate.add_argument(
+        "--companion-share",
+        type=float,
+        default=DEFAULT_COMPANION_SHARE,
+        help="forwarded to the generator: share of an example's non-decisive slots carrying "
+        "another signal's clinical language instead of filler. At the default 0.0 the flag is "
+        "not passed on at all and every fold is what it was before companions existed. Present "
+        "so that a declarative arm can be run at a non-zero companion share: measured at 0.0 "
+        "only, a declarative arm's gain cannot be told apart from the one companions already "
+        "deliver",
+    )
     generate.add_argument(
         "--declarative-share",
         type=float,

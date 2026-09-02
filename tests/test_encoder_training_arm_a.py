@@ -1040,12 +1040,11 @@ def test_embedding_a_text_is_independent_of_its_batch(transformers_module, tmp_p
 def test_generate_folds_forwards_the_declarative_share_and_omits_it_at_zero(monkeypatch):
     """The flag reaches the generator, and does not reach it at the default.
 
-    ``generate_folds`` builds a fixed argv list with no passthrough, which is why
-    ``--companion-share`` never reached it either. Without forwarding, running
-    the two arms of the declarative comparison is fifteen invocations of the
-    generator by hand rather than one command each. Omitting the flag at zero is
-    not tidiness: it is what keeps a default tree byte-identical to one generated
-    before the flag existed.
+    ``generate_folds`` builds a fixed argv list, so a generator flag reaches it
+    only by being forwarded here. Without forwarding, running the two arms of the
+    declarative comparison is fifteen invocations of the generator by hand rather
+    than one command each. Omitting the flag at zero is not tidiness: it is what
+    keeps a default tree byte-identical to one generated before the flag existed.
     """
     import scripts.encoder_training.__main__ as cli
 
@@ -1064,4 +1063,45 @@ def test_generate_folds_forwards_the_declarative_share_and_omits_it_at_zero(monk
     )
     assert cli.generate_folds(args) == 0
     for argv in seen:
+        assert argv[argv.index("--declarative-share") + 1] == "0.3"
+
+
+def test_generate_folds_forwards_the_companion_share_and_omits_it_at_zero(monkeypatch):
+    """The same passthrough for ``--companion-share``, and it is not a convenience.
+
+    Measured at companion share 0 only, a declarative arm's gain cannot be told
+    apart from the one companions already deliver: the committed companion
+    reports move ``null -> true`` on real text from 84.1% to 4.5% on
+    ``fever_present`` by themselves. Without this flag the fold generator cannot
+    express the combination at all, so the only comparison available is the one
+    that cannot answer the question.
+    """
+    import scripts.encoder_training.__main__ as cli
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(cli, "generate_main", lambda argv: seen.append(argv) or 0)
+
+    parser = cli.build_parser()
+    args = parser.parse_args(["generate-folds", "--folds", "1", "--train-count", "1"])
+    assert args.companion_share == 0.0
+    assert cli.generate_folds(args) == 0
+    assert seen and all("--companion-share" not in argv for argv in seen)
+
+    seen.clear()
+    args = parser.parse_args(
+        [
+            "generate-folds",
+            "--folds",
+            "1",
+            "--train-count",
+            "1",
+            "--companion-share",
+            "0.5",
+            "--declarative-share",
+            "0.3",
+        ]
+    )
+    assert cli.generate_folds(args) == 0
+    for argv in seen:
+        assert argv[argv.index("--companion-share") + 1] == "0.5"
         assert argv[argv.index("--declarative-share") + 1] == "0.3"
