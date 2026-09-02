@@ -13,9 +13,9 @@ from the reports. The technical version is `2026-08-31-noise-2x2.md`.*
 Yes — and by a lot more than the effort it cost. A model trained on clean text
 gets **8.5 points worse** when the text it reads is full of typos; a model
 trained on typo'd text gets **all of that back**, and loses nothing on clean text
-in exchange. The one thing we still don't know is whether a model trained on
-*slightly* messy text copes with *very* messy text, because we only ever tested
-each model against the exact mess it was trained on.
+in exchange. And you don't have to guess how messy real messages are: a model
+trained on *slightly* messy text handles *very* messy text almost as well as one
+trained on it directly.
 
 ---
 
@@ -89,12 +89,30 @@ on clean text. Nothing is left on the table.
 worse on clean text. They're a whisker better, which we should read as "no
 difference" rather than as a bonus.
 
+**And you don't have to guess the right amount of damage.** This was the one
+worry left over: every model above was only tested against the exact mess it was
+trained on, and in real life we can't know how typo'd people's messages are. So
+we took the model trained on the *lightest* damage (3%) and threw much messier
+text at it:
+
+| the 3%-trained model, reading… | it scores | a model trained on that exact mess scores |
+|---|---|---|
+| 6% damage (twice what it trained on) | **93.1%** | 92.8% |
+| 12% damage (four times) | **92.2%** | 93.3% |
+
+At twice the damage it's as good as the model built for it. At four times it's
+1.1 points behind — a hint that the gap widens with distance, but small, and the
+error bars overlap. Against the 84.8% an untrained model manages on that text,
+it's recovering 87% of the loss from an inoculation four times lighter.
+
+So the fix is to messy text in general, not to one particular level of mess.
+That's what makes it usable. One practical steer falls out of it: since the small
+gap appears when the *test* text is messier than the training text, err on the
+side of training with **more** damage than you expect. That costs nothing — the
+12% model is the best of all five on clean text.
+
 And a fourth thing that we expected to go the other way: **more damage doesn't
-start hurting.** The worry was that past some point you're not teaching the model
-to read harder text any more, you're just teaching it noise — the model reads
-words in pieces, and a badly mangled word is pieces of nothing. That never
-happened anywhere up to 12%, which is already messier than a phone keyboard
-plausibly produces.
+start hurting.**
 
 ---
 
@@ -200,7 +218,7 @@ difference from each other, and those are the two the model has to tell apart.
 | **Typo-trained models won't over-use "didn't mention it" on messy text** | **Held.** Within 1.6% of the correct count, and one of the three under-uses it. |
 | **If the drop from typos is small, stop — there's nothing to buy** | **Did not fire.** The drop is 8.5 points. |
 | **Past some damage level, training on typos stops helping** | **Did not happen** anywhere up to 12%. |
-| **A frozen model can't adapt to typos; a fine-tuned one can** | **Held.** The frozen version degrades steadily with the damage (77.1 → 74.3) while the fine-tuned one stays flat. |
+| **Open at the time: does one damage level cover another?** | **Answered, and favourably.** A 3%-trained model recovers 97% of the loss at 6% damage and 87% at 12%. |
 
 ---
 
@@ -232,17 +250,16 @@ difference from each other, and those are the two the model has to tell apart.
 
 ## 9. What to do next
 
-1. **Answer the one open question: does a model trained on light damage cope with
-   heavy damage?** Every model here only ever saw its own damage level. If they
-   only work at a matched level, that's a problem, because we can't know how
-   messy real submissions are — we'd be guessing. Two extra test runs answer it,
-   about twenty minutes of GPU, and they must run on the same software versions
-   as everything else or the comparison is spoiled.
+1. **Start training on damaged text, and pick a damage level at the top of what
+   you think is realistic rather than the middle.** Training heavy costs nothing
+   on clean text and covers more of the range, and nothing measured here argues
+   for the middle.
 2. **Keep the shipped setting** (damage long medical words, protect short ones).
    Section 5 settles it.
-3. **Don't roll this out to the other six symptoms yet** — wait until point 1 is
-   answered. It's cheap and it's clearly positive, but it should be one decision
-   made with the full picture, not six made piecemeal.
+3. **Confirm it on one other symptom before rolling it out to all six.** Fever's
+   two decisive libraries are the only ones in the project with no grouping
+   markers at all, which makes its numbers the most flattered in the set. One
+   more symptom would tell us this is about typos rather than about fever.
 4. **Think seriously about the real-word error generator.** The typos this run
    handles are largely the ones spellcheck already catches. The ones that reach
    us are the ones it doesn't.
@@ -252,6 +269,8 @@ difference from each other, and those are the two the model has to tell apart.
 
 The honest summary: we asked whether the model was losing anything to messy
 typing, found that it was losing a good deal, found that the fix is cheap and
-costs nothing, and found that the way it fails is to go quiet rather than to
-guess wrong. What we haven't yet shown is that one setting of the fix covers the
-range of mess we'll actually see, and that is a twenty-minute question.
+costs nothing, found that the way it fails is to go quiet rather than to guess
+wrong, and found that one setting of the fix covers a range of mess four times
+wider than it was trained on. The remaining doubt is not about the mechanism —
+it's that all of this is one symptom, and the typos we generate are largely the
+ones a phone's spellcheck would have caught anyway.
