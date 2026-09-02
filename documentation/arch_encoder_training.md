@@ -457,14 +457,17 @@ subcommands is four things to keep correct. When it is set, the report header
 carries `test_dataset_dir` and the test tree's `noise` block, and the Arm B
 artefact's dataset block carries `test_dir`.
 
-**What it was built for, and what that found.** The noise sweep ran thirteen
+**What it was built for, and what that found.** The noise sweep ran fifteen
 cells on `fever_present` across five folds — a clean tree and three damage rates,
 plus the conservative `--freeze-signal-vocabulary all` variant at the middle
 rate. Because effective n is identical in every cell (noise creates no clusters),
 the cells differ only in surface form. A clean-trained model loses 8.5 points of
 decisive accuracy on text damaged at 12% per word; a rate-matched model recovers
-essentially all of it and costs nothing on clean text. The off-diagonal cells are
-what carry that: the diagonals alone show only that noise training does no harm.
+essentially all of it and costs nothing on clean text, and a model trained at 3%
+recovers 87% of the damage done at 12% — the cross-rate cells are the whole
+reason the result is usable when the real damage rate is unmeasurable. The
+off-diagonal cells are what carry all of that: the diagonals alone show only that
+noise training does no harm.
 `reports/encoder_training/2026-08-31-noise-2x2.md` is the write-up and the
 authority on every figure.
 
