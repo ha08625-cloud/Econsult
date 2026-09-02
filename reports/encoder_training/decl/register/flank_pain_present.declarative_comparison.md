@@ -241,7 +241,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 10 | 8 | 0.815 |
 | 4 | 67 | 9 | 9 | 1 |
 
-`arm_b_finetune@c0.5-d0.0` ahead on 4 folds, `arm_b_finetune@c0.5-d0.3` on 0. `null -> true` mean: 9.1% against 29.8% -- **-20.8 points** in favour of `arm_b_finetune@c0.5-d0.3`.
+`arm_b_finetune@c0.5-d0.0` ahead on 4 folds, `arm_b_finetune@c0.5-d0.3` on 0. `null -> true` mean: 9.1% against 29.8% -- **20.8 points higher** for `arm_b_finetune@c0.5-d0.3` -- more invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 
@@ -255,7 +255,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 14 | 6 | 0.115 |
 | 4 | 67 | 11 | 8 | 0.648 |
 
-`arm_b_finetune@c0.5-d0.0` ahead on 5 folds, `arm_b_finetune@c0.5-d0.6` on 0. `null -> true` mean: 9.1% against 34.3% -- **-25.3 points** in favour of `arm_b_finetune@c0.5-d0.6`.
+`arm_b_finetune@c0.5-d0.0` ahead on 5 folds, `arm_b_finetune@c0.5-d0.6` on 0. `null -> true` mean: 9.1% against 34.3% -- **25.3 points higher** for `arm_b_finetune@c0.5-d0.6` -- more invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 
@@ -269,7 +269,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 6 | 0 | 0.0312 |
 | 4 | 67 | 4 | 1 | 0.375 |
 
-`arm_b_finetune@c0.5-d0.3` ahead on 3 folds, `arm_b_finetune@c0.5-d0.6` on 1. `null -> true` mean: 29.8% against 34.3% -- **-4.5 points** in favour of `arm_b_finetune@c0.5-d0.6`.
+`arm_b_finetune@c0.5-d0.3` ahead on 3 folds, `arm_b_finetune@c0.5-d0.6` on 1. `null -> true` mean: 29.8% against 34.3% -- **4.5 points higher** for `arm_b_finetune@c0.5-d0.6` -- more invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 

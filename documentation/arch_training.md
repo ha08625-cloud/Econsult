@@ -1254,8 +1254,15 @@ about the *data* or the *pipeline* rather than about a model:
   `null -> true` rose in 6/6 signals from cell A to cell B and rose-or-held in 6/6
   from C to D, by up to 33.9 points. The prediction was that it would improve, and
   would move least for `flank_pain_present`; it moved most, upward. The cause is
-  not established — DD8's register argument is the standing hypothesis and cell R
-  at 0.6, which would test it, has not been run.
+  established, but cell R at 0.6 (run `20260902-174947-decl-compare-register`,
+  reports under `reports/encoder_training/decl/register/`) constrains it: the
+  damage is **front-loaded**, roughly 85% of it arriving with the first 0.3 and
+  the curve then flattening. DD8's register argument predicts the opposite —
+  harm scaling as the frame comes to dominate decisive text — so it fits the
+  curve poorly. A shortcut learned once the pattern is present at all, and then
+  saturating, fits it better; the candidate is claim density, since a `true`
+  example whose decisive sentence asserts three symptoms teaches "dense symptom
+  language → `true`" and real submissions are dense. Suggestive, not settled.
 * **The synthetic test set cannot see it.** On recombinations the same metric sits
   at 1–4.4% in every cell and points D *better* than C on four of six signals,
   against five of six worse on real text. This is the 2026-08-19 finding arriving
@@ -1276,8 +1283,14 @@ about the *data* or the *pipeline* rather than about a model:
   difficulty, and a pooled accuracy that rises when the library is added is partly
   reading its own free examples.
 
-One result outside the ticket's scope and larger than it: **on `null_ambiguous`,
-a fully fine-tuned `roberta-base` is indistinguishable from `tfidf_logreg`** —
+One result outside the ticket's scope and larger than it, and **strengthened by
+the register run**: with cell C as reference, TF-IDF *beats* the fine-tune on
+three of six signals (p = 0.021, 2.6e-09, 6.8e-11) and ties the rest, the
+fine-tune winning none. In the 2×2, whose reference cell had no companions, the
+fine-tune won two — so the better the data gets at suppressing invention, the
+less a transformer adds on the hard slice. The 2×2 figures: **on
+`null_ambiguous`, a fully fine-tuned `roberta-base` is indistinguishable from
+`tfidf_logreg`** —
 every point estimate within 2.2 points, McNemar p ≥ 0.36 on three of six signals,
 and TF-IDF ahead on one of the three that separate. By the reports' own decision
 rule that is the library-bottleneck reading of the encoder question. Arm A was
@@ -1288,7 +1301,9 @@ result needs one confirming run before it is acted on.
 The fold trees were generated in a console run that was not saved to a branch, so
 the `.stats.json` sidecars needed for the byte-identity and filler-only-null
 checks were never committed and `data/synthetic/generated/` is gitignored; the
-lint was not run; cell R was not run. Cell C is **not** a replication of Arm P —
+lint was not run. Cell R **has** since been run (see the bullet above and
+section 12 of the write-up); predictions 1, 2 and 5 remain unscored. Cell C is
+**not** a replication of Arm P —
 those arms are six-head `joint6` models and these are single-signal heads, which
 2026-08-17 already shows is worth 3× to 24× on this metric, so the whole gap has
 an explanation that has nothing to do with the version bump.

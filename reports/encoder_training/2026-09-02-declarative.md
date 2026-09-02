@@ -33,7 +33,10 @@ cells × five folds = 120 fine-tunes.
 | **C** `c0.5-d0.0` | 0.5 | 0.0 | companions alone |
 | **D** `c0.5-d0.3` | 0.5 | 0.3 | both |
 
-Cell R at declarative 0.6 has not been run.
+**Cell R** at declarative 0.6 was run separately on 2026-09-02 as
+`20260902-174947-decl-compare-register` — three cells at companion 0.5 (C, D, R),
+3h04m, exit 0, same sha and same flags. Its reports are under
+`reports/encoder_training/decl/register/`. Section 12 records what it found.
 
 ---
 
@@ -80,7 +83,9 @@ of what the declarative flag does.
 
 **Recommendation: do not ship `--declarative-share 0.3` on this evidence.** Run
 cell R for completeness, then take the margin selector and the `null_ambiguous`
-result as the two things this run actually found.
+result as the two things this run actually found. **Cell R has since been run**
+and is section 12: it confirms the direction and adds one structural fact the
+2×2 could not see — the damage is front-loaded, which bears on *why*.
 
 ---
 
@@ -372,11 +377,14 @@ positive, so none of them was ever wrong. They are left as they are.
    gain over C sits, on a test set whose composition changed.
 5. **Near-duplicate pairs in the hand-written libraries do not move** — *not run.*
    `python -m scripts.synthetic_data --lint` was not part of this run.
-6. **`P = 0.6` scores worse than `P = 0.3` on real text** — *not run, and now
-   largely pre-answered.* Invention rose monotonically with declarative share at
-   every companion share tested. Cell R is a confirmation rather than an open
-   question, and DD8's argument survives on the 0.3 evidence alone. Still worth
-   the three hours for the record, since DD8 rests on it.
+6. **`P = 0.6` scores worse than `P = 0.3` on real text** — **held on the metric
+   that matters, not on all of them.** Cell R raises `null -> true` above D on
+   four of six signals, holds level on one and *improves* on one
+   (`urinary_frequency`, −1.0); overall real-text accuracy is worse on three and
+   level on two. Decisive accuracy goes the other way, better on four of six —
+   the same answer-more-often trade the 2×2 showed. DD8's argument survives the
+   test it asked for, but see section 12 for why the *shape* of the result is a
+   poor fit for DD8's stated mechanism.
 
 Three of six predictions could not be scored, and two of those three failed for
 the same avoidable reason: the generation step was not saved to a branch.
@@ -404,10 +412,68 @@ Unchanged from the runsheet, and still true:
    other, and every cell selects on a validation split the treatment changed.
    Until that is addressed, no cross-arm real-text comparison in this pipeline is
    trustworthy — including the ones already committed.
-3. **Run cell R** for the record, understanding it is now confirmatory.
+3. ~~Run cell R.~~ **Done** — section 12.
 4. **Take the `null_ambiguous` result seriously.** A fine-tune level with TF-IDF
    on the only slice that discriminates is the ticket's question answering itself
    in favour of library work. Re-run with Arm A included to complete the rule's
    left-hand side before acting on it.
 5. **Save the generation run to a branch**, not just the training run. Two
    predictions were unscorable because the sidecars were never committed.
+
+
+---
+
+## 12. Cell R: the register arm, and what its shape says
+
+Run as `20260902-174947-decl-compare-register`, three cells at companion 0.5.
+
+| signal | **C** 0.0 | **D** 0.3 | **R** 0.6 | 0→0.3 | 0.3→0.6 |
+|---|---|---|---|---|---|
+| `dysuria` | 3.6% | 12.7% | 12.7% | **+9.1** | +0.0 |
+| `fever` | 0.0% | 0.4% | 1.6% | **+0.4** | +1.2 |
+| `flank_pain` | 9.1% | 29.8% | 34.3% | **+20.8** | +4.5 |
+| `haematuria` | 9.3% | 13.2% | 14.6% | **+3.9** | +1.4 |
+| `nocturia` | 0.3% | 0.3% | 0.7% | **+0.0** | +0.4 |
+| `urinary_frequency` | 4.4% | 5.9% | 4.9% | **+1.5** | −1.0 |
+| **total** | | | | **+35.7** | **+6.5** |
+
+**The damage is front-loaded.** Introducing declarative fragments at all costs
+35.7 points summed across the six signals; doubling the share costs a further
+6.5. Roughly 85% of the harm arrives with the first 0.3 and then the curve
+flattens.
+
+That shape is evidence about mechanism, and it is the one thing the 2×2 could
+not provide. **DD8's register argument predicts the opposite shape.** Its claim
+is that harm comes from the frame *becoming the typical decisive sentence* — at
+0.3 the frame is a minority of decisive text and at 0.6 it is the majority, so
+the second step should hurt at least as much as the first. It does not; it hurts
+about a fifth as much. A shortcut learned as soon as the pattern is present at
+all, and then saturating, fits this curve; a register shift that scales with
+dominance does not.
+
+The competing account (section 4 of the plain-English companion) is that a
+`true` example whose decisive sentence asserts three symptoms teaches "text dense
+with symptom language → `true`", which real submissions then trigger. That
+predicts saturation, because the cue is learnable from a modest number of
+examples. **This is suggestive, not settled** — six signals, one run, and the
+`urinary_frequency` cell moves the wrong way for both stories.
+
+**The synthetic set diverges further, in the direction that flatters the arm.**
+At 0.6 the declarative library is **34.1%** of the decisive test set, and scores
+100.0% there in every cell. Pooled decisive accuracy therefore reaches its
+highest values anywhere in this project — `nocturia` 91.5%, `urinary_frequency`
+90.9%, `fever` 96.3% — on the same models whose real-text invention is worst.
+Excluding that slice, the like-for-like gain from D to R is +1.7, +0.8, +0.2,
+−0.1, +3.7 and +1.7 points, so some of it is real and none of it survives contact
+with the holdout. A reader shown only the pooled table would call cell R the best
+model in the run.
+
+**The `null_ambiguous` result replicates and hardens.** With cell C as the
+reference, TF-IDF now beats the fine-tune on three of six signals — `dysuria`
+(96.0 vs 95.1, p = 0.021), `haematuria` (95.9 vs 93.1, p = 2.6e-09) and
+`nocturia` (94.0 vs 90.5, p = 6.8e-11) — and ties the other three. **The
+fine-tune does not significantly win a single signal.** In the 2×2, whose
+reference cell had no companions, it won two. So the better the training data
+gets at suppressing invention, the *less* a transformer adds over word counting
+on the hard slice. That strengthens the library-bottleneck reading rather than
+weakening it, and it is now the most decision-relevant thing on file.
