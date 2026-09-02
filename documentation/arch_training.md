@@ -1129,8 +1129,9 @@ strength of one manifest happening to make them agree.
   0.5, identical in everything else), each merged into a six-head `joint6` tree.
 * One generated library — `declarative_v1`, 1,000 multi-symptom lines across 316
   clusters, built from an authored phrase inventory (12.3). It is committed, in
-  the manifest and drawn from only above `--declarative-share 0`, which no
-  measured arm has used: **no trained arm has seen a declarative fragment.**
+  the manifest and drawn from only above `--declarative-share 0`. **Measured at
+  0.3 on 2026-09-02 and not recommended** — see the four-cell entry below.
+  `--declarative-share` remains 0.0 by default and nothing shipped draws from it.
 * Six trained heads. `recent_uti_present` has libraries and a fold tree but **no
   trained head**, and `EncoderOutput.validate_against` requires all seven keys —
   so nothing produced so far is deployable.
@@ -1170,7 +1171,7 @@ not by measurement** (section 3), so their intervals are narrower than the truth
 The evaluation report computes this table per run and prints the warning above
 its own headline.
 
-### What the three measured runs established about the data
+### What the four measured runs established about the data
 
 Full results and caveats are in the reports; these are the findings that are
 facts about the *data* rather than about a model.
@@ -1240,18 +1241,74 @@ real corpus and **not swept**, deliberately — sweeping it against the 67 would
 selection on the holdout; and the register gap is untouched, because companions
 do not change register.
 
+**2026-09-02, the declarative 2×2 (version 4, six single-signal heads).** Four
+cells at `--companion-share` 0.0/0.5 × `--declarative-share` 0.0/0.3, six signals,
+five folds, one `declarative-compare` invocation. **The numbers are in the six
+`*.declarative_comparison.json` files under
+`reports/encoder_training/decl/comparison/`**, the write-up is
+`2026-09-02-declarative.md` and its plain-English companion, and the run record is
+`reports/training_runs/20260902-125946-decl-compare-2x2/`. Four findings are facts
+about the *data* or the *pipeline* rather than about a model:
+
+* **Declarative fragments make the invented-symptom rate worse.** Real-text
+  `null -> true` rose in 6/6 signals from cell A to cell B and rose-or-held in 6/6
+  from C to D, by up to 33.9 points. The prediction was that it would improve, and
+  would move least for `flank_pain_present`; it moved most, upward. The cause is
+  not established — DD8's register argument is the standing hypothesis and cell R
+  at 0.6, which would test it, has not been run.
+* **The synthetic test set cannot see it.** On recombinations the same metric sits
+  at 1–4.4% in every cell and points D *better* than C on four of six signals,
+  against five of six worse on real text. This is the 2026-08-19 finding arriving
+  from the other side: a failure the synthetic set cannot contain is a failure it
+  cannot see returning. Read the holdout section of these reports or read nothing.
+* **The margin selector is now a larger effect than the treatments.** Per-fold
+  margins span more than half the 0.0–0.9 range in 20 of 24 cells, and the margin
+  is mechanically the lever on `null -> true`. Each cell selects on its own
+  validation split, which the treatment changed. **Until this is addressed, no
+  cross-arm real-text comparison in this pipeline is trustworthy, including those
+  already committed.** 2026-08-19's closing note — that no future margin should be
+  selected on a split in which the failure cannot occur — is this problem,
+  recorded and not yet acted on.
+* **Everything `declarative_v1` emits is an easy case, measured.** It scores
+  **100.0%** with an exactly diagonal confusion matrix in every cell that draws
+  from it, and contributes roughly a quarter of the effective clusters in those
+  cells. DD3 as a number: a dataset that grew in line count has not grown in
+  difficulty, and a pooled accuracy that rises when the library is added is partly
+  reading its own free examples.
+
+One result outside the ticket's scope and larger than it: **on `null_ambiguous`,
+a fully fine-tuned `roberta-base` is indistinguishable from `tfidf_logreg`** —
+every point estimate within 2.2 points, McNemar p ≥ 0.36 on three of six signals,
+and TF-IDF ahead on one of the three that separate. By the reports' own decision
+rule that is the library-bottleneck reading of the encoder question. Arm A was
+skipped in this run, so the rule's frozen-probe comparator is missing and the
+result needs one confirming run before it is acted on.
+
+**What 2026-09-02 does not establish:** predictions 1, 2, 5 and 6 are unscored.
+The fold trees were generated in a console run that was not saved to a branch, so
+the `.stats.json` sidecars needed for the byte-identity and filler-only-null
+checks were never committed and `data/synthetic/generated/` is gitignored; the
+lint was not run; cell R was not run. Cell C is **not** a replication of Arm P —
+those arms are six-head `joint6` models and these are single-signal heads, which
+2026-08-17 already shows is worth 3× to 24× on this metric, so the whole gap has
+an explanation that has nothing to do with the version bump.
+
 ### Outstanding
 
-1. **Fix `urinary_frequency`** — 12.9 first, since it may be a library-level
+1. **Fix the margin selector** — 2026-09-02 shows it varying more between folds of
+   one cell than the treatments being measured vary from each other, on a
+   criterion unrelated to real-text invention. This now blocks trustworthy
+   measurement of everything below it.
+2. **Fix `urinary_frequency`** — 12.9 first, since it may be a library-level
    assertion rather than the per-line format of 12.3.
-2. **Write the missing `false` submissions** for the three signals that have
+3. **Write the missing `false` submissions** for the three signals that have
    none.
-3. **Fold companion-bearing validation into the standard recipe regardless of
+4. **Fold companion-bearing validation into the standard recipe regardless of
    arm** — Arm C's 16% costs nothing but a re-selection.
-4. **Train a `recent_uti_present` head**, without which nothing is deployable.
-5. **Re-run or retire the outstanding A1/A2/A3 sweep** — its datasets are version
+5. **Train a `recent_uti_present` head**, without which nothing is deployable.
+6. **Re-run or retire the outstanding A1/A2/A3 sweep** — its datasets are version
    2 and non-comparable.
-6. **Tag the five untagged library sets**, prioritised by the near-duplicate
+7. **Tag the five untagged library sets**, prioritised by the near-duplicate
    rates in section 3.
 
 ### Effective sample size: count clusters, not examples
@@ -1444,7 +1501,7 @@ unrelated to reading the text. The question a multi-key arm can answer is "does
 more label per example buy training efficiency?", which is not the question
 companions were built to answer.
 
-### 12.3 Multi-symptom fragments — built, not measured
+### 12.3 Multi-symptom fragments — built and measured, not recommended
 
 Fragments asserting more than one signal in a clause: "I had a fever and it's
 been burning when I urinate." These are closer to how patients write than
@@ -1480,8 +1537,17 @@ source of hard ones.
 
 **The generator now exists too**, and so does the library it writes:
 `data/synthetic/conditions/uti/declarative/declarative_v1.jsonl`, 1,000 lines
-across 316 clusters. What has *not* happened is a training run that draws from
-it — every arm measured so far is at `--declarative-share 0`.
+across 316 clusters.
+
+**It was measured on 2026-09-02 at `--declarative-share 0.3`, in a 2×2 against
+`--companion-share`, and the result was negative** (section 10): the real-text
+invented-symptom rate rose in every signal, at both companion shares, by up to
+33.9 points. The share stays at its 0.0 default and nothing draws from the
+library. The paragraph above about `null_ambiguous` never drawing a declarative
+fragment now has a measurement behind it as well as an argument —
+`declarative_v1` scores 100.0% with an exactly diagonal confusion matrix in every
+cell that contains it, so the library adds volume and claim density and no
+difficulty whatever.
 
 `scripts/synthetic_data/declarative.py` composes it out of two things:
 

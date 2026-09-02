@@ -254,7 +254,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 14 | 1 | 0.000977 |
 | 4 | 67 | 31 | 4 | 3.47e-06 |
 
-`arm_b_finetune@c0.0-d0.0` ahead on 5 folds, `arm_b_finetune@c0.0-d0.3` on 0. `null -> true` mean: 29.3% against 63.2% -- **-33.9 points** in favour of `arm_b_finetune@c0.0-d0.3`.
+`arm_b_finetune@c0.0-d0.0` ahead on 5 folds, `arm_b_finetune@c0.0-d0.3` on 0. `null -> true` mean: 29.3% against 63.2% -- **33.9 points higher** for `arm_b_finetune@c0.0-d0.3` -- more invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 
@@ -268,7 +268,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 3 | 17 | 0.00258 |
 | 4 | 67 | 3 | 11 | 0.0574 |
 
-`arm_b_finetune@c0.0-d0.0` ahead on 0 folds, `arm_b_finetune@c0.5-d0.0` on 5. `null -> true` mean: 29.3% against 9.3% -- **+20.0 points** in favour of `arm_b_finetune@c0.5-d0.0`.
+`arm_b_finetune@c0.0-d0.0` ahead on 0 folds, `arm_b_finetune@c0.5-d0.0` on 5. `null -> true` mean: 29.3% against 9.3% -- **20.0 points lower** for `arm_b_finetune@c0.5-d0.0` -- fewer invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 
@@ -282,7 +282,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 1 | 16 | 0.000275 |
 | 4 | 67 | 2 | 10 | 0.0386 |
 
-`arm_b_finetune@c0.0-d0.0` ahead on 0 folds, `arm_b_finetune@c0.5-d0.3` on 5. `null -> true` mean: 29.3% against 13.2% -- **+16.1 points** in favour of `arm_b_finetune@c0.5-d0.3`.
+`arm_b_finetune@c0.0-d0.0` ahead on 0 folds, `arm_b_finetune@c0.5-d0.3` on 5. `null -> true` mean: 29.3% against 13.2% -- **16.1 points lower** for `arm_b_finetune@c0.5-d0.3` -- fewer invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 
@@ -296,7 +296,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 4 | 31 | 3.47e-06 |
 | 4 | 67 | 5 | 40 | 7.88e-08 |
 
-`arm_b_finetune@c0.0-d0.3` ahead on 0 folds, `arm_b_finetune@c0.5-d0.0` on 5. `null -> true` mean: 63.2% against 9.3% -- **+53.9 points** in favour of `arm_b_finetune@c0.5-d0.0`.
+`arm_b_finetune@c0.0-d0.3` ahead on 0 folds, `arm_b_finetune@c0.5-d0.0` on 5. `null -> true` mean: 63.2% against 9.3% -- **53.9 points lower** for `arm_b_finetune@c0.5-d0.0` -- fewer invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 
@@ -310,7 +310,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 2 | 30 | 2.46e-07 |
 | 4 | 67 | 2 | 37 | 2.84e-09 |
 
-`arm_b_finetune@c0.0-d0.3` ahead on 0 folds, `arm_b_finetune@c0.5-d0.3` on 5. `null -> true` mean: 63.2% against 13.2% -- **+50.0 points** in favour of `arm_b_finetune@c0.5-d0.3`.
+`arm_b_finetune@c0.0-d0.3` ahead on 0 folds, `arm_b_finetune@c0.5-d0.3` on 5. `null -> true` mean: 63.2% against 13.2% -- **50.0 points lower** for `arm_b_finetune@c0.5-d0.3` -- fewer invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 
@@ -324,7 +324,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 4 | 5 | 1 |
 | 4 | 67 | 6 | 6 | 1 |
 
-`arm_b_finetune@c0.5-d0.0` ahead on 0 folds, `arm_b_finetune@c0.5-d0.3` on 3. `null -> true` mean: 9.3% against 13.2% -- **-3.9 points** in favour of `arm_b_finetune@c0.5-d0.3`.
+`arm_b_finetune@c0.5-d0.0` ahead on 0 folds, `arm_b_finetune@c0.5-d0.3` on 3. `null -> true` mean: 9.3% against 13.2% -- **3.9 points higher** for `arm_b_finetune@c0.5-d0.3` -- more invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 

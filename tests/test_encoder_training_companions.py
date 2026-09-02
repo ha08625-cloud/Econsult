@@ -43,6 +43,7 @@ from scripts.encoder_training.metrics import Prediction
 from scripts.encoder_training.report import (
     FoldRun,
     ModelRun,
+    _render_holdout_comparisons,
     compare_models,
     holdout_comparisons,
 )
@@ -171,6 +172,49 @@ def test_the_real_text_comparison_pairs_on_submissions():
     # Arm 0 answers `true` on the one truly-null submission in every fold; the
     # companion arm never does. That is 100 points, and the sign says which way.
     assert entry["null_to_true"]["delta_points"] == pytest.approx(100.0)
+
+
+def test_the_paired_sentence_names_the_arm_the_gap_actually_favours():
+    """The 2026-09-02 declarative sweep read backwards in six reports.
+
+    ``delta_points`` is ``left - right``, so it is negative when the *left*
+    arm invents fewer symptoms. The sentence used to append a fixed
+    "in favour of `{right}`" to it regardless, which turned every arm that
+    made invention worse into one the report appeared to endorse. Only the
+    positive direction was covered, which is why it survived. Both directions
+    are asserted here on the rendered text, because the sign in the JSON was
+    never the thing that misled anyone.
+    """
+    better = _run("better", per_fold_rows=[RIGHT, RIGHT], test_rows=[(CLASS_NULL, CLASS_NULL)])
+    worse = _run("worse", per_fold_rows=[WRONG, WRONG], test_rows=[(CLASS_NULL, CLASS_NULL)])
+
+    def _sentence_for(left, right):
+        comparisons, _ = holdout_comparisons([left, right], signal=SIGNAL)
+        (entry,) = comparisons
+        return entry, _render_holdout_comparisons(
+            {"holdout_comparisons": comparisons, "skipped_holdout_comparisons": []}
+        )
+
+    # Right-hand arm is the better one: the gap is in its favour.
+    entry, lines = _sentence_for(worse, better)
+    assert entry["null_to_true"]["delta_points"] == pytest.approx(100.0)
+    rendered = "\n".join(lines)
+    assert "100.0 points lower** for `better`" in rendered
+    assert "higher" not in rendered
+
+    # Swap them. The same gap now runs against the right-hand arm, and the
+    # sentence has to say so rather than crediting it with a negative win.
+    entry, lines = _sentence_for(better, worse)
+    assert entry["null_to_true"]["delta_points"] == pytest.approx(-100.0)
+    rendered = "\n".join(lines)
+    assert "100.0 points higher** for `worse`" in rendered
+    assert "lower" not in rendered
+
+    # Two arms that invent at the same rate are level, not a win for either.
+    _, lines = _sentence_for(
+        better, _run("same", per_fold_rows=[RIGHT, RIGHT], test_rows=[(CLASS_NULL, CLASS_NULL)])
+    )
+    assert "**level** between the two." in "\n".join(lines)
 
 
 def test_a_run_that_did_not_score_the_holdout_is_a_recorded_skip():
