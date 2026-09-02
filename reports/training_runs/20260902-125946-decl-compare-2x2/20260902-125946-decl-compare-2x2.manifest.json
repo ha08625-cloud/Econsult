@@ -1,0 +1,47 @@
+{
+  "run_id": "20260902-125946-decl-compare-2x2",
+  "entry_id": "decl-compare-2x2",
+  "entry_name": "Declarative sweep: compare the four cells",
+  "parameters": {},
+  "commit": "a35b1ea5377e65b5b70af5b5ae31871d2e7db5f7",
+  "status": "succeeded",
+  "started_at": "2026-09-02T11:59:46+00:00",
+  "ended_at": "2026-09-02T16:00:05+00:00",
+  "error": null,
+  "steps": [
+    {
+      "index": 1,
+      "argv": [
+        "-m",
+        "scripts.encoder_training",
+        "declarative-compare",
+        "--folds",
+        "5",
+        "--cell",
+        "data/synthetic/generated/decl/c0.0-d0.0",
+        "--cell",
+        "data/synthetic/generated/decl/c0.0-d0.3",
+        "--cell",
+        "data/synthetic/generated/decl/c0.5-d0.0",
+        "--cell",
+        "data/synthetic/generated/decl/c0.5-d0.3",
+        "--report-dir",
+        "reports/encoder_training/decl/comparison",
+        "--models-dir",
+        "models/encoder-decl/comparison",
+        "--base-model",
+        "roberta-base",
+        "--determinism",
+        "strict",
+        "--train-seed",
+        "1234",
+        "--no-weights"
+      ],
+      "command": "python -u -m scripts.encoder_training declarative-compare --folds 5 --cell data/synthetic/generated/decl/c0.0-d0.0 --cell data/synthetic/generated/decl/c0.0-d0.3 --cell data/synthetic/generated/decl/c0.5-d0.0 --cell data/synthetic/generated/decl/c0.5-d0.3 --report-dir reports/encoder_training/decl/comparison --models-dir models/encoder-decl/comparison --base-model roberta-base --determinism strict --train-seed 1234 --no-weights",
+      "status": "succeeded",
+      "exit_code": 0,
+      "started_at": "2026-09-02T11:59:46+00:00",
+      "ended_at": "2026-09-02T16:00:05+00:00"
+    }
+  ]
+}

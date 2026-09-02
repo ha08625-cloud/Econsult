@@ -1,0 +1,3463 @@
+{
+  "arm": "arm_b_finetune__c0-5-d0-0",
+  "signal": "nocturia_present",
+  "classes": [
+    "false",
+    "true",
+    "null"
+  ],
+  "encoder": {
+    "base_model": "roberta-base",
+    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "requested_revision": null,
+    "revision_pinned": false,
+    "hidden_size": 768,
+    "tokeniser": {
+      "reported_do_lower_case": null,
+      "lowercases_input": false,
+      "cased_vocab": true,
+      "discards_casing": false,
+      "vocab_size": 50265,
+      "model_max_length": 512,
+      "tokenizer_class": "RobertaTokenizer"
+    }
+  },
+  "config": {
+    "base_model": "roberta-base",
+    "revision": null,
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "epochs": 3,
+    "batch_size": 32,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "seed": 1234,
+    "fold_seed_rule": "seed + 1000 * fold_index",
+    "device": "auto",
+    "eval_batch_size": 64,
+    "determinism": "strict",
+    "trainable": "all layers; the encoder is unfrozen and trained with the head",
+    "loss": "cross_entropy, unweighted (DD8), masked on missing signals (DD10)",
+    "optimiser": "AdamW with linear warmup then linear decay",
+    "epoch_selection": "highest macro-F1 on the fold's own validation split",
+    "dtype": "float32",
+    "memory_strategy": "none. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation -- BERT-base at batch 32 / seq 256 fits in 12GB with room to spare",
+    "hyperparameter_provenance": "learning rate, epochs, warmup and optimiser are the published BERT-base recipe, fixed before any run. Hyperparameter search is out of scope",
+    "validation_guided_decisions": [
+      "pooling mode (DD3) -- mean vs CLS, compared once",
+      "learning rate",
+      "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+      "decision margin (DD9)"
+    ]
+  },
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "cuda_available": true,
+    "deterministic_env": ":4096:8",
+    "device_name": "NVIDIA GeForce RTX 5070",
+    "compute_capability": [
+      12,
+      0
+    ],
+    "capability_matches_expected": true,
+    "wheel_covers_blackwell": true,
+    "kernel_launch_ok": true
+  },
+  "dataset": {
+    "dir": "data/synthetic/generated/decl/c0.5-d0.0",
+    "name": "nocturia_present",
+    "folds": 5,
+    "generator_version": 4,
+    "generator_base_seed": 42,
+    "split_salt": "0",
+    "dataset_seeds": [
+      42,
+      142,
+      242,
+      342,
+      442
+    ],
+    "examples_per_fold": {
+      "train": 10000,
+      "val": 2000,
+      "test": 2000
+    }
+  },
+  "ruleset": "data/uti1.json",
+  "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+  "folds": [
+    {
+      "fold": 0,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.8528708790439713,
+        0.846065302568881,
+        0.8451243290649343
+      ],
+      "train_loss_by_epoch": [
+        0.2421736541347811,
+        0.00010892157345078886,
+        5.3675833716988564e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 70,
+        "accuracy": 0.8855,
+        "macro_f1": 0.8575324355077826,
+        "confusion": [
+          [
+            364,
+            29,
+            131
+          ],
+          [
+            6,
+            249,
+            30
+          ],
+          [
+            0,
+            33,
+            1158
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.6946564885496184,
+          "true": 0.8736842105263158,
+          "null": 0.9722921914357683
+        }
+      },
+      "decision_rule": {
+        "margin": 0.65,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.038623005877413935,
+        "null_to_true_rate": 0.027707808564231738,
+        "macro_f1": 0.8575324355077826,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "nocturia_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.65,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              6,
+              3
+            ],
+            [
+              0,
+              1,
+              57
+            ]
+          ],
+          "accuracy": {
+            "point": 0.9402985074626866,
+            "low": 0.8805970149253731,
+            "high": 0.9850746268656716,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8580508474576272,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 9,
+          "n_submissions": 9,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              6,
+              3
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6666666666666666,
+            "low": 0.3333333333333333,
+            "high": 1.0,
+            "effective_n": 9,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.4,
+          "worst_case_half_width": 0.326660664090009
+        },
+        "by_signal": [
+          {
+            "signal": "nocturia_present",
+            "margin": 0.65,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  6,
+                  3
+                ],
+                [
+                  0,
+                  1,
+                  57
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9402985074626866,
+                "low": 0.8805970149253731,
+                "high": 0.9850746268656716,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8580508474576272,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  6,
+                  3
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6666666666666666,
+                "low": 0.3333333333333333,
+                "high": 1.0,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 9,
+                "predicted": 7,
+                "recall": 0.6666666666666666,
+                "precision": 0.8571428571428571
+              },
+              "null": {
+                "support": 58,
+                "predicted": 60,
+                "recall": 0.9827586206896551,
+                "precision": 0.95
+              }
+            },
+            "null_to_true": {
+              "count": 1,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "nocturia_present": [
+            {
+              "id": "holdout-0001:nocturia_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:nocturia_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:nocturia_present",
+              "unit": "holdout-0003",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:nocturia_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:nocturia_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:nocturia_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:nocturia_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:nocturia_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:nocturia_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:nocturia_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:nocturia_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:nocturia_present",
+              "unit": "holdout-0012",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0013:nocturia_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:nocturia_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:nocturia_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:nocturia_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:nocturia_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:nocturia_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:nocturia_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:nocturia_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:nocturia_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:nocturia_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:nocturia_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:nocturia_present",
+              "unit": "holdout-0024",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0025:nocturia_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:nocturia_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:nocturia_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:nocturia_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:nocturia_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:nocturia_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:nocturia_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:nocturia_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:nocturia_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:nocturia_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:nocturia_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0036:nocturia_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:nocturia_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:nocturia_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:nocturia_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:nocturia_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:nocturia_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:nocturia_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:nocturia_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:nocturia_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:nocturia_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:nocturia_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:nocturia_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:nocturia_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0049:nocturia_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:nocturia_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:nocturia_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:nocturia_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:nocturia_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:nocturia_present",
+              "unit": "holdout-0054",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0055:nocturia_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:nocturia_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:nocturia_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0058:nocturia_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:nocturia_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:nocturia_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:nocturia_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:nocturia_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:nocturia_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:nocturia_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:nocturia_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:nocturia_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:nocturia_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 1
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 1,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.7743098742468871,
+        0.7383035290518044,
+        0.7417108017778293
+      ],
+      "train_loss_by_epoch": [
+        0.24188073102412747,
+        0.00011689501023502089,
+        4.2237105272943156e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 79,
+        "accuracy": 0.8225,
+        "macro_f1": 0.7764899216087123,
+        "confusion": [
+          [
+            359,
+            24,
+            126
+          ],
+          [
+            1,
+            197,
+            118
+          ],
+          [
+            20,
+            66,
+            1089
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.7053045186640472,
+          "true": 0.6234177215189873,
+          "null": 0.9268085106382978
+        }
+      },
+      "decision_rule": {
+        "margin": 0.3,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.05702127659574468,
+        "null_to_true_rate": 0.05617021276595745,
+        "macro_f1": 0.7764899216087123,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "nocturia_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.3,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              6,
+              3
+            ],
+            [
+              0,
+              0,
+              58
+            ]
+          ],
+          "accuracy": {
+            "point": 0.9552238805970149,
+            "low": 0.9104477611940298,
+            "high": 1.0,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8873949579831932,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 9,
+          "n_submissions": 9,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              6,
+              3
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6666666666666666,
+            "low": 0.3333333333333333,
+            "high": 1.0,
+            "effective_n": 9,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.4,
+          "worst_case_half_width": 0.326660664090009
+        },
+        "by_signal": [
+          {
+            "signal": "nocturia_present",
+            "margin": 0.3,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  6,
+                  3
+                ],
+                [
+                  0,
+                  0,
+                  58
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9552238805970149,
+                "low": 0.9104477611940298,
+                "high": 1.0,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8873949579831932,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  6,
+                  3
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6666666666666666,
+                "low": 0.3333333333333333,
+                "high": 1.0,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 9,
+                "predicted": 6,
+                "recall": 0.6666666666666666,
+                "precision": 1.0
+              },
+              "null": {
+                "support": 58,
+                "predicted": 61,
+                "recall": 1.0,
+                "precision": 0.9508196721311475
+              }
+            },
+            "null_to_true": {
+              "count": 0,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "nocturia_present": [
+            {
+              "id": "holdout-0001:nocturia_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:nocturia_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:nocturia_present",
+              "unit": "holdout-0003",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:nocturia_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:nocturia_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:nocturia_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:nocturia_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:nocturia_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:nocturia_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:nocturia_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:nocturia_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:nocturia_present",
+              "unit": "holdout-0012",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0013:nocturia_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:nocturia_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:nocturia_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:nocturia_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:nocturia_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:nocturia_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:nocturia_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:nocturia_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:nocturia_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:nocturia_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:nocturia_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:nocturia_present",
+              "unit": "holdout-0024",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0025:nocturia_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:nocturia_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:nocturia_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:nocturia_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:nocturia_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:nocturia_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:nocturia_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:nocturia_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:nocturia_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:nocturia_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:nocturia_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:nocturia_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:nocturia_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:nocturia_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:nocturia_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0040:nocturia_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:nocturia_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:nocturia_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:nocturia_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:nocturia_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:nocturia_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:nocturia_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:nocturia_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:nocturia_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0049:nocturia_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:nocturia_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:nocturia_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:nocturia_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:nocturia_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:nocturia_present",
+              "unit": "holdout-0054",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0055:nocturia_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:nocturia_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:nocturia_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:nocturia_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:nocturia_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:nocturia_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:nocturia_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:nocturia_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:nocturia_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:nocturia_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:nocturia_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:nocturia_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:nocturia_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 1
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 2,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.8512204176862778,
+        0.9017760306034713,
+        0.9050303713162409
+      ],
+      "train_loss_by_epoch": [
+        0.23840412584149745,
+        0.0009098746592353564,
+        4.085910085705109e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 66,
+        "accuracy": 0.932,
+        "macro_f1": 0.9082009493759781,
+        "confusion": [
+          [
+            508,
+            0,
+            6
+          ],
+          [
+            3,
+            234,
+            81
+          ],
+          [
+            17,
+            29,
+            1122
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9883268482490273,
+          "true": 0.7358490566037735,
+          "null": 0.9606164383561644
+        }
+      },
+      "decision_rule": {
+        "margin": 0.6,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.036815068493150686,
+        "null_to_true_rate": 0.02482876712328767,
+        "macro_f1": 0.9082009493759781,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "nocturia_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.6,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              5,
+              4
+            ],
+            [
+              0,
+              0,
+              58
+            ]
+          ],
+          "accuracy": {
+            "point": 0.9402985074626866,
+            "low": 0.8805970149253731,
+            "high": 0.9850746268656716,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8404761904761904,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 9,
+          "n_submissions": 9,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              5,
+              4
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.5555555555555556,
+            "low": 0.2222222222222222,
+            "high": 0.8888888888888888,
+            "effective_n": 9,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.35714285714285715,
+          "worst_case_half_width": 0.326660664090009
+        },
+        "by_signal": [
+          {
+            "signal": "nocturia_present",
+            "margin": 0.6,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  5,
+                  4
+                ],
+                [
+                  0,
+                  0,
+                  58
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9402985074626866,
+                "low": 0.8805970149253731,
+                "high": 0.9850746268656716,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8404761904761904,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  5,
+                  4
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5555555555555556,
+                "low": 0.2222222222222222,
+                "high": 0.8888888888888888,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.35714285714285715,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 9,
+                "predicted": 5,
+                "recall": 0.5555555555555556,
+                "precision": 1.0
+              },
+              "null": {
+                "support": 58,
+                "predicted": 62,
+                "recall": 1.0,
+                "precision": 0.9354838709677419
+              }
+            },
+            "null_to_true": {
+              "count": 0,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "nocturia_present": [
+            {
+              "id": "holdout-0001:nocturia_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:nocturia_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:nocturia_present",
+              "unit": "holdout-0003",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:nocturia_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:nocturia_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:nocturia_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:nocturia_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:nocturia_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:nocturia_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:nocturia_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:nocturia_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:nocturia_present",
+              "unit": "holdout-0012",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0013:nocturia_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:nocturia_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:nocturia_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:nocturia_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:nocturia_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:nocturia_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:nocturia_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:nocturia_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:nocturia_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:nocturia_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:nocturia_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:nocturia_present",
+              "unit": "holdout-0024",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:nocturia_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:nocturia_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:nocturia_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:nocturia_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:nocturia_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:nocturia_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:nocturia_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:nocturia_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:nocturia_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:nocturia_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:nocturia_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:nocturia_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:nocturia_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:nocturia_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:nocturia_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0040:nocturia_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:nocturia_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:nocturia_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:nocturia_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:nocturia_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:nocturia_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:nocturia_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:nocturia_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:nocturia_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0049:nocturia_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:nocturia_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:nocturia_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:nocturia_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:nocturia_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:nocturia_present",
+              "unit": "holdout-0054",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0055:nocturia_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:nocturia_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:nocturia_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:nocturia_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:nocturia_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:nocturia_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:nocturia_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:nocturia_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:nocturia_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:nocturia_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:nocturia_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:nocturia_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:nocturia_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 1
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 3,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 2,
+      "val_macro_f1_by_epoch": [
+        0.8644931950162068,
+        0.9145268168283541,
+        0.8848562802905077
+      ],
+      "train_loss_by_epoch": [
+        0.24887984459279106,
+        0.001108645522245206,
+        0.00010930453192559071
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 67,
+        "accuracy": 0.942,
+        "macro_f1": 0.9151514016977708,
+        "confusion": [
+          [
+            489,
+            0,
+            13
+          ],
+          [
+            20,
+            231,
+            48
+          ],
+          [
+            0,
+            35,
+            1164
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9741035856573705,
+          "true": 0.7725752508361204,
+          "null": 0.9708090075062552
+        }
+      },
+      "decision_rule": {
+        "margin": 0.05,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.030025020850708923,
+        "null_to_true_rate": 0.029190992493744787,
+        "macro_f1": 0.9151514016977708,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "nocturia_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.05,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              2,
+              7
+            ],
+            [
+              0,
+              0,
+              58
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8955223880597015,
+            "low": 0.8208955223880597,
+            "high": 0.9552238805970149,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6533628972653364,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 9,
+          "n_submissions": 9,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              2,
+              7
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.2222222222222222,
+            "low": 0.0,
+            "high": 0.5555555555555556,
+            "effective_n": 9,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.1818181818181818,
+          "worst_case_half_width": 0.326660664090009
+        },
+        "by_signal": [
+          {
+            "signal": "nocturia_present",
+            "margin": 0.05,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  2,
+                  7
+                ],
+                [
+                  0,
+                  0,
+                  58
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8955223880597015,
+                "low": 0.8208955223880597,
+                "high": 0.9552238805970149,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6533628972653364,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  2,
+                  7
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.2222222222222222,
+                "low": 0.0,
+                "high": 0.5555555555555556,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.1818181818181818,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 9,
+                "predicted": 2,
+                "recall": 0.2222222222222222,
+                "precision": 1.0
+              },
+              "null": {
+                "support": 58,
+                "predicted": 65,
+                "recall": 1.0,
+                "precision": 0.8923076923076924
+              }
+            },
+            "null_to_true": {
+              "count": 0,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "nocturia_present": [
+            {
+              "id": "holdout-0001:nocturia_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:nocturia_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:nocturia_present",
+              "unit": "holdout-0003",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:nocturia_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:nocturia_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:nocturia_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:nocturia_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:nocturia_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:nocturia_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:nocturia_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:nocturia_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:nocturia_present",
+              "unit": "holdout-0012",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0013:nocturia_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:nocturia_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:nocturia_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:nocturia_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:nocturia_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:nocturia_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:nocturia_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:nocturia_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:nocturia_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:nocturia_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:nocturia_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:nocturia_present",
+              "unit": "holdout-0024",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:nocturia_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:nocturia_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:nocturia_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:nocturia_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:nocturia_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:nocturia_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:nocturia_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:nocturia_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:nocturia_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:nocturia_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:nocturia_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:nocturia_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:nocturia_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:nocturia_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:nocturia_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0040:nocturia_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:nocturia_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:nocturia_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:nocturia_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:nocturia_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:nocturia_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:nocturia_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:nocturia_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:nocturia_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:nocturia_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:nocturia_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:nocturia_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:nocturia_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:nocturia_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:nocturia_present",
+              "unit": "holdout-0054",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:nocturia_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:nocturia_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:nocturia_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:nocturia_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:nocturia_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:nocturia_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:nocturia_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:nocturia_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:nocturia_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:nocturia_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:nocturia_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:nocturia_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:nocturia_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 2
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 4,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.7635971720675238,
+        0.7588943746864434,
+        0.7691179259069166
+      ],
+      "train_loss_by_epoch": [
+        0.24360642534478102,
+        0.00016244327189633622,
+        4.204959729104303e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 74,
+        "accuracy": 0.8095,
+        "macro_f1": 0.7697295134322223,
+        "confusion": [
+          [
+            313,
+            0,
+            211
+          ],
+          [
+            4,
+            194,
+            106
+          ],
+          [
+            31,
+            29,
+            1112
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.5973282442748091,
+          "true": 0.6381578947368421,
+          "null": 0.9488054607508533
+        }
+      },
+      "decision_rule": {
+        "margin": 0.05,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.025597269624573378,
+        "null_to_true_rate": 0.024744027303754267,
+        "macro_f1": 0.7697295134322223,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "nocturia_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.05,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              5,
+              4
+            ],
+            [
+              0,
+              0,
+              58
+            ]
+          ],
+          "accuracy": {
+            "point": 0.9402985074626866,
+            "low": 0.8805970149253731,
+            "high": 0.9850746268656716,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8404761904761904,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 9,
+          "n_submissions": 9,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              5,
+              4
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.5555555555555556,
+            "low": 0.2222222222222222,
+            "high": 0.8888888888888888,
+            "effective_n": 9,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.35714285714285715,
+          "worst_case_half_width": 0.326660664090009
+        },
+        "by_signal": [
+          {
+            "signal": "nocturia_present",
+            "margin": 0.05,
+            "distribution": {
+              "false": 0,
+              "true": 9,
+              "null": 58,
+              "omitted": 0,
+              "decisive": 9
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  5,
+                  4
+                ],
+                [
+                  0,
+                  0,
+                  58
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9402985074626866,
+                "low": 0.8805970149253731,
+                "high": 0.9850746268656716,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8404761904761904,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 9,
+              "n_submissions": 9,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  5,
+                  4
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5555555555555556,
+                "low": 0.2222222222222222,
+                "high": 0.8888888888888888,
+                "effective_n": 9,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.35714285714285715,
+              "worst_case_half_width": 0.326660664090009
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 9,
+                "predicted": 5,
+                "recall": 0.5555555555555556,
+                "precision": 1.0
+              },
+              "null": {
+                "support": 58,
+                "predicted": 62,
+                "recall": 1.0,
+                "precision": 0.9354838709677419
+              }
+            },
+            "null_to_true": {
+              "count": 0,
+              "null_support": 58
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "nocturia_present": [
+            {
+              "id": "holdout-0001:nocturia_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:nocturia_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:nocturia_present",
+              "unit": "holdout-0003",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:nocturia_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:nocturia_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:nocturia_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:nocturia_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:nocturia_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:nocturia_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:nocturia_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:nocturia_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:nocturia_present",
+              "unit": "holdout-0012",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0013:nocturia_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:nocturia_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:nocturia_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:nocturia_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:nocturia_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:nocturia_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:nocturia_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:nocturia_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:nocturia_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:nocturia_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:nocturia_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:nocturia_present",
+              "unit": "holdout-0024",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0025:nocturia_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:nocturia_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:nocturia_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:nocturia_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:nocturia_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:nocturia_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:nocturia_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:nocturia_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:nocturia_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:nocturia_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:nocturia_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:nocturia_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:nocturia_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:nocturia_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:nocturia_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0040:nocturia_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:nocturia_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:nocturia_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:nocturia_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:nocturia_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:nocturia_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:nocturia_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:nocturia_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:nocturia_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:nocturia_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:nocturia_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:nocturia_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:nocturia_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:nocturia_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:nocturia_present",
+              "unit": "holdout-0054",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0055:nocturia_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:nocturia_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:nocturia_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:nocturia_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:nocturia_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:nocturia_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:nocturia_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:nocturia_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:nocturia_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:nocturia_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:nocturia_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:nocturia_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:nocturia_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 1
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    }
+  ],
+  "margins": {
+    "objective": "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9)",
+    "selected_on": "each fold's own validation split, never test and never pooled",
+    "by_fold": {
+      "0": 0.65,
+      "1": 0.3,
+      "2": 0.6,
+      "3": 0.05,
+      "4": 0.05
+    }
+  },
+  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it."
+}
