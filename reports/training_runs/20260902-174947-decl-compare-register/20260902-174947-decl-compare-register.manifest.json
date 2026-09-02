@@ -1,0 +1,45 @@
+{
+  "run_id": "20260902-174947-decl-compare-register",
+  "entry_id": "decl-compare-register",
+  "entry_name": "Declarative sweep: compare 0.3 against 0.6 (the register arm)",
+  "parameters": {},
+  "commit": "e46ce4845a3dc44f90300acf69783a3f2e599fed",
+  "status": "succeeded",
+  "started_at": "2026-09-02T16:49:47+00:00",
+  "ended_at": "2026-09-02T19:53:57+00:00",
+  "error": null,
+  "steps": [
+    {
+      "index": 1,
+      "argv": [
+        "-m",
+        "scripts.encoder_training",
+        "declarative-compare",
+        "--folds",
+        "5",
+        "--cell",
+        "data/synthetic/generated/decl/c0.5-d0.0",
+        "--cell",
+        "data/synthetic/generated/decl/c0.5-d0.3",
+        "--cell",
+        "data/synthetic/generated/decl/c0.5-d0.6",
+        "--report-dir",
+        "reports/encoder_training/decl/register",
+        "--models-dir",
+        "models/encoder-decl/register",
+        "--base-model",
+        "roberta-base",
+        "--determinism",
+        "strict",
+        "--train-seed",
+        "1234",
+        "--no-weights"
+      ],
+      "command": "python -u -m scripts.encoder_training declarative-compare --folds 5 --cell data/synthetic/generated/decl/c0.5-d0.0 --cell data/synthetic/generated/decl/c0.5-d0.3 --cell data/synthetic/generated/decl/c0.5-d0.6 --report-dir reports/encoder_training/decl/register --models-dir models/encoder-decl/register --base-model roberta-base --determinism strict --train-seed 1234 --no-weights",
+      "status": "succeeded",
+      "exit_code": 0,
+      "started_at": "2026-09-02T16:49:47+00:00",
+      "ended_at": "2026-09-02T19:53:57+00:00"
+    }
+  ]
+}

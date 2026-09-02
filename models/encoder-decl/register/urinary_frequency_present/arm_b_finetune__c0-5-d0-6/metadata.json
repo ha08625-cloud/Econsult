@@ -1,0 +1,3463 @@
+{
+  "arm": "arm_b_finetune__c0-5-d0-6",
+  "signal": "urinary_frequency_present",
+  "classes": [
+    "false",
+    "true",
+    "null"
+  ],
+  "encoder": {
+    "base_model": "roberta-base",
+    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "requested_revision": null,
+    "revision_pinned": false,
+    "hidden_size": 768,
+    "tokeniser": {
+      "reported_do_lower_case": null,
+      "lowercases_input": false,
+      "cased_vocab": true,
+      "discards_casing": false,
+      "vocab_size": 50265,
+      "model_max_length": 512,
+      "tokenizer_class": "RobertaTokenizer"
+    }
+  },
+  "config": {
+    "base_model": "roberta-base",
+    "revision": null,
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "epochs": 3,
+    "batch_size": 32,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "seed": 1234,
+    "fold_seed_rule": "seed + 1000 * fold_index",
+    "device": "auto",
+    "eval_batch_size": 64,
+    "determinism": "strict",
+    "trainable": "all layers; the encoder is unfrozen and trained with the head",
+    "loss": "cross_entropy, unweighted (DD8), masked on missing signals (DD10)",
+    "optimiser": "AdamW with linear warmup then linear decay",
+    "epoch_selection": "highest macro-F1 on the fold's own validation split",
+    "dtype": "float32",
+    "memory_strategy": "none. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation -- BERT-base at batch 32 / seq 256 fits in 12GB with room to spare",
+    "hyperparameter_provenance": "learning rate, epochs, warmup and optimiser are the published BERT-base recipe, fixed before any run. Hyperparameter search is out of scope",
+    "validation_guided_decisions": [
+      "pooling mode (DD3) -- mean vs CLS, compared once",
+      "learning rate",
+      "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+      "decision margin (DD9)"
+    ]
+  },
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "cuda_available": true,
+    "deterministic_env": ":4096:8",
+    "device_name": "NVIDIA GeForce RTX 5070",
+    "compute_capability": [
+      12,
+      0
+    ],
+    "capability_matches_expected": true,
+    "wheel_covers_blackwell": true,
+    "kernel_launch_ok": true
+  },
+  "dataset": {
+    "dir": "data/synthetic/generated/decl/c0.5-d0.6",
+    "name": "urinary_frequency_present",
+    "folds": 5,
+    "generator_version": 4,
+    "generator_base_seed": 42,
+    "split_salt": "0",
+    "dataset_seeds": [
+      42,
+      142,
+      242,
+      342,
+      442
+    ],
+    "examples_per_fold": {
+      "train": 10000,
+      "val": 2000,
+      "test": 2000
+    }
+  },
+  "ruleset": "data/uti1.json",
+  "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+  "folds": [
+    {
+      "fold": 0,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.8913786644932943,
+        0.9113306926744555,
+        0.9171208369761329
+      ],
+      "train_loss_by_epoch": [
+        0.2830512839839328,
+        0.0017772125954157673,
+        7.653015310061164e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 95,
+        "accuracy": 0.9385,
+        "macro_f1": 0.918623476894926,
+        "confusion": [
+          [
+            471,
+            12,
+            41
+          ],
+          [
+            0,
+            241,
+            44
+          ],
+          [
+            0,
+            26,
+            1165
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.898854961832061,
+          "true": 0.8456140350877193,
+          "null": 0.9781696053736356
+        }
+      },
+      "decision_rule": {
+        "margin": 0.25,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.022670025188916875,
+        "null_to_true_rate": 0.0218303946263644,
+        "macro_f1": 0.918623476894926,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.25,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              16,
+              10
+            ],
+            [
+              0,
+              3,
+              38
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8059701492537313,
+            "low": 0.7014925373134329,
+            "high": 0.8955223880597015,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.782521847690387,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 26,
+          "n_submissions": 26,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              16,
+              10
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6153846153846154,
+            "low": 0.4230769230769231,
+            "high": 0.8076923076923077,
+            "effective_n": 26,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.380952380952381,
+          "worst_case_half_width": 0.19219028082901546
+        },
+        "by_signal": [
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.25,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  16,
+                  10
+                ],
+                [
+                  0,
+                  3,
+                  38
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8059701492537313,
+                "low": 0.7014925373134329,
+                "high": 0.8955223880597015,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.782521847690387,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  16,
+                  10
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6153846153846154,
+                "low": 0.4230769230769231,
+                "high": 0.8076923076923077,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.380952380952381,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 26,
+                "predicted": 19,
+                "recall": 0.6153846153846154,
+                "precision": 0.8421052631578947
+              },
+              "null": {
+                "support": 41,
+                "predicted": 48,
+                "recall": 0.926829268292683,
+                "precision": 0.7916666666666666
+              }
+            },
+            "null_to_true": {
+              "count": 3,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "urinary_frequency_present": [
+            {
+              "id": "holdout-0001:urinary_frequency_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:urinary_frequency_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:urinary_frequency_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:urinary_frequency_present",
+              "unit": "holdout-0004",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0005:urinary_frequency_present",
+              "unit": "holdout-0005",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:urinary_frequency_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:urinary_frequency_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:urinary_frequency_present",
+              "unit": "holdout-0008",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0009:urinary_frequency_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:urinary_frequency_present",
+              "unit": "holdout-0010",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:urinary_frequency_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:urinary_frequency_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0013:urinary_frequency_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:urinary_frequency_present",
+              "unit": "holdout-0014",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0015:urinary_frequency_present",
+              "unit": "holdout-0015",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:urinary_frequency_present",
+              "unit": "holdout-0016",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0017:urinary_frequency_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:urinary_frequency_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:urinary_frequency_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:urinary_frequency_present",
+              "unit": "holdout-0020",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0021:urinary_frequency_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:urinary_frequency_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:urinary_frequency_present",
+              "unit": "holdout-0023",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0024:urinary_frequency_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0025:urinary_frequency_present",
+              "unit": "holdout-0025",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:urinary_frequency_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:urinary_frequency_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:urinary_frequency_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:urinary_frequency_present",
+              "unit": "holdout-0029",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0030:urinary_frequency_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:urinary_frequency_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:urinary_frequency_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:urinary_frequency_present",
+              "unit": "holdout-0033",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:urinary_frequency_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:urinary_frequency_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0036:urinary_frequency_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:urinary_frequency_present",
+              "unit": "holdout-0037",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:urinary_frequency_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:urinary_frequency_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0040:urinary_frequency_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:urinary_frequency_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:urinary_frequency_present",
+              "unit": "holdout-0042",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:urinary_frequency_present",
+              "unit": "holdout-0043",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0044:urinary_frequency_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:urinary_frequency_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:urinary_frequency_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:urinary_frequency_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:urinary_frequency_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0049:urinary_frequency_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:urinary_frequency_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:urinary_frequency_present",
+              "unit": "holdout-0051",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:urinary_frequency_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:urinary_frequency_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:urinary_frequency_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0055:urinary_frequency_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:urinary_frequency_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:urinary_frequency_present",
+              "unit": "holdout-0057",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0058:urinary_frequency_present",
+              "unit": "holdout-0058",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0059:urinary_frequency_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:urinary_frequency_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:urinary_frequency_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:urinary_frequency_present",
+              "unit": "holdout-0062",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0063:urinary_frequency_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:urinary_frequency_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:urinary_frequency_present",
+              "unit": "holdout-0065",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:urinary_frequency_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0067:urinary_frequency_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 1
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 1,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 2,
+      "val_macro_f1_by_epoch": [
+        0.8496888992316212,
+        0.8822686410672774,
+        0.8792635250032413
+      ],
+      "train_loss_by_epoch": [
+        0.254122328460007,
+        0.0023344289539032614,
+        4.7799805970862506e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 107,
+        "accuracy": 0.907,
+        "macro_f1": 0.884457580132301,
+        "confusion": [
+          [
+            456,
+            22,
+            31
+          ],
+          [
+            0,
+            263,
+            53
+          ],
+          [
+            25,
+            55,
+            1095
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.8958742632612967,
+          "true": 0.8322784810126582,
+          "null": 0.9319148936170213
+        }
+      },
+      "decision_rule": {
+        "margin": 0.6,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.04851063829787234,
+        "null_to_true_rate": 0.04680851063829787,
+        "macro_f1": 0.884457580132301,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.6,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              14,
+              12
+            ],
+            [
+              0,
+              3,
+              38
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7761194029850746,
+            "low": 0.6716417910447762,
+            "high": 0.8656716417910447,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.7431638129312548,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 26,
+          "n_submissions": 26,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              14,
+              12
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.5384615384615384,
+            "low": 0.34615384615384615,
+            "high": 0.7307692307692307,
+            "effective_n": 26,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.35000000000000003,
+          "worst_case_half_width": 0.19219028082901546
+        },
+        "by_signal": [
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.6,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  14,
+                  12
+                ],
+                [
+                  0,
+                  3,
+                  38
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7761194029850746,
+                "low": 0.6716417910447762,
+                "high": 0.8656716417910447,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.7431638129312548,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  14,
+                  12
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5384615384615384,
+                "low": 0.34615384615384615,
+                "high": 0.7307692307692307,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.35000000000000003,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 26,
+                "predicted": 17,
+                "recall": 0.5384615384615384,
+                "precision": 0.8235294117647058
+              },
+              "null": {
+                "support": 41,
+                "predicted": 50,
+                "recall": 0.926829268292683,
+                "precision": 0.76
+              }
+            },
+            "null_to_true": {
+              "count": 3,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "urinary_frequency_present": [
+            {
+              "id": "holdout-0001:urinary_frequency_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:urinary_frequency_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:urinary_frequency_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:urinary_frequency_present",
+              "unit": "holdout-0004",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:urinary_frequency_present",
+              "unit": "holdout-0005",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:urinary_frequency_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:urinary_frequency_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0008:urinary_frequency_present",
+              "unit": "holdout-0008",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0009:urinary_frequency_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:urinary_frequency_present",
+              "unit": "holdout-0010",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:urinary_frequency_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:urinary_frequency_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0013:urinary_frequency_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:urinary_frequency_present",
+              "unit": "holdout-0014",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0015:urinary_frequency_present",
+              "unit": "holdout-0015",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:urinary_frequency_present",
+              "unit": "holdout-0016",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0017:urinary_frequency_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:urinary_frequency_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:urinary_frequency_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:urinary_frequency_present",
+              "unit": "holdout-0020",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0021:urinary_frequency_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:urinary_frequency_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:urinary_frequency_present",
+              "unit": "holdout-0023",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0024:urinary_frequency_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0025:urinary_frequency_present",
+              "unit": "holdout-0025",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:urinary_frequency_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:urinary_frequency_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:urinary_frequency_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:urinary_frequency_present",
+              "unit": "holdout-0029",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0030:urinary_frequency_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:urinary_frequency_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:urinary_frequency_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:urinary_frequency_present",
+              "unit": "holdout-0033",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:urinary_frequency_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:urinary_frequency_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0036:urinary_frequency_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:urinary_frequency_present",
+              "unit": "holdout-0037",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:urinary_frequency_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:urinary_frequency_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:urinary_frequency_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:urinary_frequency_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:urinary_frequency_present",
+              "unit": "holdout-0042",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0043:urinary_frequency_present",
+              "unit": "holdout-0043",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0044:urinary_frequency_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:urinary_frequency_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:urinary_frequency_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:urinary_frequency_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:urinary_frequency_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0049:urinary_frequency_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:urinary_frequency_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:urinary_frequency_present",
+              "unit": "holdout-0051",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:urinary_frequency_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:urinary_frequency_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:urinary_frequency_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0055:urinary_frequency_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:urinary_frequency_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:urinary_frequency_present",
+              "unit": "holdout-0057",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0058:urinary_frequency_present",
+              "unit": "holdout-0058",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:urinary_frequency_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:urinary_frequency_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:urinary_frequency_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:urinary_frequency_present",
+              "unit": "holdout-0062",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0063:urinary_frequency_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:urinary_frequency_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:urinary_frequency_present",
+              "unit": "holdout-0065",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:urinary_frequency_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:urinary_frequency_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 1
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 2,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.9288818510538928,
+        0.9268961886727946,
+        0.9276984756848262
+      ],
+      "train_loss_by_epoch": [
+        0.24267750902816188,
+        8.563255859771743e-05,
+        4.271399868885055e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 94,
+        "accuracy": 0.954,
+        "macro_f1": 0.9305278565027518,
+        "confusion": [
+          [
+            492,
+            22,
+            0
+          ],
+          [
+            8,
+            255,
+            55
+          ],
+          [
+            0,
+            7,
+            1161
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9571984435797666,
+          "true": 0.8018867924528302,
+          "null": 0.9940068493150684
+        }
+      },
+      "decision_rule": {
+        "margin": 0.45,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.0059931506849315065,
+        "null_to_true_rate": 0.0059931506849315065,
+        "macro_f1": 0.9305278565027518,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.45,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              8,
+              18
+            ],
+            [
+              0,
+              0,
+              41
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7313432835820896,
+            "low": 0.6268656716417911,
+            "high": 0.835820895522388,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6452941176470588,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 26,
+          "n_submissions": 26,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              8,
+              18
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.3076923076923077,
+            "low": 0.15384615384615385,
+            "high": 0.5,
+            "effective_n": 26,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.23529411764705882,
+          "worst_case_half_width": 0.19219028082901546
+        },
+        "by_signal": [
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.45,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  8,
+                  18
+                ],
+                [
+                  0,
+                  0,
+                  41
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7313432835820896,
+                "low": 0.6268656716417911,
+                "high": 0.835820895522388,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6452941176470588,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  8,
+                  18
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.3076923076923077,
+                "low": 0.15384615384615385,
+                "high": 0.5,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.23529411764705882,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 26,
+                "predicted": 8,
+                "recall": 0.3076923076923077,
+                "precision": 1.0
+              },
+              "null": {
+                "support": 41,
+                "predicted": 59,
+                "recall": 1.0,
+                "precision": 0.6949152542372882
+              }
+            },
+            "null_to_true": {
+              "count": 0,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "urinary_frequency_present": [
+            {
+              "id": "holdout-0001:urinary_frequency_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:urinary_frequency_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:urinary_frequency_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:urinary_frequency_present",
+              "unit": "holdout-0004",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0005:urinary_frequency_present",
+              "unit": "holdout-0005",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:urinary_frequency_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:urinary_frequency_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:urinary_frequency_present",
+              "unit": "holdout-0008",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0009:urinary_frequency_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:urinary_frequency_present",
+              "unit": "holdout-0010",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0011:urinary_frequency_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:urinary_frequency_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:urinary_frequency_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:urinary_frequency_present",
+              "unit": "holdout-0014",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0015:urinary_frequency_present",
+              "unit": "holdout-0015",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:urinary_frequency_present",
+              "unit": "holdout-0016",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:urinary_frequency_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:urinary_frequency_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:urinary_frequency_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:urinary_frequency_present",
+              "unit": "holdout-0020",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0021:urinary_frequency_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:urinary_frequency_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:urinary_frequency_present",
+              "unit": "holdout-0023",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:urinary_frequency_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:urinary_frequency_present",
+              "unit": "holdout-0025",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:urinary_frequency_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:urinary_frequency_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:urinary_frequency_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:urinary_frequency_present",
+              "unit": "holdout-0029",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:urinary_frequency_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:urinary_frequency_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:urinary_frequency_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:urinary_frequency_present",
+              "unit": "holdout-0033",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:urinary_frequency_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:urinary_frequency_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0036:urinary_frequency_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:urinary_frequency_present",
+              "unit": "holdout-0037",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:urinary_frequency_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:urinary_frequency_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:urinary_frequency_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:urinary_frequency_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:urinary_frequency_present",
+              "unit": "holdout-0042",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:urinary_frequency_present",
+              "unit": "holdout-0043",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:urinary_frequency_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:urinary_frequency_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:urinary_frequency_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:urinary_frequency_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:urinary_frequency_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:urinary_frequency_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:urinary_frequency_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:urinary_frequency_present",
+              "unit": "holdout-0051",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:urinary_frequency_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:urinary_frequency_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:urinary_frequency_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:urinary_frequency_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:urinary_frequency_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:urinary_frequency_present",
+              "unit": "holdout-0057",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:urinary_frequency_present",
+              "unit": "holdout-0058",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:urinary_frequency_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:urinary_frequency_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:urinary_frequency_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:urinary_frequency_present",
+              "unit": "holdout-0062",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0063:urinary_frequency_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:urinary_frequency_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:urinary_frequency_present",
+              "unit": "holdout-0065",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:urinary_frequency_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:urinary_frequency_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 1
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 3,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.8860655683898048,
+        0.9024930149431935,
+        0.9046773675217654
+      ],
+      "train_loss_by_epoch": [
+        0.2508053146427963,
+        0.0019077791740885004,
+        8.296001239796169e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 83,
+        "accuracy": 0.938,
+        "macro_f1": 0.9125434520040296,
+        "confusion": [
+          [
+            457,
+            45,
+            0
+          ],
+          [
+            1,
+            272,
+            26
+          ],
+          [
+            15,
+            37,
+            1147
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9103585657370518,
+          "true": 0.9096989966555183,
+          "null": 0.9566305254378649
+        }
+      },
+      "decision_rule": {
+        "margin": 0.85,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.045037531276063386,
+        "null_to_true_rate": 0.030859049207673062,
+        "macro_f1": 0.9125434520040296,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.85,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              17,
+              9
+            ],
+            [
+              0,
+              1,
+              40
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8507462686567164,
+            "low": 0.7611940298507462,
+            "high": 0.9253731343283582,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8308080808080809,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 26,
+          "n_submissions": 26,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              17,
+              9
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6538461538461539,
+            "low": 0.46153846153846156,
+            "high": 0.8461538461538461,
+            "effective_n": 26,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.39534883720930236,
+          "worst_case_half_width": 0.19219028082901546
+        },
+        "by_signal": [
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.85,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  17,
+                  9
+                ],
+                [
+                  0,
+                  1,
+                  40
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8507462686567164,
+                "low": 0.7611940298507462,
+                "high": 0.9253731343283582,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8308080808080809,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  17,
+                  9
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6538461538461539,
+                "low": 0.46153846153846156,
+                "high": 0.8461538461538461,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.39534883720930236,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 26,
+                "predicted": 18,
+                "recall": 0.6538461538461539,
+                "precision": 0.9444444444444444
+              },
+              "null": {
+                "support": 41,
+                "predicted": 49,
+                "recall": 0.975609756097561,
+                "precision": 0.8163265306122449
+              }
+            },
+            "null_to_true": {
+              "count": 1,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "urinary_frequency_present": [
+            {
+              "id": "holdout-0001:urinary_frequency_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:urinary_frequency_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:urinary_frequency_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:urinary_frequency_present",
+              "unit": "holdout-0004",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:urinary_frequency_present",
+              "unit": "holdout-0005",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0006:urinary_frequency_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:urinary_frequency_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:urinary_frequency_present",
+              "unit": "holdout-0008",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0009:urinary_frequency_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:urinary_frequency_present",
+              "unit": "holdout-0010",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0011:urinary_frequency_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:urinary_frequency_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0013:urinary_frequency_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:urinary_frequency_present",
+              "unit": "holdout-0014",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0015:urinary_frequency_present",
+              "unit": "holdout-0015",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0016:urinary_frequency_present",
+              "unit": "holdout-0016",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0017:urinary_frequency_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:urinary_frequency_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:urinary_frequency_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:urinary_frequency_present",
+              "unit": "holdout-0020",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0021:urinary_frequency_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:urinary_frequency_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:urinary_frequency_present",
+              "unit": "holdout-0023",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0024:urinary_frequency_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:urinary_frequency_present",
+              "unit": "holdout-0025",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:urinary_frequency_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:urinary_frequency_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:urinary_frequency_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:urinary_frequency_present",
+              "unit": "holdout-0029",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0030:urinary_frequency_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:urinary_frequency_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:urinary_frequency_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:urinary_frequency_present",
+              "unit": "holdout-0033",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0034:urinary_frequency_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:urinary_frequency_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0036:urinary_frequency_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:urinary_frequency_present",
+              "unit": "holdout-0037",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:urinary_frequency_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:urinary_frequency_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:urinary_frequency_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:urinary_frequency_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:urinary_frequency_present",
+              "unit": "holdout-0042",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:urinary_frequency_present",
+              "unit": "holdout-0043",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0044:urinary_frequency_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:urinary_frequency_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:urinary_frequency_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:urinary_frequency_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:urinary_frequency_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:urinary_frequency_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:urinary_frequency_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:urinary_frequency_present",
+              "unit": "holdout-0051",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0052:urinary_frequency_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:urinary_frequency_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:urinary_frequency_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:urinary_frequency_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:urinary_frequency_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:urinary_frequency_present",
+              "unit": "holdout-0057",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0058:urinary_frequency_present",
+              "unit": "holdout-0058",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:urinary_frequency_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:urinary_frequency_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:urinary_frequency_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:urinary_frequency_present",
+              "unit": "holdout-0062",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0063:urinary_frequency_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:urinary_frequency_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:urinary_frequency_present",
+              "unit": "holdout-0065",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:urinary_frequency_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0067:urinary_frequency_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 1
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 4,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.9391073908959466,
+        0.947541560587371,
+        0.9594421459942758
+      ],
+      "train_loss_by_epoch": [
+        0.259908754231967,
+        0.001663645504473243,
+        6.851463360944763e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 94,
+        "accuracy": 0.9765,
+        "macro_f1": 0.9622090653186977,
+        "confusion": [
+          [
+            509,
+            13,
+            2
+          ],
+          [
+            21,
+            283,
+            0
+          ],
+          [
+            0,
+            11,
+            1161
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9713740458015268,
+          "true": 0.930921052631579,
+          "null": 0.9906143344709898
+        }
+      },
+      "decision_rule": {
+        "margin": 0.45,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.011945392491467578,
+        "null_to_true_rate": 0.00938566552901024,
+        "macro_f1": 0.9622090653186977,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "urinary_frequency_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.45,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              20,
+              6
+            ],
+            [
+              0,
+              3,
+              38
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8656716417910447,
+            "low": 0.7761194029850746,
+            "high": 0.9402985074626866,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8552220888355342,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 26,
+          "n_submissions": 26,
+          "confusion": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              20,
+              6
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7692307692307693,
+            "low": 0.6153846153846154,
+            "high": 0.9230769230769231,
+            "effective_n": 26,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.4347826086956522,
+          "worst_case_half_width": 0.19219028082901546
+        },
+        "by_signal": [
+          {
+            "signal": "urinary_frequency_present",
+            "margin": 0.45,
+            "distribution": {
+              "false": 0,
+              "true": 26,
+              "null": 41,
+              "omitted": 0,
+              "decisive": 26
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  20,
+                  6
+                ],
+                [
+                  0,
+                  3,
+                  38
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8656716417910447,
+                "low": 0.7761194029850746,
+                "high": 0.9402985074626866,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8552220888355342,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 26,
+              "n_submissions": 26,
+              "confusion": [
+                [
+                  0,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  20,
+                  6
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7692307692307693,
+                "low": 0.6153846153846154,
+                "high": 0.9230769230769231,
+                "effective_n": 26,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4347826086956522,
+              "worst_case_half_width": 0.19219028082901546
+            },
+            "per_class": {
+              "false": {
+                "support": 0,
+                "predicted": 0,
+                "recall": null,
+                "precision": null
+              },
+              "true": {
+                "support": 26,
+                "predicted": 23,
+                "recall": 0.7692307692307693,
+                "precision": 0.8695652173913043
+              },
+              "null": {
+                "support": 41,
+                "predicted": 44,
+                "recall": 0.926829268292683,
+                "precision": 0.8636363636363636
+              }
+            },
+            "null_to_true": {
+              "count": 3,
+              "null_support": 41
+            },
+            "caveat": "no `false` examples in this set, so its number is very nearly a recall-only measurement: nothing here tests whether an explicit denial is read correctly, which was the largest error family in the synthetic evaluation"
+          }
+        ],
+        "cells": {
+          "urinary_frequency_present": [
+            {
+              "id": "holdout-0001:urinary_frequency_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:urinary_frequency_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:urinary_frequency_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:urinary_frequency_present",
+              "unit": "holdout-0004",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0005:urinary_frequency_present",
+              "unit": "holdout-0005",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0006:urinary_frequency_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:urinary_frequency_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:urinary_frequency_present",
+              "unit": "holdout-0008",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0009:urinary_frequency_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0010:urinary_frequency_present",
+              "unit": "holdout-0010",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0011:urinary_frequency_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:urinary_frequency_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0013:urinary_frequency_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:urinary_frequency_present",
+              "unit": "holdout-0014",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0015:urinary_frequency_present",
+              "unit": "holdout-0015",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:urinary_frequency_present",
+              "unit": "holdout-0016",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0017:urinary_frequency_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:urinary_frequency_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:urinary_frequency_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:urinary_frequency_present",
+              "unit": "holdout-0020",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0021:urinary_frequency_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:urinary_frequency_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:urinary_frequency_present",
+              "unit": "holdout-0023",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0024:urinary_frequency_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0025:urinary_frequency_present",
+              "unit": "holdout-0025",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:urinary_frequency_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:urinary_frequency_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:urinary_frequency_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:urinary_frequency_present",
+              "unit": "holdout-0029",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0030:urinary_frequency_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:urinary_frequency_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:urinary_frequency_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:urinary_frequency_present",
+              "unit": "holdout-0033",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0034:urinary_frequency_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:urinary_frequency_present",
+              "unit": "holdout-0035",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0036:urinary_frequency_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:urinary_frequency_present",
+              "unit": "holdout-0037",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:urinary_frequency_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:urinary_frequency_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:urinary_frequency_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:urinary_frequency_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:urinary_frequency_present",
+              "unit": "holdout-0042",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:urinary_frequency_present",
+              "unit": "holdout-0043",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0044:urinary_frequency_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:urinary_frequency_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:urinary_frequency_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:urinary_frequency_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:urinary_frequency_present",
+              "unit": "holdout-0048",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0049:urinary_frequency_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:urinary_frequency_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:urinary_frequency_present",
+              "unit": "holdout-0051",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0052:urinary_frequency_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:urinary_frequency_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:urinary_frequency_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0055:urinary_frequency_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:urinary_frequency_present",
+              "unit": "holdout-0056",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:urinary_frequency_present",
+              "unit": "holdout-0057",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0058:urinary_frequency_present",
+              "unit": "holdout-0058",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0059:urinary_frequency_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:urinary_frequency_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:urinary_frequency_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:urinary_frequency_present",
+              "unit": "holdout-0062",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0063:urinary_frequency_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:urinary_frequency_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:urinary_frequency_present",
+              "unit": "holdout-0065",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0066:urinary_frequency_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0067:urinary_frequency_present",
+              "unit": "holdout-0067",
+              "truth": 1,
+              "predicted": 1
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    }
+  ],
+  "margins": {
+    "objective": "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9)",
+    "selected_on": "each fold's own validation split, never test and never pooled",
+    "by_fold": {
+      "0": 0.25,
+      "1": 0.6,
+      "2": 0.45,
+      "3": 0.85,
+      "4": 0.45
+    }
+  },
+  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it."
+}
