@@ -219,12 +219,25 @@ class MergeResult:
 # --------------------------------------------------------------------------
 
 
-def _read_jsonl(path: Path) -> list[dict]:
+def _require_dataset(path: Path) -> None:
+    """Fail on an absent dataset before anything is said about its sidecar.
+
+    Order matters here rather than only reading well: a signal that was never
+    generated has no JSONL *and* no sidecar, and reading the sidecar first
+    reported the missing sidecar -- which reads as a tree that exists but was
+    written by something older, and sends the reader looking for a regeneration
+    they do not need. The sidecar message is for the one case it describes: a
+    JSONL that really is there without one.
+    """
     if not path.is_file():
         raise MergeError(
             f"source dataset not found: {path}. Every signal needs every fold of every split; "
             "a tree missing one fold looks complete from the directory listing"
         )
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    _require_dataset(path)
 
     records: list[dict] = []
     with path.open(encoding="utf-8") as handle:
@@ -340,6 +353,7 @@ def load_source_split(path: Path | str, *, signal: str, split: str) -> SourceSpl
     merge is wrong, not the loader.
     """
     path = Path(path)
+    _require_dataset(path)
     stats = _read_stats(path)
     if stats["signal"] != signal:
         raise MergeError(
@@ -735,6 +749,52 @@ def write_merged_split(
     return path
 
 
+def _check_tree_is_complete(
+    data_dir: Path, *, signals: Sequence[str], folds: int
+) -> None:
+    """Refuse a merge whose sources are not all on disk, naming all of them.
+
+    The merge walks signals in :data:`DEFAULT_SIGNALS` order, so without this it
+    stops at the first absent file and says nothing about the other five. The
+    common way to arrive here is the console's ``Generate folds for one signal``
+    entry, which generates the signal in its dropdown and no other: whoever ran
+    it once has one tree of six and wants to be told that, not to rediscover it
+    five more times.
+    """
+    absent: dict[str, list[Path]] = {}
+    for signal in signals:
+        for fold_index in range(folds):
+            for split in SPLITS:
+                path = fold_dataset_path(data_dir, signal, fold_index, split)
+                if not path.is_file():
+                    absent.setdefault(signal, []).append(path)
+    if not absent:
+        return
+
+    whole = [signal for signal, paths in absent.items() if len(paths) == folds * len(SPLITS)]
+    partial = {signal: paths for signal, paths in absent.items() if signal not in set(whole)}
+
+    lines = [
+        f"the tree under {data_dir} is not complete: a merge needs all {folds} folds' "
+        f"{len(SPLITS)} splits for each of the {len(signals)} signals."
+    ]
+    if whole:
+        lines.append(
+            "Not generated at all: "
+            + ", ".join(whole)
+            + ". Generate each one with: python -m scripts.encoder_training generate-folds "
+            f"--folds {folds} --signal <signal> --out-dir {data_dir}"
+        )
+    for signal, paths in partial.items():
+        shown = ", ".join(str(path) for path in paths[:4])
+        more = f" (+{len(paths) - 4} more)" if len(paths) > 4 else ""
+        lines.append(
+            f"{signal} is missing {len(paths)} of its {folds * len(SPLITS)} files -- "
+            f"source dataset not found: {shown}{more}"
+        )
+    raise MergeError(" ".join(lines))
+
+
 def merge_folds(
     data_dir: Path | str,
     *,
@@ -757,6 +817,8 @@ def merge_folds(
     data_dir = Path(data_dir)
     out_dir = Path(out_dir) if out_dir is not None else data_dir
     name = name or f"joint{len(signals)}"
+
+    _check_tree_is_complete(data_dir, signals=signals, folds=folds)
 
     written: list[Path] = []
     collisions: dict[str, dict] = {}

@@ -56,6 +56,67 @@
       ]
     },
     {
+      "id": "generate-folds-all",
+      "name": "Generate folds for all six signals",
+      "description": "The six per-signal fold trees the merge needs, as six steps under one run. 'Generate folds for one signal' writes one tree, and 'Merge the six fold trees' needs all six on disk; this is the entry that gets there in one click. recent_uti_present is excluded: it has no trained head. Stdlib only, no GPU.",
+      "steps": [
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "dysuria_present"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "fever_present"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "flank_pain_present"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "haematuria_present"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "nocturia_present"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "5",
+          "--signal",
+          "urinary_frequency_present"
+        ]
+      ]
+    },
+    {
       "id": "merge-folds",
       "name": "Merge the six fold trees",
       "description": "Reads the six per-signal fold trees and writes one merged tree beside them, ready for joint multi-head training. Nothing is regenerated. Stdlib only.",

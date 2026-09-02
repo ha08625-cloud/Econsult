@@ -638,6 +638,13 @@ signal position, so `load_folds` reads it with every existing check applying and
 no special case. That is the contract: if the merged output ever needed an escape
 hatch in `dataset.py`, the merge would be wrong, not the loader.
 
+**It reads six trees and generates none of them.** The merge checks the whole
+tree is on disk before it opens anything, and names every signal that is absent
+in one message. The console's `Generate folds for one signal` entry writes the
+one signal in its dropdown, so running it once and then the merge leaves five
+signals missing; `Generate folds for all six signals` is the entry that gets to a
+mergeable tree in one click.
+
 **No head gains supervision.** A merged dysuria example carries no
 `fever_present` key at all — a mask, not a `null` assertion. Each head sees the
 same labelled positions in the same mix it saw alone; what changes is that the

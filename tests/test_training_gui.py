@@ -108,6 +108,7 @@ def test_the_committed_catalogue_loads():
         "smoke-cuda",
         "score-companions",
         "generate-folds",
+        "generate-folds-all",
         "merge-folds",
         "finetune",
         "decl-generate-folds",

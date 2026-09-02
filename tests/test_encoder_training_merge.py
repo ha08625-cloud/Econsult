@@ -751,7 +751,43 @@ def test_a_filler_only_example_that_is_not_a_structural_null_is_refused(tmp_path
 
 def test_a_source_missing_a_fold_is_a_hard_error(tmp_path):
     write_tree(tmp_path)
-    fold_dataset_path(tmp_path, "nocturia_present", 1, "val").unlink()
+    path = fold_dataset_path(tmp_path, "nocturia_present", 1, "val")
+    path.unlink()
+    sidecar_path(path).unlink()
+
+    with pytest.raises(MergeError, match="nocturia_present is missing 1 of its 6 files"):
+        merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
+
+
+def test_a_signal_that_was_never_generated_says_so_rather_than_blaming_a_sidecar(tmp_path):
+    """The console's one-signal entry leaves five signals absent, not stale.
+
+    Reading the sidecar first reported a missing sidecar for a tree that was
+    never written, which reads as a tree needing regeneration under a newer
+    generator. Both absent signals are named in one message, because stopping at
+    the first means running the merge five more times to learn the rest.
+    """
+    write_tree(tmp_path)
+    for signal in ("dysuria_present", "nocturia_present"):
+        for fold_index in range(FOLDS):
+            for split in ("train", "val", "test"):
+                path = fold_dataset_path(tmp_path, signal, fold_index, split)
+                path.unlink()
+                sidecar_path(path).unlink()
+
+    with pytest.raises(MergeError) as error:
+        merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
+
+    message = str(error.value)
+    assert "no stats sidecar" not in message
+    assert "Not generated at all: dysuria_present, nocturia_present" in message
+    assert "generate-folds" in message
+
+
+def test_a_dataset_gone_but_its_sidecar_left_names_the_dataset(tmp_path):
+    """The half-deleted case still reports the file that is actually absent."""
+    write_tree(tmp_path)
+    fold_dataset_path(tmp_path, "fever_present", 0, "train").unlink()
 
     with pytest.raises(MergeError, match="source dataset not found"):
         merge_folds(tmp_path, signals=SIGNALS, folds=FOLDS)
