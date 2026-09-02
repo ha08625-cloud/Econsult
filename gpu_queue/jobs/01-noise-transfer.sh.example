@@ -12,6 +12,8 @@ python -c "import transformers; assert transformers.__version__ == '5.14.1'"
 for r in 06 12; do
   python -m scripts.encoder_training finetune \
     --signal fever_present \
+    --base-model roberta-base \
+    --revision e2da8e2f811d1448a5b465c236feacd80ffbac7b \
     --data-dir   data/synthetic/generated/noise/fever-r03 \
     --test-dir   data/synthetic/generated/noise/fever-r${r} \
     --report-dir reports/encoder_training/noise/r03-on-r${r} \
