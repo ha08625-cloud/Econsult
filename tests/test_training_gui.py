@@ -110,7 +110,104 @@ def test_the_committed_catalogue_loads():
         "generate-folds",
         "merge-folds",
         "finetune",
+        "decl-generate-folds",
+        "decl-generate-folds-all",
+        "decl-finetune",
+        "decl-finetune-all",
+        "decl-compare-2x2",
+        "decl-compare-register",
     ]
+
+
+def test_every_declarative_cell_writes_to_its_own_directories():
+    """The failure this prevents is silent and expensive.
+
+    Every declarative entry writes under a path built from both shares, so a
+    second cell cannot land on the first's fold tree, report tree or models. The
+    committed ``generate-folds`` and ``finetune`` entries take the default
+    directories, which is fine while there is one arm and wrong the moment there
+    are two: the second run would overwrite the first and the comparison would be
+    a tree against itself.
+    """
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    cells = [
+        {"companion_share": companion, "declarative_share": declarative}
+        for companion in ("0.0", "0.5")
+        for declarative in ("0.0", "0.3", "0.6")
+    ]
+
+    for entry_id in ("decl-generate-folds-all", "decl-finetune-all"):
+        seen: set[str] = set()
+        for values in cells:
+            steps = resolve(entries[entry_id], values)
+            directories = {
+                step[position + 1]
+                for step in steps
+                for position, element in enumerate(step)
+                if element in ("--out-dir", "--data-dir", "--report-dir", "--models-dir")
+            }
+            assert directories, entry_id
+            assert not directories & seen, f"{entry_id} reuses a directory across cells"
+            seen |= directories
+
+
+def test_the_comparison_entries_point_at_directories_the_sweep_produces():
+    """The one coupling the catalogue cannot check for itself.
+
+    The comparison entries name their cells as literal paths, because the
+    console has no way to pass a list; the generate entries build the same paths
+    by substitution. Change the template in one place and the comparison points
+    at directories nothing writes -- which surfaces an hour in, as a run that
+    refuses because a cell does not exist, after the four hours of training that
+    produced the cells it cannot find.
+    """
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+
+    produced = set()
+    for values in (
+        {"companion_share": companion, "declarative_share": declarative}
+        for companion in ("0.0", "0.5")
+        for declarative in ("0.0", "0.3", "0.6")
+    ):
+        for step in resolve(entries["decl-generate-folds-all"], values):
+            produced.add(step[step.index("--out-dir") + 1])
+
+    for entry_id in ("decl-compare-2x2", "decl-compare-register"):
+        for step in entries[entry_id].steps:
+            cells = [step[i + 1] for i, element in enumerate(step) if element == "--cell"]
+            assert len(cells) >= 2, entry_id
+            assert len(set(cells)) == len(cells), f"{entry_id} repeats a cell"
+            unknown = sorted(set(cells) - produced)
+            assert not unknown, f"{entry_id} names cells the sweep never writes: {unknown}"
+
+
+def test_the_declarative_sweep_scores_the_real_text_holdout():
+    """``--no-holdout`` here would produce a comparison that cannot answer the
+    question the arms exist for, and the report would say the check was skipped
+    in a line nobody reads. The holdout is on by default, so this asserts the
+    absence of the flag rather than its presence."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in (
+        "decl-finetune",
+        "decl-finetune-all",
+        "decl-compare-2x2",
+        "decl-compare-register",
+    ):
+        for step in entries[entry_id].steps:
+            assert "--no-holdout" not in step, entry_id
+
+
+def test_the_declarative_sweep_covers_the_six_trainable_signals():
+    """Not seven. ``recent_uti_present`` is excluded by DD9 -- its label turns on
+    a 30-day window and six written policy rules -- and it has no trained head
+    either, so including it would produce a run that fails partway."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in ("decl-generate-folds-all", "decl-finetune-all"):
+        entry = entries[entry_id]
+        signals = [step[step.index("--signal") + 1] for step in entry.steps]
+        assert len(signals) == 6, entry_id
+        assert "recent_uti_present" not in signals, entry_id
+        assert len(set(signals)) == 6, entry_id
 
 
 def test_the_committed_catalogue_names_the_base_model_explicitly():

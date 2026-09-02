@@ -4,8 +4,10 @@ Task 7 of `procedural_fragment_generation_implementation.md`. Tasks 1–6 are
 merged; `--declarative-share` exists end to end and no measured arm has used it.
 
 This file is the run sheet, not the plan. The plan's Task 7 section is the
-authority on *why*; this is *what to type*, in order, with the decisions already
-made.
+authority on *why*; this is what to do, in order, with the decisions already
+made. **The console is the intended route** — see "Running it from the console".
+The terminal equivalents are given for each step because they are what the
+console types, and because a step that fails is easier to debug directly.
 
 ---
 
@@ -23,13 +25,52 @@ the case when the plan was written:
   `data/realistic/README.md` requires it to be restated in every report using
   the set. Put it in this one.
 
-So Task 7 runs in full, real-set arm included. Instruction 1's fallback — a
-fold-pooled comparison with a note that the question was never asked — does not
-apply.
+So Task 7 runs in full, real-set arm included.
 
 **Read `data/realistic/README.md` before the first run.** Rule 2 (the set
 selects nothing) and rule 3 (scored once per candidate model, and the number is
-recorded, including the bad ones) are the two that a run can quietly break.
+recorded, including the bad ones) are the two a run can quietly break.
+
+---
+
+## The design: a 2×2, not the plan's 2×1
+
+The plan asks for two arms differing only in `--declarative-share`. **Run a 2×2
+instead**, and the reason is in the committed companion reports:
+
+| signal | `null -> true` at companion 0 | at companion 0.5 |
+|---|---|---|
+| `fever_present` | 84.1% | **4.5%** |
+| `flank_pain_present` | 87.5% | 17.7% |
+| `haematuria_present` | 80.4% | 12.5% |
+| `dysuria_present` | 72.7% | 23.6% |
+
+Companions already fixed the invented-symptom problem almost completely. A
+declarative arm measured only at companion share 0 starts from that same bad
+baseline, so **any improvement it shows may be the mechanism companions already
+deliver, arriving by a second route** — more clinical language about other
+signals in the text. Prediction 3 would come out true and mean nothing about
+whether declarative fragments are worth shipping.
+
+`generate-folds` now forwards `--companion-share` as well, so the combination is
+expressible. The four cells:
+
+| cell | companion | declarative | what it is |
+|---|---|---|---|
+| **A** | 0.0 | 0.0 | the control; byte-identical to a pre-flag tree |
+| **B** | 0.0 | 0.3 | the plan's Arm D — declarative alone |
+| **C** | 0.5 | 0.0 | companions alone; **replicates the known result at version 4** |
+| **D** | 0.5 | 0.3 | both — the cell that decides whether this ships |
+
+**D against C is the question.** B against A is the mechanism check, and C
+against the committed companion numbers is a free replication that will catch a
+version-4 regression if there is one.
+
+Fifth cell **R** at companion 0.5, declarative 0.6, for prediction 6 — the only
+cell that can find the register failure DD8 argues about. If R beats D on real
+text, DD8's whole argument is wrong, and that is the most valuable thing this run
+could find. It has its own console entry and its own report directory, so it can
+be run after the 2×2 without disturbing it.
 
 ---
 
@@ -38,312 +79,334 @@ recorded, including the bad ones) are the two that a run can quietly break.
 | decision | value | why |
 |---|---|---|
 | Signals | the six trainable ones | `recent_uti_present` is out by DD9 and has no trained head anyway |
-| Arms | `P = 0.0` (Arm 0), `P = 0.3` (Arm D), `P = 0.6` (Arm R, optional) | plan instructions 2–4 |
 | Folds | 5 | every committed run |
 | Base model | `roberta-base` | the console default and what the committed reports used |
-| Companion share | 0.0 | `generate-folds` does not expose the flag; see "What this run cannot answer" |
-| Weights | `--no-weights` | ~440MB × 5 folds × 6 signals × 2 arms ≈ 26GB, none committed, all regenerable |
-| Holdout | on (the default) | never pass `--no-holdout` here; the real set is the point |
+| Weights | `--no-weights` | ~440MB × 5 folds × 6 signals × 4 cells ≈ 53GB, none committed, all regenerable |
+| Holdout | on | never `--no-holdout` here; the real set is the point |
+| Control, Arm A | skipped | halves the wall clock; the 2026-08-31 noise sweep did the same |
 
-**The flags must be identical across arms.** One flag, one difference. If you
-drop `--no-probe` for Arm 0 you must drop it for Arm D too, or the comparison is
-between two configurations rather than two datasets.
+**The flags are identical across cells** — they are baked into the console
+entries, which is most of why the console is the right route here. Two shares
+vary and nothing else.
 
 ---
 
-## Step 0 — preflight
+## Running it from the console
+
+### Start it
+
+Double-click `tools/train-gui.bat` (Windows) or run `tools/train-gui.sh`. It
+activates the `econsult-ml` conda environment, refuses to start a second console
+on a busy port, and opens `http://127.0.0.1:8765/`.
+
+**Closing the window stops the console and any run it started.** A cell takes
+about an hour; leave it open.
+
+If it says fastapi and uvicorn are not importable, `pip install -r
+requirements-ml.txt` in that environment.
+
+### The console entries
+
+The catalogue has six new runs. The four sweep entries take **Companion
+share** and **Declarative share** dropdowns, and the two together name the cell;
+the two comparison entries have fixed cell lists and no dropdowns.
+
+| entry | what it does |
+|---|---|
+| `Declarative sweep: generate folds for one signal` | one signal, one cell. Stdlib only, no GPU, about a minute |
+| `Declarative sweep: generate folds for all six signals` | the whole cell's data, six steps, one run |
+| `Declarative sweep: train and score one signal` | Arm B on one signal, five folds, ~10 min |
+| `Declarative sweep: train and score all six signals` | the whole cell, ~1 hour |
+| `Declarative sweep: compare the four cells` | trains all four and writes one report per signal, ~4 hours |
+| `Declarative sweep: compare 0.3 against 0.6` | the register arm, three cells at companion 0.5, ~3 hours |
+
+Every directory is built from both shares —
+`data/synthetic/generated/decl/c0.5-d0.3`, and the matching `reports/` and
+`models/` paths — so **no two cells can overwrite each other**. That is asserted
+by `tests/test_training_gui.py::test_every_declarative_cell_writes_to_its_own_directories`,
+because the alternative is a comparison of a tree against itself with nothing
+raised anywhere.
+
+### The order to click
+
+For each of the four cells, in this order:
+
+1. **Run `generate folds for all six signals`** with the cell's two shares.
+   A minute. No GPU.
+2. **Check the card's command preview** before clicking Run: it re-renders as
+   you change the dropdowns and shows the exact argv. Confirm the two `--*-share`
+   values and the `c…-d…` directory match the cell you meant.
+3. **Run `train and score all six signals`** with the *same* two shares. About
+   an hour. The Live log streams it; the verdict chip shows the step.
+   **Skip this step if you are going to run `compare the four cells`** — that
+   entry trains every cell itself, and doing both trains everything twice.
+4. When it finishes, **Save this run to a branch** in the Git section. That
+   copies the log and the run manifest — every step's argv, exit code, timings
+   and the sha it ran at — into `reports/training_runs/<run_id>/` along with the
+   reports, and pushes a branch. Cite that from the write-up instead of
+   hand-transcribing a command matrix, which is what the 2026-08-31 noise sweep
+   had to do.
+
+**The console runs one thing at a time** and disables every Run button while
+busy, so it cannot contend with itself for the GPU. That is a feature here: four
+cells back to back is roughly four hours and needs no supervision beyond
+noticing a red verdict.
+
+### Preflight, once
+
+Run **`CUDA smoke test`** first on a fresh machine or after any driver or wheel
+change. Ten seconds, and it fails loudly rather than an hour into a training run.
+
+---
+
+## The terminal equivalents
+
+What the console types, if you would rather drive it directly.
+
+**Generate one cell** (companion 0.5, declarative 0.3 shown):
 
 ```bash
-git checkout main && git pull
-python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
-python -m scripts.encoder_training smoke-cuda
+for sig in fever_present dysuria_present flank_pain_present \
+           haematuria_present nocturia_present urinary_frequency_present; do
+  python -m scripts.encoder_training generate-folds \
+    --folds 5 --signal "$sig" \
+    --companion-share 0.5 --declarative-share 0.3 \
+    --out-dir data/synthetic/generated/decl/c0.5-d0.3
+done
 ```
 
-`cuda.is_available()` must be `True`. Unlike the noise sweep there is no
-`transformers` version to pin: both arms are trained here, together, on whatever
-stack is installed, so they are comparable with each other. They are **not**
-comparable with the 2026-08-19 companion arms (version 3) or anything earlier —
-say so in the report.
+**Train one cell:**
+
+```bash
+for sig in fever_present dysuria_present flank_pain_present \
+           haematuria_present nocturia_present urinary_frequency_present; do
+  python -m scripts.encoder_training finetune \
+    --folds 5 --signal "$sig" \
+    --data-dir   data/synthetic/generated/decl/c0.5-d0.3 \
+    --report-dir reports/encoder_training/decl/c0.5-d0.3 \
+    --models-dir models/encoder-decl/c0.5-d0.3 \
+    --base-model roberta-base \
+    --determinism strict --train-seed 1234 \
+    --no-weights --no-control --no-probe
+done
+```
+
+`data/synthetic/generated/` is gitignored, so the trees are not committed and
+are regenerable from the pinned seeds.
 
 ---
 
-## Step 1 — discharge prediction 1 before spending any GPU
+## Before training: two checks worth the five minutes
 
-Prediction 1 is that output is byte-identical at `P = 0`. It is cheap to check
-and everything downstream rests on it.
+### Prediction 1 — byte-identity at zero
+
+Everything downstream rests on it, and it costs no GPU:
 
 ```bash
 python -m pytest tests/test_synthetic_recombination.py -q \
   -k "golden or inert_against_a_pool"
 ```
 
-Two tests carry it: `test_default_invocation_still_produces_the_golden_dataset`
-pins the default output against a recorded digest, and
-`test_declarative_share_zero_is_inert_against_a_pool_that_could_serve_it`
-proves the draw is *skipped* rather than taken with probability zero, against a
-manifest that has a populated declarative pool.
+`test_default_invocation_still_produces_the_golden_dataset` pins the default
+output against a recorded digest;
+`test_declarative_share_zero_is_inert_against_a_pool_that_could_serve_it` proves
+the draw is *skipped* rather than taken with probability zero, against a manifest
+with a populated declarative pool.
 
-**Both run against fixture manifests, so they prove the mechanism, not the real
-manifest's output.** For the real-manifest assertion the plan asks for, diff
-Arm 0 against a tree generated from the commit before the library entered the
-manifest:
+Both use fixture manifests, so they prove the mechanism, not the real manifest's
+output. For that, diff cell A against a tree generated from the commit before
+the library entered the manifest:
 
 ```bash
 git worktree add /tmp/pre-decl f653832^
 cd /tmp/pre-decl && python -m scripts.encoder_training generate-folds \
   --signal fever_present --folds 5 --out-dir /tmp/pre-decl-folds
-cd - && diff -r /tmp/pre-decl-folds data/synthetic/generated/decl/arm0 \
+cd - && diff -r /tmp/pre-decl-folds data/synthetic/generated/decl/c0.0-d0.0 \
   --exclude='*.stats.json'
 ```
 
-Run this *after* Step 2 has written Arm 0. The JSONL must match exactly. The
-sidecars are excluded because `generator_version` legitimately moved 3 → 4;
-if you want to check them, diff them and confirm that field is the only
-difference. **If the JSONL differs, stop** — DD4's pool refactor changed a pool
-and that is a bug, not a result.
+The JSONL must match exactly. Sidecars are excluded because
+`generator_version` legitimately moved 3 → 4; diff them separately and confirm
+that field is the only difference. **If the JSONL differs, stop** — DD4's pool
+refactor changed a pool, and that is a bug rather than a result.
 
----
+### The cells are the cells
 
-## Step 2 — generate the fold trees
-
-One directory per arm; each holds all six signals' trees, since the fold
-filename carries the signal.
-
-```bash
-for sig in fever_present dysuria_present flank_pain_present \
-           haematuria_present nocturia_present urinary_frequency_present; do
-  python -m scripts.encoder_training generate-folds \
-    --signal "$sig" --folds 5 \
-    --out-dir data/synthetic/generated/decl/arm0
-done
-
-for sig in fever_present dysuria_present flank_pain_present \
-           haematuria_present nocturia_present urinary_frequency_present; do
-  python -m scripts.encoder_training generate-folds \
-    --signal "$sig" --folds 5 --declarative-share 0.3 \
-    --out-dir data/synthetic/generated/decl/armD
-done
-```
-
-Stdlib only, no GPU, a few minutes. `data/synthetic/generated/` is gitignored,
-so these do not get committed and are regenerable from the pinned seeds.
-
-Optional third arm (instruction 4 — the only arm that can find the register
-failure prediction 6 describes):
-
-```bash
-# ... --declarative-share 0.6 --out-dir data/synthetic/generated/decl/armR
-```
-
-**Sanity-check before training**, or you may train two copies of one arm:
+A mis-set dropdown produces a run that succeeds and answers a different
+question:
 
 ```bash
 python - <<'EOF'
 import json, pathlib
-for arm in ("arm0", "armD"):
-    p = pathlib.Path(f"data/synthetic/generated/decl/{arm}/fever_present.fold0.train.jsonl.stats.json")
+for cell in ("c0.0-d0.0", "c0.0-d0.3", "c0.5-d0.0", "c0.5-d0.3"):
+    p = pathlib.Path(f"data/synthetic/generated/decl/{cell}"
+                     "/fever_present.fold0.train.jsonl.stats.json")
+    if not p.exists():
+        print(f"{cell:12} not generated"); continue
     s = json.load(p.open())
-    print(arm, "share:", s["requested"]["declarative_share"],
-          "decl pool:", s["split_pool_sizes"]["declarative_positive"],
-          "version:", s["generator_version"])
+    zero = s["companions"]["count_by_label_mode"]["null_structural"]["0"]
+    print(f"{cell:12} companion {s['requested']['companion_share']} "
+          f"declarative {s['requested']['declarative_share']} "
+          f"| decl pool {s['split_pool_sizes']['declarative_positive']} "
+          f"| filler-only nulls {zero}")
 EOF
 ```
 
-Arm 0 must read `0.0`, Arm D `0.3`, both at version 4, both with a non-empty
-declarative pool. A zero pool on Arm D means the library is not being loaded and
-the run would silently be a second Arm 0.
+Each cell must report the shares you meant, at generator version 4. Two things
+to look at:
+
+* **The declarative pool is non-empty in every cell, A included** — the pool is
+  built from the manifest regardless, and the *share* is what decides whether it
+  is drawn from. So a non-zero pool on A is correct and proves nothing. What
+  would be wrong is a **zero** pool on B or D: the library would not be loading,
+  and the cell would silently be a duplicate of A or C.
+* **Filler-only structural nulls** should read 3064 at companion 0 and **1118**
+  at companion 0.5 — 1,118 is the figure the plan's prediction 2 was written
+  against, so it doubles as a check that the companion passthrough reproduces
+  the known measurement rather than something new.
 
 ---
 
-## Step 3 — train and score
+## Reading the result
 
-Roughly two minutes a fold on a 12GB card, so ~10 minutes per signal per arm and
-about two hours for the twelve runs. **Run them one at a time** — parallel runs
-contend for the GPU.
+The report renders both numbers; nothing here needs a bespoke script.
 
-```bash
-for arm in arm0 armD; do
-  for sig in fever_present dysuria_present flank_pain_present \
-             haematuria_present nocturia_present urinary_frequency_present; do
-    python -m scripts.encoder_training finetune \
-      --signal "$sig" --folds 5 \
-      --data-dir   "data/synthetic/generated/decl/$arm" \
-      --report-dir "reports/encoder_training/decl/$arm" \
-      --models-dir "models/encoder-decl/$arm" \
-      --base-model roberta-base \
-      --determinism strict --train-seed 1234 \
-      --no-weights --no-control --no-probe
-  done
-done
-```
-
-On the three `--no-*` flags: `--no-weights` is not optional (disk).
-`--no-control` and `--no-probe` drop the permuted-label negative control and
-Arm A, roughly halving the wall clock; the 2026-08-31 noise sweep dropped both
-plus baselines for the same reason. Baselines are kept because the majority-class
-floor moves with the dataset and is the thing an arm has to beat. If you have the
-GPU hours, drop all three `--no-*` except `--no-weights` — just do it for **both**
-arms.
-
-### Why not `companion-compare`?
-
-It is the closest precedent — it is what produced the
-`*.companion_comparison.md` reports, with both arms as columns of one table —
-and **it cannot be reused here.** Two reasons, both hard:
-
-* It requires *merged* `joint6` trees from `merge-folds`, not per-signal ones.
-* It refuses two trees that share a `--companion-share`, on the grounds that
-  they are two runs of one arm rather than two arms. Both declarative arms are
-  at companion share 0.0, so it would raise `TrainError` before training.
-
-So the arms are trained separately and compared across two report files, which
-is what Step 4 does. A `declarative-compare` subcommand modelled on
-`companion-compare` would give a single side-by-side report and is the nicer
-route — but it is code work no Task 7 instruction asks for. Decide that before
-Step 3, not after.
-
-The holdout is scored automatically, once per fold model, after the margin has
-been chosen on validation and after the synthetic test split. That ordering is
-enforced in `train.select_then_score`, not by you remembering it.
-
----
-
-## Step 4 — read the result
-
-The report already renders both numbers; nothing here needs a bespoke script.
-
-Fold-pooled decisive accuracy per signal per arm:
+**Fold-pooled decisive accuracy**, per signal per cell:
 
 ```bash
 grep -H -E '^\| `arm_b_finetune` \| finetune' \
-  reports/encoder_training/decl/arm*/*_present.arm_b_finetune.md
+  reports/encoder_training/decl/*/*_present.arm_b_finetune.md
 ```
 
-The real set, which is the number this ticket exists for. Each per-signal report
-carries a `## The real-text holdout` section whose **first** table is
-`### \`null -> true\` on real text -- the headline`:
+**The real set**, which is what the ticket exists for. Each per-signal report
+carries a `## The real-text holdout` section whose first table is the headline:
 
 ```bash
-for f in reports/encoder_training/decl/arm*/*_present.arm_b_finetune.md; do
+for f in reports/encoder_training/decl/*/*_present.arm_b_finetune.md; do
   echo "=== $f"
   sed -n '/^### `null -> true` on real text/,/^###* /p' "$f" | head -12
 done
 ```
 
-Each file's table has **one** model column, because each arm was trained in its
-own run; you are reading two files side by side rather than one table with two
-columns. That is the cost of not having a `declarative-compare`.
+If you trained the cells one at a time, each file's table has **one** model
+column and you are reading four files side by side. `declarative-compare` writes
+one report with a column per cell instead — see below.
 
-**`null -> true` is the invented-symptom rate** — how often the model answers
+**`null -> true` is the invented-symptom rate**: how often the model answers
 `true` about a signal the submission never mentioned, as the mean across folds.
-It is deliberately printed above the accuracy tables, because real-text accuracy
-is dominated by the `null` cells that a model scores by saying nothing. This is
-prediction 3's number, and 47%–89% (the 2026-08-17 joint run) is what it moves
-against.
+It is printed above the accuracy tables deliberately, because real-text accuracy
+is dominated by the `null` cells a model scores by saying nothing.
 
-For prediction 4, the same section's per-signal table carries the `false` column
-of the distribution and the decisive accuracy; the per-class recalls are in the
-JSON at `holdout.by_signal[].per_class` if the markdown does not break them out
-far enough.
+Note the two `n`s the report prints side by side. The recombination test slice
+is thousands of examples over hundreds of clusters; the holdout is 67
+submissions at one observation each. **A difference between cells on the holdout
+has to be large before it is real** — read the intervals, not the point
+estimates.
 
-Note the two `n`s the report prints side by side: the recombination test slice
-is thousands of examples over hundreds of clusters, the holdout is 67
-submissions at one observation each. They are not the same kind of number and
-the second is far the smaller — a difference between arms on the holdout needs
-to be large before it is real.
+### The comparison report
 
-## Step 5 — write down what the predictions did
+`declarative-compare` puts the cells in one report per signal, columns in
+`--cell` order, stem `<signal>.declarative_comparison`:
 
-All six, whatever they say, including the ones that went the wrong way. The
-plan's "Predictions, recorded before the run" section is the checklist:
+```bash
+python -m scripts.encoder_training declarative-compare --folds 5 \
+  --cell data/synthetic/generated/decl/c0.0-d0.0 \
+  --cell data/synthetic/generated/decl/c0.0-d0.3 \
+  --cell data/synthetic/generated/decl/c0.5-d0.0 \
+  --cell data/synthetic/generated/decl/c0.5-d0.3 \
+  --report-dir reports/encoder_training/decl/comparison \
+  --models-dir models/encoder-decl/comparison \
+  --base-model roberta-base --determinism strict --train-seed 1234 --no-weights
+```
 
-1. Byte-identical at `P = 0` — from Step 1.
-2. **Not testable by this run.** `generate-folds` has no `--companion-share`, so
-   both arms are at 0.0 and there is no companion baseline to see structural
-   nulls fall from. Read it off a directly-generated split instead
-   (`python -m scripts.synthetic_data --companion-share 0.5 --declarative-share 0.3`)
-   and report it as a separate observation, or say it was not measured. Do not
-   quietly drop it.
-3. Invented-symptom rate improves, most where the inventory has most phrases,
-   least for `flank_pain_present` — from Step 4.
-4. `false` recall improves most — from the `per_class` block.
-5. Near-duplicate pairs in the hand-written libraries do not move — from
-   `python -m scripts.synthetic_data --lint`.
-6. `P = 0.6` scores worse on the real set than `P = 0.3`. Needs Arm R. If
-   `P = 0.6` wins, DD8's whole argument is wrong and that is the most valuable
-   thing this run could find.
+or the **`compare the four cells`** console entry, which is the same command.
+
+**It trains all four cells itself** — about four hours — rather than reading the
+per-cell runs off disk, for the reason `joint-compare` re-runs A1: the reports
+hold no per-example predictions, so anything comparing two cells can only be
+computed inside the invocation that produced both. Running the four
+`train and score` entries first and then this is training everything twice. Pick
+one route:
+
+* **The comparison entry alone** if you want the side-by-side report. Generate
+  the four cells, then run it. This is the shorter path.
+* **The four `train and score` entries** if you want them one at a time — a cell
+  a day, say — and are content to read four report files side by side.
+
+`companion-compare` cannot do this job: it wants merged `joint6` trees, and it
+refuses two trees that share a `--companion-share`, which cells A and B do and
+cells C and D do.
+
+**What the report tells you, and what it does not.** Every cell holds different
+texts under the same example ids, so no cell pairs with any other on the
+synthetic test set: every McNemar row is a recorded skip, deliberately, and a
+reader who takes those skips for a missing result has read it backwards. The 67
+real-text submissions are the same for every cell and are the shared instrument.
+The first `--cell` is the reference — its tree is what the report's test slice,
+fold partition and cluster checks describe.
+
+Guards, all of which fire before a tree is loaded: fewer than two cells, a
+repeated directory, two cells at the same two shares, a cell whose shares cannot
+be read from its sidecars, a path that does not exist, and every cell at
+declarative 0. The shares are read back from each cell's own sidecars rather than
+from the flags, so a directory named after the wrong cell cannot mislabel a
+column.
+
+For the register arm:
+
+```bash
+# --cell c0.5-d0.0 --cell c0.5-d0.3 --cell c0.5-d0.6
+```
+
+or the **`compare 0.3 against 0.6`** console entry.
 
 ---
 
-## Step 6 — the report
+## Writing down what the predictions did
+
+All six, whatever they say, including the ones that went the wrong way.
+
+1. **Byte-identical at `P = 0`** — from the checks above.
+2. **Structural nulls fall further at a given companion share** — now testable,
+   because the cells exist. Compare filler-only nulls in D against C.
+3. **Invented-symptom rate improves**, most where the inventory has most
+   phrases, least for `flank_pain_present` — B against A *and* D against C. The
+   second comparison is the one that matters.
+4. **`false` recall improves most** — from the `per_class` block.
+5. **Near-duplicate pairs in the hand-written libraries do not move** —
+   `python -m scripts.synthetic_data --lint`.
+6. **`P = 0.6` scores worse than `P = 0.3` on real text** — cell R, via the
+   register comparison.
+
+---
+
+## The report
 
 `reports/encoder_training/<date>-declarative.md` plus its plain-English
-companion, following the pattern of the 2026-08-31 noise pair. Then update
+companion, following the 2026-08-31 noise pair. Then update
 `documentation/arch_training.md` section 10.
 
-Three things the report must say and will not say by itself:
+Four things it must say and will not say by itself:
 
 * The holdout labels were **proposed by Claude and reviewed by the maintainer**;
   labeller and model share an architecture and could share a blind spot.
-* These arms are **version 4** and not comparable with the version-3 companion
-  arms or anything before them.
-* Nothing generated is a hard case (DD3). A dataset that grew in line count has
-  not grown in difficulty, and the per-sub-class counts are where to check that
-  before believing otherwise.
+* These cells are **version 4** and not comparable with the version-3 companion
+  arms or anything earlier — cell C is the bridge, and whether it reproduces the
+  version-3 numbers is itself a finding.
+* **Nothing generated is a hard case** (DD3). A dataset that grew in line count
+  has not grown in difficulty; the per-sub-class counts are where to check that.
+* Whether the decision rests on **D against C** or only on B against A. A reader
+  comparing against the companion numbers will otherwise read a 2×1 as though it
+  were the 2×2.
 
 ---
 
-## Step 7 — the console catalogue (instruction 7)
-
-Code work, no GPU, and worth doing **before** Step 2 if you would rather drive
-the runs from the training console than the terminal.
-
-`scripts/training_gui/runs.json` does not yet know `--declarative-share`. The
-console's parameters are enumerated strings only, which suits this exactly: the
-enumeration *is* the arm list, and it makes the `P = 0.6` arm a dropdown rather
-than something someone has to remember to run.
-
-Add to both the `generate-folds` and `finetune` entries a parameter:
-
-```json
-{ "name": "share", "label": "Declarative share",
-  "choices": ["0.0", "0.3", "0.6"], "default": "0.0" }
-```
-
-and thread `{share}` into the argv — `--declarative-share {share}` on
-`generate-folds`, and into the `--out-dir` / `--data-dir` / `--report-dir` /
-`--models-dir` paths on both, so the arms cannot overwrite each other. That
-last part is the bit that matters: with the current entries both arms write to
-the default directory and the second silently replaces the first.
-
----
-
-## What this run cannot answer
+## What this run still cannot answer
 
 * **Supervision per example.** At `--emit-signals primary` a fragment asserting
   three signals emits one key and the other two assertions are discarded.
   Banking them needs `--emit-signals all` and a `merge-folds` that accepts a
-  multi-key tree (12.2). This run measures claim density, not supervision.
-* **Whether declarative adds anything on top of companions — and this is the
-  big one.** The committed companion reports already show the invented-symptom
-  rate collapsing when companions were switched on: on `fever_present`,
-  `null -> true` went from **84.1% at Arm 0 to 4.5% at Arm P**; `dysuria` 72.7%
-  to 23.6%, `flank_pain` 87.5% to 17.7%, `haematuria` 80.4% to 12.5%. Both
-  declarative arms here sit at companion share 0.0, so Arm 0 starts from that
-  same bad baseline and any improvement Arm D shows may be **the same mechanism
-  companions already fixed**, arriving by a second route — more clinical
-  language about other signals in the text.
-
-  Prediction 3 will probably come out true and will not, on its own, mean
-  declarative fragments are worth shipping. The question that decides that is
-  whether `P > 0` improves anything *at a non-zero companion share*, and
-  `generate-folds` cannot express that combination today. Options, in order of
-  cost: add `--companion-share` passthrough to `generate-folds` (a few lines,
-  mirroring the `--declarative-share` passthrough already there) and run the
-  arms at companion share 0.5; or run this 2×1 as specified and treat it as a
-  mechanism check rather than a shipping decision. **Say which was chosen in the
-  report** — a reader comparing against the companion numbers will otherwise
-  read a 2×1 as though it were the 2×2.
+  multi-key tree (12.2). This measures claim density, not supervision.
 * **Hard cases.** DD3 — the frames cannot produce a hedge, a metaphor or a
   third-party attribution, so the hard-case libraries remain the only source of
   those and `--null-ambiguous-ratio` still means what it meant.

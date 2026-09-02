@@ -30,7 +30,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.encoder_training.__main__ import _as_unpaired, _companion_facts
+from scripts.encoder_training.__main__ import (
+    _as_unpaired,
+    _cell_label,
+    _cell_shares,
+    _companion_facts,
+    build_parser,
+)
 from scripts.encoder_training.dataset import CLASS_NULL, CLASS_TRUE
 from scripts.encoder_training.decision import DecisionRule
 from scripts.encoder_training.metrics import Prediction
@@ -435,3 +441,134 @@ def test_the_three_arm_report_renders(tmp_path):
     assert "## Paired on real text" in markdown
     assert "## The datasets behind these arms" in markdown
     assert "0.0238" in markdown
+
+
+# --------------------------------------------------------------------------
+# The declarative comparison (task 7)
+#
+# Guards only. What they protect is a sweep that runs for four hours, writes a
+# clean report and answers a question nobody asked -- which is the failure mode
+# every check here is shaped around, and none of it is visible in the output.
+# --------------------------------------------------------------------------
+
+
+def _cell(directory: Path, *, companion: float, declarative: float, version: int = 4) -> Path:
+    """A cell's worth of sidecars: the three fields `_cell_shares` reads."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{SIGNAL}.fold0.train.jsonl.stats.json").write_text(
+        json.dumps(
+            {
+                "generator_version": version,
+                "requested": {
+                    "companion_share": companion,
+                    "declarative_share": declarative,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return directory
+
+
+def _declarative_args(*cells: Path):
+    parser = build_parser()
+    argv = ["declarative-compare", "--folds", "1", "--signals", SIGNAL]
+    for cell in cells:
+        argv += ["--cell", str(cell)]
+    return parser.parse_args(argv)
+
+
+def test_cell_shares_are_read_from_the_sidecars_not_the_flags(tmp_path):
+    """A directory named after the wrong cell must not be able to mislabel a column.
+
+    The label is the report's column heading and the artefact directory's name,
+    so reading it from the tree the numbers came from rather than from the run
+    that read the tree is the same argument `_companion_facts` makes.
+    """
+    directory = _cell(tmp_path / "named-wrong", companion=0.5, declarative=0.3)
+    shares = _cell_shares(directory, (SIGNAL,), 1)
+
+    assert shares["companion_share"] == 0.5
+    assert shares["declarative_share"] == 0.3
+    assert shares["generator_version"] == 4
+    assert _cell_label(shares) == "c0.5-d0.3"
+
+
+def test_cell_shares_survive_a_missing_sidecar(tmp_path):
+    shares = _cell_shares(tmp_path, (SIGNAL,), 1)
+
+    assert shares["train_splits_read"] == 0
+    assert shares["companion_share"] is None
+    assert shares["declarative_share"] is None
+
+
+def test_one_cell_is_not_a_comparison(tmp_path):
+    args = _declarative_args(_cell(tmp_path / "a", companion=0.0, declarative=0.0))
+
+    with pytest.raises(TrainError, match="at least two cells"):
+        args.handler(args)
+
+
+def test_a_repeated_directory_is_refused(tmp_path):
+    """Two --cell flags at one tree is one arm trained twice, and the report
+    would present the difference between two seeds as the effect of a share."""
+    cell = _cell(tmp_path / "a", companion=0.0, declarative=0.3)
+    args = _declarative_args(cell, cell)
+
+    with pytest.raises(TrainError, match="repeats a directory"):
+        args.handler(args)
+
+
+def test_two_cells_at_the_same_shares_are_refused(tmp_path):
+    """Different directories, same coordinates: still one cell, run twice.
+
+    The directory check above cannot catch this, and this is the shape the
+    mistake actually takes -- a second cell generated with a dropdown left where
+    it was.
+    """
+    args = _declarative_args(
+        _cell(tmp_path / "a", companion=0.5, declarative=0.3),
+        _cell(tmp_path / "b", companion=0.5, declarative=0.3),
+    )
+
+    with pytest.raises(TrainError, match="two runs of one cell"):
+        args.handler(args)
+
+
+def test_a_sweep_with_no_declarative_cell_is_refused(tmp_path):
+    """Every cell at declarative 0 has nothing to compare, and would report a
+    null result more convincingly than a real one."""
+    args = _declarative_args(
+        _cell(tmp_path / "a", companion=0.0, declarative=0.0),
+        _cell(tmp_path / "b", companion=0.5, declarative=0.0),
+    )
+
+    with pytest.raises(TrainError, match="nothing here to compare"):
+        args.handler(args)
+
+
+def test_a_path_that_does_not_exist_says_so(tmp_path):
+    """Separately from the check below, because the two have different remedies
+    and a typo'd path reported as a stale tree sends someone to regenerate a
+    cell that was never the problem."""
+    args = _declarative_args(
+        _cell(tmp_path / "a", companion=0.0, declarative=0.3),
+        tmp_path / "typo",
+    )
+
+    with pytest.raises(TrainError, match="no such directory"):
+        args.handler(args)
+
+
+def test_a_tree_whose_shares_cannot_be_read_is_refused(tmp_path):
+    """A pre-version-4 tree, or one from before generate-folds forwarded the
+    shares. Assuming what it was built with is how a cell ends up mislabelled in
+    a report that reads as though it were checked."""
+    args = _declarative_args(
+        _cell(tmp_path / "a", companion=0.0, declarative=0.3),
+        (tmp_path / "b").resolve(),
+    )
+    (tmp_path / "b").mkdir()
+
+    with pytest.raises(TrainError, match="no companion or declarative share"):
+        args.handler(args)
