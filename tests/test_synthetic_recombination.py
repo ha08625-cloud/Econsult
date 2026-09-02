@@ -4239,6 +4239,57 @@ def test_the_cli_threads_the_declarative_share_and_the_sidecar_records_it(
     assert declarative["decisive_by_label_mode"]["null_structural"] == 0
 
 
+def test_a_generated_declarative_dataset_loads_in_the_training_loader(
+    tmp_path, declarative_libraries
+):
+    """The one test that puts the generator and the training loader in the same room.
+
+    Everything else about the provenance block is asserted against a fixture on
+    one side or the other, and a fixture cannot catch the failure that actually
+    matters here: the generator writing a field name, or a shape, that the
+    loader does not read. Before ``signals`` existed the loader tested a scalar
+    ``signal_key`` that a declarative fragment does not have, so every example
+    holding one raised "holds no decisive fragment" -- a dataset that generates
+    cleanly and cannot be trained on.
+
+    Imports the loader inside the test: this module is the generator's, and the
+    dependency is one test's, not the file's.
+    """
+    from scripts.encoder_training.dataset import STRUCTURAL_NULL_UNIT, load_split
+
+    out = tmp_path / "fever.fold0.train.jsonl"
+    assert (
+        cli_main(
+            _argv(
+                manifest=declarative_libraries,
+                ruleset=_write_ruleset(tmp_path, _VECTOR_SIGNALS),
+                split="train",
+                count=400,
+                declarative_share=0.5,
+                companion_share=0.5,
+                out=out,
+            )
+        )
+        == 0
+    )
+
+    split = load_split(out)
+    assert len(split) == 400
+
+    multi = [e for e in split.examples if e.decisive and len(e.decisive.signals or ()) > 1]
+    assert multi, "the fixture library is meant to produce multi-signal decisive fragments"
+
+    example = multi[0]
+    assert example.decisive is not None
+    # The four properties every slice, interval and error table is cut by.
+    assert example.decisive.signal_key is None
+    assert SIGNAL in example.decisive.signals
+    assert example.library == example.decisive.library
+    assert example.subclass is None
+    assert example.resampling_unit == example.decisive.cluster_key
+    assert example.resampling_unit != STRUCTURAL_NULL_UNIT
+
+
 # --------------------------------------------------------------------------
 # 22. The lint over the generated library and the phrase inventory (Task 5)
 #
