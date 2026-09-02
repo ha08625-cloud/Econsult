@@ -201,6 +201,25 @@ function renderCommands(entry) {
   }
 }
 
+// The dropdowns are remembered per entry and parameter. localStorage throws in
+// a private window and on a browser configured to block site data; forgetting a
+// dropdown is a much better outcome than failing to render the catalogue.
+function rememberedChoice(entryId, parameterName) {
+  try {
+    return localStorage.getItem(`traingui:${entryId}:${parameterName}`);
+  } catch (error) {
+    return null;
+  }
+}
+
+function rememberChoice(entryId, parameterName, value) {
+  try {
+    localStorage.setItem(`traingui:${entryId}:${parameterName}`, value);
+  } catch (error) {
+    /* not worth reporting */
+  }
+}
+
 function renderCatalogue() {
   const container = $("runs");
   container.className = "";
@@ -239,7 +258,14 @@ function renderCatalogue() {
         option.selected = choice === parameter.default;
         select.appendChild(option);
       }
-      select.onchange = () => renderCommands(entry);
+      const stored = rememberedChoice(entry.id, parameter.name);
+      // An unknown stored value falls back to the committed default, so editing
+      // the catalogue cannot resurrect a choice that no longer exists.
+      if (parameter.choices.includes(stored)) select.value = stored;
+      select.onchange = () => {
+        rememberChoice(entry.id, parameter.name, select.value);
+        renderCommands(entry);
+      };
       wrap.appendChild(select);
       params.appendChild(wrap);
     }
