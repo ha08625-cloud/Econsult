@@ -1,0 +1,3458 @@
+{
+  "arm": "arm_b_finetune__c0-5-d0-3",
+  "signal": "haematuria_present",
+  "classes": [
+    "false",
+    "true",
+    "null"
+  ],
+  "encoder": {
+    "base_model": "roberta-base",
+    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "requested_revision": null,
+    "revision_pinned": false,
+    "hidden_size": 768,
+    "tokeniser": {
+      "reported_do_lower_case": null,
+      "lowercases_input": false,
+      "cased_vocab": true,
+      "discards_casing": false,
+      "vocab_size": 50265,
+      "model_max_length": 512,
+      "tokenizer_class": "RobertaTokenizer"
+    }
+  },
+  "config": {
+    "base_model": "roberta-base",
+    "revision": null,
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "epochs": 3,
+    "batch_size": 32,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "seed": 1234,
+    "fold_seed_rule": "seed + 1000 * fold_index",
+    "device": "auto",
+    "eval_batch_size": 64,
+    "determinism": "strict",
+    "trainable": "all layers; the encoder is unfrozen and trained with the head",
+    "loss": "cross_entropy, unweighted (DD8), masked on missing signals (DD10)",
+    "optimiser": "AdamW with linear warmup then linear decay",
+    "epoch_selection": "highest macro-F1 on the fold's own validation split",
+    "dtype": "float32",
+    "memory_strategy": "none. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation -- BERT-base at batch 32 / seq 256 fits in 12GB with room to spare",
+    "hyperparameter_provenance": "learning rate, epochs, warmup and optimiser are the published BERT-base recipe, fixed before any run. Hyperparameter search is out of scope",
+    "validation_guided_decisions": [
+      "pooling mode (DD3) -- mean vs CLS, compared once",
+      "learning rate",
+      "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+      "decision margin (DD9)"
+    ]
+  },
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "cuda_available": true,
+    "deterministic_env": ":4096:8",
+    "device_name": "NVIDIA GeForce RTX 5070",
+    "compute_capability": [
+      12,
+      0
+    ],
+    "capability_matches_expected": true,
+    "wheel_covers_blackwell": true,
+    "kernel_launch_ok": true
+  },
+  "dataset": {
+    "dir": "data/synthetic/generated/decl/c0.5-d0.3",
+    "name": "haematuria_present",
+    "folds": 5,
+    "generator_version": 4,
+    "generator_base_seed": 42,
+    "split_salt": "0",
+    "dataset_seeds": [
+      42,
+      142,
+      242,
+      342,
+      442
+    ],
+    "examples_per_fold": {
+      "train": 10000,
+      "val": 2000,
+      "test": 2000
+    }
+  },
+  "ruleset": "data/uti1.json",
+  "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+  "folds": [
+    {
+      "fold": 0,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.8626728280585266,
+        0.866424899708344,
+        0.8748602722887293
+      ],
+      "train_loss_by_epoch": [
+        0.2579620406470494,
+        0.002992350330715999,
+        5.3545594203751534e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 94,
+        "accuracy": 0.898,
+        "macro_f1": 0.8799658641365747,
+        "confusion": [
+          [
+            480,
+            0,
+            44
+          ],
+          [
+            0,
+            240,
+            45
+          ],
+          [
+            54,
+            61,
+            1076
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.916030534351145,
+          "true": 0.8421052631578947,
+          "null": 0.9034424853064652
+        }
+      },
+      "decision_rule": {
+        "margin": 0.9,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.06633081444164568,
+        "null_to_true_rate": 0.051217464315701094,
+        "macro_f1": 0.8799658641365747,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "haematuria_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.9,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              6,
+              3
+            ],
+            [
+              0,
+              6,
+              50
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8656716417910447,
+            "low": 0.7761194029850746,
+            "high": 0.9402985074626866,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8296199213630406,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 11,
+          "n_submissions": 11,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              6,
+              3
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7272727272727273,
+            "low": 0.45454545454545453,
+            "high": 1.0,
+            "effective_n": 11,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6,
+          "worst_case_half_width": 0.2954756881513314
+        },
+        "by_signal": [
+          {
+            "signal": "haematuria_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  6,
+                  3
+                ],
+                [
+                  0,
+                  6,
+                  50
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8656716417910447,
+                "low": 0.7761194029850746,
+                "high": 0.9402985074626866,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8296199213630406,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  6,
+                  3
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7272727272727273,
+                "low": 0.45454545454545453,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 2,
+                "recall": 1.0,
+                "precision": 1.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 12,
+                "recall": 0.6666666666666666,
+                "precision": 0.5
+              },
+              "null": {
+                "support": 56,
+                "predicted": 53,
+                "recall": 0.8928571428571429,
+                "precision": 0.9433962264150944
+              }
+            },
+            "null_to_true": {
+              "count": 6,
+              "null_support": 56
+            }
+          }
+        ],
+        "cells": {
+          "haematuria_present": [
+            {
+              "id": "holdout-0001:haematuria_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:haematuria_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:haematuria_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:haematuria_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:haematuria_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:haematuria_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:haematuria_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0008:haematuria_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:haematuria_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0010:haematuria_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:haematuria_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0012:haematuria_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:haematuria_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:haematuria_present",
+              "unit": "holdout-0014",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0015:haematuria_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:haematuria_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:haematuria_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:haematuria_present",
+              "unit": "holdout-0018",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:haematuria_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:haematuria_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:haematuria_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:haematuria_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:haematuria_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0024:haematuria_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:haematuria_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:haematuria_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0027:haematuria_present",
+              "unit": "holdout-0027",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0028:haematuria_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:haematuria_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:haematuria_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:haematuria_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:haematuria_present",
+              "unit": "holdout-0032",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:haematuria_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:haematuria_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:haematuria_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:haematuria_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:haematuria_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:haematuria_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:haematuria_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:haematuria_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:haematuria_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:haematuria_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:haematuria_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:haematuria_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:haematuria_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:haematuria_present",
+              "unit": "holdout-0046",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0047:haematuria_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:haematuria_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:haematuria_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:haematuria_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:haematuria_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:haematuria_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:haematuria_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:haematuria_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:haematuria_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:haematuria_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:haematuria_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:haematuria_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:haematuria_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:haematuria_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:haematuria_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:haematuria_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:haematuria_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:haematuria_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:haematuria_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:haematuria_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0067:haematuria_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 1,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.9077420335762786,
+        0.8932185698122628,
+        0.9046204239547521
+      ],
+      "train_loss_by_epoch": [
+        0.22612419088056776,
+        0.0008271579780150204,
+        4.855392724275589e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 73,
+        "accuracy": 0.9425,
+        "macro_f1": 0.9298988272827478,
+        "confusion": [
+          [
+            475,
+            25,
+            9
+          ],
+          [
+            0,
+            316,
+            0
+          ],
+          [
+            29,
+            52,
+            1094
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9332023575638507,
+          "true": 1.0,
+          "null": 0.931063829787234
+        }
+      },
+      "decision_rule": {
+        "margin": 0.9,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.06382978723404255,
+        "null_to_true_rate": 0.04425531914893617,
+        "macro_f1": 0.9298988272827478,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "haematuria_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.9,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              9,
+              0
+            ],
+            [
+              0,
+              6,
+              50
+            ]
+          ],
+          "accuracy": {
+            "point": 0.9104477611940298,
+            "low": 0.835820895522388,
+            "high": 0.9701492537313433,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8977987421383649,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 11,
+          "n_submissions": 11,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              9,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 1.0,
+            "low": 1.0,
+            "high": 1.0,
+            "effective_n": 11,
+            "resamples_used": 2000
+          },
+          "macro_f1": 1.0,
+          "worst_case_half_width": 0.2954756881513314
+        },
+        "by_signal": [
+          {
+            "signal": "haematuria_present",
+            "margin": 0.9,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  0,
+                  6,
+                  50
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9104477611940298,
+                "low": 0.835820895522388,
+                "high": 0.9701492537313433,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8977987421383649,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 1.0,
+                "low": 1.0,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 1.0,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 2,
+                "recall": 1.0,
+                "precision": 1.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 15,
+                "recall": 1.0,
+                "precision": 0.6
+              },
+              "null": {
+                "support": 56,
+                "predicted": 50,
+                "recall": 0.8928571428571429,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 6,
+              "null_support": 56
+            }
+          }
+        ],
+        "cells": {
+          "haematuria_present": [
+            {
+              "id": "holdout-0001:haematuria_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:haematuria_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:haematuria_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:haematuria_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:haematuria_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:haematuria_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:haematuria_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0008:haematuria_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:haematuria_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0010:haematuria_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:haematuria_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0012:haematuria_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:haematuria_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:haematuria_present",
+              "unit": "holdout-0014",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0015:haematuria_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:haematuria_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:haematuria_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:haematuria_present",
+              "unit": "holdout-0018",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:haematuria_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:haematuria_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:haematuria_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:haematuria_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:haematuria_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0024:haematuria_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:haematuria_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:haematuria_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:haematuria_present",
+              "unit": "holdout-0027",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0028:haematuria_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:haematuria_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:haematuria_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:haematuria_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:haematuria_present",
+              "unit": "holdout-0032",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0033:haematuria_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:haematuria_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:haematuria_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:haematuria_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:haematuria_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:haematuria_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0039:haematuria_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0040:haematuria_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:haematuria_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:haematuria_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:haematuria_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:haematuria_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:haematuria_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:haematuria_present",
+              "unit": "holdout-0046",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0047:haematuria_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:haematuria_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:haematuria_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:haematuria_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:haematuria_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:haematuria_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:haematuria_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:haematuria_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:haematuria_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:haematuria_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:haematuria_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:haematuria_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:haematuria_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0060:haematuria_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:haematuria_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:haematuria_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:haematuria_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:haematuria_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:haematuria_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:haematuria_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0067:haematuria_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 2,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.9274778983932399,
+        0.9123978535802998,
+        0.9200050204230629
+      ],
+      "train_loss_by_epoch": [
+        0.23674179556512973,
+        0.0011075521811610089,
+        3.7499421965912916e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 89,
+        "accuracy": 0.94,
+        "macro_f1": 0.9303655335201076,
+        "confusion": [
+          [
+            421,
+            15,
+            78
+          ],
+          [
+            0,
+            296,
+            22
+          ],
+          [
+            0,
+            5,
+            1163
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.8190661478599222,
+          "true": 0.9308176100628931,
+          "null": 0.9957191780821918
+        }
+      },
+      "decision_rule": {
+        "margin": 0.5,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.007705479452054794,
+        "null_to_true_rate": 0.004280821917808219,
+        "macro_f1": 0.9303655335201076,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "haematuria_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.5,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              9,
+              0
+            ],
+            [
+              0,
+              11,
+              45
+            ]
+          ],
+          "accuracy": {
+            "point": 0.835820895522388,
+            "low": 0.746268656716418,
+            "high": 0.9104477611940298,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8372595880277682,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 11,
+          "n_submissions": 11,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              9,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 1.0,
+            "low": 1.0,
+            "high": 1.0,
+            "effective_n": 11,
+            "resamples_used": 2000
+          },
+          "macro_f1": 1.0,
+          "worst_case_half_width": 0.2954756881513314
+        },
+        "by_signal": [
+          {
+            "signal": "haematuria_present",
+            "margin": 0.5,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  0,
+                  11,
+                  45
+                ]
+              ],
+              "accuracy": {
+                "point": 0.835820895522388,
+                "low": 0.746268656716418,
+                "high": 0.9104477611940298,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8372595880277682,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  9,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 1.0,
+                "low": 1.0,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 1.0,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 2,
+                "recall": 1.0,
+                "precision": 1.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 20,
+                "recall": 1.0,
+                "precision": 0.45
+              },
+              "null": {
+                "support": 56,
+                "predicted": 45,
+                "recall": 0.8035714285714286,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 11,
+              "null_support": 56
+            }
+          }
+        ],
+        "cells": {
+          "haematuria_present": [
+            {
+              "id": "holdout-0001:haematuria_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:haematuria_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:haematuria_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:haematuria_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:haematuria_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:haematuria_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:haematuria_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0008:haematuria_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:haematuria_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0010:haematuria_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:haematuria_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0012:haematuria_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:haematuria_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:haematuria_present",
+              "unit": "holdout-0014",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0015:haematuria_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:haematuria_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:haematuria_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0018:haematuria_present",
+              "unit": "holdout-0018",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:haematuria_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:haematuria_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:haematuria_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:haematuria_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:haematuria_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0024:haematuria_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:haematuria_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:haematuria_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0027:haematuria_present",
+              "unit": "holdout-0027",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0028:haematuria_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:haematuria_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:haematuria_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:haematuria_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:haematuria_present",
+              "unit": "holdout-0032",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0033:haematuria_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:haematuria_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:haematuria_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:haematuria_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0037:haematuria_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:haematuria_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0039:haematuria_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0040:haematuria_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:haematuria_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:haematuria_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:haematuria_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0044:haematuria_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:haematuria_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:haematuria_present",
+              "unit": "holdout-0046",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0047:haematuria_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:haematuria_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:haematuria_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0050:haematuria_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:haematuria_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:haematuria_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:haematuria_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:haematuria_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0055:haematuria_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:haematuria_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:haematuria_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:haematuria_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:haematuria_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0060:haematuria_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:haematuria_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:haematuria_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:haematuria_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:haematuria_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:haematuria_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:haematuria_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0067:haematuria_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 3,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 2,
+      "val_macro_f1_by_epoch": [
+        0.96227243907695,
+        0.9655190104023138,
+        0.9647372924876997
+      ],
+      "train_loss_by_epoch": [
+        0.24477485101283528,
+        0.0005909146999707446,
+        5.677601848146878e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 63,
+        "accuracy": 0.976,
+        "macro_f1": 0.9655190104023138,
+        "confusion": [
+          [
+            499,
+            0,
+            3
+          ],
+          [
+            0,
+            256,
+            43
+          ],
+          [
+            0,
+            2,
+            1197
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9940239043824701,
+          "true": 0.8561872909698997,
+          "null": 0.9983319432860718
+        }
+      },
+      "decision_rule": {
+        "margin": 0.0,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.0016680567139282735,
+        "null_to_true_rate": 0.0016680567139282735,
+        "macro_f1": 0.9655190104023138,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "haematuria_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.0,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              7,
+              2
+            ],
+            [
+              0,
+              7,
+              49
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8656716417910447,
+            "low": 0.7761194029850746,
+            "high": 0.9402985074626866,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8415278342137342,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 11,
+          "n_submissions": 11,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              7,
+              2
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8181818181818182,
+            "low": 0.5454545454545454,
+            "high": 1.0,
+            "effective_n": 11,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.625,
+          "worst_case_half_width": 0.2954756881513314
+        },
+        "by_signal": [
+          {
+            "signal": "haematuria_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  2
+                ],
+                [
+                  0,
+                  7,
+                  49
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8656716417910447,
+                "low": 0.7761194029850746,
+                "high": 0.9402985074626866,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8415278342137342,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  2
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8181818181818182,
+                "low": 0.5454545454545454,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.625,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 2,
+                "recall": 1.0,
+                "precision": 1.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 14,
+                "recall": 0.7777777777777778,
+                "precision": 0.5
+              },
+              "null": {
+                "support": 56,
+                "predicted": 51,
+                "recall": 0.875,
+                "precision": 0.9607843137254902
+              }
+            },
+            "null_to_true": {
+              "count": 7,
+              "null_support": 56
+            }
+          }
+        ],
+        "cells": {
+          "haematuria_present": [
+            {
+              "id": "holdout-0001:haematuria_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:haematuria_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:haematuria_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:haematuria_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:haematuria_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:haematuria_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:haematuria_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0008:haematuria_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:haematuria_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0010:haematuria_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:haematuria_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0012:haematuria_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:haematuria_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:haematuria_present",
+              "unit": "holdout-0014",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0015:haematuria_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:haematuria_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:haematuria_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:haematuria_present",
+              "unit": "holdout-0018",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:haematuria_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:haematuria_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:haematuria_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:haematuria_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:haematuria_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0024:haematuria_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:haematuria_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:haematuria_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0027:haematuria_present",
+              "unit": "holdout-0027",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0028:haematuria_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:haematuria_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:haematuria_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:haematuria_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:haematuria_present",
+              "unit": "holdout-0032",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0033:haematuria_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:haematuria_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:haematuria_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:haematuria_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:haematuria_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:haematuria_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0039:haematuria_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:haematuria_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:haematuria_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:haematuria_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:haematuria_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:haematuria_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:haematuria_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:haematuria_present",
+              "unit": "holdout-0046",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0047:haematuria_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:haematuria_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:haematuria_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:haematuria_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:haematuria_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:haematuria_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:haematuria_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:haematuria_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:haematuria_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:haematuria_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:haematuria_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:haematuria_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:haematuria_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0060:haematuria_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:haematuria_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:haematuria_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:haematuria_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:haematuria_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:haematuria_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:haematuria_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0067:haematuria_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 4,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.9749728387427146,
+        0.9700651672143222,
+        0.9545045161328121
+      ],
+      "train_loss_by_epoch": [
+        0.2539924586331472,
+        0.0008588486382737756,
+        5.937427867902443e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 74,
+        "accuracy": 0.976,
+        "macro_f1": 0.9763373625298412,
+        "confusion": [
+          [
+            483,
+            0,
+            41
+          ],
+          [
+            0,
+            301,
+            3
+          ],
+          [
+            2,
+            2,
+            1168
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9217557251908397,
+          "true": 0.9901315789473685,
+          "null": 0.9965870307167235
+        }
+      },
+      "decision_rule": {
+        "margin": 0.35,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.004266211604095563,
+        "null_to_true_rate": 0.0017064846416382253,
+        "macro_f1": 0.9763373625298412,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "haematuria_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "flank_pain_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.35,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              7,
+              2
+            ],
+            [
+              0,
+              7,
+              49
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8656716417910447,
+            "low": 0.7761194029850746,
+            "high": 0.9402985074626866,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.8415278342137342,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 11,
+          "n_submissions": 11,
+          "confusion": [
+            [
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              7,
+              2
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8181818181818182,
+            "low": 0.5454545454545454,
+            "high": 1.0,
+            "effective_n": 11,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.625,
+          "worst_case_half_width": 0.2954756881513314
+        },
+        "by_signal": [
+          {
+            "signal": "haematuria_present",
+            "margin": 0.35,
+            "distribution": {
+              "false": 2,
+              "true": 9,
+              "null": 56,
+              "omitted": 0,
+              "decisive": 11
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  2
+                ],
+                [
+                  0,
+                  7,
+                  49
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8656716417910447,
+                "low": 0.7761194029850746,
+                "high": 0.9402985074626866,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.8415278342137342,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 11,
+              "n_submissions": 11,
+              "confusion": [
+                [
+                  2,
+                  0,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  2
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8181818181818182,
+                "low": 0.5454545454545454,
+                "high": 1.0,
+                "effective_n": 11,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.625,
+              "worst_case_half_width": 0.2954756881513314
+            },
+            "per_class": {
+              "false": {
+                "support": 2,
+                "predicted": 2,
+                "recall": 1.0,
+                "precision": 1.0
+              },
+              "true": {
+                "support": 9,
+                "predicted": 14,
+                "recall": 0.7777777777777778,
+                "precision": 0.5
+              },
+              "null": {
+                "support": 56,
+                "predicted": 51,
+                "recall": 0.875,
+                "precision": 0.9607843137254902
+              }
+            },
+            "null_to_true": {
+              "count": 7,
+              "null_support": 56
+            }
+          }
+        ],
+        "cells": {
+          "haematuria_present": [
+            {
+              "id": "holdout-0001:haematuria_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:haematuria_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:haematuria_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:haematuria_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:haematuria_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:haematuria_present",
+              "unit": "holdout-0006",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:haematuria_present",
+              "unit": "holdout-0007",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0008:haematuria_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:haematuria_present",
+              "unit": "holdout-0009",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0010:haematuria_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:haematuria_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:haematuria_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:haematuria_present",
+              "unit": "holdout-0013",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:haematuria_present",
+              "unit": "holdout-0014",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0015:haematuria_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:haematuria_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:haematuria_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0018:haematuria_present",
+              "unit": "holdout-0018",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:haematuria_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:haematuria_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:haematuria_present",
+              "unit": "holdout-0021",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:haematuria_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:haematuria_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0024:haematuria_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0025:haematuria_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:haematuria_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0027:haematuria_present",
+              "unit": "holdout-0027",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0028:haematuria_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:haematuria_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:haematuria_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:haematuria_present",
+              "unit": "holdout-0031",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0032:haematuria_present",
+              "unit": "holdout-0032",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0033:haematuria_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:haematuria_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:haematuria_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:haematuria_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:haematuria_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:haematuria_present",
+              "unit": "holdout-0038",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0039:haematuria_present",
+              "unit": "holdout-0039",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:haematuria_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:haematuria_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0042:haematuria_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:haematuria_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:haematuria_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:haematuria_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:haematuria_present",
+              "unit": "holdout-0046",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0047:haematuria_present",
+              "unit": "holdout-0047",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:haematuria_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:haematuria_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0050:haematuria_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:haematuria_present",
+              "unit": "holdout-0051",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0052:haematuria_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:haematuria_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:haematuria_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:haematuria_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:haematuria_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:haematuria_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:haematuria_present",
+              "unit": "holdout-0058",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0059:haematuria_present",
+              "unit": "holdout-0059",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0060:haematuria_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:haematuria_present",
+              "unit": "holdout-0061",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:haematuria_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:haematuria_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:haematuria_present",
+              "unit": "holdout-0064",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:haematuria_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:haematuria_present",
+              "unit": "holdout-0066",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0067:haematuria_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    }
+  ],
+  "margins": {
+    "objective": "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9)",
+    "selected_on": "each fold's own validation split, never test and never pooled",
+    "by_fold": {
+      "0": 0.9,
+      "1": 0.9,
+      "2": 0.5,
+      "3": 0.0,
+      "4": 0.35
+    }
+  },
+  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it."
+}
