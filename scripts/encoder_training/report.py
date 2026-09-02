@@ -1809,6 +1809,23 @@ def _render_null_to_true_headline(scored: Sequence[Mapping[str, object]]) -> lis
     ]
 
 
+def _null_to_true_direction(delta: float, right: str) -> str:
+    """The `null -> true` gap as a sentence that names the direction.
+
+    ``delta`` is ``left - right`` in points, so a positive value means the
+    right-hand run invents fewer symptoms. Reading that sign off the number is
+    exactly what a reader does not do, so the sentence says which way it went
+    rather than leaving a minus sign to carry the meaning: a signed figure
+    followed by a fixed "in favour of `{right}`" reads as a win for the
+    right-hand run whichever way it points.
+    """
+    if abs(delta) < 0.05:
+        return "**level** between the two."
+    if delta > 0:
+        return f"**{delta:.1f} points lower** for `{right}` -- fewer invented symptoms."
+    return f"**{-delta:.1f} points higher** for `{right}` -- more invented symptoms."
+
+
 def _render_holdout_comparisons(report: Mapping[str, object]) -> list[str]:
     """The paired real-text tests, and the ones that could not be run."""
     comparisons = report.get("holdout_comparisons") or []
@@ -1848,11 +1865,7 @@ def _render_holdout_comparisons(report: Mapping[str, object]) -> list[str]:
             f"`{entry['left']}` ahead on {entry['left_better_folds']} folds, "
             f"`{entry['right']}` on {entry['right_better_folds']}. "
             f"`null -> true` mean: {_pct(rate['left_mean'])} against {_pct(rate['right_mean'])}"
-            + (
-                "."
-                if delta is None
-                else f" -- **{delta:+.1f} points** in favour of `{entry['right']}`."
-            )
+            + ("." if delta is None else f" -- {_null_to_true_direction(delta, entry['right'])}")
         )
         lines.append("")
         lines.append(f"*{_sentence(entry['not_pooled'])}*")
