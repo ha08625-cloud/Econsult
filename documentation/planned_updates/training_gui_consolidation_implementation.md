@@ -98,14 +98,14 @@ Nine is still more than the provisional plan's P3 grouping was written for, but
 the grouping is now much less urgent: seven of the nine are escape hatches a
 reader can skim past, and the two composites can simply be placed first.
 
-**Open question for you:** with `finetune` gone, nothing in the catalogue
-consumes `generate-folds`'s default tree except `merge-folds`, and nothing
-consumes `merge-folds`'s merged tree at all. They are two buttons for a training
-path that is not yet built. Keeping them means two dead buttons; removing them
-means re-adding them when joint multi-head training lands. I lean towards
-**keeping them** — they are cheap, correct, and the merged tree is the input to
-the next real piece of work — but if you want the catalogue down to seven, these
-are the two to cut.
+**Decided: both stay.** With `finetune` gone, nothing in the catalogue consumes
+`generate-folds`'s default tree except `merge-folds`, and nothing consumes
+`merge-folds`'s merged tree at all — they are two buttons for a training path
+that is not yet built. They stay anyway: they are cheap, they are correct, and
+the merged tree is the input to the next real piece of work. Cutting them would
+mean re-adding them when joint multi-head training lands, and two entries a
+reader skims past cost less than that. Reversible: if the catalogue feels long
+after a sweep or two, these are the two to cut and nothing depends on them.
 
 ### DD-C. What the composites contain
 
@@ -181,6 +181,15 @@ choices, `reports/encoder_training/decl/comparison` (default) and
 `reports/encoder_training/decl/register`. Both are literals in `runs.json`, so
 the browser still only names a choice. The composites pass the matching
 directory as a literal in their own final step.
+
+**Decided: `score-companions` runs as the composites' final step.** This puts a
+scored verdict at the end of the console's log for the first time, which is worth
+naming explicitly against the console's "never interprets a result" rule. It does
+not breach it: the scoring is done by `scripts/encoder_training/thresholds.py`
+against a criterion declared before the run, invoked as a subprocess step like
+every other step, and the console does nothing with the output but show it. The
+console still holds no opinion about a number; it now shows one the training CLI
+holds.
 
 ### DD-F. Step labels are a new catalogue field, and task 2 needs them
 
@@ -419,18 +428,29 @@ No new endpoints. No `runner.py` change.
    Note that the current favicon is deliberately `data:,` to avoid a 404 — keep
    the data-URI approach rather than adding files.
 
-5. **Not in this task:** browser notifications and the finish sound. The
+5. **A confirm on Stop, and only on Stop** (P6, reduced). `Stop` is currently a
+   single unguarded click that can throw away four hours; make it a
+   `confirm()` naming the entry and its elapsed time whenever a run is active.
+
+   The provisional plan's P6 also wanted a confirm before *starting* anything
+   long. That is dropped: with the composite as the main entry, a confirm on Run
+   would fire on the press made most often, and a confirm that fires on the
+   common path is a confirm that gets clicked through — which would also weaken
+   the Stop confirm sitting next to it. One guarded button, on the destructive
+   action, and none on the routine one.
+
+6. **Not in this task:** browser notifications and the finish sound. The
    provisional plan left this open; the answer is that the tab title ships first
    and notifications are only worth a permission prompt if the tab title turns
    out not to be enough. Revisit after a sweep or two.
 
-6. **Optional, and cheap while the page is open (was P4):** a **Copy log**
+7. **Optional, and cheap while the page is open (was P4):** a **Copy log**
    button and a **Copy the failing step's output** button, and an expand control
    on the 420px log box. A 26-step run makes both more valuable, not less, since
    the failing step's output is now buried much deeper. Add them if the task has
    room; they are page-only and have no tests.
 
-7. **Check:** `pytest tests/test_training_gui.py`. The page itself has no test
+8. **Check:** `pytest tests/test_training_gui.py`. The page itself has no test
    harness — verify it by hand against a running console, or against a
    two-step fake run.
 
@@ -508,8 +528,13 @@ lists the console's key files and invariants. Neither mentions the composites.
 2. **`architecture.md` 3.17.** In **Invariants**, strengthen the second bullet:
    the browser can name a run and, for the composite sweeps, supplies no string
    at all. In **Scope**, mention that the catalogue's main entries run a
-   comparison end to end from smoke test to scorecard. Do not restate the step
-   lists — they are in `runs.json` and will drift.
+   comparison end to end from smoke test to scorecard. Add one sentence recording
+   that this sequencing is a property of `runs.json` and not of
+   `scripts/encoder_training/`, so a future experiment gets it by adding a
+   catalogue entry — but that running several arms inside *one* invocation, which
+   is what paired statistics require, is a training-CLI feature no catalogue
+   entry substitutes for. Do not restate the step lists — they are in `runs.json`
+   and will drift.
 
 3. **`training_gui_usability_provisional.md`.** Add two lines at the top: which
    items this plan superseded (P1, P2, P3 in part, P6), which are cut (P2's cell
@@ -520,21 +545,51 @@ lists the console's key files and invariants. Neither mentions the composites.
 
 ---
 
-## Open questions
+## What this generalises to, and what it does not
 
-1. **`generate-folds` and `merge-folds`** — keep them as two buttons for a
-   training path that is not yet built, or cut the catalogue to seven entries and
-   re-add them when joint multi-head training lands? (DD-B)
-2. **Losing the short GPU run.** After task 1 the shortest thing that trains
-   anything is three hours. Is `smoke-cuda` plus the composite's first training
-   step enough of an early-failure signal, or do you want a deliberately tiny
-   "train one signal, one fold" entry kept purely as a canary? (DD-A)
-3. **P6's confirm dialog.** The provisional plan wanted a confirm before starting
-   anything over 30 minutes and before Stop. With the composite as the main
-   button, a confirm on Run would fire on the press you make most often, which is
-   how confirms get clicked through. I would ship **only** the confirm on Stop
-   (which can throw away four hours) and drop the confirm on Run. Agreed?
-4. **`score-companions` as a step.** It is the training CLI's scorer, not the
-   console's, but it does put a scored verdict at the end of the console's log
-   for the first time. If that reads as the console interpreting a result to you,
-   say so and it comes out of the composites and stays a separate button. (DD-E)
+Recorded because the question came up while planning and the answer is not
+obvious from the diff: **the sequencing added here is a property of the
+catalogue, not of the training code.** Nothing in `scripts/encoder_training/`
+chains a smoke test to a generation run to a comparison. The chaining is a list
+of argv vectors in `runs.json` and `runner.py`'s loop over it, so a future
+experiment gets the same one-button behaviour by adding a catalogue entry and
+writing no code.
+
+Two things are combined in the 2x2 workflow and they live in different places.
+Confusing them would lead a future plan to assume it gets the second for free:
+
+| What | Where it lives | Why there |
+|---|---|---|
+| smoke test, then generation, then comparison, in sequence | **The catalogue.** `steps` in `runs.json` | Convenience. Any experiment can have it for the cost of a JSON entry. |
+| four cells trained and compared inside **one** invocation | **The code.** `declarative-compare` in `scripts/encoder_training/__main__.py` | Necessity. The paired statistics can only be computed inside the invocation that produced them. |
+
+An experiment whose read-out pairs results *post hoc* over written predictions
+needs only the first, and can be a composite catalogue entry on its own. An
+experiment whose read-out needs the pairing computed where the models are in
+memory needs the second, and that is a training-CLI change no catalogue entry
+can substitute for.
+
+The console has no domain doc of its own; this distinction belongs in
+`architecture.md` 3.17, not in `arch_training.md`, which documents the synthetic
+data generator. Task 4 puts one sentence of it there.
+
+---
+
+## Decisions taken on the open questions
+
+All four were raised for the author and are now settled. Recorded with their
+reasoning so they are not re-litigated, and marked where they are cheap to
+reverse.
+
+1. **`generate-folds` and `merge-folds` stay** as buttons for a training path
+   not yet built. Cheap to reverse. (DD-B)
+2. **No short-GPU-run canary is added.** After task 1 the shortest thing that
+   trains is the composite's first training step, ~25 minutes in behind the
+   smoke test and the generation steps. That is accepted as the early-failure
+   signal. If a broken environment ever does get past `smoke-cuda` and cost a
+   real sweep, revisit — a deliberately tiny "one signal, one fold" entry is a
+   four-line catalogue addition at that point, and there is no reason to carry
+   it before it has earned its place. (DD-A)
+3. **P6 ships as a confirm on Stop only**, not on Run. (Task 2, step 5)
+4. **`score-companions` runs as the composites' final step.** Confirmed by the
+   author: a scored verdict in the console's log is wanted. (DD-E)
