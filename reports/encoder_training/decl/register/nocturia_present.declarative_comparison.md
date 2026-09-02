@@ -249,7 +249,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 1 | 3 | 0.625 |
 | 4 | 67 | 1 | 0 | 1 |
 
-`arm_b_finetune@c0.5-d0.0` ahead on 2 folds, `arm_b_finetune@c0.5-d0.3` on 2. `null -> true` mean: 0.3% against 0.3% -- **+0.0 points** in favour of `arm_b_finetune@c0.5-d0.3`.
+`arm_b_finetune@c0.5-d0.0` ahead on 2 folds, `arm_b_finetune@c0.5-d0.3` on 2. `null -> true` mean: 0.3% against 0.3% -- **level** between the two.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 
@@ -263,7 +263,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 2 | 2 | 1 |
 | 4 | 67 | 0 | 1 | 1 |
 
-`arm_b_finetune@c0.5-d0.0` ahead on 1 folds, `arm_b_finetune@c0.5-d0.6` on 2. `null -> true` mean: 0.3% against 0.7% -- **-0.3 points** in favour of `arm_b_finetune@c0.5-d0.6`.
+`arm_b_finetune@c0.5-d0.0` ahead on 1 folds, `arm_b_finetune@c0.5-d0.6` on 2. `null -> true` mean: 0.3% against 0.7% -- **0.3 points higher** for `arm_b_finetune@c0.5-d0.6` -- more invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 
@@ -277,7 +277,7 @@ disagree about, not the gap between two means. One test per fold, never pooled.
 | 3 | 67 | 2 | 0 | 0.5 |
 | 4 | 67 | 0 | 2 | 0.5 |
 
-`arm_b_finetune@c0.5-d0.3` ahead on 2 folds, `arm_b_finetune@c0.5-d0.6` on 2. `null -> true` mean: 0.3% against 0.7% -- **-0.3 points** in favour of `arm_b_finetune@c0.5-d0.6`.
+`arm_b_finetune@c0.5-d0.3` ahead on 2 folds, `arm_b_finetune@c0.5-d0.6` on 2. `null -> true` mean: 0.3% against 0.7% -- **0.3 points higher** for `arm_b_finetune@c0.5-d0.6` -- more invented symptoms.
 
 *One test per fold over the same 67 submissions, never concatenated: five folds are five models scored on one sample, and pooling would report a p-value for 335 observations that do not exist.*
 

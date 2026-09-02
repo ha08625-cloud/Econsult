@@ -204,9 +204,7 @@ direction.
 2. **Fix the confidence-threshold picker first.** Right now it adds more noise
    than most of the effects we're trying to measure, which makes every comparison
    less trustworthy than it looks.
-3. **Run the 60% version anyway**, for the record. We expect it to be worse
-   still — the trend is already clear at 30% — but a written-down prediction
-   deserves a written-down answer.
+3. ~~Run the 60% version anyway.~~ **Done, and it was worse** — see section 11.
 4. **Follow up the word-counting result properly.** If it holds with the missing
    arm included, the next month of work is writing better hard examples by hand,
    not tuning models.
@@ -218,3 +216,51 @@ None of this makes the generated-sentence machinery wasted work — it's built,
 it's tested, it's off by default, and the ability to generate multi-symptom
 sentences is on the path for later tickets. It just doesn't buy what this ticket
 hoped it would buy, and the honest thing is to say so.
+
+
+---
+
+## 11. The 60% version, and the surprise in it
+
+We ran it. At 60% generated sentences the model invents symptoms *more* than at
+30% on four of the six symptoms, holds level on one, and improves slightly on
+one. So the prediction we wrote down in advance was right in direction.
+
+But the interesting part is *how much* worse, because it is much less than you'd
+expect. Going from 0% to 30% made things worse by about 36 points added up
+across the six symptoms. Going from 30% to 60% — the same size step again —
+cost only another 6½. Roughly **85% of the damage arrives with the first spoonful**,
+and adding more barely changes anything.
+
+That matters, because it tells us *why* this is happening, which the earlier run
+couldn't.
+
+The explanation we'd written down was about **register**: the worry that a
+machine-made sentence sounds different from a patient, and that if enough of the
+training data sounds that way the model stops recognising real patients. If that
+were the cause, 60% should be much worse than 30% — that's the point where the
+machine-made voice takes over. It isn't.
+
+The other explanation fits better. The generated sentences each mention several
+symptoms at once, and they're used in examples labelled "yes". So the model
+quietly learns a shortcut: *lots of symptom words in the message → answer yes*.
+Real patients' messages are full of symptom words. Once the model has picked that
+habit up, it has picked it up — pouring in more examples of it doesn't make the
+habit much stronger. A habit that saturates looks exactly like this curve.
+
+We're not certain. It's six symptoms and one run, and one symptom moved the wrong
+way for both explanations. But it's the better-supported of the two, and it's a
+different problem from the one we thought we had.
+
+**One more thing worth seeing.** At 60%, a third of the test questions are the
+machine-generated sentences themselves — and the model gets **100% of them
+right**, as it does in every version. So the scores on our own test set reach the
+highest numbers this project has ever recorded, on exactly the models that behave
+worst on real patient messages. If you looked only at the headline table, you
+would pick the worst model in the run as the best one. That is worth remembering
+every time a synthetic score looks good.
+
+And the word-counting comparison from section 7 got *stronger*, not weaker: with
+the better training data in place, plain word-counting now beats our
+110-million-parameter model on three of the six symptoms and ties the rest. The
+model doesn't win a single one.
