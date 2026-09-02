@@ -77,6 +77,10 @@ decision metric a paired statistic instead of a bespoke forty-line corpus.
   (Task 5).
 * Training-side wiring for an expanded test tree, and the four-cell measurement
   with a pre-registered guard (Task 6).
+* One composite entry in the training run console's catalogue
+  (`scripts/training_gui/runs.json`) that runs Task 6's whole sequence — smoke
+  test, generate, expand, dry-run guard, the four cells, flip rate — in order
+  (Task 6). Data only; no console code changes. See DD12.
 
 **Out of scope**
 
@@ -286,6 +290,34 @@ probably but not necessarily be fever. Everything downstream is written against
 manifest lives there. The rule files therefore live **outside** it, at
 `data/expansion/<signal>.rules.json`. Getting this wrong fails CI, which is the
 intended behaviour and the reason it is written down here.
+
+### DD12 — Task 6 runs from one console entry, and that costs no code
+
+The training run console (`architecture.md` 3.17) chains steps by listing argv
+vectors in `scripts/training_gui/runs.json`; `runner.py` loops over them and
+stops the run on the first failing step. **Nothing in `scripts/encoder_training/`
+does the chaining**, so Task 6's sequence — smoke test, generate the clean tree,
+expand it, dry-run the rules against the library lint, four `finetune`
+invocations, `flip-rate` — becomes one button for the cost of a JSON entry and
+no console code at all.
+
+Two consequences worth stating so they are not mistaken for each other:
+
+* **Sequencing is free; single-invocation comparison is not.** `declarative-compare`
+  exists in the training CLI because 12.6's paired statistics can only be
+  computed inside the invocation that produced the models. Task 6 does **not**
+  need that: its flip rate is computed post hoc by `flip.py` over two matched
+  trees' written predictions (instruction 5), so a catalogue entry is sufficient
+  and no `lexical-compare` subcommand should be written.
+* **The catalogue admits only `-m` module invocations with literal or
+  enumerated arguments.** `expand.py` follows `noise.py`'s template and so is
+  reachable as `python -m scripts.synthetic_data.expand`, which satisfies that
+  rule. Nothing in this plan needs a free-text path to reach the console.
+
+The entry is authored once Task 1 names the pilot signal (DD10), with that
+signal, its tree paths and its rule file as literals rather than as a dropdown.
+If Task 7 goes ahead it becomes a `signal` parameter with the extended signals as
+its committed `choices`.
 
 ---
 
@@ -592,9 +624,9 @@ say so in the commit.
 # Task 6: Two arms, four cells, and the read-out
 
 **A. State of the world.** Tasks 1–5 are complete: rules exist and are validated.
-Nothing has been trained. This is the measurement, and it is the expensive task:
-two arms × five folds is **ten trainings and twenty evaluations** — the same
-arithmetic 12.6 paid for its 2×2, and affordable for the same reason.
+Nothing has been trained. This is the measurement, and it is the expensive task
+of this plan — though "expensive" here means well under an hour of GPU, not
+12.6's four. **Twenty trainings, not ten**: see the correction in instruction 3.
 
 **B. Files and deliverables.**
 
@@ -607,6 +639,10 @@ arithmetic 12.6 paid for its 2×2, and affordable for the same reason.
 * `reports/encoder_training/<date>-lexical-variant-preregistration.md` —
   **committed before the first training run.**
 * `reports/encoder_training/<date>-lexical-variant.md` and its JSON — the result.
+* `scripts/training_gui/runs.json` — one composite entry running the whole
+  sequence below (DD12). Data only; no change to `catalogue.py`, `server.py`,
+  `runner.py` or the page.
+* `tests/test_training_gui.py` — the catalogue-shape assertions for that entry.
 * `documentation/arch_training.md` §10 and §12 — the finding, and whether the
   pass is adopted.
 
@@ -629,8 +665,21 @@ arithmetic 12.6 paid for its 2×2, and affordable for the same reason.
    | **clean-trained** | today's baseline | *the diagnostic cell — does the fault exist?* |
    | **expanded-trained** | the guard cell | the robustness cell |
 
-   Training depends only on the training tree, so this is ten trainings, not
-   twenty.
+   **Twenty trainings, not ten.** An earlier draft of this plan said ten, on the
+   reasoning that training depends only on the training tree and so one trained
+   model could be scored against both test trees. That is true of the *models*
+   and false of the *CLI*: `--test-dir` is a single `Path`
+   (`scripts/encoder_training/__main__.py`), not a repeatable one, so each cell
+   is its own `finetune` invocation and each invocation trains its own five
+   folds. Four cells × five folds = twenty trainings.
+
+   This is left as twenty rather than fixed. At one signal and five folds a cell
+   is roughly ten minutes, so the whole measurement is ~40 minutes of GPU;
+   teaching `--test-dir` to repeat would save about twenty minutes and cost a
+   change to the training CLI's evaluation path, which is not a trade worth
+   making for one experiment. What matters is that **the pre-registration and any
+   time estimate say twenty**, because a plan that budgets half the GPU time it
+   needs is how a measurement gets cut short.
 4. Wire `_test_dataset_header` to record the expanded tree's `expansion` block —
    rate, clean share, rule-file digest, seed — the way it already records
    `test_dataset_noise`. A report that cannot say which tree it was scored
@@ -644,10 +693,33 @@ arithmetic 12.6 paid for its 2×2, and affordable for the same reason.
 7. Also score the realistic set for both arms, and report it **as a validity
    check only** — ±12 overall and ±25 per signal cannot rank arms
    (`holdout.py`). It is there to catch the large failure, not to pick a winner.
-8. Write the report against the pre-registration, item by item, including the
+8. **Add the composite catalogue entry** (DD12), before the first real run, so
+   the measurement is one button and the sequence is committed rather than
+   retyped. Steps, in order:
+
+   1. `smoke-cuda` — ten seconds, and it fails immediately on a broken driver.
+   2. `generate-folds --folds 5 --signal <pilot> --out-dir <clean tree>`.
+   3. `python -m scripts.synthetic_data.expand` over the clean tree, writing the
+      expanded tree.
+   4. `python -m scripts.synthetic_data.expand --dry-run-lint` against the rule
+      file (Task 4). Seconds, writes nothing, and it fails the run before any GPU
+      time if the rule file has drifted since Task 5 validated it. Putting a
+      guard *inside* the sequence is the point of having a sequence.
+   5. The four `finetune` invocations, one per cell, in the table's order.
+   6. `flip-rate`.
+
+   Every path is a literal; the entry takes no parameters. Add the two
+   catalogue-shape tests the console's suite already has an idiom for: that the
+   `--data-dir` and `--test-dir` values across the four training steps are
+   exactly the two trees steps 2 and 3 write, and that step 1 is the smoke test.
+   The first is the one that matters — it catches a cell pointed at the wrong
+   tree in CI, in a second, instead of in a report that silently compares a tree
+   against itself.
+
+9. Write the report against the pre-registration, item by item, including the
    items that failed. Note in it that effective sample size is identical in every
    cell — expansion creates no clusters — so a gain can only mean robustness to
-   paraphrase, never better coverage.
+   paraphrase, never better coverage. State the GPU cost as twenty trainings.
 
 ---
 
@@ -667,6 +739,9 @@ updated.
 2. Everything from Task 3 and 4 is signal-agnostic and already built; per signal
    this is Task 5 repeated plus one more arm if a per-signal measurement is
    wanted. It probably is not — one signal's read-out is what the pilot was for.
+   If a per-signal measurement *is* wanted, Task 6's composite catalogue entry
+   gains a `signal` parameter whose `choices` are the extended signals, rather
+   than being copied per signal (DD12).
 3. Do not extend to Tier C without a new plan. It needs per-library scoping,
    which this architecture cannot express, and it is where a label flip is most
    likely.
@@ -687,6 +762,9 @@ Per `CLAUDE.md` and `arch_training.md` §12:
   `pytest tests/ -m "not integration"` job.
 * `tests/test_synthetic_recombination.py` already runs in CI's ruleset job
   against the committed tree; the Task 1 report's trap test belongs there.
+* Task 6's catalogue-entry assertions go in the existing
+  `tests/test_training_gui.py`, which is already a unit test file in the same
+  job. They read `runs.json` and assert its shape; they start nothing.
 * `arch_training.md` is updated **within** the task that changes the behaviour,
   not in a documentation task at the end: §8 in Task 1, a new §12 subsection in
   Task 3, a paragraph in Task 4, §10 and the adoption decision in Task 6.
