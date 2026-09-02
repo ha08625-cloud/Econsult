@@ -93,6 +93,7 @@ def _entry_json(entry: RunEntry) -> dict[str, Any]:
         # The raw steps travel too, so the page can substitute locally rather
         # than round-tripping to the server on every dropdown change.
         "steps": [list(step) for step in entry.steps],
+        "step_labels": list(entry.step_labels),
         "commands": [command_line(argv) for argv in resolve(entry, defaults)],
     }
 

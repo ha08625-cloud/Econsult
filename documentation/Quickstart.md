@@ -74,6 +74,16 @@ http://127.0.0.1:8765/ and opens a browser at it.
 Closing the terminal (or the window `train-gui.bat` opened) stops the console
 **and** any run it started. Closing the browser tab does not.
 
+The two entries at the top of the page are the whole declarative sweep in one
+button each: they run the CUDA smoke test, generate every cell the comparison
+needs, train the comparison and score its companion thresholds, in sequence.
+They take no parameters, and they regenerate their cells every time even when
+those cells are already on disk — about 25 minutes on a run of three to four
+hours, in exchange for an entry with no hidden prerequisite. Everything below
+them is an escape hatch for repeating one of those steps on its own: if a
+comparison fails after the cells are written, the bare `compare` entry re-runs
+just the training.
+
 On the page: pick a run's parameters from its dropdowns, press **Run**, and watch
 the log — it shows which step of the run is executing and the literal command line
 it is running. **Stop** ends it. A failed step aborts the rest of the run. When it finishes, "Save this run to
@@ -84,7 +94,9 @@ hands you the branch name and a compare link. **Update from GitHub** does a
 one dirty only with a run's fresh reports, which is a prompt to save that run to a
 branch first.
 
-What the console does **not** do: it never interprets a result, and it does not
+What the console does **not** do: it never interprets a result — the sweeps end
+with a scoring step, but that is the training CLI scoring its own criterion as a
+subprocess, and the console does nothing with the output but show it. It does not
 touch the write-up obligations in `reports/encoder_training/README.md`. It saves
 the mechanical minutes per run and the mis-commits that come with them; it does
 not make a run worth having.

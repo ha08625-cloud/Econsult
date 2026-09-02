@@ -22,6 +22,14 @@ project that failure does not look like a configuration error -- it surfaces as 
 label, an explicit list of allowed choices and a default drawn from them; the
 page renders a dropdown. No numeric fields, because a numeric field is free text
 plus a validator and the validator is where this would go wrong.
+
+One field is presentational and nothing else. ``step_labels`` gives each step a
+short human name so a twenty-seven step run reads as a checklist rather than as
+"step 14 of 27" beside a 300-character command line. It is displayed and never
+substituted, joined or otherwise routed into an argv, so a wrong label is a
+cosmetic error; the only thing validated about it is that there is exactly one
+non-empty label per step, because a list that has drifted out of step with the
+steps would label the wrong rows.
 """
 
 from __future__ import annotations
@@ -69,6 +77,8 @@ class RunEntry:
     description: str
     steps: tuple[tuple[str, ...], ...]
     parameters: tuple[Parameter, ...] = ()
+    #: Display-only names, one per step, or empty. Never reaches an argv.
+    step_labels: tuple[str, ...] = ()
 
     def parameter(self, name: str) -> Parameter | None:
         for parameter in self.parameters:
@@ -131,6 +141,7 @@ def _parse_entry(item: Any, index: int) -> RunEntry:
     parameters = _parse_parameters(item.get("parameters", []), where)
     steps = _parse_steps(item.get("steps"), where)
     _check_placeholders(steps, parameters, where)
+    step_labels = _parse_step_labels(item.get("step_labels"), len(steps), where)
 
     return RunEntry(
         id=entry_id,
@@ -138,7 +149,24 @@ def _parse_entry(item: Any, index: int) -> RunEntry:
         description=description,
         steps=steps,
         parameters=parameters,
+        step_labels=step_labels,
     )
+
+
+def _parse_step_labels(raw: Any, step_count: int, where: str) -> tuple[str, ...]:
+    """Optional display names, one per step. Absent is fine; wrong length is not."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise CatalogueError(f"{where}: step_labels must be a list of strings")
+    if not all(isinstance(label, str) and label.strip() for label in raw):
+        raise CatalogueError(f"{where}: step_labels has a non-string or empty label")
+    if len(raw) != step_count:
+        raise CatalogueError(
+            f"{where}: step_labels has {len(raw)} labels for {step_count} steps; a list that "
+            "has drifted out of step with the steps labels the wrong rows"
+        )
+    return tuple(raw)
 
 
 def _parse_parameters(raw: Any, where: str) -> tuple[Parameter, ...]:
