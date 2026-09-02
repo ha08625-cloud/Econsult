@@ -77,7 +77,7 @@ TEST = FIXTURES / "mini.fold0.test.jsonl"
 SIGNAL = "fever_present"
 
 SPEC = EmbeddingSpec(
-    base_model="emilyalsentzer/Bio_ClinicalBERT",
+    base_model="roberta-base",
     revision="0123456789abcdef0123456789abcdef01234567",
     pooling="mean",
     max_seq_len=256,
@@ -912,10 +912,10 @@ def _tiny_encoder_dir(tmp_path: Path, *, lower: bool) -> Path:
 def test_tokeniser_casing_is_probed_rather_than_assumed(transformers_module, tmp_path):
     """Instruction 2: check ``do_lower_case`` behaviourally, and record it.
 
-    ``arch_training.md`` section 5 preserves original casing verbatim and
-    Bio_ClinicalBERT descends from ``bert-base-cased``, so casing is probably
-    signal-bearing. The attribute is a constructor argument a repository can set
-    either way, so the fact worth recording is what the tokeniser *does*.
+    ``arch_training.md`` section 5 preserves original casing verbatim, so casing
+    is probably signal-bearing. The attribute is a constructor argument a
+    repository can set either way, so the fact worth recording is what the
+    tokeniser *does*.
     """
     from scripts.encoder_training.model import PooledEncoder
 
@@ -934,9 +934,8 @@ def test_tokeniser_casing_is_probed_rather_than_assumed(transformers_module, tmp
     # Both fixtures carry `Fever` in the vocabulary, so both vocabularies are
     # cased. Only the lowercasing one throws the casing away: it looks `Fever` up
     # as `fever` and the cased entry becomes unreachable. That combination is
-    # Bio_ClinicalBERT's -- `do_lower_case: true` over a vocabulary inherited
-    # from `bert-base-cased` -- and it is the reason the fact is recorded rather
-    # than the pair of booleans left for a reader to combine.
+    # what `discards_casing` names, and it is the reason the fact is recorded
+    # rather than the pair of booleans left for a reader to combine.
     assert cased.facts.cased_vocab is True
     assert lowered.facts.cased_vocab is True
     assert cased.facts.discards_casing is False
@@ -1036,3 +1035,33 @@ def test_embedding_a_text_is_independent_of_its_batch(transformers_module, tmp_p
     alone = encoder.embed(["no temperature ."])
     batched = encoder.embed(["no temperature .", "i have a fever . i have a fever ."])
     assert alone[0].allclose(batched[0], atol=1e-5)
+
+
+def test_generate_folds_forwards_the_declarative_share_and_omits_it_at_zero(monkeypatch):
+    """The flag reaches the generator, and does not reach it at the default.
+
+    ``generate_folds`` builds a fixed argv list with no passthrough, which is why
+    ``--companion-share`` never reached it either. Without forwarding, running
+    the two arms of the declarative comparison is fifteen invocations of the
+    generator by hand rather than one command each. Omitting the flag at zero is
+    not tidiness: it is what keeps a default tree byte-identical to one generated
+    before the flag existed.
+    """
+    import scripts.encoder_training.__main__ as cli
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(cli, "generate_main", lambda argv: seen.append(argv) or 0)
+
+    parser = cli.build_parser()
+    args = parser.parse_args(["generate-folds", "--folds", "1", "--train-count", "1"])
+    assert args.declarative_share == 0.0
+    assert cli.generate_folds(args) == 0
+    assert seen and all("--declarative-share" not in argv for argv in seen)
+
+    seen.clear()
+    args = parser.parse_args(
+        ["generate-folds", "--folds", "1", "--train-count", "1", "--declarative-share", "0.3"]
+    )
+    assert cli.generate_folds(args) == 0
+    for argv in seen:
+        assert argv[argv.index("--declarative-share") + 1] == "0.3"

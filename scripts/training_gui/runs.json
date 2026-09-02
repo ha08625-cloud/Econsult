@@ -1,0 +1,92 @@
+{
+  "runs": [
+    {
+      "id": "smoke-cuda",
+      "name": "CUDA smoke test",
+      "description": "Torch and the GPU only: a real matmul on the device, plus torch.version.cuda beside the compute capability. Ten seconds, and the first thing to run on a new machine or after any driver or wheel change.",
+      "steps": [
+        ["-m", "scripts.encoder_training", "smoke-cuda"]
+      ]
+    },
+    {
+      "id": "score-companions",
+      "name": "Score the companion thresholds",
+      "description": "Reads the six companion-comparison reports back and scores the criterion declared before the run. Stdlib only, no GPU, seconds: the cheapest end-to-end check that the console can run something real.",
+      "steps": [
+        ["-m", "scripts.encoder_training", "score-companions"]
+      ]
+    },
+    {
+      "id": "generate-folds",
+      "name": "Generate folds for one signal",
+      "description": "Fifteen generator runs -- three splits for each of five folds -- under one directory, agreeing on the fold count, salt and seed derivation.",
+      "parameters": [
+        {
+          "name": "signal",
+          "label": "Signal",
+          "choices": [
+            "fever_present",
+            "dysuria_present",
+            "flank_pain_present",
+            "haematuria_present",
+            "nocturia_present",
+            "urinary_frequency_present"
+          ],
+          "default": "fever_present"
+        }
+      ],
+      "steps": [
+        ["-m", "scripts.encoder_training", "generate-folds", "--folds", "5", "--signal", "{signal}"]
+      ]
+    },
+    {
+      "id": "merge-folds",
+      "name": "Merge the six fold trees",
+      "description": "Reads the six per-signal fold trees and writes one merged tree beside them, ready for joint multi-head training. Nothing is regenerated. Stdlib only.",
+      "steps": [
+        ["-m", "scripts.encoder_training", "merge-folds", "--folds", "5"]
+      ]
+    },
+    {
+      "id": "finetune",
+      "name": "Arm B: fine-tune one signal",
+      "description": "Every layer unfrozen, across five folds, roughly two minutes a fold on a 12GB card. The base model is named explicitly rather than left to the CLI default, so the numbers can be read beside a committed report.",
+      "parameters": [
+        {
+          "name": "signal",
+          "label": "Signal",
+          "choices": [
+            "fever_present",
+            "dysuria_present",
+            "flank_pain_present",
+            "haematuria_present",
+            "nocturia_present",
+            "urinary_frequency_present"
+          ],
+          "default": "fever_present"
+        },
+        {
+          "name": "base_model",
+          "label": "Base model",
+          "choices": [
+            "roberta-base"
+          ],
+          "default": "roberta-base"
+        }
+      ],
+      "steps": [
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "5",
+          "--signal",
+          "{signal}",
+          "--base-model",
+          "{base_model}"
+        ]
+      ]
+    }
+  ]
+}

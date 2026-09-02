@@ -1,3 +1,6 @@
+# requirements-ml.txt pins these same two at these same versions, for the
+# local training-run console (scripts/training_gui). A test asserts the two
+# files agree: tests/test_training_gui.py::test_fastapi_and_uvicorn_pins_match.
 fastapi==0.141.1
 uvicorn==0.52.3
 starlette==1.6.0
@@ -6,11 +9,11 @@ anyio==4.14.2
 python-multipart==0.0.32
 nh3==0.3.6
 psycopg2-binary==2.9.12
-alembic==1.19.0
+alembic==1.19.1
 tzdata
 fpdf2==2.8.8
 Pillow==12.3.0
-bcrypt==4.2.1
+bcrypt==5.0.0
 requests==2.34.2
 sentry-sdk[fastapi]
 slowapi==0.1.10

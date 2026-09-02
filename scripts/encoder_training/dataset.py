@@ -111,8 +111,33 @@ class FragmentInfo:
     cluster_key: str
     fragment_type: str
     split: str
+    #: Every signal this fragment decides: what it asserts, plus its own signal
+    #: where it has one, so an *ambiguous* fragment -- which asserts nothing and
+    #: is entirely about its signal -- still counts as that signal's.
+    #:
+    #: This is the field to test against, not :attr:`signal_key`. A declarative
+    #: fragment (a JSONL library's per-line label vector) decides two to four
+    #: signals at once and carries no scalar key at all. For every text fragment
+    #: this is the one-element ``(signal_key,)`` that used to be tested
+    #: directly, which is why nothing about a hand-written library's behaviour
+    #: moves.
+    #:
+    #: Passed ``None`` by a caller that has not got one -- which is every
+    #: sidecar written before fragments could carry a label vector, and every
+    #: test that builds a fragment from the scalar -- and then derived from
+    #: ``signal_key``. So the two representations agree by construction rather
+    #: than by maintenance, and no caller has to know which kind of sidecar its
+    #: fragment came from. Never ``None`` after construction.
+    signals: tuple[str, ...] | None = None
+    #: The older scalar, kept because things outside this module read it.
+    #: ``None`` for filler and for every declarative fragment.
     signal_key: str | None = None
     subclass: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.signals is None:
+            derived = () if self.signal_key is None else (self.signal_key,)
+            object.__setattr__(self, "signals", derived)
 
     @property
     def is_filler(self) -> bool:
@@ -370,10 +395,34 @@ def _fragment_index(stats: Mapping[str, object], stats_path: Path) -> dict[str, 
             cluster_key=entry["cluster_key"],
             fragment_type=entry["fragment_type"],
             split=entry["split"],
+            signals=_fragment_signals(entry, where=f"{stats_path}: fragment {fragment_id!r}"),
             signal_key=entry.get("signal_key"),
             subclass=entry.get("subclass"),
         )
     return index
+
+
+def _fragment_signals(entry: Mapping[str, object], *, where: str) -> tuple[str, ...] | None:
+    """One sidecar entry's ``signals`` list, or ``None`` where it has none.
+
+    Sidecars written before fragments could carry a label vector have no
+    ``signals``, and for those the scalar ``signal_key`` *is* the whole answer
+    -- one signal for a clinical fragment, none for filler. Returning ``None``
+    hands that derivation to :meth:`FragmentInfo.__post_init__`, which keeps
+    every dataset generated so far loadable and costs nothing in fidelity,
+    because such a sidecar cannot contain a multi-signal fragment.
+
+    A declarative fragment in a sidecar that somehow lacked ``signals`` would
+    resolve to no signals and then fail loudly in :func:`_decisive_fragment` as
+    an example with no decisive fragment, rather than being quietly attributed
+    to the wrong head.
+    """
+    signals = entry.get("signals")
+    if signals is None:
+        return None
+    if not isinstance(signals, list) or not all(isinstance(item, str) for item in signals):
+        raise DatasetError(f"{where} has a 'signals' that is not a list of strings: {signals!r}")
+    return tuple(signals)
 
 
 def _decisive_fragment(
@@ -397,16 +446,23 @@ def _decisive_fragment(
     the companion draw is what made the difference visible. Above
     ``--companion-share 0`` a non-decisive slot may hold another signal's
     clinical language, which is non-filler and says nothing about this example's
-    label -- the whole point of it. So the test is the fragment's ``signal_key``
-    against the keys the example actually carries a label for, rather than
-    filler-ness alone. Before companions the two were the same test, because the
-    only non-filler fragment an example could hold was its own.
+    label -- the whole point of it. So the test is the signals the fragment
+    decides against the keys the example actually carries a label for, rather
+    than filler-ness alone. Before companions the two were the same test,
+    because the only non-filler fragment an example could hold was its own.
+
+    **A fragment decides a set of signals, not one.** A declarative line asserts
+    two to four at once, so the test intersects
+    :attr:`FragmentInfo.signals` with ``label_keys`` rather than comparing a
+    scalar. For a hand-written fragment that set is the single ``signal_key``
+    and the intersection is the old equality test, so no existing dataset
+    resolves differently.
     """
     held = [fragments[fragment_id] for fragment_id in fragment_ids]
     decisive = [
         fragment
         for fragment in held
-        if not fragment.is_filler and fragment.signal_key in label_keys
+        if not fragment.is_filler and not set(fragment.signals or ()).isdisjoint(label_keys)
     ]
 
     if len(decisive) > 1:

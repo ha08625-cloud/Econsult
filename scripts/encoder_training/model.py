@@ -13,9 +13,10 @@ Three pieces:
 **Pooling (DD3).** Attention-mask-weighted mean pooling by default, CLS behind a
 flag. Mean pooling is the default because a sentence's meaning here is spread
 across it -- "no temperature, I checked twice" turns on the whole clause -- and
-because Bio_ClinicalBERT's CLS vector was never trained by a next-sentence or
-contrastive objective that would make it a sentence summary on its own. The flag
-exists so the two get compared once and recorded, rather than argued about.
+because the CLS vector of the encoders used here was never trained by a
+next-sentence or contrastive objective that would make it a sentence summary on
+its own. The flag exists so the two get compared once and recorded, rather than
+argued about.
 
 **The head.** ``Linear(768, 3)`` per signal: 2,307 parameters, three logits,
 softmax cross-entropy (DD1). ``null`` is 60% of the data and holds four
@@ -49,7 +50,8 @@ from .embed import POOLING_MODES, EmbeddingSpec, EmbedError
 #: Three logits per signal: ``false``, ``true``, ``null``.
 N_CLASSES = len(CLASS_NAMES)
 
-#: Bio_ClinicalBERT is a BERT-base, so 768. Asserted rather than assumed: a
+#: RoBERTa-base is a BERT-base-sized model, so 768. Asserted rather than
+#: assumed: a
 #: silently different hidden size would produce a head of the wrong shape and a
 #: cache that cannot be compared with anything already on disk.
 EXPECTED_HIDDEN_SIZE = 768
@@ -67,7 +69,6 @@ class ModelError(RuntimeError):
 class TokeniserFacts:
     """What the tokeniser actually does, checked at load time rather than assumed.
 
-    Bio_ClinicalBERT descends from ``bert-base-cased`` and
     `arch_training.md` section 5 preserves original casing verbatim, so casing is
     probably signal-bearing -- "Fever" in a sentence a patient capitalised is not
     noise. That makes the tokeniser's behaviour worth *recording* rather than
@@ -84,17 +85,15 @@ class TokeniserFacts:
     while holding a vocabulary built for cased text can never emit the cased
     entries in it: ``Fever`` is looked up as ``fever``, and every capitalised
     word the patient wrote is fragmented into subwords that the cased vocabulary
-    was not organised around. Bio_ClinicalBERT is exactly this combination --
-    ``do_lower_case: true`` in the shipped config over a 28,996-entry vocabulary
-    inherited from ``bert-base-cased`` via BioBERT -- so
-    :attr:`discards_casing` is ``True`` for it, and `arch_training.md` section 5's
-    deliberate preservation of patient casing buys nothing on that encoder.
+    was not organised around. :attr:`discards_casing` is that combination, and it
+    is ``False`` for ``roberta-base``, whose byte-level BPE keeps the casing
+    `arch_training.md` section 5 preserves.
 
-    This is recorded rather than corrected. Overriding ``do_lower_case`` would
-    make fine-tuning disagree with whatever the checkpoint was pretrained under,
-    and the shipped config is the only evidence of what that was. The honest fix
-    is to compare against an encoder whose vocabulary and casing agree, which is
-    what the ``compare-models`` command exists for.
+    It is recorded rather than corrected, because overriding ``do_lower_case``
+    would make fine-tuning disagree with whatever the checkpoint was pretrained
+    under and the shipped config is the only evidence of what that was. The check
+    stays because it is what catches an encoder that silently throws that casing
+    away -- which is not hypothetical; see `arch_encoder_training.md` section 4a.
     """
 
     reported_do_lower_case: bool | None
@@ -202,7 +201,7 @@ def pool(
 
 
 class PooledEncoder:
-    """Bio_ClinicalBERT (or any HF encoder) reduced to one vector per text.
+    """An HF encoder -- ``roberta-base`` by default -- reduced to one vector per text.
 
     Not an ``nn.Module``: it owns a tokeniser as well as a model, and the two
     travel together everywhere. Arm A calls :meth:`embed` once per split under
@@ -237,9 +236,9 @@ class PooledEncoder:
         """Load the tokeniser and weights, and pin down what was actually loaded.
 
         The revision is resolved rather than trusted. ``AutoModel`` will happily
-        follow a branch, and ``emilyalsentzer/Bio_ClinicalBERT`` at ``main`` is
-        not a fixed object: the same command a month apart can produce different
-        weights, identical filenames, and an embedding cache that mixes the two.
+        follow a branch, and a bare model name at ``main`` is not a fixed object:
+        the same command a month apart can produce different weights, identical
+        filenames, and an embedding cache that mixes the two.
         """
         kwargs = {} if self.requested_revision is None else {"revision": self.requested_revision}
         self.tokenizer = AutoTokenizer.from_pretrained(self.base_model, **kwargs)

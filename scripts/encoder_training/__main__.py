@@ -47,8 +47,8 @@ the 440MB download is wasted.
 Arm A. Embeds every fold's splits once (cached), fits the ``Linear(768, 3)``
 probe, selects each fold's margin on its own validation split, scores test,
 writes the head artefacts and metadata sidecar, and writes the evaluation report
--- with the baselines included in the same report by default, because "does
-ClinicalBERT beat bag-of-words on ``null_ambiguous``" is a paired question and
+-- with the baselines included in the same report by default, because "does the
+encoder beat bag-of-words on ``null_ambiguous``" is a paired question and
 McNemar can only answer it when both models are in one report.
 
     python -m scripts.encoder_training finetune --folds 5
@@ -77,9 +77,10 @@ Arm B over several base models against the *same* folds, in **one** report. One
 report is the point: the paired McNemar tests are between the runs in a single
 report, and two separately-written reports would leave only overlapping
 confidence intervals -- which the 2026-08-09 numbers say could not separate
-anything this comparison might find. Defaults to the incumbent
-(Bio_ClinicalBERT), ``bert-base-uncased`` as the pretraining-corpus control, and
-``roberta-base`` as the contender on negation scope.
+anything this comparison might find. ``--base-models`` is required: the
+comparison this command was written for has been run and settled on
+``roberta-base`` (`arch_encoder_training.md` section 4a), so there is no
+default set left to inherit by accident.
 
     python -m scripts.encoder_training joint-compare --folds 5
 
@@ -136,6 +137,7 @@ from pathlib import Path
 
 from scripts.synthetic_data.__main__ import DEFAULT_FOLD_SALT
 from scripts.synthetic_data.__main__ import main as generate_main
+from scripts.synthetic_data.recombine import DEFAULT_DECLARATIVE_SHARE
 
 from .baselines import run_all
 from .dataset import SPLITS, DatasetError, fold_dataset_path, load_folds, swap_test_split
@@ -171,33 +173,6 @@ from .train import (
     run_probe,
     write_artefacts,
     write_joint_artefacts,
-)
-
-#: The default three-encoder comparison, and why each one is in it.
-#:
-#: ``Bio_ClinicalBERT`` is the incumbent -- the encoder every number on file was
-#: produced with, so it is the thing the other two have to beat.
-#:
-#: ``bert-base-uncased`` is the **control**, not a contender. It isolates the
-#: pretraining corpus: same architecture, same size, general English instead of
-#: MIMIC-III discharge summaries. It also settles the casing question by
-#: construction, because its vocabulary is built for lowercased text, where
-#: Bio_ClinicalBERT lowercases input into a vocabulary inherited from
-#: ``bert-base-cased`` (28,996 entries -- see :class:`model.TokeniserFacts`). If
-#: it wins, part of the gain is the tokeniser rather than the register.
-#:
-#: ``roberta-base`` is the actual contender, and on a different axis than
-#: clinical-vs-lay. The largest error family on file is contrastive negation --
-#: "my mum had a fever, I never got one" -- which is negation scope and
-#: attribution, not vocabulary. BERT-base of any pretraining corpus is weak
-#: there; RoBERTa is meaningfully better. ``deberta-v3-base`` is the stronger
-#: choice again on that axis and is a supported ``--base-models`` value, but it
-#: is not in the default set because its tokeniser needs ``sentencepiece`` and
-#: ``protobuf``, which ``requirements-ml.txt`` does not install.
-DEFAULT_COMPARISON_MODELS = (
-    "emilyalsentzer/Bio_ClinicalBERT",
-    "bert-base-uncased",
-    "roberta-base",
 )
 
 DEFAULT_SIGNAL = "fever_present"
@@ -256,6 +231,14 @@ def generate_folds(args: argparse.Namespace) -> int:
     the thing that catches a bad fold index, and routing through its ``main``
     means this wrapper cannot drift into a second, laxer interpretation of the
     same flags.
+
+    ``--declarative-share`` is forwarded, and omitted from the argv at zero. The
+    omission is not tidiness: a fifteen-run tree generated at the default must
+    stay byte-identical to one generated before the flag existed, and the surest
+    way to keep it so is for the generator never to see the flag. Forwarding it
+    at all is what makes the two arms of the declarative comparison one command
+    each differing in one flag, rather than fifteen invocations of the generator
+    by hand.
     """
     written = 0
     for fold_index in range(args.folds):
@@ -283,6 +266,8 @@ def generate_folds(args: argparse.Namespace) -> int:
                 "--out",
                 str(out_path),
             ]
+            if args.declarative_share:
+                argv += ["--declarative-share", str(args.declarative_share)]
             status = generate_main(argv)
             if status != 0:
                 print(f"error: generating fold {fold_index} {split} failed", file=sys.stderr)
@@ -866,8 +851,9 @@ def _run_arm_b_single(args: argparse.Namespace, folds) -> int:
         "tokeniser_vocab_size": reference.facts.vocab_size,
         # A cased vocabulary behind a lowercasing tokeniser means patient casing
         # never reaches the model, whatever `arch_training.md` section 5 preserves
-        # upstream. True for Bio_ClinicalBERT. Surfaced in the header because it
-        # changes how any comparison against another encoder should be read.
+        # upstream. False for roberta-base, which is part of why it is the
+        # default. Surfaced in the header because it changes how any comparison
+        # against another encoder should be read.
         "tokeniser_discards_casing": reference.facts.discards_casing,
     }
     if not args.no_probe:
@@ -2309,9 +2295,9 @@ def _add_encoder_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--revision",
         default=None,
-        help="the base model's commit SHA. The bare name emilyalsentzer/Bio_ClinicalBERT can "
-        "move, so leaving this unset makes a run unreproducible; the resolved SHA is recorded "
-        "either way, and a warning is printed when it was not pinned.",
+        help="the base model's commit SHA. A bare model name can move, so leaving this unset "
+        "makes a run unreproducible; the resolved SHA is recorded either way, and a warning is "
+        "printed when it was not pinned.",
     )
     parser.add_argument("--pooling", choices=POOLING_MODES, default="mean")
     parser.add_argument("--max-seq-len", type=int, default=256)
@@ -2332,6 +2318,14 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     generate.add_argument("--ruleset", type=Path, default=DEFAULT_RULESET)
     generate.add_argument("--out-dir", type=Path, default=DEFAULT_DATA_DIR)
+    generate.add_argument(
+        "--declarative-share",
+        type=float,
+        default=DEFAULT_DECLARATIVE_SHARE,
+        help="forwarded to the generator: share of true/false examples whose decisive "
+        "fragment is a procedurally generated multi-symptom sentence. At the default 0.0 "
+        "the flag is not passed on at all and every fold is what it was before it existed",
+    )
     for split, default in DEFAULT_COUNTS.items():
         generate.add_argument(f"--{split}-count", type=int, default=default)
     generate.set_defaults(handler=generate_folds)
@@ -2535,9 +2529,12 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument(
         "--base-models",
         nargs="+",
-        default=list(DEFAULT_COMPARISON_MODELS),
-        help="the encoders to compare. Each must be a BERT-base-sized model (hidden size 768); "
-        "anything else is rejected at load time rather than silently reshaping the head",
+        required=True,
+        help="the encoders to compare. Required rather than defaulted: the comparison this "
+        "command was written for has been run and settled on roberta-base, so any further use "
+        "of it is a deliberate question about named encoders. Each must be a BERT-base-sized "
+        "model (hidden size 768); anything else is rejected at load time rather than silently "
+        "reshaping the head",
     )
     compare.add_argument(
         "--revisions",

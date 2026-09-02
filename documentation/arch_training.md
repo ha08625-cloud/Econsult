@@ -239,6 +239,43 @@ fails CI and a declared file that is missing stops the run — the same posture 
 the four merge guards in section 8, and for the same reason: these faults are
 invisible in a diff.
 
+### Two library formats
+
+A library entry carries an optional `format`: `text` (the default, and what all
+49 hand-written libraries use) or `jsonl`. The formats differ in **where a
+line's label comes from**, and nowhere else — a JSONL library gets its
+`fragment_id`, its namespaced cluster and its split from the same functions a
+text library does, because a generated library is a committed build artefact and
+the split machinery must not be able to tell it apart.
+
+* **`text`** — one fragment per line, optionally cluster-marked. The line's
+  label vector is *derived*: the library's own signal takes its value from
+  `fragment_type`, every signal it declares `null_on` is `null`, and every other
+  signal is undeclared.
+* **`jsonl`** — one JSON object per line (`text`, `labels`, `cluster`, optional
+  `meta`), and `labels` **is** the vector. `true`/`false` assert, `null` declares
+  the line silent, and a signal the object omits is undeclared, exactly as in
+  `null_on`. Such a library must declare `fragment_type: "declarative"` and must
+  declare neither `signal_key` nor `null_on`: both are library-level statements
+  about every line, and these lines each state it for themselves. Two sources for
+  one value is one that can disagree with itself.
+
+Both end up in the same `Fragment.labels` field, so nothing downstream has to
+know which format a fragment came from; `Fragment.value_for(signal)` returns
+`True`/`False`/`None` or the `UNDECLARED` sentinel, and that fourth state is
+deliberately not `None` (section 7). `build_pools` reads exactly that, which is
+what makes one code path serve both formats: for a text library the vector and
+the `(signal_key, fragment_type)` pair are the same fact, so every pool comes out
+with the same members it always had. A JSONL line's `meta` is carried onto the
+fragment too, because a generated library records its frame there and the stats
+sidecar's `declarative.frame_by_label_mode` is the check that frame identity does
+not correlate with the label.
+
+**No migration is planned.** A text library's `fragment_id` hashes its text and
+its split hashes its cluster key, so re-expressing it as JSONL would move every
+dataset ever generated, and its vector is already derivable from what the
+manifest states.
+
 ### `null_on`: which foreign signals a library is `null` on
 
 For every (library, foreign signal) pair, the library either declares that the
@@ -562,9 +599,16 @@ arguments above:
   constraint and not only the head, and a head supervised on 4% of the tree looks
   identical to one supervised on all of it once three label counts are normalised.
 * `fragments` — for every fragment in the split: `library`, `cluster_key`,
-  `fragment_type`, `signal_key`, `subclass`, `split`. Without it **nothing in a
-  generated dataset says which fragments are the same idea**, and computing
-  effective sample size needs exactly that. Re-reading the libraries at training
+  `fragment_type`, `signal_key`, `signals`, `labels`, `subclass`, `split`.
+  **`signals` is the field to read, not `signal_key`.** It is every signal the
+  fragment decides — what it asserts, plus its own signal where it has one, so
+  an *ambiguous* fragment still counts as its signal's. For a text fragment that
+  is exactly `[signal_key]`; a declarative line decides two to four at once and
+  has no scalar key, so `signal_key` is `null` on it rather than being made to
+  pick one of four. `labels` is the whole per-line vector, including the signals
+  the line declares itself silent on, which `signals` cannot express. Without
+  this block **nothing in a generated dataset says which fragments are the same
+  idea**, and computing effective sample size needs exactly that. Re-reading the libraries at training
   time is rejected because it fails *silently*: edit a library after generating
   and the cluster grouping is quietly wrong, producing confidence intervals that
   are too narrow with nothing raised anywhere.
@@ -641,7 +685,11 @@ direction — so it is counted and warned about rather than raised.
 ## 8. The lint
 
 `python -m scripts.synthetic_data --lint` reports on library health without
-generating or editing anything. Six reports.
+generating or editing anything. Eight reports, seven of which decide nothing and
+change nothing. The eighth, the phrase inventory, is the exception: its rules are
+mechanical and **`--lint` exits non-zero on a fault in it**, because the
+inventory is composed into a thousand committed lines and a fault there is a
+fault in every line that used the phrase.
 
 **Signal language in filler** — the one with real teeth. Any filler fragment
 reading as an assertion about one of the seven signals is flagged, grouped by the
@@ -732,6 +780,14 @@ declared `policy` would otherwise stop being checked at all, and filler is paire
 with examples of *every* label. A test pins that the two checks differ on exactly
 those two pairs.
 
+**A generated library sits outside two of these reports.** The cross-signal grid
+and the undeclared-pairs list both exist to drive `null_on` authoring — they put
+a lexicon's opinion beside a library-level declaration so a human can decide the
+pair — and a JSONL library has no such declaration to decide: every line states
+its own vector, and the lexicon language it asserts is the point of it. Rows for
+it would read as unconsidered pairs that nobody can ever consider, so it is
+excluded from both and the 300-pair arithmetic below is unchanged by its arrival.
+
 **Cross-split near-duplicates** — pairs of similar fragments in different splits,
 i.e. section 6's leakage. This is the report that catches a library written as
 one sentence frame with the slots swapped, and it caught exactly that in several
@@ -741,6 +797,15 @@ effective n halved. Two caveats on the count: it is **within-library by
 construction**, so a library part-written by adapting a sibling signal's scores
 clean; and libraries sharing a small vocabulary run high on character similarity
 between genuinely distinct ideas, so chasing it to zero is partly chasing noise.
+
+Generated libraries are **excluded from the pair listing** and named in a
+section of their own with their line and cluster counts. Two lines of a generated
+library share a frame and most of a sentence by construction, so a high character
+similarity between two of them is the expected output rather than evidence of
+anything — and there are tens of thousands of such pairs in a 1,000-line library,
+enough to bury every other library's rows and to cost a minute of wall clock
+producing them. The cluster count is the number to read there instead: it is what
+the split actually partitions on.
 
 Two faults the report **cannot** see, both of which have happened:
 
@@ -761,7 +826,61 @@ fragments open with uncertainty and then resolve it. It is a reading list, not a
 fault list.
 
 **Split coverage** — how many fragments of each library landed in each split,
-flagging any empty cell (section 10).
+flagging any empty cell (section 10). Each cell is printed as **lines over
+clusters**, with the library's **frame count** beside it. The cluster is the unit
+the split is assigned in, so a cell whose two numbers are far apart holds fewer
+ideas than lines; and 12.1 asks for the frame count next to the line count
+because a generated library's lines are its frames multiplied by something, and
+reading the first without the second is how a library comes to look richer than
+it is. A hand-written library shows `-` rather than `1`: "no frames" and "one
+frame" are opposite claims about a library.
+
+**What a generated library is made of** — its lines, clusters, arity mix, frame
+mix, and the min/median/max lines per cluster. This is what replaces the
+near-duplicate pairs it is excluded from. It is also the only place DD15's budget
+can be read: one so small that most clusters are empty and one so large that
+every cluster carries a dozen near-identical siblings both look like a
+four-figure line count and are told apart only here. Today: 1,000 lines, 316
+clusters, arities 500/350/150, all four frames used, median 2 lines per cluster.
+
+**Generated vectors against the lexicons** — the one check a lexicon can make on
+a *per-line* label vector, and it is one-sided: it can say the text reads as a
+signal the vector is silent about, never that the vector is right. An asserted
+signal is skipped for the same reason a library is never checked against its own
+signal. The two silent states are reported apart because only one of them is a
+claim: `null` supervises a head towards "not mentioned" and so is contradicted by
+the text, while an *undeclared* signal earns no key and teaches nothing.
+
+**557 of the 1,000 lines hit, and none of them is a labelling fault.** 294 are
+the nocturia / urinary-frequency pair reading as each other, which is DD14
+arriving exactly where it was predicted: a line naming one of the pair says
+nothing about the other, and no lexicon can tell "extra toilet trips" from
+"night-time toilet trips". The other 263 are the third family of section 4's
+lexicon over-reach — a urinary anchor in one clause pairing with a flank-pain
+modifier in another ("blood in my wee … pain in my side") — which a sentence
+naming four symptoms makes far likelier than a hand-written line does. The
+baseline pins the counts *and* the shape: **every hit is an anchor+modifier
+pair**, and a hit where a lexicon names the signal in a word of its own would be
+a line whose text asserts what its vector calls silence, which is a wrong label
+rather than over-reach. That is the assertion worth keeping; the counts move
+whenever the inventory or the budget does.
+
+**The phrase inventory** — the authored input the generated library is composed
+from, and the only report here that fails. Four mechanical rules (12.3 DD10): the
+signal is a Boolean encoder signal in the ruleset and is not one no frame can
+state (`recent_uti_present`); it declares at least three phrases, below which the
+phrase becomes a proxy for the cluster; each bare form is at most four words; and
+**no form reproduces a hand-written library line verbatim**. The last is the
+load-bearing one — vocabulary overlap across splits is unavoidable and always has
+been, whole lines are not, and a phrase lifted from a train library would arrive
+inside a generated val fragment. The other half of DD10, that the phrase reads
+correctly after both bases and that its label is unambiguous under section 9, is
+review; no lint can do it.
+
+Its cross-lexicon rows are a report like the others: **10 rows, all of them the
+nocturia / urinary-frequency pair in both directions**, which is the same
+undecided overlap seen one level further upstream. A row for any other pair is a
+phrase to re-read, because a phrase that names two signals labels only one.
 
 ### Three guards against a bad merge
 
@@ -992,7 +1111,12 @@ Generator versions are not comparable with each other: version 3 split
 `expectations.txt` in two, which changes every `_draw_filler` outcome and
 therefore every generated example, and added `meta.filler_only` and the companion
 draw. **Every measurement before 2026-08-19 was made at version 2 and is history
-rather than a comparator.**
+rather than a comparator.** Version 4 computes pool membership from a fragment's
+label vector and adds `--declarative-share`; both are inert at the default, and
+a version-4 default run's *content* is identical to a version-3 one — only
+`meta.generator_version` moves. It is still a different version line, because a
+dataset whose pools were computed a different way is not comparable on the
+strength of one manifest happening to make them agree.
 
 ### What exists
 
@@ -1003,6 +1127,10 @@ rather than a comparator.**
   base seed 42, salt 0, no `PoolExhaustedError` anywhere.
 * Both companion arms at version 3 (Arm 0 at `--companion-share 0.0`, Arm P at
   0.5, identical in everything else), each merged into a six-head `joint6` tree.
+* One generated library — `declarative_v1`, 1,000 multi-symptom lines across 316
+  clusters, built from an authored phrase inventory (12.3). It is committed, in
+  the manifest and drawn from only above `--declarative-share 0`, which no
+  measured arm has used: **no trained arm has seen a declarative fragment.**
 * Six trained heads. `recent_uti_present` has libraries and a fold tree but **no
   trained head**, and `EncoderOutput.validate_against` requires all seven keys —
   so nothing produced so far is deployable.
@@ -1177,6 +1305,11 @@ python -m scripts.synthetic_data --folds 5 --fold 0 --split test --count 2000 \
 python -m scripts.synthetic_data --split train --count 10000 \
     --companion-share 0.5 --emit-signals all --out ...
 
+# rebuild the generated declarative library from the phrase inventory,
+# and the check CI runs (regenerates in memory, writes nothing, exits 1 on drift)
+python -m scripts.synthetic_data --build-declarative
+python -m scripts.synthetic_data --build-declarative --check
+
 # reports, no output: library health, and a salt search
 python -m scripts.synthetic_data --lint
 python -m scripts.synthetic_data --folds 5 --find-fold-salt
@@ -1265,9 +1398,10 @@ unit of thought). **Emit the template ID as a cluster marker** — machine-emitt
 IDs and hand-tagged `[c01]` markers are the same mechanism, so no change to the
 splitter is needed. **Start with the filler libraries**, which carry no label
 weight. And **never use it to fill an empty split cell** (section 10): that
-removes the warning light rather than the fault. The lint should report templates
-per library alongside raw fragment counts, so a dataset cannot *look* richer than
-its template count says it is.
+removes the warning light rather than the fault. The lint reports frames per
+library alongside lines and clusters (section 8), so a dataset cannot *look*
+richer than its frame count says it is; that half is built and applies to any
+templated library that follows.
 
 **A second, different mechanism has been proposed under this heading and is
 planned separately**: expanding the *existing* library lines by swapping parts
@@ -1276,8 +1410,18 @@ authoring new templates. It shares the surface-forms-not-ideas arithmetic above,
 but its purpose is decorrelating vocabulary from label — the fault section 8
 records twice and cannot check for — rather than volume, so it is measured
 differently and sequenced differently.
-`documentation/encoder_plans/lexical_variant_expansion_provisional.md` is the
-provisional plan.
+`documentation/encoder_plans/lexical_variant_expansion_implementation.md` is
+the plan of record; the provisional plan and the review that corrected it sit
+beside it. **The mechanism is not what the provisional plan proposed.** Editing
+a library line changes its cluster key -- `cluster_key` is `cluster_id or
+normalise(text)` -- and therefore its split, so expanding the libraries
+repartitions the data silently. It is built instead as post-processing over the
+generated JSONL, in this section's own shape (12.6): no library file is touched,
+no split moves, the generator stays byte-identical, and every expanded example
+is paired by `example_id` with its clean original, which is what makes the
+decision metric a paired statistic. Two gates come before any of it -- a
+per-token label-association lint report and a paraphrase-flip diagnostic -- and
+both are designed to be allowed to fail.
 
 ### 12.2 Multi-signal libraries — built, not measured
 
@@ -1300,7 +1444,7 @@ unrelated to reading the text. The question a multi-key arm can answer is "does
 more label per example buy training efficiency?", which is not the question
 companions were built to answer.
 
-### 12.3 Multi-symptom fragments — not built
+### 12.3 Multi-symptom fragments — built, not measured
 
 Fragments asserting more than one signal in a clause: "I had a fever and it's
 been burning when I urinate." These are closer to how patients write than
@@ -1315,6 +1459,91 @@ manifest declaring which format each library uses. **This is what the
 nocturia / urinary-frequency pair is waiting on** (section 10), unless 12.9 is
 right that a library-level assertion covers it.
 
+**The format and the draw now both exist** (section 4). The manifest can declare
+a `jsonl` library, its lines carry per-line vectors, every fragment exposes one,
+and since generator version 4 a fragment's *pool* is decided by that vector
+rather than by its `(signal_key, fragment_type)` pair. A declarative line
+asserting the run's signal goes into a `declarative_positive` /
+`declarative_negative` pool held apart from the hand-written one, and
+`--declarative-share` is the probability that a `true` or `false` example's
+decisive fragment comes from there. It defaults to 0.0, the draw is skipped
+entirely at that value, and the generated content of a default run is unchanged
+— checked against the golden digest and against the real libraries.
+
+Two rules come with it. A declarative line that is `null` on the run's signal is
+an eligible **companion** at any share, filed under every signal it asserts; and
+no example may assert one signal twice, so the companion draw now excludes every
+signal the decisive fragment asserts rather than only its own. `null_ambiguous`
+never draws a declarative fragment: a fixed frame cannot produce a hedge, so
+everything generated is an easy case and the hard-case libraries stay the only
+source of hard ones.
+
+**The generator now exists too**, and so does the library it writes:
+`data/synthetic/conditions/uti/declarative/declarative_v1.jsonl`, 1,000 lines
+across 316 clusters. What has *not* happened is a training run that draws from
+it — every arm measured so far is at `--declarative-share 0`.
+
+`scripts/synthetic_data/declarative.py` composes it out of two things:
+
+* **An authored phrase inventory**,
+  `data/synthetic/conditions/uti/declarative/phrases.json`, keyed by signal.
+  Each phrase carries a bare and a negated surface form, because the obvious
+  derivation ships broken English — "a fever" negates to "any fever", not "any a
+  fever". Six signals; `recent_uti_present` is excluded, because its label turns
+  on a 30-day window and the section 9 policy rules and no frame here can place
+  an infection inside one. A phrase is admitted only if its label is unambiguous
+  under section 9, which makes the labelling policy a per-*phrase* decision made
+  once rather than a per-line one — and is also why nothing generated here is a
+  hard case.
+* **Two sentence bases**, "I have had …" and "I have not had …", each with a
+  mixed variant ("…, but not …" / "…, but I have had …"). The symptoms in a
+  sentence are sorted into a true block and a false block, so an interleaved
+  "A, but not B, and C" is unreachable by construction rather than by a rule
+  rejecting it; which base opens the sentence is decided by which block leads,
+  drawn on a fair coin, so the frame does not follow from the label.
+
+**A line's label is drawn before its text exists.** The sampler draws an arity,
+then that many distinct signals, then a polarity for each, then a phrase for
+each, then the leading block and the Oxford comma — all from one seeded
+`random.Random`, in a fixed order. The vector is computed from the drawn
+polarities: asserted signals take theirs, every other in-scope signal is `null`,
+and the nocturia / urinary-frequency partner of an asserted-but-unmentioned
+signal is **omitted** rather than nulled, because whether one of that pair says
+anything about the other is exactly the question section 4 leaves undecided.
+
+**The cluster key is the asserted label content** — `decl:dysuria-fever+haematuria+`
+— not the frame. Two lines in one cluster differ only in phrasing and comma
+style, which is what a cluster is for; hashing the frame instead would collapse
+the whole library into two clusters and make its split meaningless. That is the
+rule of 12.1 that deliberately does not bind here.
+
+**Volume is capped and stratified by arity**, `--target-count 1000` split
+0.5 / 0.35 / 0.15 across two-, three- and four-symptom sentences. Uncapped
+enumeration is tens of thousands of lines against 2,503 hand-written ones, which
+would make a stiff generated sentence the *typical* decisive fragment. The cap
+and `--declarative-share` are separate knobs on purpose: one is how much text
+exists, the other is how much of a dataset it is.
+
+**The library is a committed build artefact, not a runtime expansion.**
+`--build-declarative` writes it and the file is reviewed and committed;
+`--build-declarative --check` regenerates in memory and fails if the committed
+file differs, and CI runs that in both the unit job and the data-only job. The
+round trip through disk is what lets a human read the sentences before they
+become training text, and it keeps ids, clusters and splits flowing through the
+same machinery as every other library.
+
+**What it does not buy.** At `--emit-signals primary` a line asserting three
+signals still emits one key and the other two assertions are discarded; banking
+them needs `--emit-signals all` and a `merge-folds` that accepts a multi-key tree
+(12.2). And nothing generated here is a hard case, so a dataset that grows in
+line count has not grown in difficulty.
+
+One caveat on the DD7 leak check. `declarative.frame_by_label_mode` cannot show
+*equal* rows for the decisive slot, and should not be read as if it could: a
+`neg_base` line asserts nothing true, so it can never be the decisive fragment of
+a `true` example. What the rows can show is the mixed frames drifting apart, and
+that the negative base is not carrying the whole `false` class on its own.
+
 ### 12.4 Out-of-scope symptom mentions — not built
 
 Fragments mentioning a symptom outside the ruleset: "I had a fever and a cough."
@@ -1328,8 +1557,16 @@ more places, which mildly counteracts section 9's urgency-language leak.
 
 The mechanism 12.2 to 12.4 need. The manifest carries `null_on` (section 4), the
 lint checks the half a lexicon can check (section 8), and `--emit-signals all`
-composes the vector (section 7). **What is not built is the per-line vector**, so
-cross-signal `true`/`false` remains inexpressible.
+composes the vector (section 7). The per-line vector is now **expressible** — a
+`jsonl` library's lines each carry one, and a text library's is derived from
+`fragment_type` plus `null_on` so the two agree by construction — and it is now
+what the pipeline reads end to end. Pool selection, the one-assertion-per-signal
+rule and `label_vector` all read the vector, and so does the training loader:
+the sidecar's `signals` list is what decides which fragment is decisive for a
+head, in place of the scalar `signal_key` a declarative line does not have.
+Cross-signal `true`/`false` therefore reaches an example, but only through a
+declarative library — a text library's vector still states one assertion, which
+is what its `fragment_type` means.
 
 Combination is validated on the vector rather than the primary signal: silent
 plus asserted yields the assertion, silent plus silent yields `null`, and the
@@ -1452,7 +1689,11 @@ on "a non-empty lexicon exists for this signal". Both come out at 12.5 / step 3,
 when the lexicon moves into the manifest; two lists in two modules drifting apart
 is the outcome that guard exists to postpone, not to prevent.
 
-### 12.7 Order of work
+### 12.7 Random autocorrect errors
+
+Still needs thinking about.  Robustness to random noise is good but in reality phones autocorrect rather than leaving spelling errors, so we should aim to introduce this error pattern too
+
+### 12.8 Order of work
 
 **Section 10's "Outstanding" is the live list**; this subsection is only what
 the order depends on. Steps 1 to 5 of the original sequence — the blocked
@@ -1474,7 +1715,9 @@ those, the forward plan runs in the order its dependencies force:
    report. Note this does *not* raise the fragment-count ceiling: that counts
    *sources*, not their size (section 5).
 3. Multi-symptom and out-of-scope fragments (12.3, 12.4), which need the JSONL
-   library format.
+   library format. The multi-symptom half is now **built but unmeasured**: the
+   library exists and no arm draws from it, so what remains here is a
+   `--declarative-share` sweep scored on the 67 submissions, and 12.4.
 4. Use `--emit-signals all` (12.2), and template the clinical libraries once
    there are enough distinct templates per library for the split arithmetic.
 

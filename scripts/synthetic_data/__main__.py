@@ -11,6 +11,7 @@
         --null-ambiguous-ratio 0.5 \\
         --fragment-counts 2=0.5,3=0.5 \\
         --companion-share 0.0 \\
+        --declarative-share 0.0 \\
         --emit-signals primary \\
         --out      data/synthetic/generated/fever_present.train.jsonl
 
@@ -28,6 +29,18 @@ signal. It defaults to 0.0 and the path is skipped entirely at that value, so
 every dataset generated before companions existed is still reproducible from its
 seed. Read ``companions.count_by_label_mode`` in the sidecar after any non-zero
 run: those rows must agree, or the companion count has become a proxy for the
+label.
+
+``--declarative-share`` is the second: above zero, a share of the *decisive*
+fragments in ``true`` and ``false`` examples are procedurally generated
+multi-symptom sentences -- "I have had a fever and blood in my wee, but not any
+pain when I pee" -- each carrying a per-line label vector, rather than the
+one-claim hand-written lines. It exists as a share rather than as a merged pool
+because the generated library is larger than any hand-written one and would
+otherwise become the *typical* decisive sentence, trading the one-claim prior
+for a one-frame prior. It defaults to 0.0 and the draw is skipped entirely at
+that value. Read ``declarative.frame_by_label_mode`` in the sidecar after any
+non-zero run: those rows must agree, or the frame has become a cue for the
 label.
 
 ``--emit-signals all`` widens ``labels`` from the run's own signal to every
@@ -62,10 +75,12 @@ import json
 import sys
 from pathlib import Path
 
-from .lint import render_report
+from . import declarative
+from .lint import inventory_report_faults, render_report
 from .manifest import ManifestError, find_fold_salts, load_fragments
 from .recombine import (
     DEFAULT_COMPANION_SHARE,
+    DEFAULT_DECLARATIVE_SHARE,
     DEFAULT_EMIT_SIGNALS,
     DEFAULT_NULL_AMBIGUOUS_RATIO,
     EMIT_SIGNALS_MODES,
@@ -155,6 +170,19 @@ def build_parser() -> argparse.ArgumentParser:
         "label",
     )
     parser.add_argument(
+        "--declarative-share",
+        type=float,
+        default=DEFAULT_DECLARATIVE_SHARE,
+        help="share of true/false examples whose decisive fragment is drawn from the "
+        "declarative library -- procedurally generated multi-symptom sentences carrying a "
+        "per-line label vector -- rather than from the hand-written pool for the same "
+        "label. At the default 0.0 the draw is skipped entirely and the output is what it "
+        "was before declarative fragments existed. It governs the decisive slot only: a "
+        "declarative fragment that is null on this run's signal is an eligible companion at "
+        "any share. null_ambiguous never draws from it -- a fixed frame cannot express a "
+        "hedge, so every generated line is an easy case",
+    )
+    parser.add_argument(
         "--emit-signals",
         choices=list(EMIT_SIGNALS_MODES),
         default=DEFAULT_EMIT_SIGNALS,
@@ -192,8 +220,45 @@ def build_parser() -> argparse.ArgumentParser:
         "--lint",
         action="store_true",
         help="report library health instead of generating: hedge markers, "
-        "cross-split near-duplicates, every signal's language in filler, and the "
-        "full (library, foreign signal) grid with its paste-ready null_on block",
+        "cross-split near-duplicates, every signal's language in filler, the "
+        "full (library, foreign signal) grid with its paste-ready null_on block, "
+        "what each generated library is made of, and the phrase inventory. Exits "
+        "non-zero on an inventory fault and on nothing else",
+    )
+    parser.add_argument(
+        "--inventory",
+        type=Path,
+        default=None,
+        help="the declarative phrase inventory --lint checks and --build-declarative "
+        f"composes (default {str(declarative.DEFAULT_INVENTORY)!r})",
+    )
+    parser.add_argument(
+        "--build-declarative",
+        action="store_true",
+        help="instead of generating, expand the authored phrase inventory into the committed "
+        "declarative JSONL library. Writes a tracked file, so it is a deliberate act and a "
+        "reviewable diff rather than something recombination does at runtime",
+    )
+    parser.add_argument(
+        "--target-count",
+        type=_non_negative_int,
+        default=declarative.DEFAULT_TARGET_COUNT,
+        help="how many declarative lines --build-declarative writes, stratified across arities "
+        f"by --arity-weights (default {declarative.DEFAULT_TARGET_COUNT})",
+    )
+    parser.add_argument(
+        "--arity-weights",
+        default=declarative.DEFAULT_ARITY_WEIGHTS,
+        help="how many symptoms a declarative sentence names, as a weighted mix, e.g. "
+        f"{declarative.DEFAULT_ARITY_WEIGHTS!r}; must sum to 1.0. Arity 1 is excluded -- a "
+        "one-symptom declarative sentence is what the hand-written libraries already are",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="with --build-declarative, regenerate into memory and exit non-zero if the "
+        "committed library differs, instead of writing. This is what stops the library and "
+        "the inventory drifting apart silently",
     )
     parser.add_argument(
         "--find-fold-salt",
@@ -244,12 +309,33 @@ def split_options(args: argparse.Namespace) -> dict:
 
 
 def run_lint(args: argparse.Namespace) -> int:
-    """Print the library health reports. Never modifies a library."""
+    """Print the library health reports. Never modifies a library.
+
+    Exits non-zero on an inventory fault and on nothing else. Every other report
+    here is a prompt to re-read something, and a lint that failed on those would
+    be a lint nobody could run; an inventory fault is different in kind, because
+    the inventory is composed into hundreds of committed lines and a phrase
+    lifted from a library puts train text inside a generated val fragment (DD10).
+    """
     # check_cells=False: the empty-cell guard is generation's, and a lint that
     # aborts on unbalanced libraries cannot report on unbalanced libraries.
     fragments = load_fragments(args.manifest, check_cells=False, **split_options(args))
-    for line in render_report(fragments):
+    if not args.ruleset.is_file():
+        raise RulesetError(f"ruleset not found: {args.ruleset}")
+    signals = encoder_signals(json.loads(args.ruleset.read_text(encoding="utf-8")))
+    inventory_path = declarative.DEFAULT_INVENTORY if args.inventory is None else args.inventory
+
+    for line in render_report(fragments, inventory_path=inventory_path, encoder_signals=signals):
         print(line)
+
+    faults = inventory_report_faults(inventory_path, fragments, signals)
+    if faults:
+        print(
+            f"error: the declarative phrase inventory has {len(faults)} fault(s); "
+            "see the inventory section above",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -274,6 +360,46 @@ def run_find_fold_salt(args: argparse.Namespace) -> int:
         # libraries, and it means a library is too small to cover K buckets
         # rather than that the search went wrong.
         print("none found; a library has fewer clusters than there are buckets, or close to it")
+    return 0
+
+
+def run_build_declarative(args: argparse.Namespace) -> int:
+    """Expand the phrase inventory into the committed JSONL library, or check it.
+
+    Generation-free in the recombiner's sense: it reads neither the manifest nor
+    the ruleset, and writes a library rather than a dataset.
+    """
+    out_path = declarative.DEFAULT_OUT if args.out is None else args.out
+    lines, content = declarative.build(
+        inventory_path=(
+            declarative.DEFAULT_INVENTORY if args.inventory is None else args.inventory
+        ),
+        target_count=args.target_count,
+        arity_weights=args.arity_weights,
+        seed=args.seed,
+    )
+
+    if args.check:
+        if not out_path.is_file():
+            print(f"error: {out_path} does not exist; run --build-declarative", file=sys.stderr)
+            return 1
+        current = out_path.read_text(encoding="utf-8")
+        if current != content:
+            print(
+                f"error: {out_path} is not what the inventory and these flags generate "
+                f"(committed {len(current.splitlines())} lines, regenerated {len(lines)}). "
+                "Rerun --build-declarative and commit the diff",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"{out_path} matches the inventory ({len(lines)} lines)")
+        return 0
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(content, encoding="utf-8", newline="\n")
+    print(f"wrote {out_path}")
+    for line in declarative.summarise(lines):
+        print(line)
     return 0
 
 
@@ -312,6 +438,7 @@ def run(args: argparse.Namespace) -> int:
         null_ambiguous_ratio=args.null_ambiguous_ratio,
         fragment_counts=fragment_counts,
         companion_share=args.companion_share,
+        declarative_share=args.declarative_share,
         emit_signals=args.emit_signals,
     )
     stats = build_stats(
@@ -327,6 +454,7 @@ def run(args: argparse.Namespace) -> int:
         manifest_path=str(args.manifest),
         ruleset_path=str(args.ruleset),
         companion_share=args.companion_share,
+        declarative_share=args.declarative_share,
         emit_signals=args.emit_signals,
         folds=options["folds"],
         fold_index=options["fold_index"] if options["folds"] is not None else None,
@@ -367,19 +495,38 @@ def check_fold_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -
         parser.error(f"--fold must be in [0, {args.folds}), got {args.fold}")
 
 
+def check_build_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Reject build-mode flags that cannot mean what they look like they mean.
+
+    ``--check`` without ``--build-declarative`` reads as "check something" and
+    would silently generate a dataset instead, which is the same class of quiet
+    mismatch :func:`check_fold_args` exists for.
+    """
+    if args.build_declarative:
+        if args.lint:
+            parser.error("--build-declarative and --lint are separate modes; run one at a time")
+        return
+    if args.check:
+        parser.error("--check requires --build-declarative")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     check_fold_args(parser, args)
-    if not (args.lint or args.find_fold_salt):
+    check_build_args(parser, args)
+    if not (args.lint or args.find_fold_salt or args.build_declarative):
         missing = [f"--{name}" for name in _GENERATION_REQUIRED if getattr(args, name) is None]
         if missing:
             parser.error(f"the following arguments are required: {', '.join(missing)}")
     try:
+        if args.build_declarative:
+            return run_build_declarative(args)
         if args.find_fold_salt:
             return run_find_fold_salt(args)
         return run_lint(args) if args.lint else run(args)
     except (
+        declarative.DeclarativeError,
         DistributionError,
         ManifestError,
         PoolError,

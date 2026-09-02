@@ -612,6 +612,8 @@ generalises all three and adds the share flag. No new data yet.
   `DEFAULT_DECLARATIVE_SHARE = 0.0`, a `declarative` pool on `FragmentPools`,
   and `declarative.frame_by_label_mode` in `build_stats` (DD7).
 * `scripts/synthetic_data/__main__.py` — `--declarative-share`.
+* `scripts/encoder_training/__main__.py` — `--declarative-share` on
+  `generate-folds`, forwarded into the generator (see instruction 10).
 * `tests/test_synthetic_recombination.py`.
 
 **Deliverables:** `--declarative-share 0.0` produces byte-identical output to
@@ -662,6 +664,16 @@ signal twice.
    fixture declarative library exercising the DD5 exclusion (a fever/dysuria
    decisive fragment must never draw a dysuria companion); `label_vector` on a
    multi-signal fragment; the ceiling check with a three-signal companion.
+10. **Add the flag to `generate-folds` as well, and forward it.** `generate_folds`
+    builds a *fixed* argv list for the generator — manifest, ruleset, signal,
+    split, count, seed, folds, fold, split-salt, out — with no passthrough for
+    generator flags, which is why `--companion-share` never reached it either.
+    Without this, Task 7's "one flag, one difference" is not one command but
+    fifteen direct `python -m scripts.synthetic_data` invocations (five folds ×
+    three splits), and the console entry of Task 7 instruction 7 is a
+    fifteen-step catalogue entry rather than a one-step one. Default it to
+    `DEFAULT_DECLARATIVE_SHARE` and omit it from the forwarded argv at zero, so
+    prediction 1's byte-identity is not disturbed by the flag's mere existence.
 
 ---
 
@@ -763,6 +775,18 @@ it.
    `fragment_type: "declarative"`, no `signal_key`, no `null_on`.
 9. Read fifty lines of the output by hand before committing it, spread across
    arities. This is the last point at which broken English is cheap to fix.
+10. **Do not add `build-declarative` to the training console's catalogue**
+    (`scripts/training_gui/runs.json`). Two reasons, either sufficient. DD1 wants regeneration to be a
+    deliberate act and a reviewable diff, which is a pull request rather than a
+    button. And mechanically it would misfire: this command writes a *tracked*
+    file under `data/synthetic/`, outside `reports/` and `models/`, which are
+    the only two prefixes the console commits — so a run from the page leaves
+    the tree dirty in exactly the way the console's git guard refuses, and
+    **both of its git buttons stop working** until someone cleans up in a
+    terminal. Contrast `generate-folds`, which is safe to run from the page
+    only because `data/synthetic/generated/` is gitignored. That distinction —
+    does the command dirty a tracked path outside `reports/` and `models/`? —
+    is the test for whether anything in this ticket belongs in the catalogue.
 
 ---
 
@@ -861,6 +885,7 @@ Everything is built and inert at the defaults. Nothing has been measured.
 ## B. Files and deliverables
 
 * Generated fold trees for Arm 0 and Arm D.
+* `scripts/training_gui/runs.json` — a catalogue entry per arm (instruction 7).
 * `reports/encoder_training/<date>.md` and its plain-English companion.
 * `documentation/arch_training.md` section 10.
 
@@ -887,6 +912,22 @@ resolved — on the real set, with the predictions above marked held or not.
    invented-symptom rate per signal from the real set if it is available.
 6. Write the predictions' outcomes down whatever they say, including
    prediction 6.
+7. **Add the arms to the training console's catalogue.** The console's
+   parameters are enumerated strings only — no numeric fields and no free text
+   (AD3 of the console plan) — so `--declarative-share` is declared as
+   `choices: ["0.0", "0.3", "0.6"]` with `"0.0"` the default. That is not a
+   workaround: the enumeration *is* the arm list, and it makes instruction 4's
+   `P = 0.6` arm a dropdown rather than something a person has to remember to
+   run. One `generate-folds` entry and one `finetune` entry, both parameterised
+   on signal and share, cover every cell. This depends on Task 2 instruction 10;
+   without the passthrough the entry has to name fifteen steps.
+8. **Cite the console's run manifest rather than re-typing the commands.** A run
+   saved from the page commits its log and a manifest — every step's argv, its
+   exit code, its timings and the sha the run was produced at — to
+   `reports/training_runs/<run_id>/`. Link that from the report instead of
+   hand-transcribing a command matrix the way the 2026-08-31 noise sweep had to.
+   A run driven from a terminal instead has no manifest, and then the matrix is
+   still written out by hand as before.
 
 ---
 
@@ -901,6 +942,8 @@ Everything else has landed.
 * `documentation/arch_training.md` — sections 3, 4, 5, 7, 8, 10, 12.1, 12.3,
   12.5, 12.7.
 * `documentation/arch_encoder_training.md` — the loader's fragment contract.
+* `scripts/training_gui/runs.json` — the catalogue is a second place a flag's
+  existence is recorded, and it rots silently otherwise.
 * This file — a status line at the top.
 
 ## C. Instructions
@@ -909,7 +952,9 @@ Everything else has landed.
 2. Section 4: the `format` field, and that a JSONL library declares neither
    `signal_key` nor `null_on` and why.
 3. Section 5: `--declarative-share`, and the fragment-count ceiling arithmetic
-   with multi-signal companions.
+   with multi-signal companions. It is now a flag in three places — the
+   generator, `generate-folds`, and the console catalogue — so say which one is
+   the source of truth (the generator) and that the other two forward to it.
 4. Section 7: the sidecar's `signals` and `labels` per fragment.
 5. Section 8: the new reports and the baselined DD14 cells.
 6. Section 10: the arms and their numbers, with the version-4 line.

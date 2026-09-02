@@ -87,7 +87,7 @@ TEST = FIXTURES / "mini.fold0.test.jsonl"
 SIGNAL = "fever_present"
 
 SPEC = EmbeddingSpec(
-    base_model="emilyalsentzer/Bio_ClinicalBERT",
+    base_model="roberta-base",
     revision="0123456789abcdef0123456789abcdef01234567",
     pooling="mean",
     max_seq_len=256,
@@ -1053,8 +1053,12 @@ def test_cli_exposes_test_dir_and_defaults_it_off():
     args = build_parser().parse_args(["finetune", "--test-dir", "data/noisy"])
     assert args.test_dir == Path("data/noisy")
 
-    for command in ("probe", "compare-models", "joint-compare"):
-        parsed = build_parser().parse_args([command])
+    for command, extra in (
+        ("probe", []),
+        ("compare-models", ["--base-models", "roberta-base"]),
+        ("joint-compare", []),
+    ):
+        parsed = build_parser().parse_args([command, *extra])
         assert not hasattr(parsed, "test_dir"), f"{command} grew an unused --test-dir"
 
 

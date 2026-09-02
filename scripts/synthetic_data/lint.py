@@ -1,6 +1,10 @@
 """Reports that keep the fragment libraries honest as they grow.
 
-Six reports, none of which change a single fragment: they print and stop.
+Eight reports. Seven of them change nothing and decide nothing: they print and
+stop. The eighth, the phrase inventory, is the one exception in the file -- its
+rules are mechanical and its faults are errors, because the inventory is
+composed into hundreds of committed lines and a fault there is a fault in every
+line that used the phrase.
 
 * **Hedge markers** flag lines in the decisive libraries that read as uncertain,
   as a prompt to re-read them by hand. Precision here is poor by construction --
@@ -25,9 +29,21 @@ Six reports, none of which change a single fragment: they print and stop.
   lexicon cannot check them and an unchecked claim should at least be visible.
   Undeclared pairs are listed too -- that list is the cost of every decision
   deliberately left unmade.
-* **Split coverage** lists every ``(library, split)`` cell. Generation aborts on
-  an empty cell (DD9); the lint reports it instead, because the tool you reach
-  for when the generator refuses to run must not refuse for the same reason.
+* **Split coverage** lists every ``(library, split)`` cell, as lines over
+  clusters, with the library's frame count beside them. Generation aborts on an
+  empty cell (DD9); the lint reports it instead, because the tool you reach for
+  when the generator refuses to run must not refuse for the same reason.
+* **Generated libraries** are reported apart from the near-duplicate pairs
+  rather than inside them (DD16): a fixed frame makes high character similarity
+  between two different clusters the expected output, so the pairs carry no
+  information and would bury every other library's rows. What replaces them is
+  the shape of the library -- its clusters, arities and frames -- plus the one
+  check a lexicon can make on a per-line vector, which is that the line's text
+  does not read as a signal the vector is silent about.
+* **The phrase inventory** is checked rather than reported: an unknown signal,
+  too few phrases, an over-long phrase, or a phrase that reproduces a
+  hand-written library line verbatim. The last is what keeps train text out of a
+  generated val fragment. Its cross-lexicon rows are a report like the others.
 
 Matching is done on :func:`~scripts.synthetic_data.normalise.normalise` output --
 already case-folded and whitespace-collapsed -- and always on word boundaries.
@@ -38,12 +54,15 @@ the check would fail on day one against clean data.
 from __future__ import annotations
 
 import difflib
+import json
 import re
 import textwrap
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
-from .manifest import SPLITS, Fragment, NullOn
+from .declarative import EXCLUDED_SIGNALS, MAX_PHRASE_WORDS, Phrase
+from .manifest import DECLARATIVE_TYPE, SPLITS, UNDECLARED, Fragment, NullOn, cluster_key
 from .normalise import normalise
 
 #: Uncertainty language, reported in ``positive`` and ``negative`` libraries only.
@@ -489,6 +508,55 @@ SIGNAL_LEXICONS: dict[str, Lexicon] = {
     "recent_uti_present": RECENT_UTI_LEXICON,
 }
 
+#: The fewest phrases a signal may declare in the inventory. Below three, the
+#: phrase becomes a near-proxy for the cluster: every line asserting that signal
+#: at a given polarity says it the same one or two ways, so the split stops
+#: separating surface forms and starts separating nothing. Four to six is the
+#: authored aim; three is the floor a fault is raised at.
+MIN_PHRASES_PER_SIGNAL = 3
+
+#: Printed above the inventory report. Everything the generator writes is
+#: composed out of this file, so a fault here is a fault in every line that used
+#: the phrase -- which is why these four are errors rather than rows.
+INVENTORY_HEADER = (
+    "The authored phrase inventory is the input build-declarative composes into "
+    "the generated library, so a fault here is a fault in every line that used "
+    "the phrase. Four mechanical rules (DD10): the signal is a Boolean encoder "
+    "signal in the ruleset and is not one no frame can state; it declares at "
+    f"least {MIN_PHRASES_PER_SIGNAL} phrases; each bare form is at most "
+    f"{MAX_PHRASE_WORDS} words; and no form reproduces a hand-written library "
+    "line verbatim. The last is the load-bearing one: a phrase lifted from a "
+    "library would put train text inside a generated val fragment. The other "
+    "half of DD10 -- that the phrase reads correctly after both bases, and that "
+    "its label is unambiguous under section 9 -- is review, and no lint can do "
+    "it."
+)
+
+#: Printed above the inventory's cross-lexicon rows. Deliberately not an error:
+#: see the nocturia / urinary-frequency pair, which reads as itself twice over.
+INVENTORY_LEXICON_HEADER = (
+    "Phrases that trip another signal's lexicon. Not an error -- the lexicons "
+    "over-reach by design (arch_training.md section 4) -- but a phrase that "
+    "names two signals labels only one, so each row is a phrase to re-read. The "
+    "nocturia / urinary-frequency phrases appear here by construction: those two "
+    "signals are said in the same words, which is exactly why their overlap is "
+    "left undecided (DD14)."
+)
+
+#: Printed above the generated-vector report.
+DECLARATIVE_VECTOR_HEADER = (
+    "Generated lines whose label vector asserts nothing about a signal, in text "
+    "the lexicon reads as that signal. Two states and they mean different "
+    "things. 'null' is a declared silence that supervises the head towards 'not "
+    "mentioned', so a hit is a label the line's own text argues with. "
+    "'undeclared' is the nocturia / urinary-frequency pair (DD14): the line says "
+    "nothing about the partner and earns no key for it, so nothing is being "
+    "taught either way. Most hits of both kinds are one clause's urinary anchor "
+    "pairing with another clause's modifier across a comma, which is the "
+    "lexicon working as designed on a sentence that names four symptoms; a bare "
+    "term match would not be, and a test pins both the pairs and the shapes."
+)
+
 #: difflib ratio at or above which two fragments count as near-duplicates.
 #: A character-level ratio misses "Monday -> Tuesday, husband -> boyfriend"
 #: rewrites, so whatever this reports is a lower bound on the real twinning.
@@ -656,6 +724,115 @@ class CrossSignalCell:
         return self.matched == 0
 
 
+def is_generated(fragment: Fragment) -> bool:
+    """Whether a fragment came from a procedurally generated library.
+
+    Three of the reports below treat such a library differently, and all three
+    for one reason: a generated library states its meaning **per line** and has
+    no library-level declaration to check. Its ``null_on`` block is empty by
+    construction (a JSONL library may not declare one), and the character
+    similarity between its lines is the expected output of a fixed frame rather
+    than evidence of anything.
+    """
+    return fragment.fragment_type == DECLARATIVE_TYPE
+
+
+@dataclass(frozen=True)
+class GeneratedLibrary:
+    """What a generated library is made of, in the units DD15 caps it in.
+
+    The cluster count is what the near-duplicate report is replaced by (DD16),
+    and the arity and per-cluster distributions are what say whether the budget
+    was right: one so small that most clusters are empty and one so large that
+    every cluster carries a dozen near-identical siblings are both visible here
+    and nowhere else.
+    """
+
+    library: str
+    lines: int
+    clusters: int
+    #: ``{arity: lines}`` and ``{frame: lines}``, both read from the line's
+    #: ``meta``. Empty when a generated library carries no such key rather than
+    #: guessed at, because a missing distribution is a fact about the library.
+    by_arity: Mapping[str, int]
+    by_frame: Mapping[str, int]
+    #: Cluster sizes, ascending. Summarised rather than listed: 316 clusters is
+    #: past what anyone reads line by line, and min/median/max is the shape.
+    cluster_sizes: tuple[int, ...]
+
+
+def _tally(values: Iterable[object]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        counts[str(value)] = counts.get(str(value), 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def generated_libraries(fragments: Iterable[Fragment]) -> dict[str, GeneratedLibrary]:
+    """Return the generated libraries, keyed by name, with their distributions."""
+    members: dict[str, list[Fragment]] = {}
+    for fragment in fragments:
+        if is_generated(fragment):
+            members.setdefault(fragment.library, []).append(fragment)
+
+    summaries: dict[str, GeneratedLibrary] = {}
+    for library in sorted(members):
+        lines = members[library]
+        sizes: dict[str, int] = {}
+        for fragment in lines:
+            key = cluster_key(fragment.cluster_id, fragment.text)
+            sizes[key] = sizes.get(key, 0) + 1
+        summaries[library] = GeneratedLibrary(
+            library=library,
+            lines=len(lines),
+            clusters=len(sizes),
+            by_arity=_tally(
+                f.meta["arity"] for f in lines if isinstance(f.meta, Mapping) and "arity" in f.meta
+            ),
+            by_frame=_tally(
+                f.meta["frame"] for f in lines if isinstance(f.meta, Mapping) and "frame" in f.meta
+            ),
+            cluster_sizes=tuple(sorted(sizes.values())),
+        )
+    return summaries
+
+
+def frames_by_library(fragments: Iterable[Fragment]) -> dict[str, dict[str, int]]:
+    """Return ``{library: {frame: lines}}``, empty for a hand-written library.
+
+    ``arch_training.md`` 12.1 asks for the frame count beside the line count for
+    exactly one reason: a templated library's line count is its template count
+    multiplied by something, and reading the first without the second is how a
+    library comes to look richer than it is. A hand-written library has no
+    frames and gets an empty mapping rather than a one, because "one frame" and
+    "no frames" are opposite claims about a library.
+    """
+    frames: dict[str, dict[str, int]] = {}
+    for fragment in fragments:
+        counts = frames.setdefault(fragment.library, {})
+        frame = fragment.meta.get("frame") if isinstance(fragment.meta, Mapping) else None
+        if frame is not None:
+            counts[str(frame)] = counts.get(str(frame), 0) + 1
+    return {library: dict(sorted(frames[library].items())) for library in sorted(frames)}
+
+
+def clusters_by_split(fragments: Iterable[Fragment]) -> dict[str, dict[str, int]]:
+    """Return ``{library: {split: distinct clusters}}``.
+
+    The cluster, not the line, is the unit the split is assigned in, so this is
+    the count that says whether a split cell holds several ideas or one idea
+    written six ways. Keyed on :func:`~scripts.synthetic_data.manifest.cluster_key`
+    so it counts what the splitter counted, marker or no marker.
+    """
+    seen: dict[str, dict[str, set[str]]] = {}
+    for fragment in fragments:
+        cells = seen.setdefault(fragment.library, {split: set() for split in SPLITS})
+        cells[fragment.split].add(cluster_key(fragment.cluster_id, fragment.text))
+    return {
+        library: {split: len(seen[library][split]) for split in SPLITS} for library in sorted(seen)
+    }
+
+
 def cross_signal_cells(
     fragments: Iterable[Fragment], signals: Iterable[str] | None = None
 ) -> list[CrossSignalCell]:
@@ -665,6 +842,13 @@ def cross_signal_cells(
     pairs too, and a report that silently omitted the libraries the existing
     check already covers would leave a reader guessing which half they were
     looking at.
+
+    Every library except a generated one. The grid exists to drive ``null_on``
+    authoring -- it puts a lexicon's opinion beside a library-level declaration
+    so a human can decide the pair -- and a generated library has no such
+    declaration to decide: each of its lines states its own vector, and lexicon
+    language it asserts is the whole point of it. Including it would add rows
+    that read as unconsidered pairs and can never be considered.
 
     Sorted by matched count descending, then library, then signal -- the pairs
     that need a human decision first, and the long tail of zero-hit pairs after
@@ -676,6 +860,8 @@ def cross_signal_cells(
     by_library: dict[str, list[Fragment]] = {}
     own_signal: dict[str, str | None] = {}
     for fragment in members:
+        if is_generated(fragment):
+            continue
         by_library.setdefault(fragment.library, []).append(fragment)
         own_signal[fragment.library] = fragment.signal_key
 
@@ -796,11 +982,17 @@ def undeclared_pairs(fragments: Iterable[Fragment]) -> list[tuple[str, str]]:
     The default state, and the one worth printing: an undeclared pair is a
     library that cannot be used as a companion in that signal's run, so the list
     is the cost of every decision deliberately left unmade.
+
+    Generated libraries are excluded, as they are from the cross-signal grid and
+    for the same reason: their eligibility is decided per line by the line's own
+    vector, so a library-level pair there is not a decision anyone can make.
     """
     members = list(fragments)
     own: dict[str, str | None] = {}
     declared: dict[str, set[str]] = {}
     for fragment in members:
+        if is_generated(fragment):
+            continue
         own[fragment.library] = fragment.signal_key
         declared[fragment.library] = {entry.signal for entry in fragment.null_on}
     return sorted(
@@ -812,7 +1004,10 @@ def undeclared_pairs(fragments: Iterable[Fragment]) -> list[tuple[str, str]]:
 
 
 def cross_split_near_duplicates(
-    fragments: Iterable[Fragment], threshold: float = NEAR_DUPLICATE_THRESHOLD
+    fragments: Iterable[Fragment],
+    threshold: float = NEAR_DUPLICATE_THRESHOLD,
+    *,
+    include_generated: bool = False,
 ) -> list[NearDuplicate]:
     """Report similar within-library fragment pairs that straddle a split.
 
@@ -820,9 +1015,19 @@ def cross_split_near_duplicates(
     let a validation example borrow lexical content from a training example,
     which is the failure this exists to surface. Roughly 4,500 comparisons for
     a 96-fragment library, so no indexing scheme is warranted.
+
+    Generated libraries are skipped unless ``include_generated`` asks for them
+    (DD16). The report's purpose is *unintended* twinning in hand-written
+    libraries; in a generated one, two lines from different clusters share a
+    frame and most of a sentence by construction, so the pairs carry no
+    information -- and there are tens of thousands of them, which buries every
+    other library's rows and costs a minute of wall clock to produce. The
+    generated libraries are named in their own section of the report instead.
     """
     by_library: dict[str, list[Fragment]] = {}
     for fragment in fragments:
+        if is_generated(fragment) and not include_generated:
+            continue
         by_library.setdefault(fragment.library, []).append(fragment)
 
     pairs: list[NearDuplicate] = []
@@ -842,6 +1047,214 @@ def cross_split_near_duplicates(
     return sorted(pairs, key=lambda p: (-p.ratio, p.left.fragment_id, p.right.fragment_id))
 
 
+@dataclass(frozen=True)
+class InventoryFault:
+    """One broken rule in the authored phrase inventory. Always an error."""
+
+    signal: str
+    #: The offending phrase form, or empty when the fault is the signal's.
+    form: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class InventoryLexiconHit:
+    """An inventory phrase for one signal that reads as another signal."""
+
+    signal: str
+    form: str
+    foreign_signal: str
+    terms: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class VectorHit:
+    """A generated line carrying signal language its own vector does not assert."""
+
+    fragment_id: str
+    library: str
+    #: The signal whose lexicon matched.
+    signal: str
+    #: ``"null"`` (the vector declares the line silent about the signal) or
+    #: ``"undeclared"`` (the vector has no key for it at all).
+    state: str
+    terms: tuple[str, ...]
+    text: str
+
+
+def read_inventory(path: Path) -> tuple[dict[str, tuple[Phrase, ...]], list[InventoryFault]]:
+    """Parse the phrase inventory defensively: return what parsed, and what did not.
+
+    ``declarative.load_inventory`` raises on the first structural fault, which is
+    right for a build and wrong for a report -- a lint that aborts on the
+    inventory prints nothing about the fifty libraries either. This reads the
+    same file and turns the same faults into rows, so one run names every one of
+    them. The build remains the strict gate: nothing here relaxes it.
+    """
+    try:
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return {}, [InventoryFault(signal="", form=str(path), reason=f"cannot be read: {error}")]
+    if not isinstance(payload, dict) or not payload:
+        return {}, [
+            InventoryFault(
+                signal="", form=str(path), reason="is not a non-empty object keyed by signal"
+            )
+        ]
+
+    inventory: dict[str, tuple[Phrase, ...]] = {}
+    faults: list[InventoryFault] = []
+    for signal in sorted(payload):
+        spec = payload[signal]
+        if not isinstance(spec, dict) or not isinstance(spec.get("phrases"), list):
+            faults.append(InventoryFault(signal, "", "has no 'phrases' list"))
+            continue
+        phrases: list[Phrase] = []
+        for entry in spec["phrases"]:
+            pair = (entry.get("text"), entry.get("negated")) if isinstance(entry, dict) else ()
+            if len(pair) != 2 or not all(isinstance(form, str) and form.strip() for form in pair):
+                faults.append(
+                    InventoryFault(
+                        signal,
+                        repr(entry),
+                        "is not a {'text', 'negated'} object of two non-empty strings",
+                    )
+                )
+                continue
+            phrases.append(Phrase(text=pair[0], negated=pair[1]))
+        inventory[signal] = tuple(phrases)
+    return inventory, faults
+
+
+def inventory_faults(
+    inventory: Mapping[str, Sequence[Phrase]],
+    *,
+    library_lines: Iterable[str],
+    encoder_signals: Iterable[str],
+) -> list[InventoryFault]:
+    """Return every broken inventory rule (DD10), by signal, signal-level first.
+
+    Every rule is checked against every phrase rather than stopping at the first
+    fault, because the reader is about to edit one file and wants the whole list.
+
+    ``library_lines`` is the hand-written corpus -- the generated library is
+    excluded, because a generated line *is* composed of inventory phrases and
+    comparing them would report the generator working. ``encoder_signals`` comes
+    from the ruleset rather than from the manifest, for the same reason
+    ``null_on`` validation does: a signal being written has a declaration before
+    it has libraries.
+    """
+    known = set(encoder_signals)
+    lines = {normalise(line) for line in library_lines}
+    faults: list[InventoryFault] = []
+    for signal in sorted(inventory):
+        phrases = inventory[signal]
+        if signal in EXCLUDED_SIGNALS:
+            faults.append(
+                InventoryFault(
+                    signal,
+                    "",
+                    "cannot be stated by a declarative frame: its label turns on a 30-day "
+                    "window and the section 9 policy rules, not on what the sentence "
+                    "mentions (DD9)",
+                )
+            )
+        elif signal not in known:
+            faults.append(
+                InventoryFault(
+                    signal,
+                    "",
+                    "is not a Boolean signal the ruleset sends to the encoder, so lines "
+                    "asserting it would carry a key no head consumes",
+                )
+            )
+        if len(phrases) < MIN_PHRASES_PER_SIGNAL:
+            faults.append(
+                InventoryFault(
+                    signal,
+                    "",
+                    f"declares {len(phrases)} phrases, fewer than the {MIN_PHRASES_PER_SIGNAL} "
+                    "below which the phrase becomes a proxy for the cluster",
+                )
+            )
+        for phrase in phrases:
+            if len(phrase.text.split()) > MAX_PHRASE_WORDS:
+                faults.append(
+                    InventoryFault(
+                        signal, phrase.text, f"is over {MAX_PHRASE_WORDS} words in its bare form"
+                    )
+                )
+            for form in (phrase.text, phrase.negated):
+                if normalise(form) in lines:
+                    faults.append(
+                        InventoryFault(
+                            signal,
+                            form,
+                            "reproduces a hand-written library line verbatim, which would put "
+                            "train text inside a generated val fragment",
+                        )
+                    )
+    return faults
+
+
+def inventory_lexicon_hits(
+    inventory: Mapping[str, Sequence[Phrase]],
+) -> list[InventoryLexiconHit]:
+    """Report inventory phrases that read as a signal other than their own.
+
+    Reported, never failed. The lexicons over-reach by design and this is the
+    per-phrase view of the same 28 baselined hits the libraries carry -- but a
+    phrase is reused across hundreds of generated lines, so re-reading one here
+    is worth more than re-reading one library line.
+    """
+    hits: list[InventoryLexiconHit] = []
+    for signal in sorted(inventory):
+        for phrase in inventory[signal]:
+            for foreign in SIGNAL_LEXICONS:
+                if foreign == signal:
+                    continue
+                for form in (phrase.text, phrase.negated):
+                    if terms := lexicon_matches(form, foreign):
+                        hits.append(InventoryLexiconHit(signal, form, foreign, terms))
+    return sorted(hits, key=lambda hit: (hit.signal, hit.foreign_signal, hit.form))
+
+
+def declarative_vector_hits(fragments: Iterable[Fragment]) -> list[VectorHit]:
+    """Check a generated line's per-line vector against its own text.
+
+    The only check a lexicon can make on a per-line vector, and it is one-sided:
+    it can say "the text reads as a signal the vector is silent about", and it
+    can never say the vector is right. An *asserted* signal is skipped for the
+    reason :func:`signal_language_hits` skips a library's own signal -- a line
+    asserting dysuria matching the dysuria lexicon is the lexicon working.
+
+    Both remaining states are reported and kept apart, because only one of them
+    is a claim: ``null`` supervises a head towards "not mentioned" and so is
+    contradicted by the text, while ``undeclared`` teaches nothing at all and is
+    the DD14 pair by construction.
+    """
+    hits: list[VectorHit] = []
+    for fragment in fragments:
+        if not is_generated(fragment):
+            continue
+        for signal in SIGNAL_LEXICONS:
+            value = fragment.value_for(signal)
+            if value is True or value is False:
+                continue
+            if terms := lexicon_matches(fragment.text, signal):
+                hits.append(
+                    VectorHit(
+                        fragment_id=fragment.fragment_id,
+                        library=fragment.library,
+                        signal=signal,
+                        state="undeclared" if value is UNDECLARED else "null",
+                        terms=terms,
+                        text=fragment.text,
+                    )
+                )
+    return sorted(hits, key=lambda hit: (hit.signal, hit.state, hit.fragment_id))
+
+
 def _wrap(text: str, width: int = 100) -> str:
     return text if len(text) <= width else text[: width - 1] + "…"
 
@@ -859,8 +1272,21 @@ def _count_lines(counts: dict[str, int]) -> list[str]:
     return [f"  {library}: {counts[library]}" for library in sorted(counts)]
 
 
-def render_report(fragments: Sequence[Fragment]) -> list[str]:
-    """Render all three reports as printable lines."""
+def render_report(
+    fragments: Sequence[Fragment],
+    *,
+    inventory_path: Path | None = None,
+    encoder_signals: Iterable[str] = (),
+) -> list[str]:
+    """Render every report as printable lines.
+
+    ``inventory_path`` is optional so the library reports can be run against a
+    manifest that has no declarative library -- a fixture, or the tree before
+    this ticket. When it is given, the inventory section is rendered and its
+    faults are returned by :func:`inventory_report_faults` for the caller to
+    exit on: a report function that decided the exit code would be a report
+    function nobody could run for a look.
+    """
     hedges = hedge_marker_hits(fragments)
     duplicates = cross_split_near_duplicates(fragments)
     leaks = filler_lexicon_hits(fragments)
@@ -891,6 +1317,9 @@ def render_report(fragments: Sequence[Fragment]) -> list[str]:
             "counted above but not shown"
         )
 
+    lines += ["", "Generated libraries (not compared above)"]
+    lines += render_generated_libraries(fragments)
+
     lines += [
         "",
         f"Signal language in filler libraries: {len(leaks)}",
@@ -912,6 +1341,131 @@ def render_report(fragments: Sequence[Fragment]) -> list[str]:
 
     lines += ["", "Split coverage (DD9: generation aborts on an empty cell)"]
     lines += render_split_coverage(fragments)
+
+    if inventory_path is not None:
+        lines += ["", "Declarative phrase inventory"]
+        lines += render_inventory(
+            inventory_path, fragments=fragments, encoder_signals=encoder_signals
+        )
+    return lines
+
+
+def inventory_report_faults(
+    inventory_path: Path, fragments: Iterable[Fragment], encoder_signals: Iterable[str]
+) -> list[InventoryFault]:
+    """Return the inventory's hard faults: what ``--lint`` exits non-zero on."""
+    inventory, structural = read_inventory(inventory_path)
+    return structural + inventory_faults(
+        inventory,
+        library_lines=[f.text for f in fragments if not is_generated(f)],
+        encoder_signals=encoder_signals,
+    )
+
+
+def render_generated_libraries(fragments: Sequence[Fragment]) -> list[str]:
+    """Render each generated library's line, cluster, arity and frame distribution."""
+    generated = generated_libraries(fragments)
+    lines: list[str] = [
+        "  A fixed frame makes near-duplicate text the expected output, so the pairs "
+        "above carry no signal for these; the cluster and frame counts are what to read "
+        "instead (DD16).",
+        f"  libraries: {len(generated)}",
+    ]
+    if not generated:
+        lines.append("  (none)")
+    for summary in generated.values():
+        lines.append(
+            f"  {summary.library}: {summary.lines} lines across {summary.clusters} clusters"
+        )
+        for arity, count in summary.by_arity.items():
+            lines.append(f"    arity {arity}: {count} lines")
+        sizes = summary.cluster_sizes
+        if sizes:
+            lines.append(
+                f"    lines per cluster: min {sizes[0]}, median {sizes[len(sizes) // 2]}, "
+                f"max {sizes[-1]}"
+            )
+        for frame, count in summary.by_frame.items():
+            lines.append(f"    frame {frame}: {count} lines")
+
+    hits = declarative_vector_hits(fragments)
+    lines += ["", f"  Generated vectors carrying another signal's language: {len(hits)}"]
+    lines.append(f"  {DECLARATIVE_VECTOR_HEADER}")
+    by_cell: dict[tuple[str, str], list[VectorHit]] = {}
+    for hit in hits:
+        by_cell.setdefault((hit.signal, hit.state), []).append(hit)
+    if not by_cell:
+        lines.append("    (none)")
+    for signal, state in sorted(by_cell):
+        cell = by_cell[(signal, state)]
+        # A hit naming the signal in a word of its own is a different animal
+        # from one pairing a urinary anchor with another clause's modifier, and
+        # only the anchor side of the latter varies -- listing every
+        # "toilet/urine/wee+pain" permutation buries the distinction the reader
+        # is here for. So: the two counts, and the modifiers that did it.
+        named = [hit for hit in cell if any("+" not in term for term in hit.terms)]
+        modifiers = sorted(
+            {
+                modifier
+                for hit in cell
+                for term in hit.terms
+                if "+" in term
+                for modifier in term.split("+", 1)[1].split("/")
+            }
+        )
+        bare_terms = sorted({term for hit in named for term in hit.terms if "+" not in term})
+        lines.append(
+            f"    {signal:<28}{state:<12}{len(cell):>5}  "
+            f"{len(cell) - len(named)} by anchor+modifier, {len(named)} naming the signal"
+        )
+        if modifiers:
+            lines.append(f"      modifiers: {', '.join(modifiers)}")
+        if bare_terms:
+            lines.append(f"      terms: {', '.join(bare_terms)}")
+        # Named hits first: those are the ones where the text says the signal
+        # outright and the vector says nothing, which is the only shape here
+        # that would be a labelling fault rather than lexicon over-reach.
+        shown = named + [hit for hit in cell if hit not in named]
+        for hit in shown[:CROSS_SIGNAL_DETAIL_LIMIT]:
+            lines.append(f"      {hit.fragment_id} {_wrap(hit.text, 84)}")
+        if len(cell) > CROSS_SIGNAL_DETAIL_LIMIT:
+            lines.append(
+                f"      ... and {len(cell) - CROSS_SIGNAL_DETAIL_LIMIT} more, counted "
+                "above but not shown"
+            )
+    return lines
+
+
+def render_inventory(
+    inventory_path: Path,
+    *,
+    fragments: Sequence[Fragment],
+    encoder_signals: Iterable[str] = (),
+) -> list[str]:
+    """Render the inventory's faults and its cross-lexicon rows."""
+    inventory, structural = read_inventory(inventory_path)
+    faults = structural + inventory_faults(
+        inventory,
+        library_lines=[f.text for f in fragments if not is_generated(f)],
+        encoder_signals=encoder_signals,
+    )
+    lines: list[str] = [f"  {INVENTORY_HEADER}", f"  {inventory_path}"]
+    lines.append(f"  {len(inventory)} signals, {sum(len(p) for p in inventory.values())} phrases")
+    for signal in sorted(inventory):
+        lines.append(f"    {signal:<28}{len(inventory[signal]):>3} phrases")
+
+    lines += ["", f"  faults (a failure): {len(faults)}"]
+    for fault in faults:
+        subject = f"{fault.signal} {fault.form!r}" if fault.form else fault.signal
+        lines += textwrap.wrap(f"    {subject}: {fault.reason}", 96, subsequent_indent="      ")
+
+    hits = inventory_lexicon_hits(inventory)
+    lines += ["", f"  phrases reading as another signal: {len(hits)}"]
+    lines.append(f"  {INVENTORY_LEXICON_HEADER}")
+    for hit in hits:
+        lines.append(
+            f"    {hit.signal:<28}{hit.foreign_signal:<28}[{', '.join(hit.terms)}] {hit.form!r}"
+        )
     return lines
 
 
@@ -1010,19 +1564,39 @@ def render_null_on_block(cells: Sequence[CrossSignalCell]) -> list[str]:
     return lines
 
 
+#: Printed above the split-coverage table.
+SPLIT_COVERAGE_HEADER = (
+    "Each cell is lines/clusters. The cluster is the unit the split is assigned "
+    "in, so a cell whose two numbers are far apart holds fewer ideas than lines "
+    "-- one idea written six ways rather than six ideas. 'frames' counts the "
+    "distinct sentence frames a generated library was composed from and is '-' "
+    "for a hand-written one, where every line is its own frame: 12.1 asks for "
+    "the frame count beside the line count because a templated library's lines "
+    "are its frames multiplied by something, and reading the first without the "
+    "second is how a library comes to look richer than it is."
+)
+
+
 def render_split_coverage(fragments: Sequence[Fragment]) -> list[str]:
-    """Render the per-library fragment count in each split, flagging empties."""
+    """Render each library's lines and clusters per split, its frames, and empties."""
     counts: dict[str, dict[str, int]] = {}
     for fragment in fragments:
         cell = counts.setdefault(fragment.library, dict.fromkeys(SPLITS, 0))
         cell[fragment.split] += 1
+    clusters = clusters_by_split(fragments)
+    frames = frames_by_library(fragments)
 
-    lines = [f"  {'library':<24}" + "".join(f"{split:>7}" for split in SPLITS)]
+    lines = [f"  {SPLIT_COVERAGE_HEADER}"]
+    lines.append(
+        f"  {'library':<36}" + "".join(f"{split:>12}" for split in SPLITS) + f"{'frames':>8}"
+    )
     empty = 0
     for library in sorted(counts):
         row = counts[library]
         empty += sum(1 for split in SPLITS if not row[split])
         marker = "  <- empty cell" if any(not row[split] for split in SPLITS) else ""
-        lines.append(f"  {library:<24}" + "".join(f"{row[split]:>7}" for split in SPLITS) + marker)
+        cells = "".join(f"{row[split]}/{clusters[library][split]}".rjust(12) for split in SPLITS)
+        frame_count = str(len(frames[library])) if frames[library] else "-"
+        lines.append(f"  {library:<36}" + cells + f"{frame_count:>8}" + marker)
     lines.append(f"  empty cells: {empty}")
     return lines

@@ -1,8 +1,10 @@
 # Offline encoder-training dependencies. NEVER installed in production.
 #
 # The Dockerfile installs requirements.txt only, and nothing under app/ imports
-# scripts/encoder_training or scripts/synthetic_data (tests/test_wiring.py
-# asserts it). Keeping these out of requirements.txt is what stops a ~2.5GB
+# scripts/encoder_training or scripts/synthetic_data
+# (tests/test_encoder_training_dataset.py::test_app_never_imports_the_offline_tooling
+# asserts it, for any scripts.* import, which covers scripts/training_gui too).
+# Keeping these out of requirements.txt is what stops a ~2.5GB
 # torch wheel and its CUDA runtime from entering an image that serves forms.
 #
 # CI's unit job does not install this file either. That is deliberate: the
@@ -34,6 +36,20 @@
 # accommodate a local interpreter. The training tooling imports nothing from
 # app/, so the environment needs this file alone -- requirements.txt is not
 # required for a training run.
+#
+# ---------------------------------------------------------------------------
+# The run console (scripts/training_gui)
+# ---------------------------------------------------------------------------
+# The console starts training subprocesses with the interpreter it is itself
+# running under, so it has to live in *this* environment -- the one with torch.
+# That is why two web pins appear in a file whose whole point is that it is
+# never installed in production: fastapi and uvicorn are here for a page that
+# is served on localhost to the machine with the GPU, not for app/.
+#
+# They are pinned at exactly the versions requirements.txt pins, and
+# tests/test_training_gui.py::test_fastapi_and_uvicorn_pins_match asserts the
+# two files agree. Drift here would otherwise be discovered during a run
+# rather than before one.
 #
 # ---------------------------------------------------------------------------
 # Blackwell (RTX 5070) warning -- read before installing torch
@@ -90,18 +106,19 @@ torch==2.13.0            # PyPI default wheel is a cu130 build; see the note abo
 transformers==5.15.0
 
 # --- compare-models: other base encoders ------------------------------------
-# `compare-models` defaults to Bio_ClinicalBERT, bert-base-uncased and
-# roberta-base. All three are BERT-base-sized (hidden size 768, which
-# model.py asserts) and all three tokenise with what transformers already
-# installs, so nothing extra is needed for the default sweep.
+# Everything here trains on `roberta-base` (arch_encoder_training.md section 4a),
+# whose tokeniser needs nothing beyond what `transformers` installs.
 #
-# `deberta-v3-base` is the one worth adding by hand and the one that needs more
-# than this file provides: its tokeniser is SentencePiece, so
-# `--base-models microsoft/deberta-v3-base` fails at load with a message about a
-# conversion, not about a missing package. If you want it in the comparison:
-#
-#   pip install sentencepiece protobuf
-#
-# Left uninstalled by default rather than pinned blind: neither package is
+# `compare-models` takes any BERT-base-sized encoder (hidden size 768, which
+# model.py asserts). Some need more than this file provides: a SentencePiece
+# tokeniser, for instance, fails at load with a message about a conversion
+# rather than about a missing package, and wants `pip install sentencepiece
+# protobuf`. Left uninstalled rather than pinned blind — neither package is
 # needed by anything else here, and a pin nobody has run is worse than an
 # instruction.
+
+# --- the local run console (scripts/training_gui) ---------------------------
+# Mirrors requirements.txt exactly; see the note above. Do not bump one file
+# without the other.
+fastapi==0.141.1
+uvicorn==0.52.3

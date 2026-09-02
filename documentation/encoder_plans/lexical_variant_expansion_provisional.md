@@ -1,7 +1,13 @@
 # Provisional plan: lexical variant expansion of the existing fragment libraries (12.1b)
 
-**Status: provisional. Stage 1 of the workflow — discussion, design decisions
-and a plan to be reviewed and expanded into an implementation plan.**
+**Status: superseded. Kept for its reasoning, which is largely right, and for
+the record of what was decided and why.** The plan of record is
+`lexical_variant_expansion_implementation.md`;
+`lexical_variant_expansion_review.md` is the review that sits between them and
+explains what changed. In particular DD1, DD3, DD7 and DD9 below were corrected:
+expansion is post-processing over the generated JSONL rather than a replica
+library tree, there is no cluster-marker emission and no two-stage draw, and the
+flip-rate metric carries a pre-registered decisive-accuracy guard.
 
 Read first: `arch_training.md` sections 2 (label first), 3 (cluster markers,
 "Writing style is vocabulary"), 6 (splitting), 8 (the lint's two blind faults),

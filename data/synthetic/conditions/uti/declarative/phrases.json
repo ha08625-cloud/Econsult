@@ -1,0 +1,54 @@
+{
+  "fever_present": {
+    "phrases": [
+      {"text": "a fever", "negated": "any fever"},
+      {"text": "a temperature", "negated": "a temperature"},
+      {"text": "a high temperature", "negated": "a high temperature"},
+      {"text": "a raised temperature", "negated": "a raised temperature"}
+    ]
+  },
+  "dysuria_present": {
+    "phrases": [
+      {"text": "pain when I pee", "negated": "any pain when I pee"},
+      {"text": "burning when I wee", "negated": "any burning when I wee"},
+      {"text": "stinging when I pee", "negated": "any stinging when I pee"},
+      {"text": "pain passing urine", "negated": "any pain passing urine"},
+      {"text": "burning passing water", "negated": "any burning passing water"}
+    ]
+  },
+  "urinary_frequency_present": {
+    "phrases": [
+      {"text": "more wees than usual", "negated": "any more wees than usual"},
+      {"text": "extra trips to wee", "negated": "any extra trips to wee"},
+      {"text": "extra toilet trips", "negated": "any extra toilet trips"},
+      {"text": "more frequent weeing", "negated": "any more frequent weeing"}
+    ]
+  },
+  "nocturia_present": {
+    "phrases": [
+      {"text": "night trips to wee", "negated": "any night trips to wee"},
+      {"text": "overnight trips to wee", "negated": "any overnight trips to wee"},
+      {"text": "night-time toilet trips", "negated": "any night-time toilet trips"},
+      {"text": "night-time wees", "negated": "any night-time wees"},
+      {"text": "broken sleep from weeing", "negated": "any broken sleep from weeing"}
+    ]
+  },
+  "flank_pain_present": {
+    "phrases": [
+      {"text": "pain in my side", "negated": "any pain in my side"},
+      {"text": "pain in my flank", "negated": "any pain in my flank"},
+      {"text": "aching in my side", "negated": "any aching in my side"},
+      {"text": "one-sided back pain", "negated": "any one-sided back pain"},
+      {"text": "side and back pain", "negated": "any side and back pain"}
+    ]
+  },
+  "haematuria_present": {
+    "phrases": [
+      {"text": "blood in my wee", "negated": "any blood in my wee"},
+      {"text": "blood in my urine", "negated": "any blood in my urine"},
+      {"text": "blood when I wee", "negated": "any blood when I wee"},
+      {"text": "pink urine", "negated": "any pink urine"},
+      {"text": "red wee", "negated": "any red wee"}
+    ]
+  }
+}

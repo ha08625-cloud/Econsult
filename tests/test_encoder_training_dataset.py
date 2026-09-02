@@ -40,6 +40,7 @@ TRAIN = FIXTURES / "mini.fold0.train.jsonl"
 VAL = FIXTURES / "mini.fold0.val.jsonl"
 TEST = FIXTURES / "mini.fold0.test.jsonl"
 MISSING_KEY = FIXTURES / "missing_key.train.jsonl"
+DECLARATIVE = FIXTURES / "declarative.train.jsonl"
 
 SIGNAL = "fever_present"
 
@@ -338,6 +339,104 @@ def test_resampling_unit_falls_back_to_the_fragment_id(tmp_path):
 
     example = _by_id(load_split(path))["train-000000"]
     assert example.resampling_unit == "fever_true:11111111"
+
+
+# --------------------------------------------------------------------------
+# Multi-signal (declarative) fragments
+# --------------------------------------------------------------------------
+
+
+def test_a_multi_signal_fragment_is_decisive_for_each_signal_it_asserts():
+    """A declarative line asserts three signals at once and has no ``signal_key``.
+
+    The scalar test this replaced -- ``signal_key in label_keys`` -- read
+    ``None in {"fever_present"}`` for such a fragment and found no decisive
+    fragment at all, which made every example holding one unloadable. The
+    provenance a slice is drawn from has to survive the change intact, so the
+    library, sub-class and resampling unit are asserted here rather than
+    left to the loader's silence.
+    """
+    split = load_split(DECLARATIVE)
+    example = _by_id(split)["train-000000"]
+
+    assert example.decisive is not None
+    assert example.decisive.fragment_id == "declarative_v1:0aaa0001"
+    assert example.decisive.signal_key is None
+    assert example.decisive.signals == (
+        "dysuria_present",
+        "fever_present",
+        "haematuria_present",
+    )
+    assert example.library == "declarative_v1"
+    assert example.class_for(SIGNAL) == CLASS_TRUE
+
+
+def test_a_declarative_fragment_resamples_with_its_authored_cluster():
+    """DD6: the cluster key is the asserted label content, and it is namespaced.
+
+    Every interval in the report is computed over resampling units, so this is
+    the number a wrong cluster key silently corrupts. Two lines differing only
+    in which phrase was drawn for each symptom are one idea and must share a
+    unit; the polarity is in the key, so the denial below is a different one.
+    """
+    examples = _by_id(load_split(DECLARATIVE))
+
+    assert (
+        examples["train-000000"].resampling_unit == "declarative_v1:decl:dysuria+fever+haematuria+"
+    )
+    assert examples["train-000001"].resampling_unit == "declarative_v1:decl:fever-haematuria-"
+
+
+def test_a_declarative_fragment_has_no_subclass():
+    """DD3: nothing generated is a hard case, so no sub-class slice claims it.
+
+    ``None`` here is the same ``None`` a structural null has, and the
+    per-sub-class report already tolerates that -- what moves is the size of
+    the un-sub-classed slice, not its existence.
+    """
+    example = _by_id(load_split(DECLARATIVE))["train-000000"]
+
+    assert example.subclass is None
+
+
+def test_a_declarative_companion_is_not_decisive():
+    """DD5: it is ``null`` on this run's signal, so it decides nothing here.
+
+    It asserts two signals and neither is the one being supervised, which is
+    what makes the example a structural null despite holding clinical language
+    in every slot. Counting it as decisive would reject the example outright.
+    """
+    example = _by_id(load_split(DECLARATIVE))["train-000002"]
+
+    assert example.label_mode == "null_structural"
+    assert example.decisive is None
+    assert example.resampling_unit == STRUCTURAL_NULL_UNIT
+
+
+def test_signals_falls_back_to_the_scalar_on_a_pre_vector_sidecar(tmp_path):
+    """A sidecar written before label vectors existed still loads unchanged.
+
+    Such a sidecar cannot hold a multi-signal fragment, so the scalar is the
+    whole answer for every fragment in it and deriving the list loses nothing.
+    """
+    path = _copy_fixture(tmp_path, TRAIN)
+    split = load_split(path)
+
+    assert split.fragments["fever_true:11111111"].signals == ("fever_present",)
+    assert split.fragments["tangents:66666666"].signals == ()
+
+
+def test_a_malformed_signals_list_is_refused(tmp_path):
+    path = _copy_fixture(tmp_path, DECLARATIVE)
+    _edit_stats(
+        path,
+        lambda stats: stats["fragments"]["declarative_v1:0aaa0001"].update(
+            {"signals": "fever_present"}
+        ),
+    )
+
+    with pytest.raises(DatasetError, match="not a list of strings"):
+        load_split(path)
 
 
 # --------------------------------------------------------------------------

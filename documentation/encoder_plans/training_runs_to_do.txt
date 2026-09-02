@@ -1,0 +1,56 @@
+Running the transfer evaluations locally
+Step 0 — pin the library stack
+pip install 'transformers==5.14.1'
+python -c "import transformers; print(transformers.__version__)"
+
+Must print 5.14.1. This is the one step that can silently spoil the result: these runs retrain the r03 models, so on 5.15.0 you'd be comparing models trained on a different stack from the r06-on-r06 and r12-on-r12 cells they're being measured against. Don't commit the downgrade — it's a local pin for these two runs.
+
+Step 1 — check the trees still exist
+ls -d data/synthetic/generated/noise/fever-{clean,r03,r06,r12}
+
+All four must be there. data/synthetic/generated/ is gitignored, so if you've cleaned it since 31 August they're gone. If any are missing, skip to Step 1b. If all four are present, go to Step 2.
+
+Step 1b — only if the trees are missing
+python -m scripts.encoder_training generate-folds \
+  --signal fever_present \
+  --out-dir data/synthetic/generated/noise/fever-clean
+
+for r in 03 06 12; do
+  python -m scripts.synthetic_data.noise \
+    --in-dir  data/synthetic/generated/noise/fever-clean \
+    --out-dir data/synthetic/generated/noise/fever-r${r} \
+    --rate 0.${r} --seed 42
+done
+
+Every default matches the committed runs (5 folds, 10000/2000/2000, seed 42, salt 0, clean-share 0.25, --freeze-signal-vocabulary short), so no other flags are needed. Regeneration is deterministic — you'll get byte-identical trees.
+
+Step 2 — the two runs
+python -m scripts.encoder_training finetune \
+  --signal fever_present \
+  --data-dir   data/synthetic/generated/noise/fever-r03 \
+  --test-dir   data/synthetic/generated/noise/fever-r06 \
+  --report-dir reports/encoder_training/noise/r03-on-r06 \
+  --models-dir models/encoder-noise/r03-on-r06 \
+  --train-seed 1234 --determinism strict \
+  --no-weights --no-probe --no-baselines --no-control
+
+Then the same with fever-r12 in place of fever-r06 in the --test-dir and both output paths.
+
+Run them one at a time, not in parallel — they'll contend for the GPU. Roughly 10–12 minutes each.
+
+Both trees are loaded and id-checked before the encoder is downloaded, so a wrong path fails in about a second rather than an hour in.
+
+Step 3 — read the result
+grep -E '^\| `arm_b_finetune` \| finetune' \
+  reports/encoder_training/noise/r03-on-r{06,12}/fever_present.arm_b_finetune.md
+
+The first number is decisive accuracy on the pooled slice. Read it against:
+
+	r06 test	r12 test
+clean-trained (no inoculation)	86.0	84.8
+r03-trained (what you're measuring)	?	?
+rate-matched (the ceiling)	92.8	93.3
+
+Near the bottom row → the rate doesn't much matter, pick one for plausibility. Near the top row → you have to match the rate, and since real damage is unmeasurable that materially weakens the result.
+
+Send me the two numbers and I'll finish section 6 and update 12.6.

@@ -1,0 +1,92 @@
+{
+  "generator_version": 4,
+  "seed": 42,
+  "signal": "fever_present",
+  "split": "train",
+  "folds": 5,
+  "fold_index": 0,
+  "split_salt": "32",
+  "manifest": "data/synthetic/manifest.json",
+  "ruleset": "data/uti1.json",
+  "requested": {
+    "companion_share": 0.3,
+    "declarative_share": 0.5
+  },
+  "realised": {
+    "count": 3,
+    "labels": {
+      "true": 1,
+      "false": 1,
+      "null": 1
+    },
+    "label_modes": {
+      "true": 1,
+      "false": 1,
+      "null_structural": 1,
+      "null_ambiguous": 0
+    }
+  },
+  "fragments": {
+    "declarative_v1:0aaa0001": {
+      "library": "declarative_v1",
+      "cluster_key": "declarative_v1:decl:dysuria+fever+haematuria+",
+      "fragment_type": "declarative",
+      "signal_key": null,
+      "signals": [
+        "dysuria_present",
+        "fever_present",
+        "haematuria_present"
+      ],
+      "labels": {
+        "dysuria_present": true,
+        "fever_present": true,
+        "haematuria_present": true
+      },
+      "subclass": null,
+      "split": "train"
+    },
+    "declarative_v1:0bbb0002": {
+      "library": "declarative_v1",
+      "cluster_key": "declarative_v1:decl:dysuria+nocturia+",
+      "fragment_type": "declarative",
+      "signal_key": null,
+      "signals": [
+        "dysuria_present",
+        "nocturia_present"
+      ],
+      "labels": {
+        "dysuria_present": true,
+        "fever_present": null,
+        "nocturia_present": true
+      },
+      "subclass": null,
+      "split": "train"
+    },
+    "declarative_v1:0ccc0003": {
+      "library": "declarative_v1",
+      "cluster_key": "declarative_v1:decl:fever-haematuria-",
+      "fragment_type": "declarative",
+      "signal_key": null,
+      "signals": [
+        "fever_present",
+        "haematuria_present"
+      ],
+      "labels": {
+        "fever_present": false,
+        "haematuria_present": false
+      },
+      "subclass": null,
+      "split": "train"
+    },
+    "tangents:66666666": {
+      "library": "tangents",
+      "cluster_key": "the parking here is impossible",
+      "fragment_type": "filler",
+      "signal_key": null,
+      "signals": [],
+      "labels": {},
+      "subclass": null,
+      "split": "train"
+    }
+  }
+}
