@@ -15,6 +15,42 @@
           "scripts.encoder_training",
           "generate-folds",
           "--folds",
+          "1",
+          "--signal",
+          "fever_present",
+          "--out-dir",
+          "data/synthetic/generated/canary"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "1",
+          "--signal",
+          "fever_present",
+          "--data-dir",
+          "data/synthetic/generated/canary",
+          "--report-dir",
+          "reports/encoder_training/canary",
+          "--models-dir",
+          "models/encoder-canary",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe",
+          "--no-holdout"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
           "5",
           "--signal",
           "fever_present",
@@ -406,6 +442,8 @@
       ],
       "step_labels": [
         "CUDA smoke test",
+        "Generate the canary's one-fold tree",
+        "Train one fold (~2 min)",
         "Generate c0.0-d0.0 \u00b7 fever_present",
         "Generate c0.0-d0.0 \u00b7 dysuria_present",
         "Generate c0.0-d0.0 \u00b7 flank_pain_present",
@@ -443,6 +481,42 @@
           "-m",
           "scripts.encoder_training",
           "smoke-cuda"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "1",
+          "--signal",
+          "fever_present",
+          "--out-dir",
+          "data/synthetic/generated/canary"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "1",
+          "--signal",
+          "fever_present",
+          "--data-dir",
+          "data/synthetic/generated/canary",
+          "--report-dir",
+          "reports/encoder_training/canary",
+          "--models-dir",
+          "models/encoder-canary",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe",
+          "--no-holdout"
         ],
         [
           "-m",
@@ -748,6 +822,8 @@
       ],
       "step_labels": [
         "CUDA smoke test",
+        "Generate the canary's one-fold tree",
+        "Train one fold (~2 min)",
         "Generate c0.5-d0.0 \u00b7 fever_present",
         "Generate c0.5-d0.0 \u00b7 dysuria_present",
         "Generate c0.5-d0.0 \u00b7 flank_pain_present",
@@ -780,6 +856,59 @@
           "scripts.encoder_training",
           "smoke-cuda"
         ]
+      ]
+    },
+    {
+      "id": "train-canary",
+      "name": "Training canary: one signal, one fold",
+      "description": "The three-minute check that this machine can actually train, as opposed to merely holding a GPU. The smoke test launches a matmul; only a real backward pass catches an op with no deterministic kernel under --determinism strict, an out-of-memory at the configured batch size, or a fused optimiser kernel that faults on a mismatched wheel. Generates its own single-fold tree first -- a fold tree records the fold count it was generated at, so a one-fold run cannot read a cell built at five -- and writes to canary directories of its own, so it touches nothing a sweep reads. The real-text holdout is skipped: the comparisons load and validate it before any GPU work, so checking it here would only cost time. Press this after a driver or wheel change; the sweeps run it themselves.",
+      "steps": [
+        [
+          "-m",
+          "scripts.encoder_training",
+          "smoke-cuda"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "generate-folds",
+          "--folds",
+          "1",
+          "--signal",
+          "fever_present",
+          "--out-dir",
+          "data/synthetic/generated/canary"
+        ],
+        [
+          "-m",
+          "scripts.encoder_training",
+          "finetune",
+          "--folds",
+          "1",
+          "--signal",
+          "fever_present",
+          "--data-dir",
+          "data/synthetic/generated/canary",
+          "--report-dir",
+          "reports/encoder_training/canary",
+          "--models-dir",
+          "models/encoder-canary",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights",
+          "--no-control",
+          "--no-probe",
+          "--no-holdout"
+        ]
+      ],
+      "step_labels": [
+        "CUDA smoke test",
+        "Generate the canary's one-fold tree",
+        "Train one fold (~2 min)"
       ]
     },
     {

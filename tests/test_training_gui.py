@@ -111,6 +111,7 @@ def test_the_committed_catalogue_loads():
         "decl-sweep-2x2",
         "decl-sweep-register",
         "smoke-cuda",
+        "train-canary",
         "score-companions",
         "generate-folds",
         "merge-folds",
@@ -195,7 +196,22 @@ def test_the_declarative_sweep_scores_the_real_text_holdout():
         "decl-sweep-register",
     ):
         for step in entries[entry_id].steps:
+            if step[2] != "declarative-compare":
+                # The composites carry a canary that skips the holdout on purpose;
+                # the assertion is about the step that produces the numbers.
+                continue
             assert "--no-holdout" not in step, entry_id
+
+
+def test_the_canary_skips_the_holdout_deliberately():
+    """The comparisons load and validate the holdout before any GPU work, so a
+    canary that scored it would spend time re-checking something already checked
+    and prove nothing more about the training path."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in ("train-canary", *COMPOSITES):
+        train = [step for step in entries[entry_id].steps if step[2] == "finetune"]
+        assert len(train) == 1, entry_id
+        assert "--no-holdout" in train[0], entry_id
 
 
 def test_the_declarative_sweep_covers_the_six_trainable_signals():
@@ -211,10 +227,16 @@ def test_the_declarative_sweep_covers_the_six_trainable_signals():
         assert len(set(signals)) == 6, entry_id
 
     # The composites cover the same six, once per cell they compare: four cells
-    # for the 2x2 and three for the register arm.
+    # for the 2x2 and three for the register arm. Only the steps that write a
+    # declarative cell count -- the canary also names a signal, and it is not
+    # part of the sweep's coverage.
     for entry_id, cells in (("decl-sweep-2x2", 4), ("decl-sweep-register", 3)):
         entry = entries[entry_id]
-        signals = [step[step.index("--signal") + 1] for step in entry.steps if "--signal" in step]
+        signals = [
+            step[step.index("--signal") + 1]
+            for step in entry.steps
+            if _writes_a_declarative_cell(step)
+        ]
         assert len(signals) == 6 * cells, entry_id
         assert set(signals) == {
             "fever_present",
@@ -241,6 +263,22 @@ def test_the_committed_catalogue_names_the_base_model_explicitly():
 
 COMPOSITES = ("decl-sweep-2x2", "decl-sweep-register")
 
+#: Where the declarative sweep's cells live. The canary writes its own one-fold
+#: tree outside this prefix, so the assertions about cells can ignore it without
+#: losing any of their teeth.
+DECL_CELL_PREFIX = "data/synthetic/generated/decl/"
+
+
+CANARY_TREE = "data/synthetic/generated/canary"
+
+
+def _touches_the_canary_tree(step) -> bool:
+    return CANARY_TREE in step
+
+
+def _writes_a_declarative_cell(step) -> bool:
+    return "--out-dir" in step and step[step.index("--out-dir") + 1].startswith(DECL_CELL_PREFIX)
+
 
 def test_each_composite_generates_exactly_the_cells_it_compares():
     """The guard that pays for itself in GPU hours.
@@ -257,7 +295,9 @@ def test_each_composite_generates_exactly_the_cells_it_compares():
     for entry_id in COMPOSITES:
         entry = entries[entry_id]
         generated = {
-            step[step.index("--out-dir") + 1] for step in entry.steps if "--out-dir" in step
+            step[step.index("--out-dir") + 1]
+            for step in entry.steps
+            if _writes_a_declarative_cell(step)
         }
         compared = {
             step[position + 1]
@@ -267,6 +307,60 @@ def test_each_composite_generates_exactly_the_cells_it_compares():
         }
         assert generated, entry_id
         assert generated == compared, entry_id
+
+
+def test_the_canary_agrees_with_itself_about_the_fold_count():
+    """The coupling that makes the canary work at all.
+
+    ``load_folds`` refuses a tree whose sidecar records a different fold count
+    from the one being requested, so a canary that generated one fold and then
+    trained against five -- or the reverse -- would fail in the loader every
+    time, and the failure would read as a broken environment rather than a
+    broken catalogue entry. That is the worst possible error from a canary: the
+    thing whose job is to tell you the machine is fine would tell you it is not.
+    """
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in ("train-canary", *COMPOSITES):
+        canary = [step for step in entries[entry_id].steps if _touches_the_canary_tree(step)]
+        assert len(canary) == 2, entry_id
+        folds = {step[step.index("--folds") + 1] for step in canary}
+        assert folds == {"1"}, entry_id
+
+
+def test_the_canary_never_touches_a_directory_a_sweep_reads():
+    """It writes its own fold tree, reports and models. A canary that wrote into
+    a cell would corrupt the comparison it is supposed to be protecting -- and a
+    one-fold tree landing in a five-fold cell is exactly the half-written tree
+    that makes a presence check unsafe."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in ("train-canary", *COMPOSITES):
+        for step in entries[entry_id].steps:
+            if not _touches_the_canary_tree(step):
+                continue
+            written = {
+                step[position + 1]
+                for position, element in enumerate(step)
+                if element in ("--out-dir", "--data-dir", "--report-dir", "--models-dir")
+            }
+            assert written, entry_id
+            for directory in written:
+                assert not directory.startswith(DECL_CELL_PREFIX), (entry_id, directory)
+                assert "canary" in directory, (entry_id, directory)
+
+
+def test_each_composite_runs_the_canary_before_it_generates_anything():
+    """Three minutes in rather than twenty-six. The point of the canary's
+    position is that a machine which cannot run a backward pass fails before the
+    25 minutes of CPU generation, not after them."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in COMPOSITES:
+        steps = entries[entry_id].steps
+        assert _touches_the_canary_tree(steps[1]), entry_id
+        assert steps[2][2] == "finetune", entry_id
+        first_cell = next(
+            position for position, step in enumerate(steps) if _writes_a_declarative_cell(step)
+        )
+        assert first_cell > 2, entry_id
 
 
 def test_each_composite_starts_with_the_smoke_test():

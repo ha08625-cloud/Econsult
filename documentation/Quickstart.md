@@ -77,6 +77,13 @@ Closing the terminal (or the window `train-gui.bat` opened) stops the console
 The two entries at the top of the page are the whole declarative sweep in one
 button each: they run the CUDA smoke test, generate every cell the comparison
 needs, train the comparison and score its companion thresholds, in sequence.
+Each begins with a ten-second CUDA smoke test and then a three-minute training
+canary — one signal, one fold, on a one-fold tree of its own — so a machine that
+cannot actually run a backward pass fails about three minutes in rather than
+after the twenty-five minutes of generation that would otherwise come first. The
+same canary is a button of its own (**Training canary**), which is what to press
+after a driver or wheel change.
+
 They take no parameters, and they regenerate their cells every time even when
 those cells are already on disk — about 25 minutes on a run of three to four
 hours, in exchange for an entry with no hidden prerequisite. Everything below
