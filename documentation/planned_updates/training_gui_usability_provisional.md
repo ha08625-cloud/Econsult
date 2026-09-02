@@ -1,5 +1,22 @@
 # Provisional plan: making the training run console easier to live with
 
+> **Status: partly superseded.** `training_gui_consolidation_implementation.md`
+> shipped **P1** (step checklist, elapsed times, tab title), **P2**'s first half
+> (dropdowns remembered in `localStorage`), **P4** (copy the log and the failing
+> step's output, landed alongside P1) and **P6** in its reduced form (a confirm on
+> Stop only, deliberately not on Run). It **cut P2's cross-card "current cell"
+> control** — after the catalogue was consolidated, the shares it coordinated
+> appear on a single card — and it **largely removed P3's motivation**: the
+> catalogue is now ten entries led by two composites, so grouping and collapsing
+> buys much less than it did at eleven flat entries.
+>
+> **P5 (preflight) is deferred, not rejected**, with reduced motivation: the
+> composites generate their own cells, so the forgotten-generate-step case it
+> caught can no longer happen on the one-button path, and it would now only serve
+> the two bare comparison entries.
+>
+> **Untouched and still open: P7, P8, P9, P10.**
+
 ## Scope
 
 Usability work on the local training run console (`architecture.md` 3.17,
