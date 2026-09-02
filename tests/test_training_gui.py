@@ -114,15 +114,17 @@ def test_the_committed_catalogue_loads():
 
 
 def test_the_committed_catalogue_names_the_base_model_explicitly():
-    """``DEFAULT_BASE_MODEL`` is Bio_ClinicalBERT, so omitting ``--base-model``
-    produces a run that succeeds and yields numbers that cannot be read beside a
-    committed report. Baking the flag in is one of the clearer things the console
-    buys, and it is worth a test rather than a comment."""
+    """The flag is baked in even though ``DEFAULT_BASE_MODEL`` already agrees
+    with it, so the encoder is visible in the command the console shows and in
+    its log rather than being something a reader reconstructs from a default."""
     finetune = next(e for e in load_catalogue(DEFAULT_CATALOGUE_PATH) if e.id == "finetune")
     assert "--base-model" in finetune.steps[0]
     base_model = finetune.parameter("base_model")
     assert base_model is not None
     assert base_model.default == "roberta-base"
+    # Retired encoders are not offered: an encoder picked by accident is how a
+    # run silently stops being comparable with the committed reports.
+    assert base_model.choices == ("roberta-base",)
 
 
 def test_every_committed_step_is_a_module_invocation():
@@ -1127,7 +1129,7 @@ def test_a_valid_body_starts_the_run_and_hands_the_runner_the_resolved_argv():
         "/api/run",
         json={
             "id": "finetune",
-            "parameters": {"signal": "dysuria_present", "base_model": "bert-base-uncased"},
+            "parameters": {"signal": "dysuria_present", "base_model": "roberta-base"},
         },
     )
 
@@ -1142,7 +1144,7 @@ def test_a_valid_body_starts_the_run_and_hands_the_runner_the_resolved_argv():
             "--signal",
             "dysuria_present",
             "--base-model",
-            "bert-base-uncased",
+            "roberta-base",
         ]
     ]
     assert response.json()["run_id"] == "20260831-120000-finetune"

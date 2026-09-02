@@ -106,19 +106,14 @@ torch==2.13.0            # PyPI default wheel is a cu130 build; see the note abo
 transformers==5.15.0
 
 # --- compare-models: other base encoders ------------------------------------
-# `compare-models` defaults to Bio_ClinicalBERT, bert-base-uncased and
-# roberta-base. All three are BERT-base-sized (hidden size 768, which
-# model.py asserts) and all three tokenise with what transformers already
-# installs, so nothing extra is needed for the default sweep.
+# Everything here trains on `roberta-base` (arch_encoder_training.md section 4a),
+# whose tokeniser needs nothing beyond what `transformers` installs.
 #
-# `deberta-v3-base` is the one worth adding by hand and the one that needs more
-# than this file provides: its tokeniser is SentencePiece, so
-# `--base-models microsoft/deberta-v3-base` fails at load with a message about a
-# conversion, not about a missing package. If you want it in the comparison:
-#
-#   pip install sentencepiece protobuf
-#
-# Left uninstalled by default rather than pinned blind: neither package is
+# `compare-models` takes any BERT-base-sized encoder (hidden size 768, which
+# model.py asserts). Some need more than this file provides: a SentencePiece
+# tokeniser, for instance, fails at load with a message about a conversion
+# rather than about a missing package, and wants `pip install sentencepiece
+# protobuf`. Left uninstalled rather than pinned blind — neither package is
 # needed by anything else here, and a pin nobody has run is worse than an
 # instruction.
 

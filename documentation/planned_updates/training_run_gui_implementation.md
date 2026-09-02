@@ -323,17 +323,14 @@ Modified:
    "5"]`.
 4. `finetune` — Arm B for one signal: `["-m", "scripts.encoder_training",
    "finetune", "--folds", "5", "--signal", "{signal}", "--base-model",
-   "{base_model}"]`, `base_model` declared over `roberta-base` (default),
-   `emilyalsentzer/Bio_ClinicalBERT`, `bert-base-uncased`.
+   "{base_model}"]`, `base_model` declared over `roberta-base` alone.
 5. `score-companions` — `["-m", "scripts.encoder_training",
    "score-companions"]`. Stdlib, no GPU, and the cheapest possible end-to-end
    check that the console can run something real.
 
-`--base-model roberta-base` is spelled out in entry 4 on purpose:
-`DEFAULT_BASE_MODEL` is Bio_ClinicalBERT, and `arch_encoder_training.md` section
-10 records that omitting the flag produces a run that succeeds, reports nothing
-unusual, and yields numbers that cannot be read beside any committed report.
-Baking it into the catalogue is one of the clearer things the console buys.
+`--base-model roberta-base` is spelled out in entry 4 on purpose: it makes the
+encoder visible in the command the console shows and in its log, so a run's base
+model is never something a reader has to know a default to reconstruct.
 
 **Tests** (`tests/test_training_gui.py`, no integration marker):
 

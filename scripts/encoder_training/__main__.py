@@ -47,8 +47,8 @@ the 440MB download is wasted.
 Arm A. Embeds every fold's splits once (cached), fits the ``Linear(768, 3)``
 probe, selects each fold's margin on its own validation split, scores test,
 writes the head artefacts and metadata sidecar, and writes the evaluation report
--- with the baselines included in the same report by default, because "does
-ClinicalBERT beat bag-of-words on ``null_ambiguous``" is a paired question and
+-- with the baselines included in the same report by default, because "does the
+encoder beat bag-of-words on ``null_ambiguous``" is a paired question and
 McNemar can only answer it when both models are in one report.
 
     python -m scripts.encoder_training finetune --folds 5
@@ -77,9 +77,10 @@ Arm B over several base models against the *same* folds, in **one** report. One
 report is the point: the paired McNemar tests are between the runs in a single
 report, and two separately-written reports would leave only overlapping
 confidence intervals -- which the 2026-08-09 numbers say could not separate
-anything this comparison might find. Defaults to the incumbent
-(Bio_ClinicalBERT), ``bert-base-uncased`` as the pretraining-corpus control, and
-``roberta-base`` as the contender on negation scope.
+anything this comparison might find. ``--base-models`` is required: the
+comparison this command was written for has been run and settled on
+``roberta-base`` (`arch_encoder_training.md` section 4a), so there is no
+default set left to inherit by accident.
 
     python -m scripts.encoder_training joint-compare --folds 5
 
@@ -172,33 +173,6 @@ from .train import (
     run_probe,
     write_artefacts,
     write_joint_artefacts,
-)
-
-#: The default three-encoder comparison, and why each one is in it.
-#:
-#: ``Bio_ClinicalBERT`` is the incumbent -- the encoder every number on file was
-#: produced with, so it is the thing the other two have to beat.
-#:
-#: ``bert-base-uncased`` is the **control**, not a contender. It isolates the
-#: pretraining corpus: same architecture, same size, general English instead of
-#: MIMIC-III discharge summaries. It also settles the casing question by
-#: construction, because its vocabulary is built for lowercased text, where
-#: Bio_ClinicalBERT lowercases input into a vocabulary inherited from
-#: ``bert-base-cased`` (28,996 entries -- see :class:`model.TokeniserFacts`). If
-#: it wins, part of the gain is the tokeniser rather than the register.
-#:
-#: ``roberta-base`` is the actual contender, and on a different axis than
-#: clinical-vs-lay. The largest error family on file is contrastive negation --
-#: "my mum had a fever, I never got one" -- which is negation scope and
-#: attribution, not vocabulary. BERT-base of any pretraining corpus is weak
-#: there; RoBERTa is meaningfully better. ``deberta-v3-base`` is the stronger
-#: choice again on that axis and is a supported ``--base-models`` value, but it
-#: is not in the default set because its tokeniser needs ``sentencepiece`` and
-#: ``protobuf``, which ``requirements-ml.txt`` does not install.
-DEFAULT_COMPARISON_MODELS = (
-    "emilyalsentzer/Bio_ClinicalBERT",
-    "bert-base-uncased",
-    "roberta-base",
 )
 
 DEFAULT_SIGNAL = "fever_present"
@@ -877,8 +851,9 @@ def _run_arm_b_single(args: argparse.Namespace, folds) -> int:
         "tokeniser_vocab_size": reference.facts.vocab_size,
         # A cased vocabulary behind a lowercasing tokeniser means patient casing
         # never reaches the model, whatever `arch_training.md` section 5 preserves
-        # upstream. True for Bio_ClinicalBERT. Surfaced in the header because it
-        # changes how any comparison against another encoder should be read.
+        # upstream. False for roberta-base, which is part of why it is the
+        # default. Surfaced in the header because it changes how any comparison
+        # against another encoder should be read.
         "tokeniser_discards_casing": reference.facts.discards_casing,
     }
     if not args.no_probe:
@@ -2320,9 +2295,9 @@ def _add_encoder_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--revision",
         default=None,
-        help="the base model's commit SHA. The bare name emilyalsentzer/Bio_ClinicalBERT can "
-        "move, so leaving this unset makes a run unreproducible; the resolved SHA is recorded "
-        "either way, and a warning is printed when it was not pinned.",
+        help="the base model's commit SHA. A bare model name can move, so leaving this unset "
+        "makes a run unreproducible; the resolved SHA is recorded either way, and a warning is "
+        "printed when it was not pinned.",
     )
     parser.add_argument("--pooling", choices=POOLING_MODES, default="mean")
     parser.add_argument("--max-seq-len", type=int, default=256)
@@ -2554,9 +2529,12 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument(
         "--base-models",
         nargs="+",
-        default=list(DEFAULT_COMPARISON_MODELS),
-        help="the encoders to compare. Each must be a BERT-base-sized model (hidden size 768); "
-        "anything else is rejected at load time rather than silently reshaping the head",
+        required=True,
+        help="the encoders to compare. Required rather than defaulted: the comparison this "
+        "command was written for has been run and settled on roberta-base, so any further use "
+        "of it is a deliberate question about named encoders. Each must be a BERT-base-sized "
+        "model (hidden size 768); anything else is rejected at load time rather than silently "
+        "reshaping the head",
     )
     compare.add_argument(
         "--revisions",

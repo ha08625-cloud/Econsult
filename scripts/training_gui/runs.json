@@ -69,9 +69,7 @@
           "name": "base_model",
           "label": "Base model",
           "choices": [
-            "roberta-base",
-            "emilyalsentzer/Bio_ClinicalBERT",
-            "bert-base-uncased"
+            "roberta-base"
           ],
           "default": "roberta-base"
         }
