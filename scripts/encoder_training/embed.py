@@ -80,9 +80,9 @@ class EmbeddingSpec:
     """Everything about the encoder that changes the vectors it produces.
 
     ``revision`` is the resolved commit SHA, never the bare model name and never
-    a branch. ``emilyalsentzer/Bio_ClinicalBERT`` at ``main`` is not a fixed
-    object, and a cache keyed on the name would happily serve vectors from last
-    month's weights against this month's report.
+    a branch. A bare name at ``main`` is not a fixed object, and a cache keyed on
+    the name would happily serve vectors from last month's weights against this
+    month's report.
     """
 
     base_model: str

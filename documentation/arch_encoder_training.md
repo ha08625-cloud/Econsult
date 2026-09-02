@@ -165,13 +165,36 @@ Three implementation points that are easy to get wrong and invisible when you do
   full of plausible numbers with no warning anywhere, so every input that changes
   what an embedding *is* changes the name of the file holding it.
 
-### 4a. Comparing base encoders
+### 4a. The base encoder, and the comparison that chose it
 
-`compare-models` runs Arm B over several base models against **the same folds**
-and writes them into **one** report. The single report is the whole design: the
-paired McNemar tests in `report.compare_models` run between the runs found in one
+**The encoder is `roberta-base`.** It is `DEFAULT_BASE_MODEL`, it is the only
+choice the run console offers, and every report committed since 2026-08-16 was
+produced with it. Nothing here should be run on anything else without a specific
+reason, and a run on a different encoder cannot be read beside a committed report
+whatever else it has in common with one.
+
+That was decided once, by `compare-models`, in
+`reports/encoder_training/fever_present.model_comparison.*`: `roberta-base` at
+92.9% decisive accuracy against `Bio_ClinicalBERT`'s 84.1% and
+`bert-base-uncased`'s 85.8%, over the same five folds. Two things explain the
+gap. The largest error family on file is contrastive negation — "my mum had a
+fever, I never got one myself" — which is negation scope and attribution rather
+than clinical vocabulary, and BERT-base is weak there whatever corpus it was
+pretrained on. And `Bio_ClinicalBERT` *discards patient casing*: it lowercases
+its input into a 28,996-entry vocabulary inherited from `bert-base-cased`, so the
+cased entries are unreachable and the casing section 5 of `arch_training.md`
+deliberately preserves reaches it as noise. `roberta-base`'s byte-level BPE has
+neither problem. That is the whole of what the retired encoders are still good
+for; the reports and their write-ups hold the detail, and no live path points at
+them.
+
+`compare-models` itself remains, for a future question about named encoders, and
+`--base-models` is required rather than defaulted so that using it is always a
+deliberate act. Its design: Arm B over several base models against **the same
+folds**, written into **one** report. The single report is the point — the paired
+McNemar tests in `report.compare_models` run between the runs found in one
 report, and two separately-written reports leave only overlapping confidence
-intervals to compare — which the 2026-08-09 numbers say cannot separate anything
+intervals to compare, which the 2026-08-09 numbers say cannot separate anything
 this comparison could plausibly produce (decisive CI [79.1, 88.0], per-fold sd
 4.4%). Paired, the same five folds detect roughly 2–3 points.
 
@@ -187,42 +210,20 @@ findings that lead to different next months, and an aggregate accuracy cannot
 tell them apart. For a single-class library — `fever_false` holds only `false`
 examples — that table's accuracy *is* that class's recall on it.
 
-The default three, and why:
-
-| encoder | role | what it isolates |
-|---|---|---|
-| `emilyalsentzer/Bio_ClinicalBERT` | incumbent | every number on file was produced with it |
-| `bert-base-uncased` | control | pretraining corpus, and the tokeniser question below |
-| `roberta-base` | contender | negation scope, not register |
-
-The contender is on a different axis than clinical-vs-lay register, deliberately.
-The largest error family on file is contrastive negation — "my mum had a fever,
-I never got one myself" — which is negation scope and attribution rather than
-vocabulary. BERT-base is weak there whatever it was pretrained on.
-`microsoft/deberta-v3-base` is the stronger choice again on that axis and is a
-valid `--base-models` value, but it needs `sentencepiece` and `protobuf`, which
-`requirements-ml.txt` does not install.
-
 Two constraints on what can go in: `EXPECTED_HIDDEN_SIZE` is 768 and is asserted
 at load, so a `-large` model is rejected rather than silently reshaping the head;
 and the embedding cache keys on the resolved revision, so encoders never share
 cached vectors.
 
-**The tokeniser fact this surfaced.** `TokeniserFacts.discards_casing` is true
-when a tokeniser lowercases its input *and* holds a vocabulary built for cased
-text — the cased entries then become unreachable and every capitalised word is
-fragmented into subwords the vocabulary was not organised around. Bio_ClinicalBERT
-is exactly that: `do_lower_case: true` over 28,996 entries inherited from
-`bert-base-cased` via BioBERT. So the patient casing section 5 of
-`arch_training.md` preserves reaches that encoder as noise, not signal.
-
-This is recorded rather than corrected. Overriding `do_lower_case` would make
-fine-tuning disagree with whatever the checkpoint was pretrained under, and the
-shipped config is the only evidence of what that was. The honest response is the
-comparison above, where `bert-base-uncased`'s vocabulary and casing agree by
-construction — which also means part of any gain it shows is the tokeniser rather
-than the register, and the report header carries `tokeniser_discards_casing` so
-that reading is available rather than reconstructed.
+**`TokeniserFacts.discards_casing`**, in `model.py`, is what caught the casing
+defect above and is still checked on every load: true when a tokeniser lowercases
+its input *and* holds a vocabulary built for cased text, which makes the cased
+entries unreachable and fragments every capitalised word into subwords the
+vocabulary was not organised around. It is `False` for `roberta-base`. It is
+recorded rather than corrected — overriding `do_lower_case` would make
+fine-tuning disagree with whatever the checkpoint was pretrained under — and the
+report header carries `tokeniser_discards_casing` so the reading is available
+rather than reconstructed.
 
 ### 4b. Joint multi-head training
 
@@ -714,11 +715,12 @@ python -m scripts.encoder_training finetune --folds 5         # Arm B, every lay
 python -m scripts.encoder_training finetune --folds 5 \       # Arm B, jointly: one encoder,
   --dataset joint6 --signals fever_present dysuria_present \  # every signal merge-folds wrote
   flank_pain_present haematuria_present nocturia_present urinary_frequency_present
-python -m scripts.encoder_training compare-models --folds 5   # Arm B over several base encoders
+python -m scripts.encoder_training compare-models --folds 5 \    # Arm B over several base
+  --base-models roberta-base <other>                          # encoders; --base-models required
 python -m scripts.encoder_training companion-compare --folds 5 \   # Arm 0, Arm P and Arm C
   --arm0-dir data/synthetic/generated/arm0 \
   --armp-dir data/synthetic/generated/armp \
-  --dataset joint6 --base-model roberta-base
+  --dataset joint6
 python -m scripts.encoder_training score-companions            # read those reports, score the
                                                                # declared threshold, no GPU
 ```
@@ -736,12 +738,11 @@ fifteen runs must agree on the fold count, the salt and the seed derivation, and
 loop that gets one of those wrong produces a directory that loads cleanly and
 evaluates nonsense.
 
-**`--base-model roberta-base` is not optional on a run meant to be comparable.**
-`DEFAULT_BASE_MODEL` is `Bio_ClinicalBERT`, which `fever_present.model_comparison`
-put nine points below roberta-base on decisive accuracy (84.1% against 92.9%).
-Omit the flag and the run succeeds, reports nothing unusual, and produces numbers
-that cannot be read beside any of the six committed reports. The base model is in
-every report header; check it there before comparing anything.
+**Every command above runs on `roberta-base` without being told to** —
+`DEFAULT_BASE_MODEL`, section 4a. `--base-model` exists but there is no reason to
+pass it; a run on any other encoder produces numbers that cannot be read beside
+any committed report, and it will not announce that. The base model is in every
+report header; check it there before comparing anything.
 
 By default `finetune` reports Arm B **and** Arm A **and** the baselines in one
 report — the ticket's question is a paired comparison and McNemar can only make

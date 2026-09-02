@@ -690,7 +690,7 @@ def _movement_predictions(*outcomes):
 def _movement_report():
     """Two encoders that disagree about exactly one fragment each."""
     incumbent = _run_with_predictions(
-        "arm_b_finetune@Bio_ClinicalBERT",
+        "arm_b_finetune@other-encoder",
         _movement_predictions(
             (CLASS_FALSE, CLASS_TRUE, "neg:01", "fever_false"),
             (CLASS_TRUE, CLASS_TRUE, "pos:01", "fever_true"),
@@ -718,16 +718,16 @@ def test_model_movement_reports_each_encoder_against_the_same_fragment():
     """
     movement = _movement_report()["model_movement"]
     assert movement["models"] == [
-        "arm_b_finetune@Bio_ClinicalBERT",
+        "arm_b_finetune@other-encoder",
         "arm_b_finetune@roberta-base",
     ]
     by_fragment = {row["fragment_id"]: row for row in movement["by_fragment"]}
     assert by_fragment["neg:01"]["errors"] == {
-        "arm_b_finetune@Bio_ClinicalBERT": 1,
+        "arm_b_finetune@other-encoder": 1,
         "arm_b_finetune@roberta-base": 0,
     }
     assert by_fragment["pos:01"]["errors"] == {
-        "arm_b_finetune@Bio_ClinicalBERT": 0,
+        "arm_b_finetune@other-encoder": 0,
         "arm_b_finetune@roberta-base": 1,
     }
     assert all(row["spread"] == 1 for row in movement["by_fragment"])
@@ -779,14 +779,20 @@ def test_markdown_renders_the_movement_tables_when_models_are_compared():
 # --------------------------------------------------------------------------
 
 
-def test_comparison_defaults_name_each_encoder_after_its_short_name():
-    args = build_parser().parse_args(["compare-models"])
+def test_comparison_requires_the_encoders_to_be_named():
+    """No default set: the encoder comparison was run and settled on
+    roberta-base, so a `compare-models` invocation that inherited a default would
+    be a sweep nobody asked for."""
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["compare-models"])
+
+
+def test_comparison_names_each_encoder_after_its_short_name():
+    args = build_parser().parse_args(
+        ["compare-models", "--base-models", "roberta-base", "some-org/Other-Model"]
+    )
     resolved = _resolve_comparison_models(args)
-    assert [label for _, _, label in resolved] == [
-        "Bio_ClinicalBERT",
-        "bert-base-uncased",
-        "roberta-base",
-    ]
+    assert [label for _, _, label in resolved] == ["roberta-base", "Other-Model"]
     assert all(revision is None for _, revision, _ in resolved)
 
 
@@ -810,7 +816,7 @@ def test_arm_run_names_stay_unchanged_without_a_label():
     """The single-encoder commands must keep writing the names already on disk."""
     assert arm_run_name(ARM_B_NAME, None) == ARM_B_NAME
     assert arm_run_name(ARM_B_NAME, "roberta-base") == "arm_b_finetune@roberta-base"
-    assert display_model("emilyalsentzer/Bio_ClinicalBERT") == "Bio_ClinicalBERT"
+    assert display_model("some-org/Other-Model") == "Other-Model"
     assert display_model("roberta-base") == "roberta-base"
 
 

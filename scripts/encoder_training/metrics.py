@@ -518,7 +518,7 @@ def _two_sided_exact_binomial(successes: int, trials: int) -> float:
 def mcnemar(a: Sequence[Prediction], b: Sequence[Prediction]) -> McNemarResult:
     """Exact McNemar test on two models' predictions over the same examples.
 
-    "Does ClinicalBERT beat bag-of-words on ``null_ambiguous``" is a paired
+    "Does the encoder beat bag-of-words on ``null_ambiguous``" is a paired
     question: both models saw the same examples, so the informative quantity is
     the examples they disagree about, not the gap between two independent point
     estimates.

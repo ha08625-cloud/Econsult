@@ -1,6 +1,6 @@
 """Both arms: the frozen probe, the fine-tune, and the artefacts they produce.
 
-Arm A holds Bio_ClinicalBERT still, embeds every example once (:mod:`.embed`),
+Arm A holds the encoder still, embeds every example once (:mod:`.embed`),
 and fits ``Linear(768, 3)`` over the cached vectors. 2,307 parameters, seconds
 per fold. Its job is not to be good -- it is to exercise the whole pipeline
 where mistakes are cheap: embedding, caching, the masked loss, epoch selection,
@@ -79,10 +79,12 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
     from .model import PooledEncoder
 
-#: The model this ticket trains against. Bio_ClinicalBERT is BERT-base
-#: initialised from BioBERT and further trained on MIMIC-III notes, which is the
-#: closest freely available thing to the register patients write in.
-DEFAULT_BASE_MODEL = "emilyalsentzer/Bio_ClinicalBERT"
+#: The model this package trains against, everywhere, unless a flag says
+#: otherwise. RoBERTa-base won the encoder comparison on file -- see
+#: `arch_encoder_training.md` section 4a -- and it is the default rather than a
+#: flag to remember precisely so that a run started without thinking is
+#: comparable with every report already committed.
+DEFAULT_BASE_MODEL = "roberta-base"
 
 #: Report/artefact name of the arm.
 ARM_A_NAME = "arm_a_probe"
@@ -97,7 +99,7 @@ ARM_A_DESCRIPTION_TEMPLATE = (
     'method is too weak".'
 )
 
-ARM_A_DESCRIPTION = ARM_A_DESCRIPTION_TEMPLATE.format(model="Bio_ClinicalBERT")
+ARM_A_DESCRIPTION = ARM_A_DESCRIPTION_TEMPLATE.format(model="RoBERTa-base")
 
 
 #: Report/artefact name of the fine-tune arm.
@@ -115,7 +117,7 @@ ARM_B_DESCRIPTION_TEMPLATE = (
     "model work."
 )
 
-ARM_B_DESCRIPTION = ARM_B_DESCRIPTION_TEMPLATE.format(model="Bio_ClinicalBERT")
+ARM_B_DESCRIPTION = ARM_B_DESCRIPTION_TEMPLATE.format(model="RoBERTa-base")
 
 
 def display_model(base_model: str) -> str:

@@ -77,7 +77,7 @@ TEST = FIXTURES / "mini.fold0.test.jsonl"
 SIGNAL = "fever_present"
 
 SPEC = EmbeddingSpec(
-    base_model="emilyalsentzer/Bio_ClinicalBERT",
+    base_model="roberta-base",
     revision="0123456789abcdef0123456789abcdef01234567",
     pooling="mean",
     max_seq_len=256,
@@ -912,10 +912,10 @@ def _tiny_encoder_dir(tmp_path: Path, *, lower: bool) -> Path:
 def test_tokeniser_casing_is_probed_rather_than_assumed(transformers_module, tmp_path):
     """Instruction 2: check ``do_lower_case`` behaviourally, and record it.
 
-    ``arch_training.md`` section 5 preserves original casing verbatim and
-    Bio_ClinicalBERT descends from ``bert-base-cased``, so casing is probably
-    signal-bearing. The attribute is a constructor argument a repository can set
-    either way, so the fact worth recording is what the tokeniser *does*.
+    ``arch_training.md`` section 5 preserves original casing verbatim, so casing
+    is probably signal-bearing. The attribute is a constructor argument a
+    repository can set either way, so the fact worth recording is what the
+    tokeniser *does*.
     """
     from scripts.encoder_training.model import PooledEncoder
 
@@ -934,9 +934,8 @@ def test_tokeniser_casing_is_probed_rather_than_assumed(transformers_module, tmp
     # Both fixtures carry `Fever` in the vocabulary, so both vocabularies are
     # cased. Only the lowercasing one throws the casing away: it looks `Fever` up
     # as `fever` and the cased entry becomes unreachable. That combination is
-    # Bio_ClinicalBERT's -- `do_lower_case: true` over a vocabulary inherited
-    # from `bert-base-cased` -- and it is the reason the fact is recorded rather
-    # than the pair of booleans left for a reader to combine.
+    # what `discards_casing` names, and it is the reason the fact is recorded
+    # rather than the pair of booleans left for a reader to combine.
     assert cased.facts.cased_vocab is True
     assert lowered.facts.cased_vocab is True
     assert cased.facts.discards_casing is False
