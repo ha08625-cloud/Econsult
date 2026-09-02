@@ -4,9 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Encoder training console</title>
-<!-- Inline empty icon: the browser asks for /favicon.ico otherwise, and a 404 in
-     the console of a page whose job is showing errors is a distraction. -->
-<link rel="icon" href="data:,">
+<!-- Inline icon: the browser asks for /favicon.ico otherwise, and a 404 in the
+     console of a page whose job is showing errors is a distraction. The script
+     swaps the href between four inline dots, so the tab reports the run's state
+     without a file to serve. -->
+<link id="favicon" rel="icon" href="data:,">
 <style>
   :root {
     --ink: #1c1c1c;
@@ -71,10 +73,25 @@
   .verdict.stopped, .verdict.interrupted, .verdict.idle { color: var(--neutral); }
   .verdict.running { color: var(--ink); }
   .step { color: var(--muted); }
+  .elapsed { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .steps { margin: 0 0 12px; padding: 0; list-style: none; }
+  .steps li { display: flex; gap: 10px; align-items: baseline; padding: 2px 0; }
+  .steps .glyph { width: 1.2em; text-align: center; }
+  .steps .label { flex: 1; }
+  .steps .dur { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .steps .running { font-weight: 600; }
+  .steps .succeeded .glyph { color: var(--good); }
+  .steps .failed .glyph, .steps .interrupted .glyph { color: var(--bad); }
+  .steps .pending, .steps .skipped, .steps .stopped { color: var(--muted); }
+  .steps details { width: 100%; }
+  .steps details summary { cursor: pointer; color: var(--muted); }
+  .steps details ul { margin: 4px 0 0; padding: 0 0 0 18px; list-style: none; }
+  .log-controls { margin: 0 0 8px; }
   #log {
     height: 420px; overflow: auto; background: #12161c; color: #dde3ea;
     border-radius: 6px; padding: 12px; margin: 0; white-space: pre-wrap; word-break: break-word;
   }
+  #log.expanded { height: 80vh; }
   .files { margin: 0; padding: 0; list-style: none; }
   .files li { padding: 3px 0; border-bottom: 1px solid #f0f2f5; }
   .files .flag { display: inline-block; width: 3.5em; color: var(--muted); }
@@ -106,9 +123,16 @@
   <div class="statusline">
     <span id="verdict" class="verdict idle">Idle</span>
     <span id="step" class="step"></span>
+    <span id="elapsed" class="elapsed"></span>
     <button id="stop" class="stop" hidden>Stop</button>
   </div>
+  <ul id="steps" class="steps"></ul>
   <div id="command" class="mono step"></div>
+  <div class="row log-controls">
+    <button id="copy-log">Copy log</button>
+    <button id="copy-failed" hidden>Copy the failing step&rsquo;s output</button>
+    <button id="expand-log">Expand</button>
+  </div>
   <pre id="log"></pre>
 </section>
 
@@ -272,6 +296,14 @@ async function startRun(entry) {
 }
 
 async function stopRun() {
+  // The only guarded button on the page. It is guarded because it is the only
+  // one that throws away work that cannot be got back without spending the hours
+  // again; Run is deliberately left unguarded, because a confirm on the press
+  // made most often is a confirm that gets clicked through.
+  const name = (lastStatus && lastStatus.entry_name) || "this run";
+  const elapsed = totalElapsed(lastStatus);
+  const since = elapsed ? ` It has been going for ${elapsed}.` : "";
+  if (!confirm(`Stop ${name}?${since} What it has not written yet is lost.`)) return;
   try {
     await api("/api/stop", { method: "POST" });
   } catch (error) {
@@ -288,7 +320,176 @@ const VERDICTS = {
   interrupted: "Interrupted",
 };
 
+const GLYPHS = {
+  succeeded: "\u2713",
+  failed: "\u2717",
+  interrupted: "\u2717",
+  stopped: "\u25a0",
+  skipped: "\u2013",
+  running: "\u25b6",
+  pending: "\u00b7",
+};
+
+// Four dots, inline, so the tab reports the state from across a desk. Kept as
+// data URIs for the same reason the empty icon was: no file for the server to
+// serve and no 404 in a console whose job is showing errors.
+const DOT = (fill) =>
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">' +
+    `<circle cx="8" cy="8" r="7" fill="${fill}"/></svg>`);
+const FAVICONS = {
+  idle: DOT("#8a94a6"),
+  running: DOT("#1c1c1c"),
+  succeeded: DOT("#0f7b3f"),
+  failed: DOT("#a3160b"),
+};
+
+// -- timestamps --------------------------------------------------------------
+// The manifest carries ISO 8601 with an offset, so Date.parse is enough. A step
+// that is still going has ended_at: null, which is why each of these takes "now"
+// rather than reading the clock itself: one poll, one clock read, so the rows on
+// screen agree with each other.
+
+function parseTime(value) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function duration(started, ended, now) {
+  const from = parseTime(started);
+  if (from === null) return "";
+  const to = ended ? parseTime(ended) : now;
+  if (to === null || to < from) return "";
+  return formatDuration(Math.round((to - from) / 1000));
+}
+
+function formatDuration(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  if (hours) return `${hours}h ${pad(minutes)}m`;
+  if (minutes) return `${minutes}m ${pad(rest)}s`;
+  return `${pad(rest)}s`;
+}
+
+function totalElapsed(status, now) {
+  if (!status || !status.started_at) return "";
+  return duration(status.started_at, status.ended_at, now === undefined ? Date.now() : now);
+}
+
+function stepLabel(status, step) {
+  const labels = status.step_labels || [];
+  return labels[step.index - 1] || `step ${step.index}`;
+}
+
+// -- the step checklist ------------------------------------------------------
+
+function stepRow(status, step, now) {
+  const row = document.createElement("li");
+  row.className = step.status || "pending";
+  const glyph = document.createElement("span");
+  glyph.className = "glyph";
+  glyph.textContent = GLYPHS[step.status] || GLYPHS.pending;
+  const label = document.createElement("span");
+  label.className = "label";
+  label.textContent = stepLabel(status, step);
+  const dur = document.createElement("span");
+  dur.className = "dur";
+  dur.textContent = step.status === "pending" ? "" : duration(step.started_at, step.ended_at, now);
+  row.append(glyph, label, dur);
+  return row;
+}
+
+// The checklist is rebuilt from scratch on every poll, which would slam a
+// disclosure shut a second after it was opened. The open state therefore lives
+// here rather than in the DOM.
+const disclosureOpen = { succeeded: false, skipped: false };
+
+function collapsedRow(key, status, steps, now, summary) {
+  const row = document.createElement("li");
+  const details = document.createElement("details");
+  details.open = disclosureOpen[key];
+  details.ontoggle = () => { disclosureOpen[key] = details.open; };
+  const head = document.createElement("summary");
+  head.textContent = summary;
+  const list = document.createElement("ul");
+  for (const step of steps) list.appendChild(stepRow(status, step, now));
+  details.append(head, list);
+  row.appendChild(details);
+  return row;
+}
+
+// How many not-yet-started steps to show below the running one: enough to see
+// what is coming next, not so many that a 29-step sweep fills the page.
+const PENDING_SHOWN = 3;
+
+function renderSteps(status, now) {
+  const container = $("steps");
+  container.innerHTML = "";
+  const steps = Array.isArray(status.steps) ? status.steps : [];
+  if (!steps.length) return;
+
+  const succeeded = steps.filter((step) => step.status === "succeeded");
+  const skipped = steps.filter((step) => step.status === "skipped");
+  const shown = steps.filter(
+    (step) => !["succeeded", "skipped", "pending"].includes(step.status));
+  const pending = steps.filter((step) => step.status === "pending");
+
+  if (succeeded.length) {
+    const total = succeeded.reduce((sum, step) => {
+      const from = parseTime(step.started_at);
+      const to = parseTime(step.ended_at);
+      return from !== null && to !== null ? sum + (to - from) : sum;
+    }, 0);
+    const plural = succeeded.length === 1 ? "step" : "steps";
+    container.appendChild(collapsedRow("succeeded", status, succeeded, now,
+      `\u2713 ${succeeded.length} ${plural} succeeded \u00b7 ` +
+      formatDuration(Math.round(total / 1000))));
+  }
+  for (const step of shown) container.appendChild(stepRow(status, step, now));
+  for (const step of pending.slice(0, PENDING_SHOWN)) {
+    container.appendChild(stepRow(status, step, now));
+  }
+  if (pending.length > PENDING_SHOWN) {
+    const rest = document.createElement("li");
+    rest.className = "pending";
+    rest.textContent = `\u00b7 ${pending.length - PENDING_SHOWN} more to come`;
+    container.appendChild(rest);
+  }
+  if (skipped.length) {
+    const plural = skipped.length === 1 ? "step" : "steps";
+    container.appendChild(collapsedRow("skipped", status, skipped, now,
+      `\u2013 ${skipped.length} ${plural} never ran`));
+  }
+}
+
+function renderTab(status) {
+  const state = status.status || "idle";
+  const name = status.entry_name || "";
+  if (state === "running") {
+    const counter = status.step_index && status.step_count
+      ? `${status.step_index}/${status.step_count} \u00b7 ` : "";
+    document.title = `\u25b6 ${counter}${name}`.trim();
+    $("favicon").href = FAVICONS.running;
+  } else if (state === "succeeded") {
+    document.title = `\u2705 Succeeded \u00b7 ${name}`.trim();
+    $("favicon").href = FAVICONS.succeeded;
+  } else if (["failed", "stopped", "interrupted"].includes(state)) {
+    document.title = `\u274c ${VERDICTS[state]} \u00b7 ${name}`.trim();
+    $("favicon").href = FAVICONS.failed;
+  } else {
+    document.title = "Encoder training console";
+    $("favicon").href = FAVICONS.idle;
+  }
+}
+
 function renderStatus(status) {
+  // One clock read for the whole render, so the total and the running step's own
+  // elapsed cannot disagree by a second.
+  const now = Date.now();
   const state = status.status || "idle";
   const verdict = $("verdict");
   verdict.className = "verdict " + state;
@@ -300,13 +501,48 @@ function renderStatus(status) {
     stepLine.push(`step ${status.step_index} of ${status.step_count}`);
   }
   $("step").textContent = stepLine.join(" — ");
+  $("elapsed").textContent = totalElapsed(status, now);
   $("command").textContent = status.command || "";
+  renderSteps(status, now);
+  renderTab(status);
+  $("copy-failed").hidden = !failingStep(status);
 
   const wasBusy = busy;
   busy = state === "running";
   applyBusy();
   // The run just ended: the file list is the first thing wanted next.
   if (wasBusy && !busy) refreshChanges();
+}
+
+// -- copying -----------------------------------------------------------------
+
+function failingStep(status) {
+  const steps = (status && status.steps) || [];
+  return steps.find((step) => step.status === "failed") || null;
+}
+
+function failingStepOutput() {
+  const step = failingStep(lastStatus);
+  if (!step) return null;
+  // The runner banners each step as "=== step N/M: <command> ===", so the slice
+  // from one banner to the next is that step's own output.
+  const text = logBox.textContent;
+  const start = text.indexOf(`=== step ${step.index}/`);
+  if (start < 0) return null;
+  const rest = text.slice(start);
+  const next = rest.indexOf("\n=== ", 1);
+  return next < 0 ? rest : rest.slice(0, next);
+}
+
+async function copyToClipboard(text, button) {
+  const previous = button.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "Copied";
+  } catch (error) {
+    button.textContent = "Could not copy";
+  }
+  setTimeout(() => { button.textContent = previous; }, 1500);
 }
 
 async function poll() {
@@ -435,6 +671,14 @@ async function gitAction(path, button, label) {
 }
 
 $("stop").onclick = stopRun;
+$("copy-log").onclick = (event) => copyToClipboard(logBox.textContent, event.target);
+$("copy-failed").onclick = (event) =>
+  copyToClipboard(failingStepOutput() || logBox.textContent, event.target);
+$("expand-log").onclick = (event) => {
+  const expanded = logBox.classList.toggle("expanded");
+  event.target.textContent = expanded ? "Collapse" : "Expand";
+  logBox.scrollTop = logBox.scrollHeight;
+};
 $("refresh-changes").onclick = refreshChanges;
 $("save").onclick = (event) => gitAction("/api/save-branch", event.target, "Saving…");
 $("update").onclick = (event) => gitAction("/api/update", event.target, "Updating…");

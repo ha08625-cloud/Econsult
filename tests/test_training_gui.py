@@ -1518,6 +1518,35 @@ def test_status_reports_the_step_number_and_the_current_command():
 
 
 @requires_fastapi
+def test_status_carries_the_entrys_step_labels_so_the_page_can_name_each_step():
+    """The labels belong to the catalogue, not to the run, so the status endpoint
+    joins them on by ``entry_id``. A run of an entry the catalogue no longer has
+    gets an empty list rather than an error: the page falls back to step numbers."""
+    manifest = {
+        "run_id": "20260902-120000-decl-sweep-2x2",
+        "entry_id": "decl-sweep-2x2",
+        "status": STATUS_RUNNING,
+        "steps": [{"index": 1, "command": "python -u -m a", "status": STATUS_RUNNING}],
+    }
+    client, _, _ = client_for(runner=FakeRunner(manifest))
+
+    body = client.get("/api/status").json()
+
+    entry = next(item for item in load_catalogue() if item.id == "decl-sweep-2x2")
+    assert body["step_labels"] == list(entry.step_labels)
+    assert body["step_labels"][0] == "CUDA smoke test"
+
+
+@requires_fastapi
+def test_status_of_an_unlabelled_or_unknown_entry_carries_no_labels():
+    client, _, _ = client_for(
+        runner=FakeRunner({"run_id": "20260902-120000-gone", "entry_id": "no-such-entry"})
+    )
+
+    assert client.get("/api/status").json()["step_labels"] == []
+
+
+@requires_fastapi
 def test_status_is_idle_with_no_run():
     client, _, _ = client_for()
 

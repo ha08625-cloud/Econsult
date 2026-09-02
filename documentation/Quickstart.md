@@ -92,8 +92,15 @@ comparison fails after the cells are written, the bare `compare` entry re-runs
 just the training.
 
 On the page: pick a run's parameters from its dropdowns, press **Run**, and watch
-the log — it shows which step of the run is executing and the literal command line
-it is running. **Stop** ends it. A failed step aborts the rest of the run. When it finishes, "Save this run to
+the log. A checklist shows every step by name with its own status and duration —
+succeeded steps collapse behind one summary row, and the running step, any failed
+step and the next few to come are always in view — beside the total elapsed time
+and the literal command line running now. The tab title and its dot carry the same
+state, so a sweep can be left in a background tab. **Copy log** and **Copy the
+failing step's output** put either on the clipboard for a chat; **Expand** gives
+the log the height of the window. **Stop** asks for confirmation, naming the run
+and how long it has been going, because it is the one button that throws away
+hours. A failed step aborts the rest of the run. When it finishes, "Save this run to
 a branch" commits what it wrote under `reports/` and `models/`, plus that run's log
 and manifest, to a new branch cut from the commit the run was produced by, and
 hands you the branch name and a compare link. **Update from GitHub** does a

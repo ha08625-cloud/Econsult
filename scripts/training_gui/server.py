@@ -108,7 +108,13 @@ def _current_step(steps: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | Non
     return started[-1] if started else None
 
 
-def _status_json(manifest: Mapping[str, Any]) -> dict[str, Any]:
+def _status_json(manifest: Mapping[str, Any], step_labels: Sequence[str] = ()) -> dict[str, Any]:
+    """The manifest as the page wants it, plus the entry's step labels.
+
+    The labels are presentational and belong to the catalogue, not to the run, so
+    they are passed in rather than looked up here: this stays a pure function of
+    its arguments and the endpoint does the lookup.
+    """
     steps = manifest.get("steps") or []
     current = _current_step(steps) if isinstance(steps, list) else None
     return {
@@ -116,6 +122,7 @@ def _status_json(manifest: Mapping[str, Any]) -> dict[str, Any]:
         "step_count": len(steps) if isinstance(steps, list) else 0,
         "step_index": current.get("index") if current else None,
         "command": current.get("command") if current else None,
+        "step_labels": list(step_labels),
     }
 
 
@@ -190,7 +197,9 @@ def create_app(runner: Any, catalogue: Sequence[RunEntry], gitops: Any) -> FastA
 
     @app.get("/api/status")
     def get_status() -> dict[str, Any]:
-        return _status_json(active_manifest())
+        manifest = active_manifest()
+        entry = entries.get(manifest.get("entry_id"))
+        return _status_json(manifest, entry.step_labels if entry else ())
 
     @app.get("/api/log")
     def get_log(offset: int = Query(default=0, ge=0)) -> dict[str, Any]:
