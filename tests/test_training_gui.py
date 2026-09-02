@@ -105,15 +105,17 @@ def wait_for(predicate, timeout: float = 20.0) -> bool:
 def test_the_committed_catalogue_loads():
     entries = load_catalogue(DEFAULT_CATALOGUE_PATH)
     assert [entry.id for entry in entries] == [
+        # The two composites come first: they are the buttons that get pressed,
+        # and everything below them is an escape hatch for when one of their
+        # steps has to be repeated on its own.
+        "decl-sweep-2x2",
+        "decl-sweep-register",
         "smoke-cuda",
+        "train-canary",
         "score-companions",
         "generate-folds",
         "merge-folds",
-        "finetune",
-        "decl-generate-folds",
         "decl-generate-folds-all",
-        "decl-finetune",
-        "decl-finetune-all",
         "decl-compare-2x2",
         "decl-compare-register",
     ]
@@ -124,10 +126,10 @@ def test_every_declarative_cell_writes_to_its_own_directories():
 
     Every declarative entry writes under a path built from both shares, so a
     second cell cannot land on the first's fold tree, report tree or models. The
-    committed ``generate-folds`` and ``finetune`` entries take the default
-    directories, which is fine while there is one arm and wrong the moment there
-    are two: the second run would overwrite the first and the comparison would be
-    a tree against itself.
+    committed ``generate-folds`` entry takes the default directories, which is
+    fine while there is one arm and wrong the moment there are two: the second
+    run would overwrite the first and the comparison would be a tree against
+    itself.
     """
     entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
     cells = [
@@ -136,7 +138,7 @@ def test_every_declarative_cell_writes_to_its_own_directories():
         for declarative in ("0.0", "0.3", "0.6")
     ]
 
-    for entry_id in ("decl-generate-folds-all", "decl-finetune-all"):
+    for entry_id in ("decl-generate-folds-all",):
         seen: set[str] = set()
         for values in cells:
             steps = resolve(entries[entry_id], values)
@@ -188,13 +190,28 @@ def test_the_declarative_sweep_scores_the_real_text_holdout():
     absence of the flag rather than its presence."""
     entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
     for entry_id in (
-        "decl-finetune",
-        "decl-finetune-all",
         "decl-compare-2x2",
         "decl-compare-register",
+        "decl-sweep-2x2",
+        "decl-sweep-register",
     ):
         for step in entries[entry_id].steps:
+            if step[2] != "declarative-compare":
+                # The composites carry a canary that skips the holdout on purpose;
+                # the assertion is about the step that produces the numbers.
+                continue
             assert "--no-holdout" not in step, entry_id
+
+
+def test_the_canary_skips_the_holdout_deliberately():
+    """The comparisons load and validate the holdout before any GPU work, so a
+    canary that scored it would spend time re-checking something already checked
+    and prove nothing more about the training path."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in ("train-canary", *COMPOSITES):
+        train = [step for step in entries[entry_id].steps if step[2] == "finetune"]
+        assert len(train) == 1, entry_id
+        assert "--no-holdout" in train[0], entry_id
 
 
 def test_the_declarative_sweep_covers_the_six_trainable_signals():
@@ -202,26 +219,205 @@ def test_the_declarative_sweep_covers_the_six_trainable_signals():
     a 30-day window and six written policy rules -- and it has no trained head
     either, so including it would produce a run that fails partway."""
     entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
-    for entry_id in ("decl-generate-folds-all", "decl-finetune-all"):
+    for entry_id in ("decl-generate-folds-all",):
         entry = entries[entry_id]
         signals = [step[step.index("--signal") + 1] for step in entry.steps]
         assert len(signals) == 6, entry_id
         assert "recent_uti_present" not in signals, entry_id
         assert len(set(signals)) == 6, entry_id
 
+    # The composites cover the same six, once per cell they compare: four cells
+    # for the 2x2 and three for the register arm. Only the steps that write a
+    # declarative cell count -- the canary also names a signal, and it is not
+    # part of the sweep's coverage.
+    for entry_id, cells in (("decl-sweep-2x2", 4), ("decl-sweep-register", 3)):
+        entry = entries[entry_id]
+        signals = [
+            step[step.index("--signal") + 1]
+            for step in entry.steps
+            if _writes_a_declarative_cell(step)
+        ]
+        assert len(signals) == 6 * cells, entry_id
+        assert set(signals) == {
+            "fever_present",
+            "dysuria_present",
+            "flank_pain_present",
+            "haematuria_present",
+            "nocturia_present",
+            "urinary_frequency_present",
+        }, entry_id
+        assert "recent_uti_present" not in signals, entry_id
+
 
 def test_the_committed_catalogue_names_the_base_model_explicitly():
     """The flag is baked in even though ``DEFAULT_BASE_MODEL`` already agrees
     with it, so the encoder is visible in the command the console shows and in
     its log rather than being something a reader reconstructs from a default."""
-    finetune = next(e for e in load_catalogue(DEFAULT_CATALOGUE_PATH) if e.id == "finetune")
-    assert "--base-model" in finetune.steps[0]
-    base_model = finetune.parameter("base_model")
-    assert base_model is not None
-    assert base_model.default == "roberta-base"
-    # Retired encoders are not offered: an encoder picked by accident is how a
+    compare = next(e for e in load_catalogue(DEFAULT_CATALOGUE_PATH) if e.id == "decl-compare-2x2")
+    step = compare.steps[0]
+    assert "--base-model" in step
+    # A literal, not a parameter: a retired encoder picked by accident is how a
     # run silently stops being comparable with the committed reports.
-    assert base_model.choices == ("roberta-base",)
+    assert step[step.index("--base-model") + 1] == "roberta-base"
+
+
+COMPOSITES = ("decl-sweep-2x2", "decl-sweep-register")
+
+#: Where the declarative sweep's cells live. The canary writes its own one-fold
+#: tree outside this prefix, so the assertions about cells can ignore it without
+#: losing any of their teeth.
+DECL_CELL_PREFIX = "data/synthetic/generated/decl/"
+
+
+CANARY_TREE = "data/synthetic/generated/canary"
+
+
+def _touches_the_canary_tree(step) -> bool:
+    return CANARY_TREE in step
+
+
+def _writes_a_declarative_cell(step) -> bool:
+    return "--out-dir" in step and step[step.index("--out-dir") + 1].startswith(DECL_CELL_PREFIX)
+
+
+def test_each_composite_generates_exactly_the_cells_it_compares():
+    """The guard that pays for itself in GPU hours.
+
+    A composite writes its cells with ``--out-dir`` and then compares them by
+    ``--cell``, and both are literals typed out cell by cell. A share mistyped in
+    one place and not the other -- ``d0.3`` where the comparison says ``d0.6`` --
+    produces a run that generates three of the cells it needs, spends 25 minutes
+    doing it, and then refuses at the start of the four-hour comparison, or worse
+    finds a stale tree there and compares against the wrong data. Set equality
+    here catches that in under a second.
+    """
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in COMPOSITES:
+        entry = entries[entry_id]
+        generated = {
+            step[step.index("--out-dir") + 1]
+            for step in entry.steps
+            if _writes_a_declarative_cell(step)
+        }
+        compared = {
+            step[position + 1]
+            for step in entry.steps
+            for position, element in enumerate(step)
+            if element == "--cell"
+        }
+        assert generated, entry_id
+        assert generated == compared, entry_id
+
+
+def test_the_canary_agrees_with_itself_about_the_fold_count():
+    """The coupling that makes the canary work at all.
+
+    ``load_folds`` refuses a tree whose sidecar records a different fold count
+    from the one being requested, so a canary that generated one fold and then
+    trained against five -- or the reverse -- would fail in the loader every
+    time, and the failure would read as a broken environment rather than a
+    broken catalogue entry. That is the worst possible error from a canary: the
+    thing whose job is to tell you the machine is fine would tell you it is not.
+    """
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in ("train-canary", *COMPOSITES):
+        canary = [step for step in entries[entry_id].steps if _touches_the_canary_tree(step)]
+        assert len(canary) == 2, entry_id
+        folds = {step[step.index("--folds") + 1] for step in canary}
+        assert folds == {"1"}, entry_id
+
+
+def test_the_canary_never_touches_a_directory_a_sweep_reads():
+    """It writes its own fold tree, reports and models. A canary that wrote into
+    a cell would corrupt the comparison it is supposed to be protecting -- and a
+    one-fold tree landing in a five-fold cell is exactly the half-written tree
+    that makes a presence check unsafe."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in ("train-canary", *COMPOSITES):
+        for step in entries[entry_id].steps:
+            if not _touches_the_canary_tree(step):
+                continue
+            written = {
+                step[position + 1]
+                for position, element in enumerate(step)
+                if element in ("--out-dir", "--data-dir", "--report-dir", "--models-dir")
+            }
+            assert written, entry_id
+            for directory in written:
+                assert not directory.startswith(DECL_CELL_PREFIX), (entry_id, directory)
+                assert "canary" in directory, (entry_id, directory)
+
+
+def test_each_composite_runs_the_canary_before_it_generates_anything():
+    """Three minutes in rather than twenty-six. The point of the canary's
+    position is that a machine which cannot run a backward pass fails before the
+    25 minutes of CPU generation, not after them."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in COMPOSITES:
+        steps = entries[entry_id].steps
+        assert _touches_the_canary_tree(steps[1]), entry_id
+        assert steps[2][2] == "finetune", entry_id
+        first_cell = next(
+            position for position, step in enumerate(steps) if _writes_a_declarative_cell(step)
+        )
+        assert first_cell > 2, entry_id
+
+
+def test_each_composite_starts_with_the_smoke_test():
+    """Ten seconds at the front, so a broken driver or wheel fails now rather
+    than after the 25 minutes of generation that precede the first GPU work."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in COMPOSITES:
+        assert entries[entry_id].steps[0] == ("-m", "scripts.encoder_training", "smoke-cuda")
+
+
+def test_the_composites_take_no_parameters():
+    """The one-button entries are entirely literal: with no parameters declared,
+    no browser-supplied string reaches their argv at all, not even one matched
+    against a committed choice."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in COMPOSITES:
+        assert entries[entry_id].parameters == ()
+
+
+def test_score_companions_reads_a_directory_the_comparisons_write():
+    """``score-companions`` used to pass no ``--report-dir`` and so read the CLI
+    default, which no declarative comparison ever writes to -- the button could
+    not score the runs the console performs. Every choice it now offers must be a
+    directory some comparison entry actually writes."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    written = {
+        step[step.index("--report-dir") + 1]
+        for entry_id in ("decl-compare-2x2", "decl-compare-register")
+        for step in entries[entry_id].steps
+        if "--report-dir" in step
+    }
+    report_dir = entries["score-companions"].parameter("report_dir")
+    assert report_dir is not None
+    assert set(report_dir.choices) <= written
+    assert report_dir.default in written
+
+
+def test_the_composites_score_the_comparison_they_just_ran():
+    """The final step reads back the directory the composite's own comparison
+    wrote, so the run ends with the scorecard in the log instead of needing a
+    second button press against a directory chosen from memory."""
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+    for entry_id in COMPOSITES:
+        steps = entries[entry_id].steps
+        assert steps[-1][2] == "score-companions", entry_id
+        scored = steps[-1][steps[-1].index("--report-dir") + 1]
+        compared = steps[-2][steps[-2].index("--report-dir") + 1]
+        assert scored == compared, entry_id
+
+
+def test_every_multi_step_entry_labels_its_steps():
+    """A run of twenty-seven steps is unreadable as a list of command lines. The
+    labels are display only, so this asserts they exist and are one per step;
+    ``load_catalogue`` has already rejected a list of the wrong length."""
+    for entry in load_catalogue(DEFAULT_CATALOGUE_PATH):
+        if len(entry.steps) > 1:
+            assert len(entry.step_labels) == len(entry.steps), entry.id
 
 
 def test_every_committed_step_is_a_module_invocation():
@@ -377,6 +573,35 @@ def test_a_parameter_name_that_is_not_identifier_ish_is_rejected(tmp_path):
     )
     with pytest.raises(CatalogueError, match="must match"):
         load_catalogue(path)
+
+
+def test_step_labels_of_the_wrong_length_are_rejected(tmp_path):
+    """Labels that have drifted out of step with the steps name the wrong rows,
+    which is worse than no labels at all."""
+    path = write_catalogue(
+        tmp_path / "runs.json",
+        minimal_run(step_labels=["Smoke test", "One too many"]),
+    )
+    with pytest.raises(CatalogueError, match="step_labels"):
+        load_catalogue(path)
+
+
+def test_step_labels_that_are_not_a_list_are_rejected(tmp_path):
+    path = write_catalogue(tmp_path / "runs.json", minimal_run(step_labels="Smoke test"))
+    with pytest.raises(CatalogueError, match="step_labels"):
+        load_catalogue(path)
+
+
+def test_an_empty_step_label_is_rejected(tmp_path):
+    path = write_catalogue(tmp_path / "runs.json", minimal_run(step_labels=["   "]))
+    with pytest.raises(CatalogueError, match="step_labels"):
+        load_catalogue(path)
+
+
+def test_absent_step_labels_are_an_empty_tuple(tmp_path):
+    """The field is optional: an entry without it renders by step index."""
+    path = write_catalogue(tmp_path / "runs.json", minimal_run())
+    assert load_catalogue(path)[0].step_labels == ()
 
 
 def test_an_undeclared_placeholder_is_rejected(tmp_path):
@@ -1163,14 +1388,19 @@ def test_the_catalogue_endpoint_returns_every_committed_entry():
 
     committed = load_catalogue()
     assert [entry["id"] for entry in body["runs"]] == [entry.id for entry in committed]
-    finetune = next(entry for entry in body["runs"] if entry["id"] == "finetune")
-    assert [parameter["name"] for parameter in finetune["parameters"]] == ["signal", "base_model"]
-    assert finetune["parameters"][0]["default"] == "fever_present"
+    generate = next(entry for entry in body["runs"] if entry["id"] == "generate-folds")
+    assert [parameter["name"] for parameter in generate["parameters"]] == ["signal"]
+    assert generate["parameters"][0]["default"] == "fever_present"
     # The command line shown before the click is the one that would run.
-    assert finetune["commands"] == [
-        "python -u -m scripts.encoder_training finetune --folds 5 "
-        "--signal fever_present --base-model roberta-base"
+    assert generate["commands"] == [
+        "python -u -m scripts.encoder_training generate-folds --folds 5 --signal fever_present"
     ]
+    # The labels travel with the multi-step entries, so the page can render a
+    # checklist rather than twenty-seven command lines.
+    sweep = next(entry for entry in body["runs"] if entry["id"] == "decl-sweep-2x2")
+    assert len(sweep["step_labels"]) == len(sweep["steps"])
+    assert sweep["step_labels"][0] == "CUDA smoke test"
+    assert generate["step_labels"] == []
 
 
 @requires_fastapi
@@ -1189,7 +1419,7 @@ def test_a_parameter_outside_the_choices_is_a_400_and_never_reaches_the_runner()
 
     response = client.post(
         "/api/run",
-        json={"id": "finetune", "parameters": {"signal": "fever_present; rm -rf /"}},
+        json={"id": "generate-folds", "parameters": {"signal": "fever_present; rm -rf /"}},
     )
 
     assert response.status_code == 400
@@ -1201,7 +1431,7 @@ def test_a_parameter_naming_nothing_declared_is_a_400():
     client, runner, _ = client_for()
 
     response = client.post(
-        "/api/run", json={"id": "finetune", "parameters": {"output_dir": "/etc"}}
+        "/api/run", json={"id": "generate-folds", "parameters": {"output_dir": "/etc"}}
     )
 
     assert response.status_code == 400
@@ -1212,7 +1442,7 @@ def test_a_parameter_naming_nothing_declared_is_a_400():
 def test_a_non_string_parameter_value_is_a_400():
     client, runner, _ = client_for()
 
-    response = client.post("/api/run", json={"id": "finetune", "parameters": {"signal": 7}})
+    response = client.post("/api/run", json={"id": "generate-folds", "parameters": {"signal": 7}})
 
     assert response.status_code == 400
     assert runner.started == []
@@ -1225,8 +1455,8 @@ def test_a_valid_body_starts_the_run_and_hands_the_runner_the_resolved_argv():
     response = client.post(
         "/api/run",
         json={
-            "id": "finetune",
-            "parameters": {"signal": "dysuria_present", "base_model": "roberta-base"},
+            "id": "generate-folds",
+            "parameters": {"signal": "dysuria_present"},
         },
     )
 
@@ -1235,23 +1465,21 @@ def test_a_valid_body_starts_the_run_and_hands_the_runner_the_resolved_argv():
         [
             "-m",
             "scripts.encoder_training",
-            "finetune",
+            "generate-folds",
             "--folds",
             "5",
             "--signal",
             "dysuria_present",
-            "--base-model",
-            "roberta-base",
         ]
     ]
-    assert response.json()["run_id"] == "20260831-120000-finetune"
+    assert response.json()["run_id"] == "20260831-120000-generate-folds"
 
 
 @requires_fastapi
 def test_an_omitted_parameter_takes_its_declared_default():
     client, runner, _ = client_for()
 
-    client.post("/api/run", json={"id": "finetune", "parameters": {}})
+    client.post("/api/run", json={"id": "generate-folds", "parameters": {}})
 
     assert "--signal" in runner.argvs[0]
     assert runner.argvs[0][runner.argvs[0].index("--signal") + 1] == "fever_present"
