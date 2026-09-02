@@ -1,0 +1,3458 @@
+{
+  "arm": "arm_b_finetune__c0-5-d0-6",
+  "signal": "flank_pain_present",
+  "classes": [
+    "false",
+    "true",
+    "null"
+  ],
+  "encoder": {
+    "base_model": "roberta-base",
+    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "requested_revision": null,
+    "revision_pinned": false,
+    "hidden_size": 768,
+    "tokeniser": {
+      "reported_do_lower_case": null,
+      "lowercases_input": false,
+      "cased_vocab": true,
+      "discards_casing": false,
+      "vocab_size": 50265,
+      "model_max_length": 512,
+      "tokenizer_class": "RobertaTokenizer"
+    }
+  },
+  "config": {
+    "base_model": "roberta-base",
+    "revision": null,
+    "pooling": "mean",
+    "max_seq_len": 256,
+    "epochs": 3,
+    "batch_size": 32,
+    "lr": 2e-05,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "max_grad_norm": 1.0,
+    "seed": 1234,
+    "fold_seed_rule": "seed + 1000 * fold_index",
+    "device": "auto",
+    "eval_batch_size": 64,
+    "determinism": "strict",
+    "trainable": "all layers; the encoder is unfrozen and trained with the head",
+    "loss": "cross_entropy, unweighted (DD8), masked on missing signals (DD10)",
+    "optimiser": "AdamW with linear warmup then linear decay",
+    "epoch_selection": "highest macro-F1 on the fold's own validation split",
+    "dtype": "float32",
+    "memory_strategy": "none. No gradient checkpointing, no 8-bit optimiser, no LoRA, no gradient accumulation -- BERT-base at batch 32 / seq 256 fits in 12GB with room to spare",
+    "hyperparameter_provenance": "learning rate, epochs, warmup and optimiser are the published BERT-base recipe, fixed before any run. Hyperparameter search is out of scope",
+    "validation_guided_decisions": [
+      "pooling mode (DD3) -- mean vs CLS, compared once",
+      "learning rate",
+      "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+      "decision margin (DD9)"
+    ]
+  },
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.13.0+cu130",
+    "torch_cuda_version": "13.0",
+    "cuda_available": true,
+    "deterministic_env": ":4096:8",
+    "device_name": "NVIDIA GeForce RTX 5070",
+    "compute_capability": [
+      12,
+      0
+    ],
+    "capability_matches_expected": true,
+    "wheel_covers_blackwell": true,
+    "kernel_launch_ok": true
+  },
+  "dataset": {
+    "dir": "data/synthetic/generated/decl/c0.5-d0.6",
+    "name": "flank_pain_present",
+    "folds": 5,
+    "generator_version": 4,
+    "generator_base_seed": 42,
+    "split_salt": "0",
+    "dataset_seeds": [
+      42,
+      142,
+      242,
+      342,
+      442
+    ],
+    "examples_per_fold": {
+      "train": 10000,
+      "val": 2000,
+      "test": 2000
+    }
+  },
+  "ruleset": "data/uti1.json",
+  "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+  "folds": [
+    {
+      "fold": 0,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.9691678757756015,
+        0.9634286875111022,
+        0.9643045511491651
+      ],
+      "train_loss_by_epoch": [
+        0.25202986774892777,
+        0.0014128884458856192,
+        0.0007800543844583445
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 96,
+        "accuracy": 0.98,
+        "macro_f1": 0.973325532560264,
+        "confusion": [
+          [
+            524,
+            0,
+            0
+          ],
+          [
+            0,
+            268,
+            17
+          ],
+          [
+            9,
+            14,
+            1168
+          ]
+        ],
+        "per_class_recall": {
+          "false": 1.0,
+          "true": 0.9403508771929825,
+          "null": 0.980688497061293
+        }
+      },
+      "decision_rule": {
+        "margin": 0.85,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.016792611251049538,
+        "null_to_true_rate": 0.011754827875734676,
+        "macro_f1": 0.973325532560264,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "flank_pain_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.85,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              6,
+              0,
+              1
+            ],
+            [
+              0,
+              7,
+              0
+            ],
+            [
+              0,
+              15,
+              38
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7611940298507462,
+            "low": 0.6567164179104478,
+            "high": 0.8507462686567164,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.7439741667627725,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 14,
+          "n_submissions": 14,
+          "confusion": [
+            [
+              6,
+              0,
+              1
+            ],
+            [
+              0,
+              7,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.9285714285714286,
+            "low": 0.7857142857142857,
+            "high": 1.0,
+            "effective_n": 14,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.641025641025641,
+          "worst_case_half_width": 0.2619112043058993
+        },
+        "by_signal": [
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.85,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  6,
+                  0,
+                  1
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  15,
+                  38
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7611940298507462,
+                "low": 0.6567164179104478,
+                "high": 0.8507462686567164,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.7439741667627725,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  6,
+                  0,
+                  1
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9285714285714286,
+                "low": 0.7857142857142857,
+                "high": 1.0,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.641025641025641,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 6,
+                "recall": 0.8571428571428571,
+                "precision": 1.0
+              },
+              "true": {
+                "support": 7,
+                "predicted": 22,
+                "recall": 1.0,
+                "precision": 0.3181818181818182
+              },
+              "null": {
+                "support": 53,
+                "predicted": 39,
+                "recall": 0.7169811320754716,
+                "precision": 0.9743589743589743
+              }
+            },
+            "null_to_true": {
+              "count": 15,
+              "null_support": 53
+            }
+          }
+        ],
+        "cells": {
+          "flank_pain_present": [
+            {
+              "id": "holdout-0001:flank_pain_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:flank_pain_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:flank_pain_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0004:flank_pain_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:flank_pain_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:flank_pain_present",
+              "unit": "holdout-0006",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0007:flank_pain_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:flank_pain_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:flank_pain_present",
+              "unit": "holdout-0009",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0010:flank_pain_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0011:flank_pain_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:flank_pain_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:flank_pain_present",
+              "unit": "holdout-0013",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0014:flank_pain_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:flank_pain_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:flank_pain_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:flank_pain_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0018:flank_pain_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:flank_pain_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0020:flank_pain_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:flank_pain_present",
+              "unit": "holdout-0021",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0022:flank_pain_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:flank_pain_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:flank_pain_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:flank_pain_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0026:flank_pain_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:flank_pain_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:flank_pain_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:flank_pain_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:flank_pain_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:flank_pain_present",
+              "unit": "holdout-0031",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0032:flank_pain_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0033:flank_pain_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:flank_pain_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:flank_pain_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:flank_pain_present",
+              "unit": "holdout-0036",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0037:flank_pain_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:flank_pain_present",
+              "unit": "holdout-0038",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0039:flank_pain_present",
+              "unit": "holdout-0039",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:flank_pain_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:flank_pain_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0042:flank_pain_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:flank_pain_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:flank_pain_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0045:flank_pain_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:flank_pain_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:flank_pain_present",
+              "unit": "holdout-0047",
+              "truth": 0,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:flank_pain_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:flank_pain_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0050:flank_pain_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:flank_pain_present",
+              "unit": "holdout-0051",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0052:flank_pain_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0053:flank_pain_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:flank_pain_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:flank_pain_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0056:flank_pain_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:flank_pain_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:flank_pain_present",
+              "unit": "holdout-0058",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0059:flank_pain_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:flank_pain_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0061:flank_pain_present",
+              "unit": "holdout-0061",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0062:flank_pain_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:flank_pain_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:flank_pain_present",
+              "unit": "holdout-0064",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0065:flank_pain_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:flank_pain_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:flank_pain_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 1,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.9342280962116366,
+        0.9387957276052102,
+        0.9399407878015382
+      ],
+      "train_loss_by_epoch": [
+        0.23541335988172796,
+        0.003599296491732821,
+        0.0004163227109820582
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 83,
+        "accuracy": 0.9535,
+        "macro_f1": 0.9399407878015382,
+        "confusion": [
+          [
+            445,
+            20,
+            44
+          ],
+          [
+            12,
+            298,
+            6
+          ],
+          [
+            0,
+            11,
+            1164
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.8742632612966601,
+          "true": 0.9430379746835443,
+          "null": 0.9906382978723405
+        }
+      },
+      "decision_rule": {
+        "margin": 0.0,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.009361702127659575,
+        "null_to_true_rate": 0.009361702127659575,
+        "macro_f1": 0.9399407878015382,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "flank_pain_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.0,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              6,
+              1,
+              0
+            ],
+            [
+              0,
+              7,
+              0
+            ],
+            [
+              0,
+              21,
+              32
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6716417910447762,
+            "low": 0.5522388059701493,
+            "high": 0.7761194029850746,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6883023294788,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 14,
+          "n_submissions": 14,
+          "confusion": [
+            [
+              6,
+              1,
+              0
+            ],
+            [
+              0,
+              7,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.9285714285714286,
+            "low": 0.7857142857142857,
+            "high": 1.0,
+            "effective_n": 14,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.9282051282051282,
+          "worst_case_half_width": 0.2619112043058993
+        },
+        "by_signal": [
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  6,
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  21,
+                  32
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6716417910447762,
+                "low": 0.5522388059701493,
+                "high": 0.7761194029850746,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6883023294788,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  6,
+                  1,
+                  0
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.9285714285714286,
+                "low": 0.7857142857142857,
+                "high": 1.0,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.9282051282051282,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 6,
+                "recall": 0.8571428571428571,
+                "precision": 1.0
+              },
+              "true": {
+                "support": 7,
+                "predicted": 29,
+                "recall": 1.0,
+                "precision": 0.2413793103448276
+              },
+              "null": {
+                "support": 53,
+                "predicted": 32,
+                "recall": 0.6037735849056604,
+                "precision": 1.0
+              }
+            },
+            "null_to_true": {
+              "count": 21,
+              "null_support": 53
+            }
+          }
+        ],
+        "cells": {
+          "flank_pain_present": [
+            {
+              "id": "holdout-0001:flank_pain_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:flank_pain_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:flank_pain_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0004:flank_pain_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:flank_pain_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:flank_pain_present",
+              "unit": "holdout-0006",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0007:flank_pain_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:flank_pain_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:flank_pain_present",
+              "unit": "holdout-0009",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0010:flank_pain_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0011:flank_pain_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:flank_pain_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:flank_pain_present",
+              "unit": "holdout-0013",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0014:flank_pain_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:flank_pain_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0016:flank_pain_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:flank_pain_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0018:flank_pain_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:flank_pain_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0020:flank_pain_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:flank_pain_present",
+              "unit": "holdout-0021",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0022:flank_pain_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:flank_pain_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:flank_pain_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:flank_pain_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0026:flank_pain_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:flank_pain_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:flank_pain_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:flank_pain_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0030:flank_pain_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:flank_pain_present",
+              "unit": "holdout-0031",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0032:flank_pain_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0033:flank_pain_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:flank_pain_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:flank_pain_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:flank_pain_present",
+              "unit": "holdout-0036",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0037:flank_pain_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:flank_pain_present",
+              "unit": "holdout-0038",
+              "truth": 0,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0039:flank_pain_present",
+              "unit": "holdout-0039",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:flank_pain_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:flank_pain_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0042:flank_pain_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:flank_pain_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0044:flank_pain_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0045:flank_pain_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0046:flank_pain_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:flank_pain_present",
+              "unit": "holdout-0047",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0048:flank_pain_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:flank_pain_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0050:flank_pain_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:flank_pain_present",
+              "unit": "holdout-0051",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0052:flank_pain_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0053:flank_pain_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0054:flank_pain_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:flank_pain_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0056:flank_pain_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:flank_pain_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:flank_pain_present",
+              "unit": "holdout-0058",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0059:flank_pain_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:flank_pain_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0061:flank_pain_present",
+              "unit": "holdout-0061",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0062:flank_pain_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:flank_pain_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:flank_pain_present",
+              "unit": "holdout-0064",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0065:flank_pain_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0066:flank_pain_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:flank_pain_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 2,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.9584484298197021,
+        0.956248058374224,
+        0.9551343752500778
+      ],
+      "train_loss_by_epoch": [
+        0.2398875611696858,
+        9.682931383722462e-05,
+        0.00027590186666930094
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 73,
+        "accuracy": 0.9605,
+        "macro_f1": 0.9610913439322942,
+        "confusion": [
+          [
+            438,
+            0,
+            76
+          ],
+          [
+            0,
+            318,
+            0
+          ],
+          [
+            1,
+            2,
+            1165
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.8521400778210116,
+          "true": 1.0,
+          "null": 0.997431506849315
+        }
+      },
+      "decision_rule": {
+        "margin": 0.5,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.005136986301369863,
+        "null_to_true_rate": 0.0017123287671232876,
+        "macro_f1": 0.9610913439322942,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "flank_pain_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.5,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              5,
+              1,
+              1
+            ],
+            [
+              0,
+              7,
+              0
+            ],
+            [
+              1,
+              19,
+              33
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6716417910447762,
+            "low": 0.5522388059701493,
+            "high": 0.7761194029850746,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6465387215894315,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 14,
+          "n_submissions": 14,
+          "confusion": [
+            [
+              5,
+              1,
+              1
+            ],
+            [
+              0,
+              7,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8571428571428571,
+            "low": 0.6428571428571429,
+            "high": 1.0,
+            "effective_n": 14,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.5888888888888889,
+          "worst_case_half_width": 0.2619112043058993
+        },
+        "by_signal": [
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.5,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  5,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  1,
+                  19,
+                  33
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6716417910447762,
+                "low": 0.5522388059701493,
+                "high": 0.7761194029850746,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6465387215894315,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  5,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8571428571428571,
+                "low": 0.6428571428571429,
+                "high": 1.0,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.5888888888888889,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 6,
+                "recall": 0.7142857142857143,
+                "precision": 0.8333333333333334
+              },
+              "true": {
+                "support": 7,
+                "predicted": 27,
+                "recall": 1.0,
+                "precision": 0.25925925925925924
+              },
+              "null": {
+                "support": 53,
+                "predicted": 34,
+                "recall": 0.6226415094339622,
+                "precision": 0.9705882352941176
+              }
+            },
+            "null_to_true": {
+              "count": 19,
+              "null_support": 53
+            }
+          }
+        ],
+        "cells": {
+          "flank_pain_present": [
+            {
+              "id": "holdout-0001:flank_pain_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:flank_pain_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:flank_pain_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0004:flank_pain_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:flank_pain_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:flank_pain_present",
+              "unit": "holdout-0006",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0007:flank_pain_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:flank_pain_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:flank_pain_present",
+              "unit": "holdout-0009",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0010:flank_pain_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0011:flank_pain_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:flank_pain_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:flank_pain_present",
+              "unit": "holdout-0013",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0014:flank_pain_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:flank_pain_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0016:flank_pain_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:flank_pain_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0018:flank_pain_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:flank_pain_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0020:flank_pain_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:flank_pain_present",
+              "unit": "holdout-0021",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0022:flank_pain_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:flank_pain_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:flank_pain_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:flank_pain_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0026:flank_pain_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:flank_pain_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:flank_pain_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:flank_pain_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0030:flank_pain_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:flank_pain_present",
+              "unit": "holdout-0031",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0032:flank_pain_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0033:flank_pain_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:flank_pain_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0035:flank_pain_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:flank_pain_present",
+              "unit": "holdout-0036",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0037:flank_pain_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:flank_pain_present",
+              "unit": "holdout-0038",
+              "truth": 0,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0039:flank_pain_present",
+              "unit": "holdout-0039",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:flank_pain_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:flank_pain_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0042:flank_pain_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:flank_pain_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0044:flank_pain_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0045:flank_pain_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0046:flank_pain_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:flank_pain_present",
+              "unit": "holdout-0047",
+              "truth": 0,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:flank_pain_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:flank_pain_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0050:flank_pain_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:flank_pain_present",
+              "unit": "holdout-0051",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0052:flank_pain_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0053:flank_pain_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:flank_pain_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:flank_pain_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0056:flank_pain_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:flank_pain_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:flank_pain_present",
+              "unit": "holdout-0058",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0059:flank_pain_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:flank_pain_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0061:flank_pain_present",
+              "unit": "holdout-0061",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0062:flank_pain_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:flank_pain_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:flank_pain_present",
+              "unit": "holdout-0064",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0065:flank_pain_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0066:flank_pain_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:flank_pain_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 3,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.9822314736532195,
+        0.9779893620147521,
+        0.975441012635413
+      ],
+      "train_loss_by_epoch": [
+        0.2273558942232281,
+        0.0006185841335798614,
+        4.228294581407681e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 71,
+        "accuracy": 0.9855,
+        "macro_f1": 0.9822314736532195,
+        "confusion": [
+          [
+            490,
+            0,
+            12
+          ],
+          [
+            0,
+            282,
+            17
+          ],
+          [
+            0,
+            0,
+            1199
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9760956175298805,
+          "true": 0.9431438127090301,
+          "null": 1.0
+        }
+      },
+      "decision_rule": {
+        "margin": 0.0,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.0,
+        "null_to_true_rate": 0.0,
+        "macro_f1": 0.9822314736532195,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "flank_pain_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.0,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              5,
+              1,
+              1
+            ],
+            [
+              0,
+              5,
+              2
+            ],
+            [
+              1,
+              18,
+              34
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6567164179104478,
+            "low": 0.5373134328358209,
+            "high": 0.7611940298507462,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6157889899825383,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 14,
+          "n_submissions": 14,
+          "confusion": [
+            [
+              5,
+              1,
+              1
+            ],
+            [
+              0,
+              5,
+              2
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7142857142857143,
+            "low": 0.5,
+            "high": 0.9285714285714286,
+            "effective_n": 14,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.5341880341880342,
+          "worst_case_half_width": 0.2619112043058993
+        },
+        "by_signal": [
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  5,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  2
+                ],
+                [
+                  1,
+                  18,
+                  34
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6567164179104478,
+                "low": 0.5373134328358209,
+                "high": 0.7611940298507462,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6157889899825383,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  5,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  5,
+                  2
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7142857142857143,
+                "low": 0.5,
+                "high": 0.9285714285714286,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.5341880341880342,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 6,
+                "recall": 0.7142857142857143,
+                "precision": 0.8333333333333334
+              },
+              "true": {
+                "support": 7,
+                "predicted": 24,
+                "recall": 0.7142857142857143,
+                "precision": 0.20833333333333334
+              },
+              "null": {
+                "support": 53,
+                "predicted": 37,
+                "recall": 0.6415094339622641,
+                "precision": 0.918918918918919
+              }
+            },
+            "null_to_true": {
+              "count": 18,
+              "null_support": 53
+            }
+          }
+        ],
+        "cells": {
+          "flank_pain_present": [
+            {
+              "id": "holdout-0001:flank_pain_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:flank_pain_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:flank_pain_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0004:flank_pain_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:flank_pain_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:flank_pain_present",
+              "unit": "holdout-0006",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0007:flank_pain_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:flank_pain_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:flank_pain_present",
+              "unit": "holdout-0009",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0010:flank_pain_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0011:flank_pain_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:flank_pain_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:flank_pain_present",
+              "unit": "holdout-0013",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:flank_pain_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:flank_pain_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0016:flank_pain_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:flank_pain_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0018:flank_pain_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:flank_pain_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0020:flank_pain_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:flank_pain_present",
+              "unit": "holdout-0021",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0022:flank_pain_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:flank_pain_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:flank_pain_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:flank_pain_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0026:flank_pain_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:flank_pain_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:flank_pain_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:flank_pain_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0030:flank_pain_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:flank_pain_present",
+              "unit": "holdout-0031",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0032:flank_pain_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0033:flank_pain_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:flank_pain_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0035:flank_pain_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:flank_pain_present",
+              "unit": "holdout-0036",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0037:flank_pain_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:flank_pain_present",
+              "unit": "holdout-0038",
+              "truth": 0,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0039:flank_pain_present",
+              "unit": "holdout-0039",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:flank_pain_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:flank_pain_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0042:flank_pain_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:flank_pain_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0044:flank_pain_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0045:flank_pain_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0046:flank_pain_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:flank_pain_present",
+              "unit": "holdout-0047",
+              "truth": 0,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:flank_pain_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:flank_pain_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0050:flank_pain_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:flank_pain_present",
+              "unit": "holdout-0051",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0052:flank_pain_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:flank_pain_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:flank_pain_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:flank_pain_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0056:flank_pain_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:flank_pain_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:flank_pain_present",
+              "unit": "holdout-0058",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0059:flank_pain_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:flank_pain_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0061:flank_pain_present",
+              "unit": "holdout-0061",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0062:flank_pain_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:flank_pain_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:flank_pain_present",
+              "unit": "holdout-0064",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0065:flank_pain_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:flank_pain_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:flank_pain_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 4,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.9723623865832512,
+        0.9688219559216819,
+        0.9608809414549208
+      ],
+      "train_loss_by_epoch": [
+        0.23425058785635047,
+        0.0006129885289177764,
+        0.00013935971922473983
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 87,
+        "accuracy": 0.9765,
+        "macro_f1": 0.9744001708198439,
+        "confusion": [
+          [
+            493,
+            0,
+            31
+          ],
+          [
+            0,
+            293,
+            11
+          ],
+          [
+            0,
+            5,
+            1167
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9408396946564885,
+          "true": 0.9638157894736842,
+          "null": 0.9957337883959044
+        }
+      },
+      "decision_rule": {
+        "margin": 0.7,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.006825938566552901,
+        "null_to_true_rate": 0.004266211604095563,
+        "macro_f1": 0.9744001708198439,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "flank_pain_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "fever_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.7,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              5,
+              1,
+              1
+            ],
+            [
+              0,
+              7,
+              0
+            ],
+            [
+              1,
+              18,
+              34
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6865671641791045,
+            "low": 0.5671641791044776,
+            "high": 0.7910447761194029,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6554001554001554,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 14,
+          "n_submissions": 14,
+          "confusion": [
+            [
+              5,
+              1,
+              1
+            ],
+            [
+              0,
+              7,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8571428571428571,
+            "low": 0.6428571428571429,
+            "high": 1.0,
+            "effective_n": 14,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.5888888888888889,
+          "worst_case_half_width": 0.2619112043058993
+        },
+        "by_signal": [
+          {
+            "signal": "flank_pain_present",
+            "margin": 0.7,
+            "distribution": {
+              "false": 7,
+              "true": 7,
+              "null": 53,
+              "omitted": 0,
+              "decisive": 14
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  5,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  1,
+                  18,
+                  34
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6865671641791045,
+                "low": 0.5671641791044776,
+                "high": 0.7910447761194029,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6554001554001554,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 14,
+              "n_submissions": 14,
+              "confusion": [
+                [
+                  5,
+                  1,
+                  1
+                ],
+                [
+                  0,
+                  7,
+                  0
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8571428571428571,
+                "low": 0.6428571428571429,
+                "high": 1.0,
+                "effective_n": 14,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.5888888888888889,
+              "worst_case_half_width": 0.2619112043058993
+            },
+            "per_class": {
+              "false": {
+                "support": 7,
+                "predicted": 6,
+                "recall": 0.7142857142857143,
+                "precision": 0.8333333333333334
+              },
+              "true": {
+                "support": 7,
+                "predicted": 26,
+                "recall": 1.0,
+                "precision": 0.2692307692307692
+              },
+              "null": {
+                "support": 53,
+                "predicted": 35,
+                "recall": 0.6415094339622641,
+                "precision": 0.9714285714285714
+              }
+            },
+            "null_to_true": {
+              "count": 18,
+              "null_support": 53
+            }
+          }
+        ],
+        "cells": {
+          "flank_pain_present": [
+            {
+              "id": "holdout-0001:flank_pain_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:flank_pain_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:flank_pain_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:flank_pain_present",
+              "unit": "holdout-0004",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:flank_pain_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:flank_pain_present",
+              "unit": "holdout-0006",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0007:flank_pain_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:flank_pain_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:flank_pain_present",
+              "unit": "holdout-0009",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0010:flank_pain_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0011:flank_pain_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0012:flank_pain_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:flank_pain_present",
+              "unit": "holdout-0013",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0014:flank_pain_present",
+              "unit": "holdout-0014",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0015:flank_pain_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0016:flank_pain_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:flank_pain_present",
+              "unit": "holdout-0017",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0018:flank_pain_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0019:flank_pain_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0020:flank_pain_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:flank_pain_present",
+              "unit": "holdout-0021",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0022:flank_pain_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0023:flank_pain_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:flank_pain_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:flank_pain_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0026:flank_pain_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:flank_pain_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:flank_pain_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:flank_pain_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0030:flank_pain_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:flank_pain_present",
+              "unit": "holdout-0031",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0032:flank_pain_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0033:flank_pain_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0034:flank_pain_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0035:flank_pain_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:flank_pain_present",
+              "unit": "holdout-0036",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0037:flank_pain_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:flank_pain_present",
+              "unit": "holdout-0038",
+              "truth": 0,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0039:flank_pain_present",
+              "unit": "holdout-0039",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:flank_pain_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:flank_pain_present",
+              "unit": "holdout-0041",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0042:flank_pain_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:flank_pain_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0044:flank_pain_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0045:flank_pain_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0046:flank_pain_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0047:flank_pain_present",
+              "unit": "holdout-0047",
+              "truth": 0,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0048:flank_pain_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:flank_pain_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0050:flank_pain_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:flank_pain_present",
+              "unit": "holdout-0051",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0052:flank_pain_present",
+              "unit": "holdout-0052",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0053:flank_pain_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:flank_pain_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:flank_pain_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0056:flank_pain_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:flank_pain_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:flank_pain_present",
+              "unit": "holdout-0058",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0059:flank_pain_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:flank_pain_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0061:flank_pain_present",
+              "unit": "holdout-0061",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0062:flank_pain_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:flank_pain_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:flank_pain_present",
+              "unit": "holdout-0064",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0065:flank_pain_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0066:flank_pain_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:flank_pain_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    }
+  ],
+  "margins": {
+    "objective": "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9)",
+    "selected_on": "each fold's own validation split, never test and never pooled",
+    "by_fold": {
+      "0": 0.85,
+      "1": 0.0,
+      "2": 0.5,
+      "3": 0.0,
+      "4": 0.7
+    }
+  },
+  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it."
+}

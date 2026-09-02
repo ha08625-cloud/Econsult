@@ -1,0 +1,1716 @@
+
+=== step 1/1: python -u -m scripts.encoder_training declarative-compare --folds 5 --cell data/synthetic/generated/decl/c0.5-d0.0 --cell data/synthetic/generated/decl/c0.5-d0.3 --cell data/synthetic/generated/decl/c0.5-d0.6 --report-dir reports/encoder_training/decl/register --models-dir models/encoder-decl/register --base-model roberta-base --determinism strict --train-seed 1234 --no-weights ===
+device: cuda
+torch_version: 2.13.0+cu130
+torch_cuda_version: 13.0
+cuda_available: True
+deterministic_env: :4096:8
+device_name: NVIDIA GeForce RTX 5070
+compute_capability: [12, 0]
+capability_matches_expected: True
+wheel_covers_blackwell: True
+kernel_launch_ok: True
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  53%|█████▎    | 104/197 [00:00<00:00, 1035.96it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1378.12it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+warning: --revision was not given; recording the resolved commit e2da8e2f811d1448a5b465c236feacd80ffbac7b. Pass it explicitly to make this run repeatable.
+
+=== c0.5-d0.0: dysuria_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  69%|██████▉   | 136/197 [00:00<00:00, 1354.73it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1830.12it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 87.5% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.05
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 150/197 [00:00<00:00, 1497.25it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1767.11it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 85.7% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.7
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  72%|███████▏  | 141/197 [00:00<00:00, 1406.90it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1707.26it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 75.0% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 151/197 [00:00<00:00, 1504.72it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1779.99it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 69.6% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  80%|███████▉  | 157/197 [00:00<00:00, 1564.60it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1747.21it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 75.0% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.15
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/metadata.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold0.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold0.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold1.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold1.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold2.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold2.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold3.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold3.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold4.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-0/fold4.decision.json
+
+=== c0.5-d0.0: fever_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 153/197 [00:00<00:00, 1524.80it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1672.25it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 55.6% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.35
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 152/197 [00:00<00:00, 1517.23it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1770.21it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 33.3% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1489.67it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1707.58it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 61.1% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.85
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▌  | 148/197 [00:00<00:00, 1475.98it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1770.05it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 50.0% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▎  | 145/197 [00:00<00:00, 1444.93it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1782.70it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 44.4% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/metadata.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold0.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold0.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold1.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold1.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold2.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold2.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold3.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold3.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold4.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-0/fold4.decision.json
+
+=== c0.5-d0.0: flank_pain_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 143/197 [00:00<00:00, 1426.27it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1763.98it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 42.9% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.65
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1486.49it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1715.56it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 42.9% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.25
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 144/197 [00:00<00:00, 1429.16it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1770.86it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 57.1% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 153/197 [00:00<00:00, 1519.30it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1775.12it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 28.6% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.8
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▌  | 148/197 [00:00<00:00, 1473.27it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1778.31it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 28.6% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.0
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/metadata.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold0.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold0.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold1.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold1.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold2.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold2.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold3.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold3.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold4.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-0/fold4.decision.json
+
+=== c0.5-d0.0: haematuria_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1481.74it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1741.78it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 27.3% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 151/197 [00:00<00:00, 1508.15it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1750.31it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 63.6% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  80%|███████▉  | 157/197 [00:00<00:00, 1556.24it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1755.57it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 45.5% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  83%|████████▎ | 163/197 [00:00<00:00, 1626.20it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1687.04it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 63.6% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 144/197 [00:00<00:00, 1439.02it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1757.68it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 54.5% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.55
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/metadata.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold0.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold0.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold1.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold1.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold2.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold2.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold3.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold3.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold4.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-0/fold4.decision.json
+
+=== c0.5-d0.0: nocturia_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  72%|███████▏  | 141/197 [00:00<00:00, 1402.00it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1840.02it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 66.7% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.65
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 153/197 [00:00<00:00, 1504.34it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1771.84it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 66.7% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.3
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▊  | 155/197 [00:00<00:00, 1542.50it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1728.60it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 55.6% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.6
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 153/197 [00:00<00:00, 1518.48it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1747.81it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 22.2% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.05
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 144/197 [00:00<00:00, 1439.76it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1769.37it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 55.6% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.05
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/metadata.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold0.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold0.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold1.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold1.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold2.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold2.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold3.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold3.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold4.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-0/fold4.decision.json
+
+=== c0.5-d0.0: urinary_frequency_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 153/197 [00:00<00:00, 1522.27it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1727.90it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 61.5% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 151/197 [00:00<00:00, 1506.74it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1754.58it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 53.8% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1485.59it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1760.74it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 23.1% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▍  | 147/197 [00:00<00:00, 1469.41it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1798.83it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 26.9% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 144/197 [00:00<00:00, 1434.56it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1780.91it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 61.5% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.7
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/metadata.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold0.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold0.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold1.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold1.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold2.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold2.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold3.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold3.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold4.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-0/fold4.decision.json
+
+=== c0.5-d0.3: dysuria_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 150/197 [00:00<00:00, 1496.77it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1739.63it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 91.1% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.1
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 144/197 [00:00<00:00, 1435.25it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1749.65it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 91.1% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.85
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  81%|████████  | 159/197 [00:00<00:00, 1583.96it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1711.93it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 96.4% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1485.20it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1733.14it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 96.4% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  80%|███████▉  | 157/197 [00:00<00:00, 1565.96it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1733.68it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 89.3% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.4
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/metadata.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold0.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold0.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold1.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold1.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold2.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold2.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold3.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold3.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold4.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-3/fold4.decision.json
+
+=== c0.5-d0.3: fever_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▌  | 148/197 [00:00<00:00, 1472.65it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1743.57it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 88.9% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 154/197 [00:00<00:00, 1536.05it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1739.00it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 94.4% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1489.52it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1745.80it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 88.9% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.75
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 152/197 [00:00<00:00, 1517.41it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1732.62it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 88.9% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.55
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 150/197 [00:00<00:00, 1493.72it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1747.50it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 88.9% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.65
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/metadata.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold0.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold0.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold1.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold1.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold2.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold2.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold3.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold3.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold4.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-3/fold4.decision.json
+
+=== c0.5-d0.3: flank_pain_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  80%|███████▉  | 157/197 [00:00<00:00, 1567.39it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1772.30it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 64.3% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▍  | 147/197 [00:00<00:00, 1457.61it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1789.23it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 78.6% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.6
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▌  | 148/197 [00:00<00:00, 1476.11it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1707.18it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 92.9% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 151/197 [00:00<00:00, 1495.62it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1701.97it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 85.7% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 143/197 [00:00<00:00, 1419.82it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1818.00it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 85.7% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.0
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/metadata.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold0.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold0.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold1.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold1.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold2.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold2.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold3.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold3.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold4.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-3/fold4.decision.json
+
+=== c0.5-d0.3: haematuria_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▌  | 148/197 [00:00<00:00, 1475.80it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1775.46it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 72.7% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1488.70it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1751.93it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 100.0% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 143/197 [00:00<00:00, 1425.45it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1740.83it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 100.0% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.5
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 150/197 [00:00<00:00, 1484.54it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1789.71it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 81.8% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▍  | 146/197 [00:00<00:00, 1459.36it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1782.18it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 81.8% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.35
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/metadata.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold0.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold0.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold1.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold1.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold2.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold2.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold3.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold3.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold4.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-3/fold4.decision.json
+
+=== c0.5-d0.3: nocturia_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 150/197 [00:00<00:00, 1499.06it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1818.69it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 66.7% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.35
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  80%|████████  | 158/197 [00:00<00:00, 1566.92it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1695.93it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 66.7% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.35
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▊  | 155/197 [00:00<00:00, 1547.84it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1733.84it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 44.4% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.1
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▉  | 156/197 [00:00<00:00, 1557.26it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1723.99it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 55.6% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▎  | 145/197 [00:00<00:00, 1447.26it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1694.31it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 44.4% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.8
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/metadata.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold0.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold0.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold1.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold1.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold2.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold2.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold3.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold3.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold4.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-3/fold4.decision.json
+
+=== c0.5-d0.3: urinary_frequency_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▌  | 148/197 [00:00<00:00, 1473.12it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1779.16it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 65.4% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.85
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1480.56it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1789.73it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 65.4% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.2
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▉  | 156/197 [00:00<00:00, 1548.24it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1743.49it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 42.3% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▎  | 145/197 [00:00<00:00, 1441.94it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1803.49it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 50.0% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▊  | 155/197 [00:00<00:00, 1546.80it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1742.20it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 61.5% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.5
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/metadata.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold0.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold0.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold1.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold1.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold2.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold2.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold3.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold3.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold4.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-3/fold4.decision.json
+
+=== c0.5-d0.6: dysuria_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▌  | 148/197 [00:00<00:00, 1474.52it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1762.52it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 94.6% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.05
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  72%|███████▏  | 142/197 [00:00<00:00, 1415.23it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1798.53it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 89.3% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.75
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▍  | 146/197 [00:00<00:00, 1452.97it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1741.44it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 71.4% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.8
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  69%|██████▊   | 135/197 [00:00<00:00, 1341.10it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1820.07it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 82.1% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▌  | 148/197 [00:00<00:00, 1477.62it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1734.72it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: dysuria_present decisive 89.3% (worst-case +/-13) on 56 cells of 67 real submissions, at margin 0.1
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/metadata.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold0.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold0.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold1.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold1.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold2.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold2.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold3.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold3.decision.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold4.head.json
+wrote models/encoder-decl/register/dysuria_present/arm_b_finetune__c0-5-d0-6/fold4.decision.json
+
+=== c0.5-d0.6: fever_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▊  | 155/197 [00:00<00:00, 1547.64it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1719.05it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 94.4% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▍  | 147/197 [00:00<00:00, 1460.59it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1760.80it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 94.4% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.3
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  70%|███████   | 138/197 [00:00<00:00, 1372.29it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1576.90it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 94.4% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 153/197 [00:00<00:00, 1525.83it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1811.76it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 88.9% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.85
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  81%|████████  | 160/197 [00:00<00:00, 1589.80it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1736.83it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 94.4% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.2
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/metadata.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold0.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold0.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold1.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold1.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold2.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold2.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold3.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold3.decision.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold4.head.json
+wrote models/encoder-decl/register/fever_present/arm_b_finetune__c0-5-d0-6/fold4.decision.json
+
+=== c0.5-d0.6: flank_pain_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1477.39it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1759.69it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 92.9% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.85
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  72%|███████▏  | 142/197 [00:00<00:00, 1415.20it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1722.28it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 92.9% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 152/197 [00:00<00:00, 1517.62it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1714.37it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 85.7% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.5
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▍  | 147/197 [00:00<00:00, 1456.10it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1800.09it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 71.4% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1485.05it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1770.01it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: flank_pain_present decisive 85.7% (worst-case +/-26) on 14 cells of 67 real submissions, at margin 0.7
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/metadata.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold0.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold0.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold1.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold1.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold2.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold2.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold3.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold3.decision.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold4.head.json
+wrote models/encoder-decl/register/flank_pain_present/arm_b_finetune__c0-5-d0-6/fold4.decision.json
+
+=== c0.5-d0.6: haematuria_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 150/197 [00:00<00:00, 1499.37it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1761.69it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 90.9% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 152/197 [00:00<00:00, 1517.66it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1769.80it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 81.8% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.75
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 152/197 [00:00<00:00, 1512.31it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1711.57it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 81.8% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.8
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 144/197 [00:00<00:00, 1431.57it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1766.29it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 63.6% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 150/197 [00:00<00:00, 1498.57it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1753.15it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: haematuria_present decisive 90.9% (worst-case +/-30) on 11 cells of 67 real submissions, at margin 0.05
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/metadata.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold0.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold0.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold1.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold1.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold2.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold2.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold3.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold3.decision.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold4.head.json
+wrote models/encoder-decl/register/haematuria_present/arm_b_finetune__c0-5-d0-6/fold4.decision.json
+
+=== c0.5-d0.6: nocturia_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 154/197 [00:00<00:00, 1528.88it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1704.50it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 66.7% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.7
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 144/197 [00:00<00:00, 1436.82it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1794.83it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 66.7% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▎  | 145/197 [00:00<00:00, 1446.30it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1743.64it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 55.6% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.9
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 152/197 [00:00<00:00, 1489.91it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1787.98it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 33.3% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.25
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 151/197 [00:00<00:00, 1495.95it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1779.16it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: nocturia_present decisive 66.7% (worst-case +/-33) on 9 cells of 67 real submissions, at margin 0.0
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/metadata.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold0.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold0.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold1.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold1.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold2.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold2.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold3.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold3.decision.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold4.head.json
+wrote models/encoder-decl/register/nocturia_present/arm_b_finetune__c0-5-d0-6/fold4.decision.json
+
+=== c0.5-d0.6: urinary_frequency_present ===
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▎  | 145/197 [00:00<00:00, 1443.37it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1785.86it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 61.5% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.25
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  80%|███████▉  | 157/197 [00:00<00:00, 1558.63it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1781.65it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 53.8% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.6
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▍  | 146/197 [00:00<00:00, 1447.88it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1756.98it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 30.8% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.45
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 150/197 [00:00<00:00, 1493.68it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1747.00it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 65.4% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.85
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 152/197 [00:00<00:00, 1518.72it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1748.14it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: urinary_frequency_present decisive 76.9% (worst-case +/-19) on 26 cells of 67 real submissions, at margin 0.45
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/metadata.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold0.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold0.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold1.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold1.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold2.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold2.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold3.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold3.decision.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold4.head.json
+wrote models/encoder-decl/register/urinary_frequency_present/arm_b_finetune__c0-5-d0-6/fold4.decision.json
+wrote reports/encoder_training/decl/register/dysuria_present.declarative_comparison.json
+wrote reports/encoder_training/decl/register/dysuria_present.declarative_comparison.md
+wrote reports/encoder_training/decl/register/fever_present.declarative_comparison.json
+wrote reports/encoder_training/decl/register/fever_present.declarative_comparison.md
+wrote reports/encoder_training/decl/register/flank_pain_present.declarative_comparison.json
+wrote reports/encoder_training/decl/register/flank_pain_present.declarative_comparison.md
+wrote reports/encoder_training/decl/register/haematuria_present.declarative_comparison.json
+wrote reports/encoder_training/decl/register/haematuria_present.declarative_comparison.md
+wrote reports/encoder_training/decl/register/nocturia_present.declarative_comparison.json
+wrote reports/encoder_training/decl/register/nocturia_present.declarative_comparison.md
+wrote reports/encoder_training/decl/register/urinary_frequency_present.declarative_comparison.json
+wrote reports/encoder_training/decl/register/urinary_frequency_present.declarative_comparison.md
+
+=== run succeeded ===
