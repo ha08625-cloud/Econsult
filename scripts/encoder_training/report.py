@@ -1354,6 +1354,7 @@ def build_report(
     checks: Mapping[str, object] | None = None,
     fragments: Sequence | None = None,
     companions: Mapping[str, object] | None = None,
+    declarative: Mapping[str, object] | None = None,
 ) -> dict:
     """Assemble the whole report as one JSON-serialisable dict.
 
@@ -1399,6 +1400,11 @@ def build_report(
         # the caller passed it, which is every command whose report holds one
         # dataset and therefore has nothing to distinguish.
         "companions": dict(companions or {}),
+        # The declarative sweep's cells. A separate key from `companions`
+        # because the two describe different generator settings and a reader
+        # comparing a cell table against an arm table needs to know which it is
+        # looking at; `_render_declarative` renders whichever is present.
+        "declarative": dict(declarative or {}),
         "model_movement": model_movement(models),
         "expectations": list(EXPECTATIONS),
         "limitations": list(LIMITATIONS),
@@ -1857,6 +1863,49 @@ def _render_holdout_comparisons(report: Mapping[str, object]) -> list[str]:
         )
     if skipped:
         lines.append("")
+    return lines
+
+
+def _render_declarative(report: Mapping[str, object]) -> list[str]:
+    """The cells behind a declarative sweep: their coordinates and what pairs.
+
+    Separate from :func:`_render_companions` rather than a branch inside it. A
+    companion arm is described by how many companions it drew; a declarative
+    cell is described by two shares, and the one number that matters about the
+    pairing is that there is none -- every cell holds different texts, so the
+    real-text holdout is the only shared instrument and the McNemar rows below
+    are all skips. A reader who takes those skips for a missing result has read
+    the report backwards.
+    """
+    declarative = report.get("declarative") or {}
+    cells = declarative.get("cells") or []
+    if not cells:
+        return []
+    lines = [
+        "## The cells behind these columns",
+        "",
+        f"{declarative.get('note', '')}".strip(),
+        "",
+        *_table(
+            ["cell", "companion share", "declarative share", "generator", "splits read", "tree"],
+            [
+                [
+                    f"`c{cell.get('companion_share')}-d{cell.get('declarative_share')}`",
+                    str(cell.get("companion_share")),
+                    str(cell.get("declarative_share")),
+                    str(cell.get("generator_version")),
+                    str(cell.get("train_splits_read")),
+                    f"`{cell.get('dataset_dir')}`",
+                ]
+                for cell in cells
+            ],
+        ),
+        "",
+    ]
+    for key in ("reference", "pairing"):
+        value = declarative.get(key)
+        if value:
+            lines.extend([f"*{_sentence(str(value))}*", ""])
     return lines
 
 
@@ -2646,6 +2695,7 @@ def render_markdown(
     lines.extend(_render_holdout(report))
     lines.extend(_render_holdout_comparisons(report))
     lines.extend(_render_companions(report))
+    lines.extend(_render_declarative(report))
     lines.extend(_render_ticket_question(report))
     lines.extend(_render_expectations(report))
     lines.extend(_render_checks(report))

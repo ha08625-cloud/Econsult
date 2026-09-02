@@ -520,6 +520,70 @@
           "--no-probe"
         ]
       ]
+    },
+    {
+      "id": "decl-compare-2x2",
+      "name": "Declarative sweep: compare the four cells",
+      "description": "The 2x2 in one report per signal, columns in cell order: control, declarative alone, companions alone, both. Trains all four from scratch -- roughly four hours on a 12GB card -- because the paired statistics can only be computed inside the invocation that produced them. Generate all four cells first. The first --cell is the reference: its tree is what each report's test slice and cluster checks describe.",
+      "steps": [
+        [
+          "-m",
+          "scripts.encoder_training",
+          "declarative-compare",
+          "--folds",
+          "5",
+          "--cell",
+          "data/synthetic/generated/decl/c0.0-d0.0",
+          "--cell",
+          "data/synthetic/generated/decl/c0.0-d0.3",
+          "--cell",
+          "data/synthetic/generated/decl/c0.5-d0.0",
+          "--cell",
+          "data/synthetic/generated/decl/c0.5-d0.3",
+          "--report-dir",
+          "reports/encoder_training/decl/comparison",
+          "--models-dir",
+          "models/encoder-decl/comparison",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights"
+        ]
+      ]
+    },
+    {
+      "id": "decl-compare-register",
+      "name": "Declarative sweep: compare 0.3 against 0.6 (the register arm)",
+      "description": "Prediction 6, and the only run that can find the register failure DD8 argues about: three cells at companion 0.5 and declarative 0.0, 0.3, 0.6. If 0.6 wins on real text, DD8's whole argument is wrong. Needs the c0.5-d0.6 cell generated first.",
+      "steps": [
+        [
+          "-m",
+          "scripts.encoder_training",
+          "declarative-compare",
+          "--folds",
+          "5",
+          "--cell",
+          "data/synthetic/generated/decl/c0.5-d0.0",
+          "--cell",
+          "data/synthetic/generated/decl/c0.5-d0.3",
+          "--cell",
+          "data/synthetic/generated/decl/c0.5-d0.6",
+          "--report-dir",
+          "reports/encoder_training/decl/register",
+          "--models-dir",
+          "models/encoder-decl/register",
+          "--base-model",
+          "roberta-base",
+          "--determinism",
+          "strict",
+          "--train-seed",
+          "1234",
+          "--no-weights"
+        ]
+      ]
     }
   ]
 }

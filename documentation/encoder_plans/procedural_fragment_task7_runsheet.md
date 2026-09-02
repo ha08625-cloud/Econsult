@@ -66,10 +66,11 @@ expressible. The four cells:
 against the committed companion numbers is a free replication that will catch a
 version-4 regression if there is one.
 
-Optional fifth cell **R** at companion 0.5, declarative 0.6, for prediction 6:
-the only cell that can find the register failure DD8 argues about. If R beats D
-on real text, DD8's whole argument is wrong, and that is the most valuable thing
-this run could find.
+Fifth cell **R** at companion 0.5, declarative 0.6, for prediction 6 — the only
+cell that can find the register failure DD8 argues about. If R beats D on real
+text, DD8's whole argument is wrong, and that is the most valuable thing this run
+could find. It has its own console entry and its own report directory, so it can
+be run after the 2×2 without disturbing it.
 
 ---
 
@@ -104,10 +105,11 @@ about an hour; leave it open.
 If it says fastapi and uvicorn are not importable, `pip install -r
 requirements-ml.txt` in that environment.
 
-### The four entries
+### The console entries
 
-The catalogue has four new runs. Each takes **Companion share** and
-**Declarative share** dropdowns, and the two together name the cell:
+The catalogue has six new runs. The four sweep entries take **Companion
+share** and **Declarative share** dropdowns, and the two together name the cell;
+the two comparison entries have fixed cell lists and no dropdowns.
 
 | entry | what it does |
 |---|---|
@@ -115,6 +117,8 @@ The catalogue has four new runs. Each takes **Companion share** and
 | `Declarative sweep: generate folds for all six signals` | the whole cell's data, six steps, one run |
 | `Declarative sweep: train and score one signal` | Arm B on one signal, five folds, ~10 min |
 | `Declarative sweep: train and score all six signals` | the whole cell, ~1 hour |
+| `Declarative sweep: compare the four cells` | trains all four and writes one report per signal, ~4 hours |
+| `Declarative sweep: compare 0.3 against 0.6` | the register arm, three cells at companion 0.5, ~3 hours |
 
 Every directory is built from both shares —
 `data/synthetic/generated/decl/c0.5-d0.3`, and the matching `reports/` and
@@ -134,6 +138,8 @@ For each of the four cells, in this order:
    values and the `c…-d…` directory match the cell you meant.
 3. **Run `train and score all six signals`** with the *same* two shares. About
    an hour. The Live log streams it; the verdict chip shows the step.
+   **Skip this step if you are going to run `compare the four cells`** — that
+   entry trains every cell itself, and doing both trains everything twice.
 4. When it finishes, **Save this run to a branch** in the Git section. That
    copies the log and the run manifest — every step's argv, exit code, timings
    and the sha it ran at — into `reports/training_runs/<run_id>/` along with the
@@ -282,9 +288,9 @@ for f in reports/encoder_training/decl/*/*_present.arm_b_finetune.md; do
 done
 ```
 
-Each file's table has **one** model column, because each cell was trained in its
-own run; you are reading four files side by side rather than one table with four
-columns. That is the cost of not having a `declarative-compare` — see below.
+If you trained the cells one at a time, each file's table has **one** model
+column and you are reading four files side by side. `declarative-compare` writes
+one report with a column per cell instead — see below.
 
 **`null -> true` is the invented-symptom rate**: how often the model answers
 `true` about a signal the submission never mentioned, as the mean across folds.
@@ -297,17 +303,62 @@ submissions at one observation each. **A difference between cells on the holdout
 has to be large before it is real** — read the intervals, not the point
 estimates.
 
-### Why not `companion-compare`?
+### The comparison report
 
-It is the closest precedent — it produced the `*.companion_comparison.md`
-reports with the arms as columns of one table — and it cannot be reused. It
-requires merged `joint6` trees from `merge-folds`, and it refuses two trees that
-share a `--companion-share` on the grounds that they are two runs of one arm.
-Cells A and B share one; so do C and D.
+`declarative-compare` puts the cells in one report per signal, columns in
+`--cell` order, stem `<signal>.declarative_comparison`:
 
-A `declarative-compare` subcommand modelled on it would give a single
-side-by-side report and is the nicer route. It is code work no Task 7
-instruction asks for. Decide it before training, not after.
+```bash
+python -m scripts.encoder_training declarative-compare --folds 5 \
+  --cell data/synthetic/generated/decl/c0.0-d0.0 \
+  --cell data/synthetic/generated/decl/c0.0-d0.3 \
+  --cell data/synthetic/generated/decl/c0.5-d0.0 \
+  --cell data/synthetic/generated/decl/c0.5-d0.3 \
+  --report-dir reports/encoder_training/decl/comparison \
+  --models-dir models/encoder-decl/comparison \
+  --base-model roberta-base --determinism strict --train-seed 1234 --no-weights
+```
+
+or the **`compare the four cells`** console entry, which is the same command.
+
+**It trains all four cells itself** — about four hours — rather than reading the
+per-cell runs off disk, for the reason `joint-compare` re-runs A1: the reports
+hold no per-example predictions, so anything comparing two cells can only be
+computed inside the invocation that produced both. Running the four
+`train and score` entries first and then this is training everything twice. Pick
+one route:
+
+* **The comparison entry alone** if you want the side-by-side report. Generate
+  the four cells, then run it. This is the shorter path.
+* **The four `train and score` entries** if you want them one at a time — a cell
+  a day, say — and are content to read four report files side by side.
+
+`companion-compare` cannot do this job: it wants merged `joint6` trees, and it
+refuses two trees that share a `--companion-share`, which cells A and B do and
+cells C and D do.
+
+**What the report tells you, and what it does not.** Every cell holds different
+texts under the same example ids, so no cell pairs with any other on the
+synthetic test set: every McNemar row is a recorded skip, deliberately, and a
+reader who takes those skips for a missing result has read it backwards. The 67
+real-text submissions are the same for every cell and are the shared instrument.
+The first `--cell` is the reference — its tree is what the report's test slice,
+fold partition and cluster checks describe.
+
+Guards, all of which fire before a tree is loaded: fewer than two cells, a
+repeated directory, two cells at the same two shares, a cell whose shares cannot
+be read from its sidecars, a path that does not exist, and every cell at
+declarative 0. The shares are read back from each cell's own sidecars rather than
+from the flags, so a directory named after the wrong cell cannot mislabel a
+column.
+
+For the register arm:
+
+```bash
+# --cell c0.5-d0.0 --cell c0.5-d0.3 --cell c0.5-d0.6
+```
+
+or the **`compare 0.3 against 0.6`** console entry.
 
 ---
 
@@ -324,7 +375,8 @@ All six, whatever they say, including the ones that went the wrong way.
 4. **`false` recall improves most** — from the `per_class` block.
 5. **Near-duplicate pairs in the hand-written libraries do not move** —
    `python -m scripts.synthetic_data --lint`.
-6. **`P = 0.6` scores worse than `P = 0.3` on real text** — needs cell R.
+6. **`P = 0.6` scores worse than `P = 0.3` on real text** — cell R, via the
+   register comparison.
 
 ---
 

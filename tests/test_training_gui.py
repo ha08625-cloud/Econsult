@@ -114,6 +114,8 @@ def test_the_committed_catalogue_loads():
         "decl-generate-folds-all",
         "decl-finetune",
         "decl-finetune-all",
+        "decl-compare-2x2",
+        "decl-compare-register",
     ]
 
 
@@ -149,13 +151,48 @@ def test_every_declarative_cell_writes_to_its_own_directories():
             seen |= directories
 
 
+def test_the_comparison_entries_point_at_directories_the_sweep_produces():
+    """The one coupling the catalogue cannot check for itself.
+
+    The comparison entries name their cells as literal paths, because the
+    console has no way to pass a list; the generate entries build the same paths
+    by substitution. Change the template in one place and the comparison points
+    at directories nothing writes -- which surfaces an hour in, as a run that
+    refuses because a cell does not exist, after the four hours of training that
+    produced the cells it cannot find.
+    """
+    entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
+
+    produced = set()
+    for values in (
+        {"companion_share": companion, "declarative_share": declarative}
+        for companion in ("0.0", "0.5")
+        for declarative in ("0.0", "0.3", "0.6")
+    ):
+        for step in resolve(entries["decl-generate-folds-all"], values):
+            produced.add(step[step.index("--out-dir") + 1])
+
+    for entry_id in ("decl-compare-2x2", "decl-compare-register"):
+        for step in entries[entry_id].steps:
+            cells = [step[i + 1] for i, element in enumerate(step) if element == "--cell"]
+            assert len(cells) >= 2, entry_id
+            assert len(set(cells)) == len(cells), f"{entry_id} repeats a cell"
+            unknown = sorted(set(cells) - produced)
+            assert not unknown, f"{entry_id} names cells the sweep never writes: {unknown}"
+
+
 def test_the_declarative_sweep_scores_the_real_text_holdout():
     """``--no-holdout`` here would produce a comparison that cannot answer the
     question the arms exist for, and the report would say the check was skipped
     in a line nobody reads. The holdout is on by default, so this asserts the
     absence of the flag rather than its presence."""
     entries = {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}
-    for entry_id in ("decl-finetune", "decl-finetune-all"):
+    for entry_id in (
+        "decl-finetune",
+        "decl-finetune-all",
+        "decl-compare-2x2",
+        "decl-compare-register",
+    ):
         for step in entries[entry_id].steps:
             assert "--no-holdout" not in step, entry_id
 
