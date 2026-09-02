@@ -1638,7 +1638,7 @@ examples is left completely clean, because a dataset where every example carries
 the same error density is its own kind of unrealistic.
 
 **The experiment has been run and it is positive.** A 2×2 with a rate sweep,
-thirteen cells over five folds on `fever_present`: clean plus three damage rates,
+fifteen cells over five folds on `fever_present`: clean plus three damage rates,
 each model scored against its own tree and the clean one via `--test-dir`. Cells
 are (train tree × test tree) and training depends only on the training tree, so
 this is **twenty training runs and forty evaluations**, not one run per cell — the
@@ -1652,9 +1652,16 @@ A clean-trained model loses **8.5 points** of decisive accuracy on text damaged 
 so the finding is "noise helps" rather than "a little noise helps". The failure
 damage causes has a direction worth knowing: decisive recall drains into `null` —
 `true` recall falls 90.5% → 65.3% while `null → true` *falls* — so a typo'd
-message is silently dropped rather than misread. **The open question is whether
-one rate covers another**: every noise-trained model was scored only at its own
-rate, and until that is closed the claim is robustness at a matched rate.
+message is silently dropped rather than misread.
+
+**The rate transfers, which is what makes the result usable.** A model trained at
+3% recovers 97% of the damage done at 6% and 87% of that done at 12% — text four
+times messier than it ever saw. The inoculation is to damage in general rather
+than to a damage level, so the rate does not have to be guessed right, which
+matters because the real rate in patient submissions is unmeasured. The small
+decay appears when the test rate exceeds the training rate, so **train at the top
+of the plausible range rather than the middle**: it costs nothing on clean text
+(the r12-trained model is the best of the five there) and covers more of it.
 
 **`--freeze-signal-vocabulary` was measured, not asserted.** The conservative
 variant (`all`, freezing every signal word) damages a clean-trained model by an
@@ -1699,10 +1706,11 @@ Section 10's outstanding items come first — fixing `urinary_frequency` and
 writing the missing `false` submissions both block reading a result. After
 those, the forward plan runs in the order its dependencies force:
 
-1. **Close the noise 2×2's one open cell** (12.6). The sweep has run and is
-   positive; what is missing is whether a model trained at one damage rate copes
-   with another, which is two evaluations and no new dataset. The decision to
-   adopt a noised training tree for the other six signals waits on it.
+1. **Adopt a noised training tree** (12.6), at the top of the plausible damage
+   range rather than the middle. The sweep and its transfer cells are positive
+   and the cost on clean text is nil. What it still wants is one non-fever signal
+   as confirmation, because fever's two decisive libraries are the project's only
+   untagged ones and its intervals are therefore the most flattered in the set.
 2. Template the filler libraries (12.1). The templates-per-library half of the
    lint report is already built as frames-per-library (section 8). Note this does *not* raise the fragment-count ceiling: that counts
    *sources*, not their size (section 5).
