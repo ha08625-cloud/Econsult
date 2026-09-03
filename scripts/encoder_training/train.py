@@ -1576,6 +1576,73 @@ def write_joint_finetuned_weights(
     return path
 
 
+def load_finetuned_weights(
+    path: Path | str,
+    *,
+    device: str = "cpu",
+    signals: Sequence[str] | None = None,
+) -> tuple[PooledEncoder, object, dict]:
+    """Read back a ``.pt`` written by :func:`write_finetuned_weights`.
+
+    The inverse of the two writers above, and the only way a saved fold can be
+    scored again without retraining it. Returns the loaded encoder, its heads,
+    and the payload's own metadata with the two large tensors' entries removed,
+    so a caller can record *what* it scored without carrying the state dict
+    around.
+
+    The base model, revision, pooling and sequence length come out of the
+    payload rather than from the caller: they are what the fine-tune was built
+    on, and a checkpoint scored under a different pooling mode or a different
+    base revision is a checkpoint scored as a different model. ``signals``
+    exists only to narrow a joint checkpoint to a subset of its heads; the
+    default is every head the file holds.
+
+    ``weights_only=True`` deliberately: this file may have been produced on
+    another machine and a pickle that can execute code on load is not a thing to
+    read casually. The payload is tensors, strings and lists, all of which the
+    safe loader handles.
+    """
+    import torch
+
+    path = Path(path)
+    if not path.is_file():
+        raise TrainError(
+            f"fine-tuned weights not found: {path}. They are ~440MB per fold and are not "
+            "committed (models/.gitignore); regenerate the fold with `finetune` on a machine "
+            "with a GPU, or point --weights at a machine that still holds them"
+        )
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+
+    saved_heads = payload.get("heads")
+    if not isinstance(saved_heads, Mapping) or not saved_heads:
+        raise TrainError(f"{path} carries no head weights")
+    requested = tuple(signals) if signals is not None else tuple(saved_heads)
+    missing = [signal for signal in requested if signal not in saved_heads]
+    if missing:
+        raise TrainError(f"{path} has no head for {missing}; it holds {sorted(saved_heads)}")
+
+    from .model import LinearHeads, PooledEncoder
+
+    encoder = PooledEncoder(
+        payload["base_model"],
+        revision=payload["revision"],
+        pooling=payload["pooling"],
+        max_seq_len=payload["max_seq_len"],
+        device=device,
+    ).load()
+    encoder.model.load_state_dict(payload["encoder_state_dict"])
+    encoder.model.to(device=device)
+    encoder.model.eval()
+
+    heads = LinearHeads(requested).load_state_lists(saved_heads).to(device)
+    heads.eval()
+
+    facts = {key: value for key, value in payload.items() if key != "encoder_state_dict"}
+    facts["heads"] = list(requested)
+    facts["path"] = str(path)
+    return encoder, heads, facts
+
+
 def run_finetune_fold(
     fold: Fold,
     encoder_factory: Callable[[], PooledEncoder],
@@ -2486,6 +2553,7 @@ __all__ = [
     "finetune_joint_fold_model",
     "head_artefact",
     "joint_head_artefact",
+    "load_finetuned_weights",
     "load_head_artefact",
     "permute_targets",
     "predict",
