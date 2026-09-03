@@ -39,6 +39,23 @@ disappointing number is when they get broken.
 | `uti1_holdout.source.txt` | **The source of truth.** One submission per line, verbatim. |
 | `uti1_holdout.labels.tsv` | The labels. One row per submission, one column per `send_to_encoder` signal in `data/uti1.json`. |
 | `uti1_holdout.arbitrate.md` | The 13 cells where the call is genuinely arguable, with the text and the reasoning. Read this first when reviewing. Two of its proposals were overruled and it says which; the TSV is the labels. |
+| `uti1_paraphrases.tsv` | A dozen of these submissions, each rewritten three ways with **only** the vocabulary and orthography changed. Used by the paraphrase-flip diagnostic (`scripts/encoder_training/flip.py`), which reads no labels. |
+
+### The paraphrase set does not spend the holdout
+
+`uti1_paraphrases.tsv` pairs a submission with rewrites of itself and asks
+whether a trained head answers the two differently. A flip is a disagreement
+between two *predictions*, so the labels file is never opened and no label is
+scored. That keeps it clear of rule 1 (nothing is trained on) and of rule 2
+(nothing is selected: it is a go/no-go diagnostic on whether a dataset change is
+worth building, and the arm comparisons it feeds into run on the synthetic
+tree). It would breach rule 2 the moment a flip rate were used to choose between
+two candidate models, and nothing does that.
+
+Its `source` rows are the submissions **verbatim** and the loader checks them
+character for character against `uti1_holdout.source.txt`. A source tidied up on
+its way into the file would measure a rewrite against a rewrite, and the tidying
+is exactly the register difference the diagnostic exists to probe.
 
 `submission_id` is `holdout-NNNN`, assigned by line order in the source file.
 **Do not reorder or insert lines in the source file** — the ids would shift and

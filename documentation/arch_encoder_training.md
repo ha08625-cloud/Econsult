@@ -872,3 +872,59 @@ forward pass to hand these submissions without new machinery — and a
 bag-of-words number on real text is not what the set is for. Arm B carries the
 encoder that would eventually be deployed, so it is where the question is worth
 asking.
+
+## 12. The paraphrase-flip diagnostic
+
+`flip.py` and the `flip-rate` subcommand, added for Task 2 of the lexical
+variant expansion plan. **It is a diagnostic, not an evaluation**: it decides
+whether a dataset-side expansion pass is worth building, and it was written to
+be allowed to come back negative.
+
+**The question.** A submission is rewritten so that only its vocabulary and
+orthography change — same tense, same person, same certainty, same polarity. The
+fold's decision rule is applied to the original and to the rewrite. The pair
+*flips* when the two predicted classes differ. `arch_training.md` section 8
+records two faults where surface form separated a label class, and the token
+association report of 2026-09-03 measured a live frequency-skew version of the
+second. This asks whether a trained head is actually reading it.
+
+**Why it can use the 67 real submissions without spending them.** A flip is a
+disagreement between two *predictions*, so no label is read and
+`uti1_holdout.labels.tsv` is never opened. Under README rule 2 the set may not
+*select* anything, and this selects nothing — the arm comparisons stay on the
+synthetic tree. Real text is also where the register gap lives, which is why the
+paraphrase set is built over these submissions rather than over test-split
+fragments.
+
+**Where it sits in the code.** `flip.py` is the same tier as `holdout.py`:
+standard library plus `metrics`, with the forward pass injected, so CI's unit
+job covers every line that decides what the number means. `flip-rate` is the
+torch half — it reads one fold's saved `.pt` through
+`train.load_finetuned_weights` (the inverse of `write_finetuned_weights`, and
+the only way to score a fold again without retraining it), takes the margin from
+that fold's own `decision.json`, and scores every head the checkpoint holds in
+one pass.
+
+**The statistic, and why it is a confusion matrix.** A pair is stored as a
+`Prediction` whose `truth` is the source's class and whose `predicted` is the
+variant's. Its confusion matrix is then exactly the flip-*direction* matrix, and
+the flip rate is one minus its accuracy. The direction is not a bonus: 12.6
+found decisive recall draining into `null`, and `true → null` flips and
+`true → false` flips are different faults with the same rate.
+
+**The resampling unit is the submission**, as it is for the holdout and for the
+same reason — three rewrites of one sentence are not three independent
+observations. A dozen submissions can separate "flips are common" from "flips
+are rare" and nothing finer; `flip.POWER_NOTE` says so beside every number.
+
+**The set** is `data/realistic/uti1_paraphrases.tsv`, whose `source` rows are
+checked verbatim against `uti1_holdout.source.txt` on every load: a tidied-up
+source measures a rewrite against a rewrite, and the tidying is the register
+axis being probed. Three shapes are hard errors rather than a quietly smaller
+set — a variant with no source, a source with no variants, and a repeated id.
+The variants were written by Claude and reviewed by the maintainer, which
+`flip.PROVENANCE_NOTE` carries into every report: a flip found here is real, a
+flip not found here is weaker evidence.
+
+The pre-registered gate and the standing result live in
+`reports/encoder_training/2026-09-03-paraphrase-flip-diagnostic.md`.

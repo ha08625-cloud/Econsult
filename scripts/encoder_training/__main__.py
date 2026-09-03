@@ -1,6 +1,6 @@
 """Command-line entry point for encoder training and evaluation.
 
-Eleven subcommands.
+Thirteen subcommands.
 
     python -m scripts.encoder_training generate-folds --folds 5
 
@@ -136,6 +136,16 @@ first, and a run whose companion draw correlates with the label is reported void
 rather than scored, because such a run did not test what it was built to test.
 See :mod:`.thresholds`.
 
+    python -m scripts.encoder_training flip-rate --weights <fold>.encoder.pt
+
+The lexical variant expansion plan's Task 2 gate. Scores one saved fold against
+`data/realistic/uti1_paraphrases.tsv` -- a dozen real submissions, each rewritten
+three ways with the vocabulary and orthography changed and nothing else -- and
+reports how often the fold's answer changes between a submission and its
+rewrite. No labels are read, so this costs the holdout nothing; it is a
+diagnostic that decides whether a dataset-side expansion pass is worth building,
+and it is built to be allowed to come back negative. See :mod:`.flip`.
+
 No command touches ``app/``, and nothing in ``app/`` imports this. The dependency
 runs one way, and ``tests/test_wiring.py`` asserts it.
 """
@@ -154,8 +164,24 @@ from scripts.synthetic_data.__main__ import main as generate_main
 from scripts.synthetic_data.recombine import DEFAULT_COMPANION_SHARE, DEFAULT_DECLARATIVE_SHARE
 
 from .baselines import run_all
-from .dataset import SPLITS, DatasetError, fold_dataset_path, load_folds, swap_test_split
+from .dataset import (
+    CLASS_TRUE,
+    SPLITS,
+    DatasetError,
+    fold_dataset_path,
+    load_folds,
+    swap_test_split,
+)
+from .decision import DecisionRule
 from .embed import POOLING_MODES, EmbedError
+from .flip import (
+    DEFAULT_PARAPHRASE_PATH,
+    FlipError,
+    describe_flips,
+    load_holdout_sources,
+    load_paraphrases,
+    score_flips,
+)
 from .holdout import DEFAULT_HOLDOUT_PATH, HoldoutError, HoldoutSet, encoder_signals, load_holdout
 from .merge import DEFAULT_SIGNALS, MergeError, merge_folds
 from .report import BootstrapConfig, build_report, write_report
@@ -180,6 +206,7 @@ from .train import (
     build_joint_metadata,
     build_metadata,
     display_model,
+    load_finetuned_weights,
     remargined_runs,
     resolve_device,
     run_finetune,
@@ -2665,6 +2692,96 @@ def _add_encoder_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-seq-len", type=int, default=256)
 
 
+DEFAULT_HOLDOUT_SOURCE = Path("data/realistic/uti1_holdout.source.txt")
+
+
+def run_flip_rate(args: argparse.Namespace) -> int:
+    """Task 2's gate: how often does a saved fold change its answer under paraphrase?
+
+    One fold, not five. This is a diagnostic that decides whether a dataset pass
+    is worth building, and the question it asks -- "are flips common or rare?" --
+    is answered at the resolution a dozen submissions support, which five folds
+    would not improve on (:data:`flip.POWER_NOTE`).
+
+    The margin is read from the fold's own ``decision.json`` rather than
+    defaulted to argmax. A flip rate measured under a rule the fold never used
+    is a number about a model nobody deployed, and the two differ exactly where
+    it matters most: near the ``null``/``true`` boundary the margin exists to
+    police.
+    """
+    weights = Path(args.weights)
+    paraphrases = load_paraphrases(
+        args.paraphrases,
+        sources=None if args.no_source_check else load_holdout_sources(args.holdout_source),
+    )
+
+    if args.margin is not None:
+        margin = args.margin
+        gated_class = CLASS_TRUE
+        rule_source = f"--margin {margin}"
+    else:
+        decision_path = Path(args.decision) if args.decision else _default_decision_path(weights)
+        if not decision_path.is_file():
+            raise FlipError(
+                f"decision rule not found: {decision_path}. It is written beside the head "
+                "artefacts by `finetune`; pass --decision, or --margin to score under a margin "
+                "chosen here instead (and say so in the report)"
+            )
+        rule = DecisionRule.read(decision_path)
+        margin = rule.margin
+        gated_class = rule.gated_class
+        rule_source = f"{decision_path} (margin {margin}, selected on {rule.selected_on})"
+
+    device_facts = check_device(args.device, cuda_required=False)
+    device = device_facts["device"]
+    encoder, heads, facts = load_finetuned_weights(
+        weights, device=device, signals=args.signals or None
+    )
+    signals = list(facts["heads"])
+    from .train import encoder_scorer
+
+    result = score_flips(
+        paraphrases,
+        encoder_scorer(encoder, heads, signals=signals, batch_size=args.batch_size),
+        signals=signals,
+        margin=margin,
+        gated_class=gated_class,
+        resamples=args.resamples,
+        seed=args.seed,
+    )
+    result["model"] = {
+        key: facts[key]
+        for key in ("path", "arm", "fold", "base_model", "revision", "pooling", "max_seq_len")
+        if key in facts
+    }
+    result["decision_rule"] = rule_source
+    result["device"] = device
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"model: {weights}")
+        print(f"rule: {rule_source}")
+        for line in describe_flips(result):
+            print(line)
+    if args.out:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {out}")
+    return 0
+
+
+def _default_decision_path(weights: Path) -> Path:
+    """``.../weights/foldN.encoder.pt`` -> ``.../foldN.decision.json``.
+
+    The layout `finetune` writes: the rule sits beside the head artefacts, one
+    directory up from the weights it applies to.
+    """
+    stem = weights.name.split(".")[0]
+    return weights.parent.parent / f"{stem}.decision.json"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m scripts.encoder_training",
@@ -3196,6 +3313,60 @@ def build_parser() -> argparse.ArgumentParser:
     )
     score.set_defaults(handler=score_companions)
 
+    flip = subparsers.add_parser(
+        "flip-rate",
+        help="Task 2's gate: how often a saved fold changes its answer when only the "
+        "vocabulary of a real submission changes",
+    )
+    flip.add_argument(
+        "--weights",
+        type=Path,
+        required=True,
+        help="one fold's fine-tuned .pt, as written by `finetune` (not committed: ~440MB)",
+    )
+    flip.add_argument(
+        "--paraphrases", type=Path, default=DEFAULT_PARAPHRASE_PATH, help="the hand-written set"
+    )
+    flip.add_argument(
+        "--holdout-source",
+        type=Path,
+        default=DEFAULT_HOLDOUT_SOURCE,
+        help="the submissions the set's `source` rows must match verbatim",
+    )
+    flip.add_argument(
+        "--no-source-check",
+        action="store_true",
+        help="skip the verbatim check, for a paraphrase set built over text that is not the "
+        "holdout. Say so in the report: it is the check that keeps this a measurement of real "
+        "text rather than of a rewrite of it",
+    )
+    flip.add_argument(
+        "--decision",
+        type=Path,
+        default=None,
+        help="the fold's decision.json; by default the one beside the head artefacts",
+    )
+    flip.add_argument(
+        "--margin",
+        type=float,
+        default=None,
+        help="score under this margin instead of the fold's selected rule. A number about a "
+        "model nobody deployed, so use it only for a deliberate sensitivity check",
+    )
+    flip.add_argument(
+        "--signals",
+        nargs="+",
+        default=None,
+        help="which of the checkpoint's heads to score; by default every one it holds",
+    )
+    flip.add_argument("--device", default="cuda")
+    flip.add_argument("--batch-size", type=int, default=64)
+    flip.add_argument("--resamples", type=int, default=2000)
+    flip.add_argument("--seed", type=int, default=0)
+    flip.add_argument("--out", type=Path, default=None, help="also write the result as JSON here")
+    flip.add_argument("--json", action="store_true", help="print JSON instead of the summary")
+    flip.set_defaults(handler=run_flip_rate)
+
     return parser
 
 
@@ -3207,6 +3378,7 @@ def main(argv: list[str] | None = None) -> int:
         CudaSmokeError,
         DatasetError,
         EmbedError,
+        FlipError,
         HoldoutError,
         MergeError,
         ThresholdError,
