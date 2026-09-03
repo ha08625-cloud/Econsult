@@ -101,6 +101,41 @@ So, committed before scoring:
 | **Proceed** | point estimate **≥ 25%** | The skew is learnable and expansion is worth building. Continue to Task 3. |
 | **Judgement** | anything between | Neither answer is supported at n = 13. Resolved on the direction matrix and on the cheaper alternative below, in a written addendum to this report, not silently. |
 
+### What a `stop` does and does not establish
+
+Recorded now, because the `stop` row above is easy to over-read as "the
+libraries are fine".
+
+A low flip rate establishes that the head's decisions are already invariant to
+the vocabulary substitutions this pass would make — **which is the whole of what
+the pass does.** Tiers A and B change words and orthography and nothing else,
+and the aspect and opener rewrites that would change phrasing (Tier C) are out
+of scope for unrelated reasons. So a head that does not move under this probe
+has nothing to gain from being trained on rephrased copies of the same lines.
+The precedent is the noise 2×2 (12.6): augmentation there bought no accuracy on
+the distribution the model already handled, and bought robustness to the one it
+did not. That is the shape to expect here, and it is why the flip rate — not a
+synthetic accuracy figure — is the outcome measure.
+
+It does **not** establish that the libraries' *register and phrasing* are
+harmless. The ticket's broader premise is that a few dozen fragments recombined
+thousands of times invite the model to learn the libraries' voice rather than
+their meaning, and the word-level association Task 1 measured is one narrow
+instance of that. Nothing in this report measures the rest of it: sentence shape,
+punctuation habits, typical length and opener are invisible to both gates, and
+the one instrument that could see them — the 67 real submissions — is worth about
+±12 points overall and cannot separate two arms.
+
+If that broader concern is to be addressed, this pass is not the tool for it. It
+adds no ideas and no effective sample size, and the closest evidence available
+says surface multiplication over a fixed cluster set buys little: the A2 arm
+generated 4.5× the recombinations of the same clusters for −0.8 to +1.3 points.
+The candidate interventions are more fragments (12.1's procedural generation, or
+hand-written ones), which add ideas, or Tier C rewrites under an architecture
+that can scope a rule to a library. Both are separate tickets. **A `stop` here
+closes this ticket, not that question**, and the write-up must say so rather than
+reporting the libraries clean.
+
 Two secondary readings, recorded now so they are not invented afterwards to fit
 the result:
 
