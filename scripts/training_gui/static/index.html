@@ -10,149 +10,293 @@
      without a file to serve. -->
 <link id="favicon" rel="icon" href="data:,">
 <style>
+  /* Layout: an app shell rather than a scrolling document. The header is fixed,
+     the catalogue scrolls in the left column and the log holds the right one at
+     full height, so starting a run never scrolls its output off the screen.
+     Below 1000px the two columns stack and the page scrolls normally. */
   :root {
-    --ink: #1c1c1c;
+    color-scheme: light dark;
+    --ink: #16202c;
     --muted: #5f6b7a;
-    --line: #d8dee6;
+    --faint: #8a94a6;
+    --line: #dde3ea;
     --panel: #ffffff;
-    --page: #f4f6f8;
+    --page: #eef1f5;
+    --raised: #f7f9fb;
+    --accent: #1f4fd8;
     --good: #0f7b3f;
     --bad: #a3160b;
     --neutral: #46536a;
+    --term-bg: #10151c;
+    --term-ink: #d7dee7;
+    /* Text on a filled button. The dark palette lightens the accent and the red
+       so they read against a dark panel, which then needs dark text on top. */
+    --on-fill: #ffffff;
+    --radius: 10px;
+    --header: 64px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e7ecf3;
+      --muted: #9aa6b6;
+      --faint: #78849a;
+      --line: #2a3340;
+      --panel: #171d26;
+      --page: #0e1319;
+      --raised: #1e2530;
+      --accent: #7fa3ff;
+      --good: #4ec97f;
+      --bad: #ff8a80;
+      --neutral: #a5b1c4;
+      --term-bg: #0a0e13;
+      --term-ink: #cfd8e3;
+      --on-fill: #0e1319;
+    }
   }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body {
     margin: 0;
-    padding: 24px;
     background: var(--page);
     color: var(--ink);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  h2 { font-size: 15px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .06em;
-       color: var(--muted); }
-  .sub { color: var(--muted); margin: 0 0 24px; }
+
+  /* -- header ------------------------------------------------------------- */
+  header {
+    flex: 0 0 auto;
+    height: var(--header);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 0 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  h1 { font-size: 17px; font-weight: 650; margin: 0; letter-spacing: -.01em; white-space: nowrap; }
+  .sub { color: var(--faint); margin: 0; font-size: 13px; white-space: nowrap;
+         overflow: hidden; text-overflow: ellipsis; }
+  .statusline { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+  .verdict {
+    font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 999px; border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .verdict.succeeded { color: var(--good); }
+  .verdict.failed { color: var(--bad); }
+  .verdict.stopped, .verdict.interrupted { color: var(--neutral); }
+  .verdict.idle { color: var(--faint); }
+  .verdict.running { color: var(--accent); }
+  .verdict.running::before {
+    content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px;
+    border-radius: 50%; background: currentColor; vertical-align: middle;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  .step { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .elapsed { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+
+  /* -- the two columns ---------------------------------------------------- */
+  main {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(400px, 1fr) minmax(460px, 1.1fr);
+    gap: 16px;
+    padding: 16px;
+  }
+  main.focus-log { grid-template-columns: 1fr; }
+  main.focus-log .column-left { display: none; }
+  .column { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+  .column-left { overflow-y: auto; padding-right: 2px; }
+  .column-right { overflow: hidden; }
+
   section {
     background: var(--panel);
     border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 20px;
+    border-radius: var(--radius);
+    padding: 14px 16px;
   }
-  .run { border-top: 1px solid var(--line); padding: 14px 0; }
-  .run:first-of-type { border-top: none; padding-top: 0; }
-  .run-head { display: flex; gap: 16px; align-items: baseline; justify-content: space-between; }
-  .run-name { font-weight: 600; }
-  .run-desc { color: var(--muted); margin: 4px 0 10px; max-width: 70ch; }
-  .params { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
-  .param { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+  section.fill { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  h2 {
+    font-size: 11px; margin: 0 0 12px; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--faint); font-weight: 700;
+  }
+
+  /* -- the catalogue ------------------------------------------------------ */
+  .run {
+    border: 1px solid var(--line); border-radius: 8px; background: var(--raised);
+    padding: 12px 14px; margin-bottom: 10px;
+  }
+  .run:last-child { margin-bottom: 0; }
+  .run-head { display: flex; gap: 14px; align-items: center; justify-content: space-between; }
+  .run-name { font-weight: 620; }
+  /* Descriptions run to a paragraph. Three lines is enough to tell the entries
+     apart; a click gives the rest, so the column stays a list of runs. */
+  .run-desc { color: var(--muted); margin: 6px 0 0; font-size: 13.5px; cursor: pointer; }
+  .run-desc.clamped {
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .params { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+  .param { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
   select, button { font: inherit; }
-  select { padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff;
-           color: var(--ink); }
+  select {
+    padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); color: var(--ink); font-size: 13px;
+  }
   button {
-    padding: 6px 14px; border: 1px solid var(--line); border-radius: 4px;
-    background: #eef1f5; color: var(--ink); cursor: pointer;
+    padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); color: var(--ink); cursor: pointer; font-size: 13px;
   }
-  button:hover:not(:disabled) { background: #e2e7ee; }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
-  button.stop { background: #fdeceb; border-color: #f0b7b2; color: var(--bad); }
-  pre, code, .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 13px;
+  button:hover:not(:disabled) { border-color: var(--faint); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: var(--on-fill); border-color: transparent; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+  button.stop { background: var(--bad); border-color: transparent; color: var(--on-fill); }
+  pre, code, .mono { font-family: var(--mono); font-size: 12.5px; }
+  details.commands { margin-top: 10px; }
+  details.commands > summary {
+    cursor: pointer; color: var(--faint); font-size: 12px; list-style: none;
   }
-  .commands { margin: 0; padding: 0; list-style: none; }
-  .commands li {
-    background: #f7f9fb; border: 1px solid var(--line); border-radius: 4px;
+  details.commands > summary::-webkit-details-marker { display: none; }
+  details.commands > summary::before { content: "\25b8  "; }
+  details.commands[open] > summary::before { content: "\25be  "; }
+  details.commands ul { margin: 8px 0 0; padding: 0; list-style: none; }
+  details.commands li {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
     padding: 6px 8px; margin-bottom: 4px; overflow-x: auto; white-space: pre;
+    color: var(--muted);
   }
-  .statusline { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
-  .verdict { font-size: 22px; font-weight: 700; letter-spacing: .02em; }
-  .verdict.succeeded { color: var(--good); }
-  .verdict.failed { color: var(--bad); }
-  .verdict.stopped, .verdict.interrupted, .verdict.idle { color: var(--neutral); }
-  .verdict.running { color: var(--ink); }
-  .step { color: var(--muted); }
-  .elapsed { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .steps { margin: 0 0 12px; padding: 0; list-style: none; }
+
+  /* -- the step checklist ------------------------------------------------- */
+  .steps { margin: 0 0 10px; padding: 0; list-style: none; font-size: 13.5px; }
   .steps li { display: flex; gap: 10px; align-items: baseline; padding: 2px 0; }
   .steps .glyph { width: 1.2em; text-align: center; }
-  .steps .label { flex: 1; }
+  .steps .label { flex: 1; min-width: 0; }
   .steps .dur { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .steps .running { font-weight: 600; }
+  .steps .running { font-weight: 650; }
   .steps .succeeded .glyph { color: var(--good); }
   .steps .failed .glyph, .steps .interrupted .glyph { color: var(--bad); }
   .steps .pending, .steps .skipped, .steps .stopped { color: var(--muted); }
   .steps details { width: 100%; }
   .steps details summary { cursor: pointer; color: var(--muted); }
   .steps details ul { margin: 4px 0 0; padding: 0 0 0 18px; list-style: none; }
-  .log-controls { margin: 0 0 8px; }
-  #log {
-    height: 420px; overflow: auto; background: #12161c; color: #dde3ea;
-    border-radius: 6px; padding: 12px; margin: 0; white-space: pre-wrap; word-break: break-word;
+  /* The running step's whole command line, kept to one row: it is a 300-character
+     reference, not something to read here, so it truncates and carries the full
+     text as a tooltip. The checklist above it says what the step is. */
+  #command {
+    flex: 0 0 auto; color: var(--faint); margin-bottom: 10px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  #log.expanded { height: 80vh; }
+  /* The checklist keeps its height and scrolls within it; the log takes whatever
+     is left. The other way round, a long checklist squeezes the running row to
+     half a line -- and the running row is the one being read. */
+  .steps { flex: 0 0 auto; max-height: 230px; overflow-y: auto; }
+
+  /* -- the log ------------------------------------------------------------ */
+  .log-controls { margin: 0 0 10px; }
+  #log {
+    flex: 1 1 0; min-height: 120px; overflow: auto;
+    background: var(--term-bg); color: var(--term-ink);
+    border-radius: 8px; padding: 12px; margin: 0;
+    white-space: pre-wrap; word-break: break-word; line-height: 1.45;
+  }
+
+  /* -- files and git ------------------------------------------------------ */
   .files { margin: 0; padding: 0; list-style: none; }
-  .files li { padding: 3px 0; border-bottom: 1px solid #f0f2f5; }
-  .files .flag { display: inline-block; width: 3.5em; color: var(--muted); }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .branch { font-size: 20px; font-weight: 700; word-break: break-all; }
-  .message { margin: 10px 0 0; }
+  .files li { padding: 3px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .files li:last-child { border-bottom: none; }
+  .files .flag { display: inline-block; width: 3.5em; color: var(--faint); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .branch { font-size: 15px; font-weight: 650; word-break: break-all; margin-top: 10px; }
+  .message { margin: 8px 0 0; font-size: 13.5px; }
   .message.bad { color: var(--bad); }
   .message.good { color: var(--good); }
   .raw {
-    background: #12161c; color: #dde3ea; border-radius: 6px; padding: 10px;
+    background: var(--term-bg); color: var(--term-ink); border-radius: 8px; padding: 10px;
     overflow-x: auto; white-space: pre-wrap; margin: 8px 0 0;
   }
-  .empty { color: var(--muted); }
+  .empty { color: var(--faint); font-size: 13.5px; }
+  a { color: var(--accent); }
+
+  /* Too narrow for two columns: back to an ordinary scrolling document, with the
+     header stuck to the top so the verdict stays visible. The app-shell rules
+     have to be undone rather than just re-stacked -- a viewport-height grid on a
+     page that now scrolls overlaps its own rows. */
+  @media (max-width: 1000px) {
+    body { height: auto; display: block; overflow: auto; }
+    header { position: sticky; top: 0; z-index: 5; }
+    main { display: block; min-height: 0; padding: 16px; }
+    .column { display: block; overflow: visible; }
+    .column > section { margin-bottom: 16px; }
+    section.fill { display: block; }
+    .steps { max-height: none; }
+    #log { height: 60vh; flex: none; }
+    .sub { display: none; }
+  }
 </style>
 </head>
 <body>
 
-<h1>Encoder training console</h1>
-<p class="sub">Runs what the catalogue allows, on this machine, and shows what it wrote.
-  It does not interpret a result.</p>
-
-<section id="runs-section">
-  <h2>Runs</h2>
-  <div id="runs" class="empty">Loading the catalogue&hellip;</div>
-</section>
-
-<section>
-  <h2>Live log</h2>
+<header>
+  <div class="brand">
+    <h1>Encoder training console</h1>
+    <p class="sub">Runs what the catalogue allows, on this machine, and shows what it wrote.</p>
+  </div>
   <div class="statusline">
-    <span id="verdict" class="verdict idle">Idle</span>
     <span id="step" class="step"></span>
     <span id="elapsed" class="elapsed"></span>
+    <span id="verdict" class="verdict idle">Idle</span>
     <button id="stop" class="stop" hidden>Stop</button>
   </div>
-  <ul id="steps" class="steps"></ul>
-  <div id="command" class="mono step"></div>
-  <div class="row log-controls">
-    <button id="copy-log">Copy log</button>
-    <button id="copy-failed" hidden>Copy the failing step&rsquo;s output</button>
-    <button id="expand-log">Expand</button>
-  </div>
-  <pre id="log"></pre>
-</section>
+</header>
 
-<section>
-  <h2>Changed files under reports/ and models/</h2>
-  <div class="row">
-    <button id="refresh-changes">Refresh</button>
-  </div>
-  <ul id="changes" class="files"></ul>
-  <p id="changes-empty" class="empty">Nothing changed yet.</p>
-</section>
+<main id="layout">
+  <div class="column column-left">
+    <section id="runs-section">
+      <h2>Runs</h2>
+      <div id="runs" class="empty">Loading the catalogue&hellip;</div>
+    </section>
 
-<section>
-  <h2>Git</h2>
-  <div class="row">
-    <button id="save" class="primary">Save this run to a branch</button>
-    <button id="update">Update from GitHub</button>
+    <section>
+      <h2>Changed files under reports/ and models/</h2>
+      <div class="row">
+        <button id="refresh-changes">Refresh</button>
+      </div>
+      <ul id="changes" class="files"></ul>
+      <p id="changes-empty" class="empty">Nothing changed yet.</p>
+    </section>
+
+    <section>
+      <h2>Git</h2>
+      <div class="row">
+        <button id="save" class="primary">Save this run to a branch</button>
+        <button id="update">Update from GitHub</button>
+      </div>
+      <div id="git-result"></div>
+    </section>
   </div>
-  <div id="git-result"></div>
-</section>
+
+  <div class="column column-right">
+    <section class="fill">
+      <h2>Live log</h2>
+      <ul id="steps" class="steps"></ul>
+      <div id="command" class="mono"></div>
+      <div class="row log-controls">
+        <button id="copy-log">Copy log</button>
+        <button id="copy-failed" hidden>Copy the failing step&rsquo;s output</button>
+        <button id="expand-log">Full width</button>
+      </div>
+      <pre id="log"></pre>
+    </section>
+  </div>
+</main>
 
 <script>
 "use strict";
@@ -240,8 +384,10 @@ function renderCatalogue() {
     head.append(name, button);
 
     const description = document.createElement("p");
-    description.className = "run-desc";
+    description.className = "run-desc clamped";
     description.textContent = entry.description;
+    description.title = "Click to show the whole description";
+    description.onclick = () => description.classList.toggle("clamped");
 
     const params = document.createElement("div");
     params.className = "params";
@@ -270,9 +416,17 @@ function renderCatalogue() {
       params.appendChild(wrap);
     }
 
-    const commands = document.createElement("ul");
+    // The command lines are what the run will actually execute and are worth
+    // reading before pressing Run, but a 29-step entry printing 29 of them
+    // buries the other entries -- so they sit behind a disclosure, shut.
+    const commands = document.createElement("details");
     commands.className = "commands";
-    commands.id = `commands-${entry.id}`;
+    const summary = document.createElement("summary");
+    const plural = entry.steps.length === 1 ? "command" : "commands";
+    summary.textContent = `${entry.steps.length} ${plural}`;
+    const list = document.createElement("ul");
+    list.id = `commands-${entry.id}`;
+    commands.append(summary, list);
 
     row.append(head, description);
     if (entry.parameters.length) row.append(params);
@@ -347,13 +501,13 @@ const VERDICTS = {
 };
 
 const GLYPHS = {
-  succeeded: "\u2713",
-  failed: "\u2717",
-  interrupted: "\u2717",
-  stopped: "\u25a0",
-  skipped: "\u2013",
-  running: "\u25b6",
-  pending: "\u00b7",
+  succeeded: "✓",
+  failed: "✗",
+  interrupted: "✗",
+  stopped: "■",
+  skipped: "–",
+  running: "▶",
+  pending: "·",
 };
 
 // Four dots, inline, so the tab reports the state from across a desk. Kept as
@@ -366,7 +520,7 @@ const DOT = (fill) =>
     `<circle cx="8" cy="8" r="7" fill="${fill}"/></svg>`);
 const FAVICONS = {
   idle: DOT("#8a94a6"),
-  running: DOT("#1c1c1c"),
+  running: DOT("#1f4fd8"),
   succeeded: DOT("#0f7b3f"),
   failed: DOT("#a3160b"),
 };
@@ -472,7 +626,7 @@ function renderSteps(status, now) {
     }, 0);
     const plural = succeeded.length === 1 ? "step" : "steps";
     container.appendChild(collapsedRow("succeeded", status, succeeded, now,
-      `\u2713 ${succeeded.length} ${plural} succeeded \u00b7 ` +
+      `✓ ${succeeded.length} ${plural} succeeded · ` +
       formatDuration(Math.round(total / 1000))));
   }
   for (const step of shown) container.appendChild(stepRow(status, step, now));
@@ -482,13 +636,13 @@ function renderSteps(status, now) {
   if (pending.length > PENDING_SHOWN) {
     const rest = document.createElement("li");
     rest.className = "pending";
-    rest.textContent = `\u00b7 ${pending.length - PENDING_SHOWN} more to come`;
+    rest.textContent = `· ${pending.length - PENDING_SHOWN} more to come`;
     container.appendChild(rest);
   }
   if (skipped.length) {
     const plural = skipped.length === 1 ? "step" : "steps";
     container.appendChild(collapsedRow("skipped", status, skipped, now,
-      `\u2013 ${skipped.length} ${plural} never ran`));
+      `– ${skipped.length} ${plural} never ran`));
   }
 }
 
@@ -497,14 +651,14 @@ function renderTab(status) {
   const name = status.entry_name || "";
   if (state === "running") {
     const counter = status.step_index && status.step_count
-      ? `${status.step_index}/${status.step_count} \u00b7 ` : "";
-    document.title = `\u25b6 ${counter}${name}`.trim();
+      ? `${status.step_index}/${status.step_count} · ` : "";
+    document.title = `▶ ${counter}${name}`.trim();
     $("favicon").href = FAVICONS.running;
   } else if (state === "succeeded") {
-    document.title = `\u2705 Succeeded \u00b7 ${name}`.trim();
+    document.title = `✅ Succeeded · ${name}`.trim();
     $("favicon").href = FAVICONS.succeeded;
   } else if (["failed", "stopped", "interrupted"].includes(state)) {
-    document.title = `\u274c ${VERDICTS[state]} \u00b7 ${name}`.trim();
+    document.title = `❌ ${VERDICTS[state]} · ${name}`.trim();
     $("favicon").href = FAVICONS.failed;
   } else {
     document.title = "Encoder training console";
@@ -529,6 +683,7 @@ function renderStatus(status) {
   $("step").textContent = stepLine.join(" — ");
   $("elapsed").textContent = totalElapsed(status, now);
   $("command").textContent = status.command || "";
+  $("command").title = status.command || "";
   renderSteps(status, now);
   renderTab(status);
   $("copy-failed").hidden = !failingStep(status);
@@ -700,9 +855,11 @@ $("stop").onclick = stopRun;
 $("copy-log").onclick = (event) => copyToClipboard(logBox.textContent, event.target);
 $("copy-failed").onclick = (event) =>
   copyToClipboard(failingStepOutput() || logBox.textContent, event.target);
+// The log already fills its column, so the only thing left to give it is the
+// other column's width: this hides the catalogue rather than growing a box.
 $("expand-log").onclick = (event) => {
-  const expanded = logBox.classList.toggle("expanded");
-  event.target.textContent = expanded ? "Collapse" : "Expand";
+  const focused = $("layout").classList.toggle("focus-log");
+  event.target.textContent = focused ? "Two columns" : "Full width";
   logBox.scrollTop = logBox.scrollHeight;
 };
 $("refresh-changes").onclick = refreshChanges;
