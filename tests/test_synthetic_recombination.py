@@ -37,7 +37,9 @@ from scripts.synthetic_data.lint import (
     read_inventory,
     render_cross_signal_report,
     render_report,
+    render_token_association,
     signal_language_hits,
+    token_label_association,
     undeclared_pairs,
 )
 from scripts.synthetic_data.manifest import (
@@ -4633,3 +4635,200 @@ def test_the_lint_exits_non_zero_on_an_inventory_fault(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "faults (a failure): 1" in captured.out
     assert "inventory has 1 fault" in captured.err
+
+
+# --------------------------------------------------------------------------
+# 23. Token / label-class association (Task 1)
+# --------------------------------------------------------------------------
+
+
+def _token_fragment(text: str, library: str, fragment_type: str) -> Fragment:
+    return _fragment(
+        text,
+        library=library,
+        signal_key=SIGNAL,
+        fragment_type=fragment_type,
+        fragment_id=f"{library}:{text[:16]}",
+        null_on=(),
+    )
+
+
+def _token_corpus(true_lines, false_lines, null_lines) -> list[Fragment]:
+    """One signal's three classes, one library each."""
+    return (
+        [_token_fragment(t, "sig_true", "positive") for t in true_lines]
+        + [_token_fragment(t, "sig_false", "negative") for t in false_lines]
+        + [_token_fragment(t, "sig_null_hedged", "ambiguous") for t in null_lines]
+    )
+
+
+def test_a_token_confined_to_one_label_class_ranks_first():
+    # The section 8 fault: "dysuria" on 16 lines of one null library and nowhere
+    # else in the signal. Here "widget" is on every null line and no other, so
+    # its skew is 1.0 and nothing can beat it.
+    # Every class shares "the alpha beta line"; only null adds "widget". The
+    # trailing number keeps the three libraries' text distinct without adding a
+    # token above the support floor.
+    fragments = _token_corpus(
+        [f"the alpha beta line {i}" for i in range(6)],
+        [f"the alpha beta line {i}" for i in range(6, 12)],
+        [f"the alpha beta widget line {i}" for i in range(12, 18)],
+    )
+    ranked = token_label_association(fragments)[SIGNAL]
+    assert ranked[0].token == "widget"
+    assert ranked[0].skew == pytest.approx(1.0)
+    assert ranked[0].classes_present == 1
+    assert ranked[0].rates == {"true": 0.0, "false": 0.0, "null": 1.0}
+    # And the denominators travel with it, so a rate of 1.0 on six lines cannot
+    # be read as a rate of 1.0 on six hundred.
+    assert ranked[0].support == 6
+    assert ranked[0].library_lines == {"sig_null_hedged": 6}
+    assert ranked[0].library_totals == {"sig_null_hedged": 6}
+
+
+def test_a_token_used_at_the_same_rate_by_every_class_has_no_skew():
+    # The negative control. "alpha" is on every line of all three classes, so
+    # nothing about it separates the label and its skew is exactly zero.
+    fragments = _token_corpus(
+        [f"alpha one {i}" for i in range(6)],
+        [f"alpha two {i}" for i in range(6)],
+        [f"alpha three {i}" for i in range(6)],
+    )
+    ranked = token_label_association(fragments)[SIGNAL]
+    alpha = next(row for row in ranked if row.token == "alpha")
+    assert alpha.skew == pytest.approx(0.0)
+    assert alpha.classes_present == 3
+
+
+def test_frequency_skew_is_ranked_even_though_every_class_uses_the_token():
+    # The fault the fever libraries actually carry: not a token one class owns,
+    # but one every class has and one class leans on. A head reads it either way.
+    fragments = _token_corpus(
+        ["gamma line 0"] + [f"plain true line {i}" for i in range(9)],
+        ["gamma line 1"] + [f"plain false line {i}" for i in range(9)],
+        [f"gamma null line {i}" for i in range(8)] + [f"plain null line {i}" for i in range(2)],
+    )
+    gamma = next(row for row in token_label_association(fragments)[SIGNAL] if row.token == "gamma")
+    assert gamma.classes_present == 3
+    assert gamma.rates == {"true": 0.1, "false": 0.1, "null": 0.8}
+    assert gamma.skew == pytest.approx(0.7)
+
+
+def test_a_token_below_the_support_floor_is_not_ranked():
+    # Four lines is not a rate, it is four sentences. The floor is what stops
+    # the top of every block being a hapax with a skew of 1.0.
+    fragments = _token_corpus(
+        [f"alpha line {i}" for i in range(6)],
+        [f"alpha other {i}" for i in range(6)],
+        [f"alpha rare{'' if i >= 4 else ' delta'} {i}" for i in range(6)],
+    )
+    tokens = {row.token for row in token_label_association(fragments)[SIGNAL]}
+    assert "delta" not in tokens, "a token on 4 lines cleared a floor of 5"
+    assert {row.token for row in token_label_association(fragments, min_support=4)[SIGNAL]} >= {
+        "delta"
+    }
+
+
+def test_line_counts_not_token_counts_drive_the_rate():
+    # "hot, really hot" is one line for "hot", not two: the statistic is a
+    # per-line rate and a rate above 1.0 would be meaningless.
+    fragments = _token_corpus(
+        [f"hot really hot line {i}" for i in range(6)],
+        [f"cold line {i}" for i in range(6)],
+        [f"mild line {i}" for i in range(6)],
+    )
+    hot = next(row for row in token_label_association(fragments)[SIGNAL] if row.token == "hot")
+    assert hot.class_lines["true"] == 6
+    assert hot.rates["true"] == pytest.approx(1.0)
+
+
+def test_filler_and_generated_libraries_are_in_no_signals_grouping():
+    # Filler carries no signal_key, and a generated library states its labels
+    # per line rather than by fragment_type, so neither has a class to be
+    # grouped into. A generated line's vocabulary appearing under "null" would
+    # be an invented association.
+    fragments = _token_corpus(
+        [f"alpha line {i}" for i in range(6)],
+        [f"alpha other {i}" for i in range(6)],
+        [f"alpha third {i}" for i in range(6)],
+    )
+    fragments += [_fragment(f"epsilon filler line {i}") for i in range(6)]
+    # As the manifest builds one: a JSONL library may declare neither
+    # signal_key nor null_on, and every line carries its own vector instead.
+    fragments += [
+        _fragment(
+            f"epsilon generated line {i}",
+            library="declarative_v1",
+            fragment_type=DECLARATIVE_TYPE,
+            fragment_id=f"declarative_v1:{i}",
+            labels={SIGNAL: True},
+            null_on=(),
+        )
+        for i in range(6)
+    ]
+    ranked = token_label_association(fragments)
+    assert set(ranked) == {SIGNAL}
+    assert "epsilon" not in {row.token for row in ranked[SIGNAL]}
+
+
+def test_the_ranking_is_stable_across_runs():
+    # The committed report is diffed when a library changes, so ties may not
+    # break on dict order.
+    fragments = _token_corpus(
+        [f"alpha beta line {i}" for i in range(6)],
+        [f"alpha beta other {i}" for i in range(6)],
+        [f"alpha beta third {i}" for i in range(6)],
+    )
+    first = [row.token for row in token_label_association(fragments)[SIGNAL]]
+    second = [row.token for row in token_label_association(list(reversed(fragments)))[SIGNAL]]
+    assert first == second
+
+
+def test_the_report_over_the_real_tree_produces_the_expected_axis_words():
+    # A trap test over the committed tree rather than a fixture. The axis word
+    # of a null sub-class is supposed to be confined to it, so its presence here
+    # is the report working; its *absence* would mean the tokeniser had changed
+    # under the report and nobody had noticed.
+    ranked = token_label_association(_real_fragments())
+    assert set(ranked) == set(SIGNAL_LEXICONS)
+    confined = {
+        signal: {row.token for row in rows if row.classes_present == 1}
+        for signal, rows in ranked.items()
+    }
+    assert {"she", "he", "her", "ago", "might"} <= confined["dysuria_present"]
+    assert {"his", "her", "might", "years"} <= confined["haematuria_present"]
+    # Apostrophes survive folding rather than splitting the token in two, which
+    # is what makes "she's" a token and not "she" plus "s".
+    assert "she's" in confined["dysuria_present"]
+
+
+def test_the_real_tree_has_no_token_a_class_owns_outright():
+    # Not a guard on the libraries -- this report fails nothing -- but a record
+    # of where they stand: no token above the support floor is on every line of
+    # one class and none of another, which is the shape the dysuria fault had.
+    for signal, rows in token_label_association(_real_fragments()).items():
+        worst = max(rows, key=lambda row: row.skew)
+        assert worst.skew < 0.75, f"{signal}: {worst.token} at {worst.skew:.2f} separates a class"
+
+
+def test_the_rendered_report_prints_both_blocks_and_counts_the_elided():
+    fragments = _token_corpus(
+        [f"alpha widget beta gamma delta line {i}" for i in range(6)],
+        [f"alpha epsilon zeta eta theta other {i}" for i in range(6)],
+        [f"alpha iota kappa lambda mu third {i}" for i in range(6)],
+    )
+    out = "\n".join(render_token_association(fragments))
+    assert "confined to one label class:" in out
+    assert "present in more than one label class but skewed:" in out
+    assert "more, counted above but not shown" in out
+    # The header has to carry what the report cannot see, or a short list here
+    # reads as a clean bill of health.
+    assert "blind to multi-token style and register" in out
+    assert "Skew *within* the null class is not in the ranking" in out
+
+
+def test_the_lint_cli_prints_the_token_association_section(capsys):
+    assert cli_main(["--lint", "--manifest", str(REAL_MANIFEST)]) == 0
+    out = capsys.readouterr().out
+    assert "Token / label-class association" in out
+    assert "fever_present: " in out
