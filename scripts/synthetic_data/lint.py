@@ -1,7 +1,7 @@
 """Reports that keep the fragment libraries honest as they grow.
 
-Eight reports. Seven of them change nothing and decide nothing: they print and
-stop. The eighth, the phrase inventory, is the one exception in the file -- its
+Nine reports. Eight of them change nothing and decide nothing: they print and
+stop. The ninth, the phrase inventory, is the one exception in the file -- its
 rules are mechanical and its faults are errors, because the inventory is
 composed into hundreds of committed lines and a fault there is a fault in every
 line that used the phrase.
@@ -40,6 +40,14 @@ line that used the phrase.
   the shape of the library -- its clusters, arities and frames -- plus the one
   check a lexicon can make on a per-line vector, which is that the line's text
   does not read as a signal the vector is silent about.
+* **Token / label-class association** ranks every token by how differently the
+  three label classes use it. This is the first of the two faults section 8
+  records as uncaught, and the reason it no longer is
+  -- a clinical term living in one library is a label, not vocabulary -- plus the
+  weaker frequency-skew form of it, where a token is on every class and one of
+  them simply leans on it. It reports and ranks; which confined token is a fault
+  and which is a null sub-class's axis word doing its job is a judgement, and it
+  is not made here.
 * **The phrase inventory** is checked rather than reported: an unknown signal,
   too few phrases, an over-long phrase, or a phrase that reproduces a
   hand-written library line verbatim. The last is what keeps train text out of a
@@ -569,6 +577,65 @@ NEAR_DUPLICATE_DETAIL_LIMIT = 10
 #: against. Ambiguous and confounder libraries are *supposed* to hedge.
 _DECISIVE_TYPES = ("positive", "negative")
 
+#: The three label classes a signal's libraries are grouped into for the
+#: token-association report. Ordered as the report prints them.
+TOKEN_LABEL_CLASSES = ("true", "false", "null")
+
+#: How a library's ``fragment_type`` maps onto those classes. Everything not
+#: named here -- ``ambiguous`` and ``confounder`` -- is ``null``, which is what
+#: the head is supervised towards for all of them.
+_TOKEN_LABEL_CLASS_BY_TYPE = {"positive": "true", "negative": "false"}
+
+#: Lines a token must appear on, across a signal's libraries, before it is
+#: ranked at all. Below this the rate differences are one or two sentences and
+#: the ranking is noise.
+MIN_TOKEN_SUPPORT = 5
+
+#: Worst offenders printed in full per block; the rest are counted only, the
+#: way :data:`NEAR_DUPLICATE_DETAIL_LIMIT` does it.
+TOKEN_ASSOCIATION_DETAIL_LIMIT = 12
+
+#: Printed above the token-association report. Longer than the other headers
+#: because this report has four separate ways of being misread and section 8
+#: records two faults that reached the libraries through exactly this gap.
+TOKEN_ASSOCIATION_HEADER = (
+    "For each signal, every library is grouped into one of three label classes "
+    "by fragment_type -- positive->true, negative->false, everything else->null "
+    "-- and each token's *per-line rate* is counted in each class: lines "
+    "containing the token over lines in the class. Rates, not counts: the three "
+    "classes are different sizes and raw counts mislead. Tokens are ranked by "
+    "'skew': the highest of the three rates minus the lowest, taken "
+    f"over tokens on at least {MIN_TOKEN_SUPPORT} lines of the signal. A token "
+    "whose skew is large is one a head can read the label off, whatever the "
+    "sentence around it says.\n"
+    "    Four things this report cannot see or does not rank, none of which is "
+    "a reason to read a short list here as a clean bill of health:\n"
+    "    (1) It is per-token, so it is blind to multi-token style and register. "
+    "Section 8's second recorded fault -- one library written entirely in "
+    "lowercase with no terminal punctuation against uniformly capitalised "
+    "siblings -- would not appear here at all.\n"
+    "    (2) Skew *within* the null class is not in the ranking. null is five "
+    "libraries for some signals, and a token used by the historical library and "
+    "not the metaphor one has a modest three-class skew and a large one across "
+    "the sub-classes. That is what the per-library breakdown on each row is "
+    "for; read it, do not trust the rank alone.\n"
+    "    (3) High-frequency function words dominate the ranking by "
+    "construction, because a rate near 0.5 has the most room to move. 'was', "
+    "'but', 'a' and 'the' at the top of a block are the tense and register "
+    "difference between the classes, which is real but is not a vocabulary "
+    "swap anyone can make.\n"
+    "    (4) The axis word of a null sub-class is *supposed* to be confined to "
+    "it -- 'she' and 'he' in third-party, 'ago' in historical, 'might' in "
+    "hedged. Expect them at the top of the first block. No filter is applied, "
+    "because deciding which confined token is a fault and which is the "
+    "sub-class doing its job is a clinical judgement and does not belong in "
+    "code.\n"
+    "    Filler libraries carry no signal_key and so are in no signal's "
+    "grouping. Generated libraries are excluded too: their lines state their "
+    "labels one at a time rather than by fragment_type, so there is no class to "
+    "group them into."
+)
+
 
 def _compile(terms: Sequence[str]) -> tuple[tuple[str, re.Pattern[str]], ...]:
     return tuple((term, re.compile(rf"\b{re.escape(term)}\b")) for term in terms)
@@ -1048,6 +1115,144 @@ def cross_split_near_duplicates(
 
 
 @dataclass(frozen=True)
+class TokenAssociation:
+    """One token's per-line rate across one signal's three label classes.
+
+    The row carries the class and library totals it was computed against rather
+    than only the rates, because a rate of 1.0 on a class of four lines and one
+    on a class of 269 are not the same claim and a reader of the report should
+    not have to go and find the denominator.
+    """
+
+    signal: str
+    token: str
+    #: ``{class: lines containing the token}`` and ``{class: lines in class}``.
+    #: Every class in :data:`TOKEN_LABEL_CLASSES` is present in both, so a zero
+    #: is a measured absence rather than a missing key.
+    class_lines: Mapping[str, int]
+    class_totals: Mapping[str, int]
+    #: The same two counts per library, restricted to the libraries the token
+    #: actually appears in. This is what makes skew *within* the null class
+    #: readable -- see caveat (2) in :data:`TOKEN_ASSOCIATION_HEADER`.
+    library_lines: Mapping[str, int]
+    library_totals: Mapping[str, int]
+
+    @property
+    def support(self) -> int:
+        """Lines across the whole signal that contain the token."""
+        return sum(self.class_lines.values())
+
+    @property
+    def rates(self) -> dict[str, float]:
+        """Per-line rate in each class. An empty class scores 0.0, not a crash."""
+        return {
+            label: (self.class_lines[label] / self.class_totals[label])
+            if self.class_totals[label]
+            else 0.0
+            for label in TOKEN_LABEL_CLASSES
+        }
+
+    @property
+    def skew(self) -> float:
+        """Highest class rate minus lowest. The statistic rows are ranked by."""
+        rates = self.rates.values()
+        return max(rates) - min(rates)
+
+    @property
+    def classes_present(self) -> int:
+        """How many of the three classes the token appears on at least one line of."""
+        return sum(1 for label in TOKEN_LABEL_CLASSES if self.class_lines[label])
+
+
+def _label_class(fragment: Fragment) -> str:
+    """Return ``true`` / ``false`` / ``null`` for a hand-written library's type."""
+    return _TOKEN_LABEL_CLASS_BY_TYPE.get(fragment.fragment_type, "null")
+
+
+def _line_tokens(text: str) -> frozenset[str]:
+    """Return the distinct folded tokens on one line.
+
+    A set, not a list: the report counts *lines containing* a token, so a line
+    saying "hot, really hot" is one line for "hot" and not two.
+
+    ``fold_token`` is imported here rather than at module scope because
+    :mod:`~scripts.synthetic_data.noise` imports this module for
+    :data:`SIGNAL_LEXICONS`, so the module-level import would be a cycle. It is
+    imported rather than reimplemented because a second tokeniser would sooner
+    or later disagree with the one the noise pass freezes words with, and then
+    this report would be measuring tokens nothing else in the pipeline has.
+    """
+    from .noise import fold_token
+
+    return frozenset(folded for folded in (fold_token(word) for word in text.split()) if folded)
+
+
+def token_label_association(
+    fragments: Iterable[Fragment], *, min_support: int = MIN_TOKEN_SUPPORT
+) -> dict[str, list[TokenAssociation]]:
+    """Return each signal's tokens ranked by label-class skew, highest first.
+
+    This is the check section 8 records as missing: "a token that appears in
+    exactly one library ... would not be caught by any check we have". A token
+    confined to one label class is a label wearing vocabulary's clothes, and the
+    dysuria case that prompted it -- "dysuria" on 16 lines of one ``null``
+    library and nowhere else in the signal -- is a skew of exactly 1.0 minus 0.
+
+    Filler libraries (no ``signal_key``) and generated ones (labels per line,
+    not per library) are excluded; see :data:`TOKEN_ASSOCIATION_HEADER`.
+
+    Ties break on the token so the ranking is stable across runs, which is what
+    lets the committed report be diffed when a library changes.
+    """
+    by_signal: dict[str, list[Fragment]] = {}
+    for fragment in fragments:
+        # The signal_key test already excludes both, because the manifest
+        # refuses a signal_key on a filler library and on a JSONL one alike.
+        # is_generated is named anyway: it is the reason rather than the
+        # mechanism, and a future format that carried both would otherwise be
+        # grouped by a fragment_type that says nothing about what its lines
+        # assert.
+        if fragment.signal_key is None or is_generated(fragment):
+            continue
+        by_signal.setdefault(fragment.signal_key, []).append(fragment)
+
+    ranked: dict[str, list[TokenAssociation]] = {}
+    for signal in sorted(by_signal):
+        members = by_signal[signal]
+        class_totals = dict.fromkeys(TOKEN_LABEL_CLASSES, 0)
+        library_totals: dict[str, int] = {}
+        class_lines: dict[str, dict[str, int]] = {}
+        library_lines: dict[str, dict[str, int]] = {}
+
+        for fragment in members:
+            label = _label_class(fragment)
+            class_totals[label] += 1
+            library_totals[fragment.library] = library_totals.get(fragment.library, 0) + 1
+            for token in _line_tokens(fragment.text):
+                per_class = class_lines.setdefault(token, dict.fromkeys(TOKEN_LABEL_CLASSES, 0))
+                per_class[label] += 1
+                per_library = library_lines.setdefault(token, {})
+                per_library[fragment.library] = per_library.get(fragment.library, 0) + 1
+
+        rows = [
+            TokenAssociation(
+                signal=signal,
+                token=token,
+                class_lines=dict(per_class),
+                class_totals=dict(class_totals),
+                library_lines=dict(sorted(library_lines[token].items())),
+                library_totals={
+                    library: library_totals[library] for library in sorted(library_lines[token])
+                },
+            )
+            for token, per_class in class_lines.items()
+            if sum(per_class.values()) >= min_support
+        ]
+        ranked[signal] = sorted(rows, key=lambda row: (-row.skew, row.token))
+    return ranked
+
+
+@dataclass(frozen=True)
 class InventoryFault:
     """One broken rule in the authored phrase inventory. Always an error."""
 
@@ -1339,6 +1544,9 @@ def render_report(
     lines += ["", "Declared null_on pairs"]
     lines += render_declared_pairs(fragments)
 
+    lines += ["", "Token / label-class association (section 8's first uncaught fault)"]
+    lines += render_token_association(fragments)
+
     lines += ["", "Split coverage (DD9: generation aborts on an empty cell)"]
     lines += render_split_coverage(fragments)
 
@@ -1561,6 +1769,74 @@ def render_null_on_block(cells: Sequence[CrossSignalCell]) -> list[str]:
         ]
         lines += [entry + "," for entry in entries[:-1]] + entries[-1:]
         lines.append("    }")
+    return lines
+
+
+def _render_token_rows(rows: Sequence[TokenAssociation]) -> list[str]:
+    """Render one block's detail lines, capped and with the elision counted."""
+    if not rows:
+        return ["      (none)"]
+    lines = []
+    for row in rows[:TOKEN_ASSOCIATION_DETAIL_LIMIT]:
+        rates = row.rates
+        cells = "".join(f"{rates[label]:>8.3f}" for label in TOKEN_LABEL_CLASSES)
+        lines.append(f"      {row.token:<18}{row.skew:>7.3f}{row.support:>7}{cells}")
+        breakdown = "  ".join(
+            f"{library} {row.library_lines[library]}/{row.library_totals[library]}"
+            for library in row.library_lines
+        )
+        # Wrapped rather than truncated: this line is the only place the
+        # within-null spread is readable, so an elided tail would elide the
+        # thing caveat (2) sends the reader here for.
+        lines += textwrap.wrap(
+            breakdown, 96, initial_indent="        ", subsequent_indent="        "
+        )
+    if len(rows) > TOKEN_ASSOCIATION_DETAIL_LIMIT:
+        lines.append(
+            f"      ... and {len(rows) - TOKEN_ASSOCIATION_DETAIL_LIMIT} more, "
+            "counted above but not shown"
+        )
+    return lines
+
+
+def render_token_association(fragments: Sequence[Fragment]) -> list[str]:
+    """Render the per-signal token-label association report.
+
+    Two blocks per signal, printed apart and labelled, because they are
+    different faults. The first is section 8's: a token confined to one label
+    class, which separates that class perfectly. The second is the frequency
+    skew found later in the fever libraries, where a token is on every class and
+    simply used far more by one of them; a head can read that as easily as it
+    can read a token it only ever sees on one side.
+    """
+    ranked = token_label_association(fragments)
+    lines: list[str] = []
+    for paragraph in TOKEN_ASSOCIATION_HEADER.split("\n"):
+        lines += textwrap.wrap(paragraph.strip(), 96, initial_indent="  ", subsequent_indent="  ")
+    header = f"      {'token':<18}{'skew':>7}{'lines':>7}" + "".join(
+        f"{label:>8}" for label in TOKEN_LABEL_CLASSES
+    )
+    for signal in sorted(ranked):
+        rows = ranked[signal]
+        if not rows:
+            lines += ["", f"  {signal}: no token clears the support floor"]
+            continue
+        totals = rows[0].class_totals
+        sizes = ", ".join(f"{label} {totals[label]}" for label in TOKEN_LABEL_CLASSES)
+        confined = [row for row in rows if row.classes_present == 1]
+        spread = [row for row in rows if row.classes_present > 1]
+        lines += [
+            "",
+            f"  {signal}: {len(rows)} tokens on {MIN_TOKEN_SUPPORT}+ lines ({sizes} lines)",
+            f"    confined to one label class: {len(confined)}",
+            header,
+        ]
+        lines += _render_token_rows(confined)
+        lines += [
+            f"    present in more than one label class but skewed: {len(spread)}",
+            header,
+        ]
+        lines += _render_token_rows(spread)
     return lines
 
 

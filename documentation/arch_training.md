@@ -685,8 +685,8 @@ direction — so it is counted and warned about rather than raised.
 ## 8. The lint
 
 `python -m scripts.synthetic_data --lint` reports on library health without
-generating or editing anything. Eight reports, seven of which decide nothing and
-change nothing. The eighth, the phrase inventory, is the exception: its rules are
+generating or editing anything. Nine reports, eight of which decide nothing and
+change nothing. The ninth, the phrase inventory, is the exception: its rules are
 mechanical and **`--lint` exits non-zero on a fault in it**, because the
 inventory is composed into a thousand committed lines and a fault there is a
 fault in every line that used the phrase.
@@ -807,18 +807,55 @@ enough to bury every other library's rows and to cost a minute of wall clock
 producing them. The cluster count is the number to read there instead: it is what
 the split actually partitions on.
 
-Two faults the report **cannot** see, both of which have happened:
+Two faults the report could not see, both of which have happened. **The first is
+now checked; the second is not**, and the gap between them is the reason the
+token report's header spends a paragraph saying what it is blind to:
 
 * **A token that appears in exactly one library.** "Dysuria" once appeared on 16
   lines of `dysuria_null_metaphor` and nowhere else in the six dysuria libraries —
   a perfect shortcut separating `null` from `true` and `false`. A clinical term
-  that lives in one library is a label, not vocabulary.
-* **The stylistic form of the same fault.** The first draft of
-  `haematuria_null_hedged` was written entirely in lowercase with no terminal
-  punctuation against uniformly capitalised `true` and `false` sets, so casing
-  alone separated the ambiguous class perfectly. Nothing normalises emitted text.
-  **Writing style is vocabulary**: if one library is written in a register, all of
-  them have to be.
+  that lives in one library is a label, not vocabulary. This is what the
+  token / label-class association report below now measures.
+* **The stylistic form of the same fault, which nothing here catches.** The first
+  draft of `haematuria_null_hedged` was written entirely in lowercase with no
+  terminal punctuation against uniformly capitalised `true` and `false` sets, so
+  casing alone separated the ambiguous class perfectly. Nothing normalises emitted
+  text, and a per-token report cannot see a property of a whole line. **Writing
+  style is vocabulary**: if one library is written in a register, all of them have
+  to be, and that is still checked by reading.
+
+**Token / label-class association** — the check the first of those two was
+missing. Each signal's libraries are grouped into three label classes by
+`fragment_type` (`positive → true`, `negative → false`, everything else →
+`null`), and every token on at least five lines of the signal is ranked by
+**skew**: its highest per-line rate across the three classes minus its lowest.
+Rates rather than counts, because the classes are different sizes. Two blocks per
+signal, printed apart because they are different faults — tokens **confined to
+one label class**, which is the dysuria case, and tokens **present in more than
+one class but skewed**, which is the weaker form the plan's review found alive in
+fever. Filler libraries have no `signal_key` and generated ones state their
+labels per line, so neither is in any signal's grouping.
+
+It reports and fails nothing, for the same reason the cross-signal grid does not:
+a null sub-class's axis word is *supposed* to be confined to it (`she` and `he`
+in third-party, `ago` in historical, `might` in hedged), and separating those from
+a fault is a clinical judgement rather than a rule. Three things to know before
+reading a short block here as a clean bill of health. **Function words dominate
+the ranking by construction** — a rate near 0.5 has the most room to move, so
+`was`, `but` and `the` head most blocks, and that is the tense and register
+difference between the classes rather than a swappable word. **Negation, tense
+and person head the per-signal ranking** on six of the seven signals, and every
+one of those tokens is frozen by `noise.STRUCTURAL_FROZEN`. And **skew within the
+`null` class is not in the ranking at all**, though it is the largest real finding
+in the tree: `fever` is on 41 of 45 `fever_null_historical` lines and 0 of 50
+`fever_null_attribution` ones, a within-null spread of 0.911 against a three-class
+skew of 0.165. Each row prints its per-library counts underneath for exactly this
+reason.
+
+The full output over the committed tree is at
+`reports/synthetic_data/2026-09-03-token-label-association.md`, with the
+signal-level summary and the two narrower readings that the headline statistic
+does not give.
 
 **Hedge markers** — lines in the decisive libraries that sound uncertain, as a
 prompt to re-read them. Precision is poor by design (~25%), because many
