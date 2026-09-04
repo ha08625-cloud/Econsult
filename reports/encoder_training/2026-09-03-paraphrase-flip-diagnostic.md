@@ -152,56 +152,229 @@ the result:
 
 ## Result
 
-**Not yet run.** The diagnostic needs a fine-tuned checkpoint, and there is none
-to score:
-
-* the fine-tuned encoder weights are **not committed** — `models/.gitignore`
-  excludes the ~440MB `.pt` per fold, and every committed
-  `fold*.head.json` records `encoder_weights_committed: false`;
-* the session that built this tooling has no `models/**/weights/*.pt` on disk,
-  no GPU, and no `torch` installed, so it can neither score a saved fold nor
-  retrain one.
-
-Everything that decides what the number *means* is nonetheless built and covered
-by CI's unit job, because `flip.py` takes its forward pass as an injected
-callable: `tests/test_encoder_training_flip.py` runs on a runner with no ML
-wheels and pins the statistic, the direction matrix, the submission-level
-resampling, the decision rule being applied to both sides, and each of the three
-malformed-file failures.
-
-### How to run it
-
-On a machine with the ML dependencies and either the saved weights or the GPU
-time to regenerate them (roughly two minutes a fold):
+**Ran 2026-09-04. Flip rate 15.4%, 95% interval [2.6%, 33.3%], 6 of 39 pairs.**
+The gate reads **Judgement** — neither the `Stop` row (point < 10% *and* upper
+bound < 20%) nor the `Proceed` row (point >= 25%). What follows is the written
+addendum the Judgement row requires, and it ends in a decision: **the ticket
+proceeds to Task 3.** The reasoning is under *The decision* below; the sections
+before it are the evidence that decision was made on, including the argument
+against proceeding, which is kept rather than tidied away.
 
 ```
-# only if no weights are on disk. A fold tree must be loaded at the K it was
-# generated with, so this is the ordinary five-fold run; it writes one .pt per
-# fold under .../arm_b_finetune/weights/
+model:  models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt
+rule:   fold0.decision.json (margin 0.55, gated class `true`, selected on val)
+result: reports/encoder_training/fever_present.paraphrase_flip.json
+```
+
+### The checkpoint is not the one this document was written beside
+
+The committed artefacts described a fold trained on **generator version 2**. The
+weights were never committed, so scoring meant regenerating them, and the fold
+tree regenerates at **generator version 4** — the libraries have moved since.
+The head scored here is therefore a valid model trained on the *current* tree,
+not a reconstruction of the old one, and its margin moved with it (0.55, where
+the v2 fold 0 selected 0.0).
+
+That is the right checkpoint for this question rather than a compromise: Task 1
+measured the v4 tree, so this asks whether a head trained on the libraries whose
+skew we measured reads that skew. A v2 head would have answered about libraries
+we did not measure. It does mean the fold 0 numbers here are not comparable
+term-by-term with the v2 figures in `fever_present.arm_b_finetune.md`. Fold 0
+validation macro-F1 was 0.957 and the shuffled-label control sat at the
+majority-class value, so the run is sound on its own terms.
+
+### The direction matrix
+
+Rows are the source's class, columns the variant's.
+
+| source \ variant | false | true | null |
+|---|---|---|---|
+| **false** | 11 | 1 | 0 |
+| **true** | 1 | 19 | 1 |
+| **null** | 0 | 3 | 3 |
+
+| transition | pairs | what the pre-registration says about it |
+|---|---|---|
+| `null -> true` | 3 | not anticipated; the direction the margin exists to police |
+| `false -> true` | 1 | polarity flip — "a different and worse fault" |
+| `true -> false` | 1 | polarity flip — "a different and worse fault" |
+| `true -> null` | 1 | the 12.6 shape — **the fault expansion is designed for** |
+
+**One pair of thirty-nine is the shape this ticket proposes to fix.**
+
+### The flips concentrate in four submissions, and three of six are one sentence
+
+Six flipped pairs, but only **4 of 13 submissions** flipped at all — and all
+three `null -> true` flips are the three variants of a single submission,
+`holdout-0004`. The whole of the dominant direction rests on one sentence
+rewritten three ways, which is precisely why the resampling unit is the
+submission and why the interval runs from 2.6% to 33.3%.
+
+| submission | flip | 
+|---|---|
+| `holdout-0004` | `null -> true` on all three variants |
+| `holdout-0024` | `true -> null` on v3 |
+| `holdout-0031` | `true -> false` on v2 |
+| `holdout-0038` | `false -> true` on v2 |
+
+### Which side of each flip was right
+
+`flip.py` never opens the label file, and nothing below selects anything: the
+flip rate above stands as measured. But the same fold's holdout predictions
+under the same margin are recorded in `arm_b_finetune/metadata.json`, and
+reading them against these four submissions is free and changes the reading.
+
+| submission | truth | source predicted | variant predicted | the rewrite |
+|---|---|---|---|---|
+| `holdout-0004` | `true` | `null` ✗ | `true` ✓ | **corrects** an error |
+| `holdout-0024` | `null` | `true` ✗ | `null` ✓ | **corrects** an error |
+| `holdout-0031` | `true` | `true` ✓ | `false` ✗ | **introduces** an error |
+| `holdout-0038` | `false` | `false` ✓ | `true` ✗ | **introduces** an error |
+
+Two of the four flips are the head getting the answer *right* only once the
+vocabulary moves. That is not the story this ticket was written to expect. It
+says the head is unstable near its decision boundary in both directions, rather
+than that library vocabulary is dragging it consistently wrong — and a pass that
+trains on rephrased copies has no particular reason to fix an instability that
+is already symmetric.
+
+### The reading
+
+Recorded against the two secondary readings this document pre-registered:
+
+1. **"The direction matrix decides what kind of fault it is."** It is mostly not
+   the 12.6 fault. One pair drains a decisive call into `null`. Two are polarity
+   flips, which the pre-registration already states expansion is not the fix
+   for. Three are `null -> true` on one submission, and on that submission
+   `true` is the correct answer.
+2. **"A high flip rate does not by itself select expansion as the remedy."**
+   Half the flipped pairs have `null` as the source class, which is the
+   condition this document named for preferring the cheaper library edit —
+   rewriting `fever_null_historical` so it does not lean on "fever" for 41 of
+   its 45 lines — over building the pass.
+
+### What this gate can and cannot weigh
+
+Both readings above are about the *narrow* fault: whether swapping a content
+word changes the answer. That is what this instrument measures, on thirteen
+submissions of fever vocabulary, and it is not the whole of the ticket's
+premise.
+
+The premise is broader: a few hundred fragments recombined thousands of times
+invite the model to fit the libraries' surface regularities rather than their
+meaning. Word-label association is one instance. Repeated n-grams, a repeated
+numeric value, a repeated hedge construction and a repeated sentence shape are
+others, and **none of them is visible to this diagnostic.** A reading of the
+15.4% that treats it as a verdict on the premise is over-reading it in the same
+way the power note warns against for the rate itself.
+
+**One correction to this document's own argument.** The `stop` section above
+cites the A2 arm — 4.5x the recombinations of the same clusters for -0.8 to
++1.3 points — as evidence that surface multiplication buys little. A2 varied
+*volume*: more draws from the same fragments, which adds no ideas and no
+effective sample size, and its null result is sound on that question.
+Expansion varies the *surface distribution* of those fragments, which is a
+different intervention. The A2 evidence transfers less cleanly than the
+sentence implies, and it should not be read as a measured prior against this
+pass.
+
+### The decision
+
+**Proceed to Task 3.** Recorded 2026-09-04 by the maintainer, against the
+Judgement row.
+
+The reasoning, so a later reader does not have to reconstruct it:
+
+* 15.4% is not a refutation, and this gate was always a cheap screen — its job
+  was to avoid spending GPU time on a dead premise, not to settle the question.
+  It came back "maybe", and "maybe" is what Task 6 exists to resolve.
+* **Task 6's diagnostic cell is the instrument this question deserves.** A
+  clean-trained model scored against the expanded test tree asks "does the
+  fault exist?" across the whole synthetic tree at cluster-level resampling,
+  rather than 39 pairs at effective n = 13. Deciding against building on the
+  weaker instrument, while the stronger one is already designed and costs about
+  forty minutes of GPU, is the wrong order to spend evidence in.
+* The machinery is reusable beyond synonym swaps. A deterministic, label-blind,
+  validated text-substitution pass with a rule format is infrastructure for
+  every surface-diversity question this project has, not a single-use fix for
+  the `fever`/`temperature` skew.
+* The system is pre-live and experimental. The cost of building and measuring
+  is bounded and known; the cost of a premise wrongly dismissed is not.
+
+The library edit (reducing `fever`'s 91% occupancy of `fever_null_historical`)
+and widening the paraphrase set both remain worth doing. They are no longer
+alternatives to this ticket — they are cheap, independent, and they make every
+future read-out sharper.
+
+### Two authoring hazards found while deciding, recorded before Task 5
+
+Neither blocks Task 3. Both are places where a plausible rule passes both
+mechanical layers of DD6 and only the human-written invariant stands, so they
+belong in the rule author's hands before the first rule is written.
+
+**1. Numeric variation crosses a clinical threshold, and nothing mechanical
+sees it.** Varying a temperature value looks like the safest possible rewrite
+and is not. `FEVER_LEXICON` (`scripts/synthetic_data/lint.py`) holds no numeric
+terms and `STRUCTURAL_FROZEN` (`scripts/synthetic_data/noise.py`) holds no
+digits, so for a rule `38.4 -> 37.6` DD6 layer 2 and layer 3 both pass
+unchanged. But the fever libraries already encode the ~38.0 threshold —
+
+```
+36.5, 36.8   in the normal-temperature lines
+38.2, 39.5   in the fever lines
+```
+
+— so a sweep across 37.6-41.0 walks a `fever_true` line into saying the
+patient's temperature was normal. That is §2's label-first invariant broken
+silently, by the one pass that edits text after the label is fixed.
+
+Numeric variation is therefore a **different rule kind**, not a Tier B literal
+swap: it needs a per-label-class safe band (`true`: 38.0-41.0; `false`:
+35.5-37.4) and a fourth validation layer asserting the band does not cross the
+threshold. Note also that Task 3's rule format is literal `find`/`replace`
+strings and **cannot express a numeric range at all**, so this is a deliberate
+scope addition rather than a rule anyone can author on day one. Task 3 should
+say so in `expand.py`'s docstring.
+
+**2. Certainty adjectives are unfrozen.** `sure`, `certain`, `positive` and
+`definitely` are in no signal lexicon and not in `STRUCTURAL_FROZEN`, whose
+modality block stops at `maybe`, `might`, `may`, `could`, `think`, `thought`,
+`feel`, `felt`, `seems`, `seemed`, `probably`, `possibly`. So
+`"I'm pretty sure" -> "I'm pretty certain"` passes both mechanical layers while
+moving the axis that *defines* `fever_null_hedged` against `fever_true`.
+
+Two consequences: hedge and certainty rewriting belongs in Tier C (out of scope
+for this pass), not Tier B; and `STRUCTURAL_FROZEN` should gain the certainty
+adjectives as a small standalone change, since the gap is a mismatch between
+what that list is documented to protect and what it actually holds. That fix is
+worth making whatever happens to this ticket.
+
+**Where the instinct is safe:** Tier A. Contraction and orthography pairs
+cannot change which word a token is, and they attack §8's recorded register
+fault — the lowercase library — which is nearer the n-gram concern than any
+Tier B swap.
+
+### How it was run
+
+On the machine holding the GPU, with `requirements-ml.txt` installed:
+
+```
 python -m scripts.encoder_training generate-folds --signal fever_present --folds 5
-python -m scripts.encoder_training finetune --signal fever_present --folds 5
+python -m scripts.encoder_training finetune --signal fever_present --folds 5 \
+  --revision e2da8e2f811d1448a5b465c236feacd80ffbac7b
 
 python -m scripts.encoder_training flip-rate \
   --weights models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt \
   --out reports/encoder_training/fever_present.paraphrase_flip.json
 ```
 
-**Score one fold, not five.** The question is whether flips are common or rare,
-and a number bounded by 13 submissions is not improved by averaging five models
-over the same 13. If a second fold is scored anyway, report both rates rather
-than pooling them: the folds share no test data but they do share these
-submissions, so pooled pairs are not independent observations.
+**One fold, not five.** The question is whether flips are common or rare, and a
+number bounded by 13 submissions is not improved by averaging five models over
+the same 13. A second fold scored anyway would be reported as its own rate, not
+pooled: the folds share no test data but they do share these submissions.
 
-The margin is read from the fold's own `fold0.decision.json` by default, not
-defaulted to argmax: a flip rate measured under a rule the fold never used is a
-number about a model nobody deployed, and the two differ exactly where it
-matters most, at the `null`/`true` boundary the margin exists to police.
-
-`models/encoder/joint6/arm_b_finetune/weights/fold0.encoder.pt`, if it is the
-checkpoint to hand, scores all six heads in the same pass and the same 39 pairs
-— the command is identical.
-
-When it has run, fill in the results section here with the overall rate **and
-its interval**, the direction matrix, the per-signal rates, and the gate
-outcome, then either continue to Task 3 or close the ticket. Recording the
-number even when it kills the ticket is the point of the gate.
+The margin is read from the fold's own `fold0.decision.json` rather than
+defaulted to argmax, so the rate describes the model as it would be deployed.
+The weights are git-ignored and were deleted after the run; the head, the
+decision rule and `metadata.json` beside them are committed, and they are what
+make this checkpoint identifiable.
