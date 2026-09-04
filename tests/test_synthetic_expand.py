@@ -14,6 +14,7 @@ apart is worse than the import.
 
 import json
 import random
+from pathlib import Path
 
 import pytest
 
@@ -484,3 +485,199 @@ def test_the_clean_share_leaves_examples_untouched(tree, rules_dir, tmp_path):
     tally = run_tree(tree, target, rules_dir, rate=1.0, clean_share=DEFAULT_CLEAN_SHARE)
     assert 0 < tally.overall_clean_share < 1
     assert tally.changed < sum(tally.examples.values())
+
+
+# ---------------------------------------------------------------------------
+# The dry run against the library lint (Task 4)
+# ---------------------------------------------------------------------------
+
+#: A filler line carrying a flank-pain *anchor* and no modifier, so it is silent
+#: on flank pain as committed. It is the whole of the aggregate case: a rule can
+#: supply the missing modifier without carrying an anchor itself, which means it
+#: passes the per-rule load check (DD6 layer 3) and manufactures the hit anyway.
+BACK_LINE = "My back has been playing up since the weekend"
+
+FILLER_LINES = [
+    BACK_LINE,
+    "I have been meaning to call about the appointment",
+    "Work has been busy and I have not had a moment",
+    "The pharmacy said to ring you instead",
+    "I am usually fit and well otherwise",
+    "Nothing else has changed at home",
+]
+
+
+def write_manifest(base, lines=None):
+    """Write a one-filler-library manifest and return its path."""
+    library = FILLER_LINES if lines is None else lines
+    (base / "filler_admin.txt").write_text("\n".join(library) + "\n", encoding="utf-8")
+    path = base / "manifest.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "libraries": [
+                    {
+                        "name": "filler_admin",
+                        "file": "filler_admin.txt",
+                        "signal_key": None,
+                        "fragment_type": "filler",
+                        "null_on": {SIGNAL: {"basis": "absent"}},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def ruleset(*raw_rules, signal=SIGNAL):
+    """A :class:`RuleSet` built in memory, so the dry run needs no rule file."""
+    _, rules = parse_rules({"signal": signal, "rules": list(raw_rules)}, source="<test>")
+    return expand.RuleSet(signal=signal, path=Path("<test>"), digest="0" * 64, rules=rules)
+
+
+HARMLESS = rule(
+    id="playing-up-to-grumbling",
+    tier="A",
+    find="playing up",
+    replace="grumbling on",
+    invariant="Both say the complaint continues; neither names a symptom.",
+)
+
+MANUFACTURES_A_HIT = rule(
+    id="playing-up-to-aching",
+    tier="A",
+    find="playing up",
+    replace="aching",
+    invariant="Wrong, and that is the point: 'aching' is a flank-pain modifier.",
+)
+
+
+def test_a_rule_that_manufactures_a_foreign_signal_hit_fails(tmp_path):
+    """The aggregate fault no per-rule check can see (DD6 layer 3's supplement).
+
+    ``playing up -> aching`` passes the load check, because "aching" on its own
+    carries a modifier and no anchor and so matches no lexicon. Applied to a
+    line that already says "back", it completes the co-occurrence.
+    """
+    assert load(MANUFACTURES_A_HIT), "the rule must pass the per-rule load check"
+
+    diff = expand.dry_run_lint(write_manifest(tmp_path), [ruleset(MANUFACTURES_A_HIT)])
+
+    assert diff.failed
+    assert len(diff.introduced) == 2, "once for filler purity, once for the cross-signal grid"
+    reports = {change.report for change in diff.introduced}
+    assert reports == {"filler", "cross-signal"}
+    for change in diff.introduced:
+        assert change.variant == "playing-up-to-aching"
+        assert change.library == "filler_admin"
+        assert change.signal == "flank_pain_present"
+        assert "aching" in change.after
+    assert not diff.removed
+
+    rendered = "\n".join(expand.render_dry_run(diff))
+    assert "FAIL" in rendered
+    assert "playing-up-to-aching" in rendered
+    assert "flank_pain_present" in rendered
+    assert BACK_LINE in rendered
+
+
+def test_a_rule_set_that_changes_nothing_passes_with_an_empty_diff(tmp_path):
+    diff = expand.dry_run_lint(write_manifest(tmp_path), [ruleset(HARMLESS)])
+
+    assert not diff.failed
+    assert diff.introduced == ()
+    assert diff.removed == ()
+    assert diff.fragments == len(FILLER_LINES)
+    assert diff.rewritten == 1
+    assert "PASS" in "\n".join(expand.render_dry_run(diff))
+
+
+def test_a_rule_that_removes_an_existing_hit_is_reported_and_is_not_a_failure(tmp_path):
+    """An existing hit is a labelling decision somebody made (instruction 5)."""
+    manifest = write_manifest(tmp_path, [*FILLER_LINES, "My side has been aching all week"])
+    diff = expand.dry_run_lint(
+        manifest,
+        [
+            ruleset(
+                rule(
+                    id="aching-to-quiet",
+                    tier="A",
+                    find="aching",
+                    replace="carrying on",
+                    invariant="Test-only.",
+                )
+            )
+        ],
+    )
+
+    assert not diff.failed
+    assert {change.signal for change in diff.removed} == {"flank_pain_present"}
+    assert "REMOVED hits (2)" in "\n".join(expand.render_dry_run(diff))
+
+
+def test_the_combined_variant_catches_what_no_single_rule_does(tmp_path):
+    """Two individually harmless rules that together complete a lexicon."""
+    manifest = write_manifest(tmp_path, [*FILLER_LINES, "My shoulder is settling down nicely"])
+    rules = ruleset(
+        rule(
+            id="shoulder-to-loin",
+            tier="B",
+            find="shoulder",
+            replace="loin",
+            invariant="Test-only: supplies a flank-pain anchor and no modifier.",
+        ),
+        rule(
+            id="settling-to-sore",
+            tier="A",
+            find="settling down",
+            replace="sore",
+            invariant="Test-only: supplies a pain modifier and no anchor.",
+        ),
+    )
+
+    diff = expand.dry_run_lint(manifest, [rules])
+
+    assert diff.failed
+    assert {change.variant for change in diff.introduced} == {expand.COMBINED}
+
+
+def test_the_dry_run_writes_nothing(tmp_path):
+    manifest = write_manifest(tmp_path)
+    before = {path: path.stat().st_mtime_ns for path in sorted(tmp_path.rglob("*"))}
+
+    expand.dry_run_lint(manifest, [ruleset(MANUFACTURES_A_HIT)])
+
+    assert {path: path.stat().st_mtime_ns for path in sorted(tmp_path.rglob("*"))} == before
+
+
+def test_every_rule_is_applied_unconditionally_rather_than_at_a_rate(tmp_path):
+    """Instruction 2: the worst case is what a dry run wants to check."""
+    text = "a fever, a fever, a fever"
+    assert expand.rewrite_exhaustively(text, load(rule())) == (
+        "a temperature, a temperature, a temperature"
+    )
+
+
+def test_the_dry_run_exits_nonzero_on_a_manufactured_hit(tmp_path, capsys):
+    manifest = write_manifest(tmp_path)
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir()
+    (rules_dir / f"{SIGNAL}.rules.json").write_text(
+        json.dumps({"signal": SIGNAL, "rules": [MANUFACTURES_A_HIT]}), encoding="utf-8"
+    )
+
+    code = expand.main(
+        ["--dry-run-lint", "--manifest", str(manifest), "--rules-dir", str(rules_dir)]
+    )
+
+    assert code == 1
+    assert "FAIL" in capsys.readouterr().out
+
+
+def test_the_dry_run_needs_no_tree_but_expanding_still_does(capsys):
+    with pytest.raises(SystemExit):
+        expand.main([])
+    assert "--in-dir" in capsys.readouterr().err

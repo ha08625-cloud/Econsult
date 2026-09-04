@@ -77,9 +77,17 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
+from dataclasses import replace as dataclass_replace
 from pathlib import Path
 
-from .lint import SIGNAL_LEXICONS, lexicon_matches
+from .lint import (
+    SIGNAL_LEXICONS,
+    LexiconHit,
+    cross_signal_cells,
+    filler_lexicon_hits,
+    lexicon_matches,
+)
+from .manifest import Fragment, ManifestError, load_fragments
 from .noise import (
     GENERATED_ROOT,
     LABEL_MODES,
@@ -1008,6 +1016,284 @@ def expand_tree(
     return total
 
 
+# ---------------------------------------------------------------------------
+# The dry run against the library lint (DD6 layer 3's supplement)
+# ---------------------------------------------------------------------------
+
+
+#: The manifest the dry run reads. The libraries as committed are the input;
+#: nothing here writes.
+DEFAULT_MANIFEST = Path("data/synthetic/manifest.json")
+
+#: Name given to the variant in which every rule of a file is applied together,
+#: rather than one rule at a time. Not a rule id, and it cannot collide with
+#: one: :func:`_check_shape` requires a rule id to be a non-empty string and no
+#: author would write this one.
+COMBINED = "<all rules together>"
+
+
+def rewrite_exhaustively(text: str, rules: Sequence[Rule]) -> str:
+    """Apply ``rules`` at **every** site they match, with no rate and no draw.
+
+    The worst case, which is what a dry run wants: a rule that is harmless at
+    the sampled rate is harmless because of the sampling, not because of the
+    rule. Where two rules tie at a site the lowest id wins, so the rewrite is
+    deterministic and a reported hit can be reproduced by re-running the mode.
+    """
+    pieces: list[str] = []
+    cursor = 0
+    for site in match_sites(text, rules):
+        chosen = min(site.rules, key=lambda rule: rule.id)
+        pieces.append(text[cursor : site.start])
+        pieces.append(_match_leading_case(text[site.start : site.end], chosen.replace))
+        cursor = site.end
+    pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
+@dataclass(frozen=True)
+class HitChange:
+    """One lexicon hit that a rewrite introduced, or removed.
+
+    ``variant`` is the rule that did it, or :data:`COMBINED` when the hit only
+    appears once the whole file is applied at once -- which is the aggregate
+    effect no per-rule load check can see, and the reason this mode exists.
+    """
+
+    report: str
+    variant: str
+    library: str
+    signal: str
+    fragment_id: str
+    before: str
+    after: str
+    terms: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DryRunDiff:
+    """What a whole dry run found. ``introduced`` is the failure."""
+
+    manifest: Path
+    signals: tuple[str, ...]
+    rules: int
+    fragments: int
+    rewritten: int
+    introduced: tuple[HitChange, ...]
+    removed: tuple[HitChange, ...]
+
+    @property
+    def failed(self) -> bool:
+        return bool(self.introduced)
+
+
+def _hit_index(hits: Sequence[LexiconHit]) -> dict[tuple[str, str], LexiconHit]:
+    """Index hits by ``(fragment_id, signal)``.
+
+    Existence is the unit, not the term list: :class:`~.lint.CrossSignalCell`
+    counts *lines* for the same reason, and a rewrite that changes which term of
+    a lexicon matched a line that already matched has not changed what the
+    library says about that signal.
+    """
+    return {(hit.fragment_id, hit.signal): hit for hit in hits}
+
+
+def _report_hits(fragments: Sequence[Fragment], report: str) -> list[LexiconHit]:
+    """Run one of the two reports over ``fragments``.
+
+    ``cross-signal`` is :func:`~.lint.cross_signal_cells` flattened to its hits:
+    the cells' rates are computed against a library's full line count and this
+    mode only ever holds the changed lines, so a rate here would be a different
+    and misleading number. Which cells exist -- every library but a generated
+    one, against every signal but its own -- is unchanged.
+    """
+    if report == "filler":
+        return filler_lexicon_hits(fragments)
+    return [hit for cell in cross_signal_cells(fragments) for hit in cell.hits]
+
+
+def _diff_variant(
+    originals: Sequence[Fragment],
+    rewrites: Sequence[str],
+    *,
+    variant: str,
+) -> tuple[list[HitChange], list[HitChange]]:
+    """Diff both reports over one rewrite of the libraries.
+
+    Only the fragments a rewrite actually *changed* are passed to the reports,
+    on both sides of the diff. A fragment whose text is byte-identical produces
+    byte-identical hits, so restricting the comparison changes no answer and
+    turns a whole-manifest lint per rule into one over a handful of lines.
+    """
+    changed = [
+        (fragment, text)
+        for fragment, text in zip(originals, rewrites, strict=True)
+        if text != fragment.text
+    ]
+    if not changed:
+        return [], []
+    before = [fragment for fragment, _ in changed]
+    after = [dataclass_replace(fragment, text=text) for fragment, text in changed]
+    texts = {fragment.fragment_id: text for fragment, text in changed}
+
+    introduced: list[HitChange] = []
+    removed: list[HitChange] = []
+    for report in ("filler", "cross-signal"):
+        was = _hit_index(_report_hits(before, report))
+        now = _hit_index(_report_hits(after, report))
+        originals_by_id = {fragment.fragment_id: fragment for fragment in before}
+        for key in sorted(set(now) - set(was)):
+            hit = now[key]
+            introduced.append(
+                HitChange(
+                    report=report,
+                    variant=variant,
+                    library=hit.library,
+                    signal=hit.signal,
+                    fragment_id=hit.fragment_id,
+                    before=originals_by_id[hit.fragment_id].text,
+                    after=texts[hit.fragment_id],
+                    terms=hit.terms,
+                )
+            )
+        for key in sorted(set(was) - set(now)):
+            hit = was[key]
+            removed.append(
+                HitChange(
+                    report=report,
+                    variant=variant,
+                    library=hit.library,
+                    signal=hit.signal,
+                    fragment_id=hit.fragment_id,
+                    before=originals_by_id[hit.fragment_id].text,
+                    after=texts[hit.fragment_id],
+                    terms=hit.terms,
+                )
+            )
+    return introduced, removed
+
+
+def dry_run_lint(
+    manifest_path: Path,
+    rulesets: Sequence[RuleSet],
+) -> DryRunDiff:
+    """Apply every rule to every library line and diff the two library reports.
+
+    **This mode reads the libraries and writes nothing.** No tree is generated,
+    no tree is expanded, no file is opened for writing; the manifest and the
+    rule files are inputs and the report goes to stdout.
+
+    It is the aggregate supplement to DD6 layer 3. The per-rule check at load
+    time asks whether a *phrase* changes signal; this asks what happens when the
+    rule is let loose on the actual library text, where a rule that is
+    individually harmless can still put another signal's language into a library
+    declared silent about it -- a lexicon match needing an anchor and a modifier
+    can be completed by a swap that carries neither on its own.
+
+    Every rule is applied **unconditionally**, not at ``--rate``, once per rule
+    and once with the whole file at play. Two things come back: hits the
+    rewrites introduced, which are the failure, and hits they removed, which are
+    not a failure but have changed what a library says and want reading.
+
+    ``check_cells=False`` is the lint's own posture, for the lint's own reason:
+    a check that refuses to run because the libraries are unbalanced is useless
+    exactly when it is most needed.
+    """
+    try:
+        fragments = load_fragments(manifest_path, check_cells=False)
+    except ManifestError as error:
+        raise ExpansionError(f"{manifest_path}: {error}") from None
+
+    introduced: list[HitChange] = []
+    removed: list[HitChange] = []
+    rewritten: set[str] = set()
+    for ruleset in rulesets:
+        variants: list[tuple[str, tuple[Rule, ...]]] = [
+            (rule.id, (rule,)) for rule in ruleset.rules
+        ]
+        if len(ruleset.rules) > 1:
+            variants.append((COMBINED, ruleset.rules))
+        for variant, rules in variants:
+            texts = [rewrite_exhaustively(fragment.text, rules) for fragment in fragments]
+            rewritten.update(
+                fragment.fragment_id
+                for fragment, text in zip(fragments, texts, strict=True)
+                if text != fragment.text
+            )
+            new, gone = _diff_variant(fragments, texts, variant=variant)
+            introduced.extend(new)
+            removed.extend(gone)
+
+    return DryRunDiff(
+        manifest=manifest_path,
+        signals=tuple(ruleset.signal for ruleset in rulesets),
+        rules=sum(len(ruleset.rules) for ruleset in rulesets),
+        fragments=len(fragments),
+        rewritten=len(rewritten),
+        introduced=tuple(introduced),
+        removed=tuple(removed),
+    )
+
+
+def _render_changes(changes: Sequence[HitChange]) -> list[str]:
+    lines: list[str] = []
+    for change in changes:
+        lines.append(
+            f"  [{change.report}] rule {change.variant} -> {change.fragment_id} "
+            f"({change.library}) reads as {change.signal} ({', '.join(change.terms)})"
+        )
+        lines.append(f"      before: {change.before}")
+        lines.append(f"      after:  {change.after}")
+    return lines
+
+
+def render_dry_run(diff: DryRunDiff) -> list[str]:
+    """The report, worst first, with the verdict on the last line."""
+    lines = [
+        "Rule dry run against the library lint",
+        "=====================================",
+        f"manifest: {diff.manifest}",
+        f"signals:  {', '.join(diff.signals)}",
+        f"rules:    {diff.rules}, applied unconditionally to {diff.fragments} library lines",
+        f"lines any rule rewrites: {diff.rewritten}",
+        "",
+    ]
+    if diff.introduced:
+        lines.append(f"INTRODUCED hits ({len(diff.introduced)}) -- these are failures:")
+        lines.extend(_render_changes(diff.introduced))
+    else:
+        lines.append("INTRODUCED hits: none.")
+    lines.append("")
+    if diff.removed:
+        # Not a failure, and not noise either: an existing hit is a labelling
+        # decision somebody made, and a rule that makes one disappear has
+        # changed what that library says.
+        lines.append(f"REMOVED hits ({len(diff.removed)}) -- not failures, but read them:")
+        lines.extend(_render_changes(diff.removed))
+    else:
+        lines.append("REMOVED hits: none.")
+    lines.append("")
+    lines.append(
+        "FAIL: a rule manufactured a lexicon hit the committed libraries do not have."
+        if diff.failed
+        else "PASS: no rule manufactures a lexicon hit the committed libraries do not have."
+    )
+    return lines
+
+
+def load_rulesets(
+    signal: str | None,
+    rules_dir: Path,
+) -> list[RuleSet]:
+    """Every rule file the dry run should check: one signal's, or all of them."""
+    if signal is not None:
+        return [load_rules(rules_path(signal, rules_dir))]
+    paths = sorted(rules_dir.glob("*.rules.json"))
+    if not paths:
+        raise ExpansionError(f"no '*.rules.json' files under {rules_dir}")
+    return [load_rules(path) for path in paths]
+
+
 def _rate(raw: str) -> float:
     value = float(raw)
     if not 0 < value <= 1:
@@ -1030,17 +1316,19 @@ def build_parser() -> argparse.ArgumentParser:
             "intact, so each example is paired with its clean original."
         ),
     )
-    parser.add_argument("--in-dir", type=Path, required=True, help="a generated fold tree")
+    # --in-dir, --out-dir and --rate are required to expand a tree and
+    # meaningless to --dry-run-lint, which reads the libraries instead, so
+    # requiredness is enforced in main() rather than by argparse -- the same
+    # split '__main__.py' makes for --lint.
+    parser.add_argument("--in-dir", type=Path, help="a generated fold tree")
     parser.add_argument(
         "--out-dir",
         type=Path,
-        required=True,
         help="where the expanded copy goes; must be a sibling of --in-dir, never inside it",
     )
     parser.add_argument(
         "--rate",
         type=_rate,
-        required=True,
         help="probability that any one match site is rewritten, Bernoulli per site rather than "
         "per example (DD3). Required rather than defaulted: there is no rate that is obviously "
         "right, and the sweep is the point",
@@ -1066,12 +1354,52 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="write into a non-empty --out-dir",
     )
+    parser.add_argument(
+        "--dry-run-lint",
+        action="store_true",
+        help="apply every rule to every committed library line unconditionally and diff the "
+        "filler-purity and cross-signal reports against the same two over the originals. "
+        "Reads the libraries and writes nothing: no tree is generated and none is expanded. "
+        "A hit a rule manufactured is a failure; a hit it removed is printed and is not",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=DEFAULT_MANIFEST,
+        help=f"the library manifest --dry-run-lint reads (default: {DEFAULT_MANIFEST})",
+    )
+    parser.add_argument(
+        "--signal",
+        help="with --dry-run-lint, check only this signal's rule file; the default checks "
+        "every rule file in --rules-dir",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.dry_run_lint:
+        try:
+            diff = dry_run_lint(args.manifest, load_rulesets(args.signal, args.rules_dir))
+        except ExpansionError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        print("\n".join(render_dry_run(diff)))
+        return 1 if diff.failed else 0
+
+    missing = [
+        name
+        for name, value in (
+            ("--in-dir", args.in_dir),
+            ("--out-dir", args.out_dir),
+            ("--rate", args.rate),
+        )
+        if value is None
+    ]
+    if missing:
+        parser.error(f"the following arguments are required: {', '.join(missing)}")
     try:
         tally = expand_tree(
             args.in_dir,
