@@ -152,56 +152,147 @@ the result:
 
 ## Result
 
-**Not yet run.** The diagnostic needs a fine-tuned checkpoint, and there is none
-to score:
-
-* the fine-tuned encoder weights are **not committed** — `models/.gitignore`
-  excludes the ~440MB `.pt` per fold, and every committed
-  `fold*.head.json` records `encoder_weights_committed: false`;
-* the session that built this tooling has no `models/**/weights/*.pt` on disk,
-  no GPU, and no `torch` installed, so it can neither score a saved fold nor
-  retrain one.
-
-Everything that decides what the number *means* is nonetheless built and covered
-by CI's unit job, because `flip.py` takes its forward pass as an injected
-callable: `tests/test_encoder_training_flip.py` runs on a runner with no ML
-wheels and pins the statistic, the direction matrix, the submission-level
-resampling, the decision rule being applied to both sides, and each of the three
-malformed-file failures.
-
-### How to run it
-
-On a machine with the ML dependencies and either the saved weights or the GPU
-time to regenerate them (roughly two minutes a fold):
+**Ran 2026-09-04. Flip rate 15.4%, 95% interval [2.6%, 33.3%], 6 of 39 pairs.**
+The gate reads **Judgement** — neither the `Stop` row (point < 10% *and* upper
+bound < 20%) nor the `Proceed` row (point >= 25%). What follows is the written
+addendum the Judgement row requires.
 
 ```
-# only if no weights are on disk. A fold tree must be loaded at the K it was
-# generated with, so this is the ordinary five-fold run; it writes one .pt per
-# fold under .../arm_b_finetune/weights/
+model:  models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt
+rule:   fold0.decision.json (margin 0.55, gated class `true`, selected on val)
+result: reports/encoder_training/fever_present.paraphrase_flip.json
+```
+
+### The checkpoint is not the one this document was written beside
+
+The committed artefacts described a fold trained on **generator version 2**. The
+weights were never committed, so scoring meant regenerating them, and the fold
+tree regenerates at **generator version 4** — the libraries have moved since.
+The head scored here is therefore a valid model trained on the *current* tree,
+not a reconstruction of the old one, and its margin moved with it (0.55, where
+the v2 fold 0 selected 0.0).
+
+That is the right checkpoint for this question rather than a compromise: Task 1
+measured the v4 tree, so this asks whether a head trained on the libraries whose
+skew we measured reads that skew. A v2 head would have answered about libraries
+we did not measure. It does mean the fold 0 numbers here are not comparable
+term-by-term with the v2 figures in `fever_present.arm_b_finetune.md`. Fold 0
+validation macro-F1 was 0.957 and the shuffled-label control sat at the
+majority-class value, so the run is sound on its own terms.
+
+### The direction matrix
+
+Rows are the source's class, columns the variant's.
+
+| source \ variant | false | true | null |
+|---|---|---|---|
+| **false** | 11 | 1 | 0 |
+| **true** | 1 | 19 | 1 |
+| **null** | 0 | 3 | 3 |
+
+| transition | pairs | what the pre-registration says about it |
+|---|---|---|
+| `null -> true` | 3 | not anticipated; the direction the margin exists to police |
+| `false -> true` | 1 | polarity flip — "a different and worse fault" |
+| `true -> false` | 1 | polarity flip — "a different and worse fault" |
+| `true -> null` | 1 | the 12.6 shape — **the fault expansion is designed for** |
+
+**One pair of thirty-nine is the shape this ticket proposes to fix.**
+
+### The flips concentrate in four submissions, and three of six are one sentence
+
+Six flipped pairs, but only **4 of 13 submissions** flipped at all — and all
+three `null -> true` flips are the three variants of a single submission,
+`holdout-0004`. The whole of the dominant direction rests on one sentence
+rewritten three ways, which is precisely why the resampling unit is the
+submission and why the interval runs from 2.6% to 33.3%.
+
+| submission | flip | 
+|---|---|
+| `holdout-0004` | `null -> true` on all three variants |
+| `holdout-0024` | `true -> null` on v3 |
+| `holdout-0031` | `true -> false` on v2 |
+| `holdout-0038` | `false -> true` on v2 |
+
+### Which side of each flip was right
+
+`flip.py` never opens the label file, and nothing below selects anything: the
+flip rate above stands as measured. But the same fold's holdout predictions
+under the same margin are recorded in `arm_b_finetune/metadata.json`, and
+reading them against these four submissions is free and changes the reading.
+
+| submission | truth | source predicted | variant predicted | the rewrite |
+|---|---|---|---|---|
+| `holdout-0004` | `true` | `null` ✗ | `true` ✓ | **corrects** an error |
+| `holdout-0024` | `null` | `true` ✗ | `null` ✓ | **corrects** an error |
+| `holdout-0031` | `true` | `true` ✓ | `false` ✗ | **introduces** an error |
+| `holdout-0038` | `false` | `false` ✓ | `true` ✗ | **introduces** an error |
+
+Two of the four flips are the head getting the answer *right* only once the
+vocabulary moves. That is not the story this ticket was written to expect. It
+says the head is unstable near its decision boundary in both directions, rather
+than that library vocabulary is dragging it consistently wrong — and a pass that
+trains on rephrased copies has no particular reason to fix an instability that
+is already symmetric.
+
+### The reading
+
+Recorded against the two secondary readings this document pre-registered:
+
+1. **"The direction matrix decides what kind of fault it is."** It is mostly not
+   the 12.6 fault. One pair drains a decisive call into `null`. Two are polarity
+   flips, which the pre-registration already states expansion is not the fix
+   for. Three are `null -> true` on one submission, and on that submission
+   `true` is the correct answer.
+2. **"A high flip rate does not by itself select expansion as the remedy."**
+   Half the flipped pairs have `null` as the source class, which is the
+   condition this document named for preferring the cheaper library edit —
+   rewriting `fever_null_historical` so it does not lean on "fever" for 41 of
+   its 45 lines — over building the pass.
+
+**Recommendation: do not build Task 3 as specified.** 15.4% is a real number and
+the ticket's premise is not refuted; but the evidence that *this pass* addresses
+*this fault* is one pair in thirty-nine, and two of the six flips are of a kind
+the pass was pre-registered as not fixing. Building `expand.py`, a rule format,
+a parallel tree and a split-risk surface on that is not proportionate.
+
+The proportionate next steps, in order of cost:
+
+* **Do the library edit.** Reduce `fever`'s 91% occupancy of
+  `fever_null_historical`. It costs no post-processing pass, no parallel tree,
+  no rule format and no split risk, and it targets the skew Task 1 actually
+  measured.
+* **Then re-run this diagnostic** against a head trained on the edited tree.
+  The command and the set are unchanged, so the re-run is one GPU hour, and it
+  measures whether the edit moved anything.
+* **Widen the paraphrase set before trusting any rate to the point.** Thirteen
+  submissions put the interval at +/-25 points and let one sentence carry a
+  direction. This is the cheapest way to make every future reading sharper.
+
+This is a recommendation, not the decision. The gate's Judgement row puts the
+call with the maintainer, and the numbers above are what it should be made on.
+
+### How it was run
+
+On the machine holding the GPU, with `requirements-ml.txt` installed:
+
+```
 python -m scripts.encoder_training generate-folds --signal fever_present --folds 5
-python -m scripts.encoder_training finetune --signal fever_present --folds 5
+python -m scripts.encoder_training finetune --signal fever_present --folds 5 \
+  --revision e2da8e2f811d1448a5b465c236feacd80ffbac7b
 
 python -m scripts.encoder_training flip-rate \
   --weights models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt \
   --out reports/encoder_training/fever_present.paraphrase_flip.json
 ```
 
-**Score one fold, not five.** The question is whether flips are common or rare,
-and a number bounded by 13 submissions is not improved by averaging five models
-over the same 13. If a second fold is scored anyway, report both rates rather
-than pooling them: the folds share no test data but they do share these
-submissions, so pooled pairs are not independent observations.
+**One fold, not five.** The question is whether flips are common or rare, and a
+number bounded by 13 submissions is not improved by averaging five models over
+the same 13. A second fold scored anyway would be reported as its own rate, not
+pooled: the folds share no test data but they do share these submissions.
 
-The margin is read from the fold's own `fold0.decision.json` by default, not
-defaulted to argmax: a flip rate measured under a rule the fold never used is a
-number about a model nobody deployed, and the two differ exactly where it
-matters most, at the `null`/`true` boundary the margin exists to police.
-
-`models/encoder/joint6/arm_b_finetune/weights/fold0.encoder.pt`, if it is the
-checkpoint to hand, scores all six heads in the same pass and the same 39 pairs
-— the command is identical.
-
-When it has run, fill in the results section here with the overall rate **and
-its interval**, the direction matrix, the per-signal rates, and the gate
-outcome, then either continue to Task 3 or close the ticket. Recording the
-number even when it kills the ticket is the point of the gate.
+The margin is read from the fold's own `fold0.decision.json` rather than
+defaulted to argmax, so the rate describes the model as it would be deployed.
+The weights are git-ignored and were deleted after the run; the head, the
+decision rule and `metadata.json` beside them are committed, and they are what
+make this checkpoint identifiable.
