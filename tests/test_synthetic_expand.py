@@ -32,6 +32,8 @@ from scripts.synthetic_data.expand import (
     parse_rules,
     structural_sequence,
 )
+from scripts.synthetic_data.manifest import load_fragments
+from scripts.synthetic_data.normalise import normalise
 from tests.test_synthetic_noise import SIGNAL, read_records, write_tree
 
 #: Enough draws that a one-in-a-thousand hole in a "never" would show.
@@ -681,3 +683,116 @@ def test_the_dry_run_needs_no_tree_but_expanding_still_does(capsys):
     with pytest.raises(SystemExit):
         expand.main([])
     assert "--in-dir" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# The committed fever_present rule set (Task 5)
+# ---------------------------------------------------------------------------
+
+#: The pilot signal Task 1 recommended, and the only rule file that exists.
+PILOT = "fever_present"
+
+#: The libraries a Tier B fever rule must leave alone. Both talk about heat
+#: without asserting the signal -- "burning up with anger", "hay fever",
+#: "the menopause gives me hot flushes" -- and both are where a swap is most
+#: likely to change what a line means (Task 5 instruction 5).
+FIGURATIVE_LIBRARIES = ("fever_null_metaphor", "fever_null_attribution")
+
+
+@pytest.fixture(scope="module")
+def committed():
+    """The committed rule set, loaded through all three validation layers.
+
+    Loading *is* the assertion: :func:`load_rules` raises on any layer, so a
+    rule file that reaches the fixture body has passed all of them. The guard
+    this test exists to be is against a later library edit or a later rule
+    edit, either of which can invalidate a rule that was sound when authored.
+    """
+    return expand.load_rules(expand.rules_path(PILOT))
+
+
+@pytest.fixture(scope="module")
+def library_fragments():
+    return load_fragments(Path("data/synthetic/manifest.json"), check_cells=False)
+
+
+def test_the_committed_rule_file_loads_and_declares_the_pilot_signal(committed):
+    assert committed.signal == PILOT
+    assert committed.rules
+    assert {rule.tier for rule in committed.rules} == {"A", "B"}
+
+
+def test_every_committed_rule_declares_an_invariant_worth_reading(committed):
+    """The one layer no check can recover, so the check is that it is there.
+
+    Nothing mechanical can read an invariant, and a placeholder is worse than
+    none: it looks like the review happened. A length floor is a crude proxy
+    and is the only one available -- "same thing, different word" fits in
+    thirty characters and is what the plan names as not an invariant.
+    """
+    for rule in committed.rules:
+        assert len(rule.invariant) >= 60, rule.id
+
+
+def test_every_committed_rule_fires_somewhere_in_the_libraries(committed, library_fragments):
+    """A rule matching nothing is authoring cost for nothing (instruction 1).
+
+    It is also a quiet failure mode: a rule written against a phrase the
+    libraries do not use reads as coverage in the rule file and buys none.
+    """
+    firing = {
+        rule.id
+        for fragment in library_fragments
+        for site in expand.match_sites(fragment.text, committed.rules)
+        for rule in site.rules
+    }
+    assert {rule.id for rule in committed.rules} - firing == set()
+
+
+def test_no_committed_rule_rewrites_the_figurative_fever_libraries(committed, library_fragments):
+    """Tier B must not touch "burning up with anger" or "hay fever".
+
+    Checked at the worst case rather than at a rate: a rule that is harmless
+    at ``--rate`` is harmless because of the sampling, not because of the rule.
+    Tier A is excluded because register repair is safe everywhere and firing
+    there is the point of it.
+    """
+    tier_b = [rule for rule in committed.rules if rule.tier == "B"]
+    for fragment in library_fragments:
+        if fragment.library in FIGURATIVE_LIBRARIES:
+            assert expand.rewrite_exhaustively(fragment.text, tier_b) == fragment.text, (
+                fragment.fragment_id
+            )
+
+
+def test_no_committed_rule_rewrites_a_line_into_another_librarys_line(committed, library_fragments):
+    """A rewrite that lands on a line from a differently-labelled library.
+
+    Not a lexicon fault, so the dry run cannot see it, and worse than one: the
+    two libraries carry different labels, so the rewritten line asserts what
+    its own label denies. Compared under :func:`normalise` because that is the
+    key the manifest clusters and splits on.
+    """
+    by_text: dict[str, set[str]] = {}
+    for fragment in library_fragments:
+        by_text.setdefault(normalise(fragment.text), set()).add(fragment.library)
+    for fragment in library_fragments:
+        rewritten = expand.rewrite_exhaustively(fragment.text, committed.rules)
+        if rewritten == fragment.text:
+            continue
+        landed = by_text.get(normalise(rewritten), set())
+        assert landed <= {fragment.library}, f"{fragment.fragment_id} -> {sorted(landed)}"
+
+
+def test_the_committed_rules_pass_the_dry_run_against_the_real_libraries(committed):
+    """Task 4's aggregate check, run against the committed libraries.
+
+    This is the test that fails when somebody edits a *library* rather than a
+    rule: a lexicon match needing an anchor and a modifier can be completed by
+    a swap that carries neither on its own, and that fault appears in library
+    text the rule's author never saw.
+    """
+    diff = expand.dry_run_lint(expand.DEFAULT_MANIFEST, [committed])
+
+    assert not diff.failed, "\n".join(expand.render_dry_run(diff))
+    assert diff.rewritten, "no library line is rewritten at all"
