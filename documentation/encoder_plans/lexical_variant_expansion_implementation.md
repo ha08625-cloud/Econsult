@@ -1,13 +1,9 @@
 # Implementation plan: lexical variant expansion (decorrelating vocabulary from label)
 
-**Stage 3. This is the plan of record.** It supersedes
-`lexical_variant_expansion_provisional.md`, which stays for its reasoning, and
-incorporates `lexical_variant_expansion_review.md`, whose five findings changed
-the architecture. Where the three disagree, this document wins.
-
 Read first: `arch_training.md` sections 2 (label first), 3 (cluster markers), 6
 (splitting), 8 (the lint and its two blind faults), 10 (effective sample size),
-12.6 (the noise pass — this is built in its shape), 12.7 (order of work).
+12.6 (the noise pass — this is built in its shape), 12.7 (order of work). Then read
+reports/encoder_training/2026-09-03-paraphrase-flip-diagnostic.md
 
 ---
 
