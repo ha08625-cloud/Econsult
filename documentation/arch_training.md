@@ -1955,7 +1955,7 @@ before it trains**.
 plan, and it is provisional: two unresolved labelling decisions and a diagnostic
 step that could retire most of it.
 
-### 12.10 Lexical variant expansion — wired and pre-registered, not yet measured
+### 12.10 Lexical variant expansion — measured, and not adopted on this evidence
 
 `scripts/synthetic_data/expand.py` rewrites a finished tree with directional,
 scoped, literal substitutions, so that the *choice of word* stops carrying the
@@ -1963,9 +1963,46 @@ label. `documentation/encoder_plans/lexical_variant_expansion_implementation.md`
 is the plan of record; `reports/synthetic_data/2026-09-03-token-label-association.md`
 (the skew) and `reports/encoder_training/2026-09-03-paraphrase-flip-diagnostic.md`
 (the flip rate, and the decision to proceed on a Judgement reading) are the two
-gates it was built through. **Nothing has been trained on an expanded tree yet**,
-so this subsection has no result to quote. What now exists is the measurement
-itself, unrun: see "How the 2x2 is measured" at the end of this subsection.
+gates it was built through, and
+`reports/encoder_training/2026-09-04-lexical-variant.md` is the result, read
+against the pre-registration committed beside it.
+
+**The short version, so it is not reconstructed from the tables below.** The
+mechanism the pass targets is real and the pass removes it: under paraphrase the
+clean-trained head flips on 1.9% of changed pairs and **46 of its 74 flips are
+`null -> true`** -- displaced fever language read as decisive once the word
+changes, which is precisely the fault section 8 and Task 1 describe -- and the
+expanded-trained head cuts that to 10 flips out of 33. What the pass does *not*
+buy is accuracy: the clean head loses **0.21 decisive points** moving to the
+expanded test tree, every interval in the 2x2 overlaps, and the four cells cannot
+be compared by McNemar because each is its own report. **The pass is therefore
+not extended to the other six signals on this evidence** (Task 7 does not
+happen). Rolling machinery across six signals on an unseparated 1.2-point gain is
+how a project acquires a component it cannot later evaluate.
+
+**Three things this run established that outlive the decision.**
+
+* **A pre-registered bound can be unmeetable, and saying so is the discipline.**
+  The 5-point flip-rate bound was anchored on Task 2's 15.4% over *real*
+  submissions; the synthetic test split is drawn from the same libraries as the
+  training split and cannot produce a rate of that size. The observed baseline was
+  1.89%, so the bound was impossible before a model was trained. It is recorded as
+  "not met" and left unedited.
+* **The synthetic decisive-accuracy guard did not proxy for the failure it was
+  designed to detect.** DD7 put the guard on decisive accuracy to catch an arm
+  that lowers its flip rate by answering `null` more often. The expanded arm did
+  exactly that on the 67 real submissions -- `null` recall +14 points, `true`
+  recall -18, `null -> true` rate 0.237 -> 0.090, and *not* through its decision
+  rule, which moved the other way -- while its **synthetic** decisive accuracy
+  went *up* 1.2 points and the guard held. Any future guard of this shape has to
+  be scored where the failure can appear.
+* **The instrument that saw something was the one that cannot rank.** Every bound
+  was written against a tree that, by DD8's own argument, cannot contain the
+  failure being targeted; the 67 submissions moved and are worth +/-12 points.
+  Closing that gap -- a real-text measurement with power -- is the prerequisite
+  for spending more GPU here, not more synthetic cells.
+
+The rest of this subsection describes the pass and its measurement as built.
 
 **The fault it targets is a frequency skew, not an exclusive token.** Section 8
 records two cases where surface form separated a label class perfectly, both

@@ -383,6 +383,19 @@ def _test_tree_header(args: argparse.Namespace, folds) -> dict:
     return header
 
 
+def _changed_share(realised: Mapping[str, object]) -> float | None:
+    """The share of examples the pass actually rewrote, out of the sidecar.
+
+    It lives under ``realised.changed_examples.share``, not under a
+    ``changed_share`` key -- the first cut of this header guessed the latter and
+    recorded `null` in the four cells of the 2026-09-04 run. It is the flip
+    rate's denominator, which is the one number in the block a reader of the
+    report cannot recompute from anything else there.
+    """
+    changed = realised.get("changed_examples")
+    return changed.get("share") if isinstance(changed, Mapping) else None
+
+
 def _expansion_header(stats: Mapping[str, object], *, key: str) -> dict:
     """The lexical expansion the test tree was written at, beside the noise block.
 
@@ -419,7 +432,7 @@ def _expansion_header(stats: Mapping[str, object], *, key: str) -> dict:
             # DD5's telemetry, carried into the report because a by-label gap is
             # the one number that would turn this pass from a decorrelation into
             # a new correlation, and nobody would open a sidecar to check.
-            "changed_share": realised.get("changed_share"),
+            "changed_share": _changed_share(realised),
             "substitutions_per_hundred_words": realised.get("substitutions_per_hundred_words"),
         }
     }

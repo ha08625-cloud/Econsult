@@ -1159,6 +1159,83 @@ def test_the_header_names_the_test_tree_only_when_it_is_not_the_training_tree(tm
     assert header["test_dataset_noise"]["requested_rate"] == 0.06
 
 
+def test_the_header_records_the_expansion_of_both_trees(tmp_path):
+    """The four cells of 12.10's 2x2 differ only in which of two trees each side
+    points at, and the trees differ only in an `expansion` block. A report that
+    cannot say which one it was scored against is not a result.
+
+    ``changed_share`` is asserted by value rather than by presence because the
+    first cut of this header read a ``changed_share`` key that the sidecar does
+    not have -- it is ``changed_examples.share`` -- and recorded `null` in all
+    four cells of the 2026-09-04 run. It is the flip rate's denominator, and the
+    one number in the block a reader cannot recompute from the rest of it.
+    """
+    import scripts.encoder_training.__main__ as main_module
+
+    clean = _write_single_fold_tree(tmp_path / "clean")
+    expanded = _write_single_fold_tree(tmp_path / "expanded", damage=True)
+    block = {
+        "source_dir": str(clean),
+        "seed": 42,
+        "requested": {
+            "rate": 0.4,
+            "clean_share": 0.25,
+            "rules": {"path": "data/expansion/fever_present.rules.json", "sha256": "abc123"},
+        },
+        "realised": {"changed_examples": {"count": 3910, "share": 0.391}},
+    }
+    for split in ("train", "val", "test"):
+        sidecar = fold_dataset_path(expanded, SIGNAL, 0, split)
+        sidecar = sidecar.with_name(sidecar.name + ".stats.json")
+        stats = json.loads(sidecar.read_text(encoding="utf-8"))
+        stats["expansion"] = block
+        sidecar.write_text(json.dumps(stats), encoding="utf-8")
+
+    args = build_parser().parse_args(
+        [
+            "finetune",
+            "--signal",
+            SIGNAL,
+            "--data-dir",
+            str(expanded),
+            "--test-dir",
+            str(clean),
+            "--folds",
+            "1",
+        ]
+    )
+    folds = tuple(
+        swap_test_split(fold, test_fold)
+        for fold, test_fold in zip(
+            load_folds(expanded, SIGNAL, folds=1),
+            load_folds(clean, SIGNAL, folds=1),
+            strict=True,
+        )
+    )
+    header = main_module._header(args, folds)
+
+    assert header["dataset_expansion"]["requested_rate"] == 0.4
+    assert header["dataset_expansion"]["rules_sha256"] == "abc123"
+    assert header["dataset_expansion"]["changed_share"] == 0.391
+    # The test split came from the clean tree, which carries no block at all.
+    assert header["test_dataset_expansion"] == "none -- the tree carries no expansion block"
+
+
+def test_a_tree_with_no_expansion_block_says_so_rather_than_recording_nothing(tmp_path):
+    """An absent key and "this tree was not expanded" read identically in a
+    report, and only one of them is a statement."""
+    import scripts.encoder_training.__main__ as main_module
+
+    clean = _write_single_fold_tree(tmp_path / "clean")
+    args = build_parser().parse_args(
+        ["finetune", "--signal", SIGNAL, "--data-dir", str(clean), "--folds", "1"]
+    )
+
+    header = main_module._header(args, load_folds(clean, SIGNAL, folds=1))
+
+    assert header["dataset_expansion"] == "none -- the tree carries no expansion block"
+
+
 # -- torch required: the joint training loop itself -------------------------
 
 

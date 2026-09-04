@@ -11,6 +11,14 @@ report, and sections 3 and 5 cover why the error bars are what they are.
 | `<signal>.<stem>.json` | The report. Always committed — it is the machine-readable record and everything else is rendered from it. |
 | `<signal>.<stem>.md` | The same report as markdown, rendered *from* that JSON so the two cannot disagree. Committed for runs worth keeping. |
 
+**Sub-directories hold one experiment's cells**, each cell a `finetune`
+invocation with its own `--report-dir` because four cells sharing one directory
+would overwrite each other's `<signal>.arm_b_finetune.json`. `noise/` and `decl/`
+are 12.6's and 12.5's; `lexical/` is 12.10's 2x2, plus `paired_flip_rate.json` —
+the flip rate and the decisive-accuracy guard, computed across the four cells
+after they ran. The dated write-up for each sits at this level, not inside the
+sub-directory.
+
 `<stem>` is `baselines`, `arm_a_probe`, `arm_b_finetune`, `joint_comparison`
 (the three-arm single/volume/joint sweep) or `companion_comparison` (Arm 0, Arm
 P and Arm C of the multi-symptom ticket). An arm's report

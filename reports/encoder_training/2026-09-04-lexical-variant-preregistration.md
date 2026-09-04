@@ -156,7 +156,24 @@ to fail.
 
 ## Results
 
-*Empty on purpose.* Filled in by
-`reports/encoder_training/<date>-lexical-variant.md` after the run described
-above, item by item against the bounds in this document — **including the items
-that failed.**
+**Run, and read against these bounds in `2026-09-04-lexical-variant.md`.** In
+summary: bound 1 **not met** (and not meetable — see below); bound 2 **held**;
+bound 3 roughly held; bound 4 held mechanically; bound 5 caught something the
+others did not.
+
+**One bound in this document was wrong, and it is left standing rather than
+edited.** The 5-point flip-rate bound was anchored on Task 2's 15.4% over real
+submissions without asking whether a *synthetic* test split could produce a rate
+of that size. It cannot, for the same reason §3 above gives about accuracy: the
+synthetic test set is drawn from the same libraries as the training split. The
+observed baseline was 1.89%, so a 5-point fall was arithmetically impossible
+before a single model was trained. The recorded outcome is therefore "not met",
+and rewriting the bound now would be exactly the thing pre-registration exists to
+prevent.
+
+The other correction the result forces is on §2. The guard was put on *synthetic*
+decisive accuracy to catch an arm that lowers its flip rate by answering `null`
+more often. The expanded arm did become more conservative — on the 67 real
+submissions its `null` recall rose 14 points and its `true` recall fell 18 — and
+its synthetic decisive accuracy went **up**, so the guard held. A guard that
+cannot see the failure it was designed for is the finding, not a footnote.
