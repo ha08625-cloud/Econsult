@@ -11,8 +11,8 @@
     "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
     "pooling": "mean",
     "max_seq_len": 256,
-    "requested_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
-    "revision_pinned": true,
+    "requested_revision": null,
+    "revision_pinned": false,
     "hidden_size": 768,
     "tokeniser": {
       "reported_do_lower_case": null,
@@ -26,7 +26,7 @@
   },
   "config": {
     "base_model": "roberta-base",
-    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "revision": null,
     "pooling": "mean",
     "max_seq_len": 256,
     "epochs": 3,
@@ -70,8 +70,8 @@
     "kernel_launch_ok": true
   },
   "dataset": {
-    "dir": "data/synthetic/generated/folds",
-    "test_dir": null,
+    "dir": "data/synthetic/generated/lexical/clean",
+    "test_dir": "data/synthetic/generated/lexical/expanded",
     "folds": 5,
     "generator_version": 4,
     "generator_base_seed": 42,
@@ -757,7 +757,7 @@
         "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -1427,7 +1427,7 @@
         "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold1.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -2097,7 +2097,7 @@
         "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold2.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -2767,7 +2767,7 @@
         "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold3.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -3437,7 +3437,7 @@
         "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold4.encoder.pt",
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -3454,11 +3454,5 @@
       "4": 0.1
     }
   },
-  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it.",
-  "negative_control": {
-    "shuffle_seed": 7,
-    "permuted": "training labels only; validation and test left unpermuted",
-    "run_name": "arm_b_finetune__shuffled",
-    "passing_looks_like": "near-zero training loss (the model memorises the permutation) together with chance performance on the unpermuted test split. Either one alone is not the control passing; the per-fold train_loss_by_epoch in this sidecar is where the first half is read"
-  }
+  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it."
 }

@@ -2329,7 +2329,5 @@
         -0.03452291712164879
       ]
     }
-  },
-  "encoder_weights": "models/encoder/fever_present/arm_b_finetune/weights/fold4.encoder.pt",
-  "encoder_weights_committed": false
+  }
 }

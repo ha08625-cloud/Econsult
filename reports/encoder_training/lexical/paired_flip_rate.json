@@ -1,0 +1,797 @@
+{
+  "signal": "fever_present",
+  "folds": 5,
+  "clean_dir": "data/synthetic/generated/lexical/clean",
+  "expanded_dir": "data/synthetic/generated/lexical/expanded",
+  "n_examples": 10000,
+  "n_changed": 3910,
+  "arms": [
+    {
+      "arm": "clean_trained",
+      "n_examples": 10000,
+      "n_changed": 3910,
+      "changed_share": 0.391,
+      "n_unchanged": 6090,
+      "n_pairs": 3910,
+      "n_submissions": 417,
+      "flip_rate": {
+        "point": 0.01892583120204605,
+        "low": 0.009509123618607007,
+        "high": 0.033879781420764976,
+        "effective_n": 417,
+        "resamples_used": 2000
+      },
+      "flips": 74,
+      "direction": {
+        "matrix": [
+          [
+            1010,
+            3,
+            2
+          ],
+          [
+            3,
+            594,
+            7
+          ],
+          [
+            13,
+            46,
+            2232
+          ]
+        ],
+        "rows": "the source's class",
+        "columns": "the variant's class",
+        "transitions": {
+          "null -> true": 46,
+          "null -> false": 13,
+          "true -> null": 7,
+          "false -> true": 3,
+          "true -> false": 3,
+          "false -> null": 2
+        }
+      },
+      "n_clusters": 417,
+      "by_label_mode": [
+        {
+          "label_mode": "false",
+          "n_pairs": 1041,
+          "n_submissions": 98,
+          "flip_rate": {
+            "point": 0.014409221902017322,
+            "low": 0.004659832246039164,
+            "high": 0.026666666666666616,
+            "effective_n": 98,
+            "resamples_used": 2000
+          },
+          "flips": 15,
+          "direction": {
+            "matrix": [
+              [
+                985,
+                3,
+                2
+              ],
+              [
+                1,
+                27,
+                0
+              ],
+              [
+                9,
+                0,
+                14
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> false": 9,
+              "false -> true": 3,
+              "false -> null": 2,
+              "true -> false": 1
+            }
+          }
+        },
+        {
+          "label_mode": "null_ambiguous",
+          "n_pairs": 1231,
+          "n_submissions": 222,
+          "flip_rate": {
+            "point": 0.02761982128350937,
+            "low": 0.014542343883661268,
+            "high": 0.043153526970954315,
+            "effective_n": 222,
+            "resamples_used": 2000
+          },
+          "flips": 34,
+          "direction": {
+            "matrix": [
+              [
+                25,
+                0,
+                0
+              ],
+              [
+                1,
+                63,
+                1
+              ],
+              [
+                4,
+                28,
+                1109
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> true": 28,
+              "null -> false": 4,
+              "true -> false": 1,
+              "true -> null": 1
+            }
+          }
+        },
+        {
+          "label_mode": "null_structural",
+          "n_pairs": 1067,
+          "n_submissions": 1,
+          "flip_rate": {
+            "point": 0.0,
+            "low": 0.0,
+            "high": 0.0,
+            "effective_n": 1,
+            "resamples_used": 2000
+          },
+          "flips": 0,
+          "direction": {
+            "matrix": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                1067
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {}
+          }
+        },
+        {
+          "label_mode": "true",
+          "n_pairs": 571,
+          "n_submissions": 96,
+          "flip_rate": {
+            "point": 0.04378283712784592,
+            "low": 0.015410958904109595,
+            "high": 0.07999999999999996,
+            "effective_n": 96,
+            "resamples_used": 2000
+          },
+          "flips": 25,
+          "direction": {
+            "matrix": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                1,
+                504,
+                6
+              ],
+              [
+                0,
+                18,
+                42
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> true": 18,
+              "true -> null": 6,
+              "true -> false": 1
+            }
+          }
+        }
+      ],
+      "bootstrap": {
+        "resamples": 2000,
+        "seed": 0,
+        "alpha": 0.05
+      },
+      "resampling_unit": "the decisive fragment's cluster",
+      "what_a_flip_is": "A flip is a disagreement between one arm's prediction on the clean test tree and the same arm's prediction on the expanded test tree, for the same example_id. The two texts make the same claim under rules whose declared invariant is that they change neither tense, person, certainty nor polarity, so a flip is an error on one side of the pair, whichever side that is. No label is read to see one.",
+      "denominator": "The denominator is the pairs the expansion pass actually changed. An example it left alone -- the clean share, plus every example holding no match site -- is byte-identical on both sides and cannot flip, so including it would drag the rate towards zero by an amount that says nothing about the model and everything about `--clean-share`. The unchanged count is reported beside the rate rather than folded into it.",
+      "cluster_unit": "The resampling unit is the decisive fragment's cluster, not the example. Ten thousand test examples sit on a few hundred clusters, because every example recombines a decisive fragment with filler; resampling examples would treat rewrites of one idea as independent observations and report an interval several times too narrow.",
+      "no_growth": "The expanded tree holds exactly as many examples as the clean one, paired example_id for example_id: expansion creates no fragments and no clusters, so effective sample size is identical in every cell. A difference between two cells can therefore only be robustness to paraphrase; it can never be better coverage.",
+      "predictions": {
+        "clean_test": {
+          "path": "models/encoder-lexical/clean-trained-clean-test.predictions.json",
+          "header": {
+            "model": "arm_b_finetune",
+            "signal": "fever_present",
+            "dataset_dir": "data/synthetic/generated/lexical/clean",
+            "test_dir": "data/synthetic/generated/lexical/clean",
+            "folds": 5,
+            "report_header": {
+              "signal": "fever_present",
+              "folds": 5,
+              "generator_version": 4,
+              "generator_base_seed": 42,
+              "generator_seed_rule": "base + 100 * fold + {train: 0, val: 1, test: 2}",
+              "split_salt": "0",
+              "dataset_dir": "data/synthetic/generated/lexical/clean",
+              "dataset_expansion": "none -- the tree carries no expansion block",
+              "test_dataset_dir": "data/synthetic/generated/lexical/clean",
+              "test_dataset_noise": "none -- the test tree carries no noise block",
+              "test_dataset_expansion": "none -- the tree carries no expansion block",
+              "ruleset": "data/uti1.json",
+              "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+              "examples_per_fold": {
+                "train": 10000,
+                "val": 2000,
+                "test": 2000
+              },
+              "shuffle_seed": 7,
+              "arm": "arm_b_finetune",
+              "base_model": "roberta-base",
+              "pooling": "mean",
+              "max_seq_len": 256,
+              "device": "cuda",
+              "epochs": 3,
+              "batch_size": 32,
+              "lr": 2e-05,
+              "warmup_ratio": 0.1,
+              "determinism": "strict",
+              "train_seed": 1234,
+              "trainable": "all layers unfrozen",
+              "holdout": "data/realistic/uti1_holdout.labels.tsv -- 67 real submissions, scored after test, selects nothing",
+              "validation_guided_decisions": [
+                "pooling mode (DD3) -- mean vs CLS, compared once",
+                "learning rate",
+                "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+                "decision margin (DD9)"
+              ],
+              "artefacts": "models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune",
+              "weights": "not written (--no-weights)",
+              "model_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+              "revision_pinned": false,
+              "tokeniser_lowercases": false,
+              "tokeniser_vocab_size": 50265,
+              "tokeniser_discards_casing": false,
+              "cluster_tag_coverage": "6 of 8 libraries carry cluster markers; 194 of 899 fragments are in libraries with none"
+            }
+          }
+        },
+        "expanded_test": {
+          "path": "models/encoder-lexical/clean-trained-expanded-test.predictions.json",
+          "header": {
+            "model": "arm_b_finetune",
+            "signal": "fever_present",
+            "dataset_dir": "data/synthetic/generated/lexical/clean",
+            "test_dir": "data/synthetic/generated/lexical/expanded",
+            "folds": 5,
+            "report_header": {
+              "signal": "fever_present",
+              "folds": 5,
+              "generator_version": 4,
+              "generator_base_seed": 42,
+              "generator_seed_rule": "base + 100 * fold + {train: 0, val: 1, test: 2}",
+              "split_salt": "0",
+              "dataset_dir": "data/synthetic/generated/lexical/clean",
+              "dataset_expansion": "none -- the tree carries no expansion block",
+              "test_dataset_dir": "data/synthetic/generated/lexical/expanded",
+              "test_dataset_noise": "none -- the test tree carries no noise block",
+              "test_dataset_expansion": {
+                "source_dir": "data/synthetic/generated/lexical/clean",
+                "seed": 42,
+                "requested_rate": 0.4,
+                "clean_share": 0.25,
+                "rules_path": "data/expansion/fever_present.rules.json",
+                "rules_sha256": "31cc52905b63dfc3695e07c77f253d7022713cfefb081a4d04de63411d47b843",
+                "rules_signal": "fever_present",
+                "rules_count": 36,
+                "changed_share": null,
+                "substitutions_per_hundred_words": {
+                  "by_label": {
+                    "true": 1.4156,
+                    "false": 1.6061,
+                    "null": 1.5417
+                  },
+                  "by_label_mode": {
+                    "true": 1.4156,
+                    "false": 1.6061,
+                    "null_structural": 1.4329,
+                    "null_ambiguous": 1.6364
+                  },
+                  "overall": 1.5383,
+                  "largest_by_label_gap": 0.1905
+                }
+              },
+              "ruleset": "data/uti1.json",
+              "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+              "examples_per_fold": {
+                "train": 10000,
+                "val": 2000,
+                "test": 2000
+              },
+              "shuffle_seed": 7,
+              "arm": "arm_b_finetune",
+              "base_model": "roberta-base",
+              "pooling": "mean",
+              "max_seq_len": 256,
+              "device": "cuda",
+              "epochs": 3,
+              "batch_size": 32,
+              "lr": 2e-05,
+              "warmup_ratio": 0.1,
+              "determinism": "strict",
+              "train_seed": 1234,
+              "trainable": "all layers unfrozen",
+              "holdout": "data/realistic/uti1_holdout.labels.tsv -- 67 real submissions, scored after test, selects nothing",
+              "validation_guided_decisions": [
+                "pooling mode (DD3) -- mean vs CLS, compared once",
+                "learning rate",
+                "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+                "decision margin (DD9)"
+              ],
+              "artefacts": "models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune",
+              "weights": "not written (--no-weights)",
+              "model_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+              "revision_pinned": false,
+              "tokeniser_lowercases": false,
+              "tokeniser_vocab_size": 50265,
+              "tokeniser_discards_casing": false,
+              "cluster_tag_coverage": "6 of 8 libraries carry cluster markers; 194 of 899 fragments are in libraries with none"
+            }
+          }
+        }
+      }
+    },
+    {
+      "arm": "expanded_trained",
+      "n_examples": 10000,
+      "n_changed": 3910,
+      "changed_share": 0.391,
+      "n_unchanged": 6090,
+      "n_pairs": 3910,
+      "n_submissions": 417,
+      "flip_rate": {
+        "point": 0.008439897698209742,
+        "low": 0.003094378545642096,
+        "high": 0.019153225806451624,
+        "effective_n": 417,
+        "resamples_used": 2000
+      },
+      "flips": 33,
+      "direction": {
+        "matrix": [
+          [
+            995,
+            4,
+            11
+          ],
+          [
+            1,
+            587,
+            1
+          ],
+          [
+            6,
+            10,
+            2295
+          ]
+        ],
+        "rows": "the source's class",
+        "columns": "the variant's class",
+        "transitions": {
+          "false -> null": 11,
+          "null -> true": 10,
+          "null -> false": 6,
+          "false -> true": 4,
+          "true -> false": 1,
+          "true -> null": 1
+        }
+      },
+      "n_clusters": 417,
+      "by_label_mode": [
+        {
+          "label_mode": "false",
+          "n_pairs": 1041,
+          "n_submissions": 98,
+          "flip_rate": {
+            "point": 0.018251681075888593,
+            "low": 0.00191387559808609,
+            "high": 0.041269841269841234,
+            "effective_n": 98,
+            "resamples_used": 2000
+          },
+          "flips": 19,
+          "direction": {
+            "matrix": [
+              [
+                981,
+                4,
+                10
+              ],
+              [
+                1,
+                26,
+                0
+              ],
+              [
+                4,
+                0,
+                15
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "false -> null": 10,
+              "false -> true": 4,
+              "null -> false": 4,
+              "true -> false": 1
+            }
+          }
+        },
+        {
+          "label_mode": "null_ambiguous",
+          "n_pairs": 1231,
+          "n_submissions": 222,
+          "flip_rate": {
+            "point": 0.008935824532900094,
+            "low": 0.003162055335968361,
+            "high": 0.016574585635359074,
+            "effective_n": 222,
+            "resamples_used": 2000
+          },
+          "flips": 11,
+          "direction": {
+            "matrix": [
+              [
+                14,
+                0,
+                1
+              ],
+              [
+                0,
+                47,
+                1
+              ],
+              [
+                2,
+                7,
+                1159
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> true": 7,
+              "null -> false": 2,
+              "false -> null": 1,
+              "true -> null": 1
+            }
+          }
+        },
+        {
+          "label_mode": "null_structural",
+          "n_pairs": 1067,
+          "n_submissions": 1,
+          "flip_rate": {
+            "point": 0.0,
+            "low": 0.0,
+            "high": 0.0,
+            "effective_n": 1,
+            "resamples_used": 2000
+          },
+          "flips": 0,
+          "direction": {
+            "matrix": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                1067
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {}
+          }
+        },
+        {
+          "label_mode": "true",
+          "n_pairs": 571,
+          "n_submissions": 96,
+          "flip_rate": {
+            "point": 0.005253940455341555,
+            "low": 0.0,
+            "high": 0.013864818024263426,
+            "effective_n": 96,
+            "resamples_used": 2000
+          },
+          "flips": 3,
+          "direction": {
+            "matrix": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                514,
+                0
+              ],
+              [
+                0,
+                3,
+                54
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> true": 3
+            }
+          }
+        }
+      ],
+      "bootstrap": {
+        "resamples": 2000,
+        "seed": 0,
+        "alpha": 0.05
+      },
+      "resampling_unit": "the decisive fragment's cluster",
+      "what_a_flip_is": "A flip is a disagreement between one arm's prediction on the clean test tree and the same arm's prediction on the expanded test tree, for the same example_id. The two texts make the same claim under rules whose declared invariant is that they change neither tense, person, certainty nor polarity, so a flip is an error on one side of the pair, whichever side that is. No label is read to see one.",
+      "denominator": "The denominator is the pairs the expansion pass actually changed. An example it left alone -- the clean share, plus every example holding no match site -- is byte-identical on both sides and cannot flip, so including it would drag the rate towards zero by an amount that says nothing about the model and everything about `--clean-share`. The unchanged count is reported beside the rate rather than folded into it.",
+      "cluster_unit": "The resampling unit is the decisive fragment's cluster, not the example. Ten thousand test examples sit on a few hundred clusters, because every example recombines a decisive fragment with filler; resampling examples would treat rewrites of one idea as independent observations and report an interval several times too narrow.",
+      "no_growth": "The expanded tree holds exactly as many examples as the clean one, paired example_id for example_id: expansion creates no fragments and no clusters, so effective sample size is identical in every cell. A difference between two cells can therefore only be robustness to paraphrase; it can never be better coverage.",
+      "predictions": {
+        "clean_test": {
+          "path": "models/encoder-lexical/expanded-trained-clean-test.predictions.json",
+          "header": {
+            "model": "arm_b_finetune",
+            "signal": "fever_present",
+            "dataset_dir": "data/synthetic/generated/lexical/expanded",
+            "test_dir": "data/synthetic/generated/lexical/clean",
+            "folds": 5,
+            "report_header": {
+              "signal": "fever_present",
+              "folds": 5,
+              "generator_version": 4,
+              "generator_base_seed": 42,
+              "generator_seed_rule": "base + 100 * fold + {train: 0, val: 1, test: 2}",
+              "split_salt": "0",
+              "dataset_dir": "data/synthetic/generated/lexical/expanded",
+              "dataset_expansion": {
+                "source_dir": "data/synthetic/generated/lexical/clean",
+                "seed": 42,
+                "requested_rate": 0.4,
+                "clean_share": 0.25,
+                "rules_path": "data/expansion/fever_present.rules.json",
+                "rules_sha256": "31cc52905b63dfc3695e07c77f253d7022713cfefb081a4d04de63411d47b843",
+                "rules_signal": "fever_present",
+                "rules_count": 36,
+                "changed_share": null,
+                "substitutions_per_hundred_words": {
+                  "by_label": {
+                    "true": 1.1174,
+                    "false": 1.4938,
+                    "null": 1.3191
+                  },
+                  "by_label_mode": {
+                    "true": 1.1174,
+                    "false": 1.4938,
+                    "null_structural": 1.2914,
+                    "null_ambiguous": 1.3459
+                  },
+                  "overall": 1.3308,
+                  "largest_by_label_gap": 0.3764
+                }
+              },
+              "test_dataset_dir": "data/synthetic/generated/lexical/clean",
+              "test_dataset_noise": "none -- the test tree carries no noise block",
+              "test_dataset_expansion": "none -- the tree carries no expansion block",
+              "ruleset": "data/uti1.json",
+              "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+              "examples_per_fold": {
+                "train": 10000,
+                "val": 2000,
+                "test": 2000
+              },
+              "shuffle_seed": 7,
+              "arm": "arm_b_finetune",
+              "base_model": "roberta-base",
+              "pooling": "mean",
+              "max_seq_len": 256,
+              "device": "cuda",
+              "epochs": 3,
+              "batch_size": 32,
+              "lr": 2e-05,
+              "warmup_ratio": 0.1,
+              "determinism": "strict",
+              "train_seed": 1234,
+              "trainable": "all layers unfrozen",
+              "holdout": "data/realistic/uti1_holdout.labels.tsv -- 67 real submissions, scored after test, selects nothing",
+              "validation_guided_decisions": [
+                "pooling mode (DD3) -- mean vs CLS, compared once",
+                "learning rate",
+                "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+                "decision margin (DD9)"
+              ],
+              "artefacts": "models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune",
+              "weights": "not written (--no-weights)",
+              "model_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+              "revision_pinned": false,
+              "tokeniser_lowercases": false,
+              "tokeniser_vocab_size": 50265,
+              "tokeniser_discards_casing": false,
+              "cluster_tag_coverage": "6 of 8 libraries carry cluster markers; 194 of 899 fragments are in libraries with none"
+            }
+          }
+        },
+        "expanded_test": {
+          "path": "models/encoder-lexical/expanded-trained-expanded-test.predictions.json",
+          "header": {
+            "model": "arm_b_finetune",
+            "signal": "fever_present",
+            "dataset_dir": "data/synthetic/generated/lexical/expanded",
+            "test_dir": "data/synthetic/generated/lexical/expanded",
+            "folds": 5,
+            "report_header": {
+              "signal": "fever_present",
+              "folds": 5,
+              "generator_version": 4,
+              "generator_base_seed": 42,
+              "generator_seed_rule": "base + 100 * fold + {train: 0, val: 1, test: 2}",
+              "split_salt": "0",
+              "dataset_dir": "data/synthetic/generated/lexical/expanded",
+              "dataset_expansion": {
+                "source_dir": "data/synthetic/generated/lexical/clean",
+                "seed": 42,
+                "requested_rate": 0.4,
+                "clean_share": 0.25,
+                "rules_path": "data/expansion/fever_present.rules.json",
+                "rules_sha256": "31cc52905b63dfc3695e07c77f253d7022713cfefb081a4d04de63411d47b843",
+                "rules_signal": "fever_present",
+                "rules_count": 36,
+                "changed_share": null,
+                "substitutions_per_hundred_words": {
+                  "by_label": {
+                    "true": 1.1174,
+                    "false": 1.4938,
+                    "null": 1.3191
+                  },
+                  "by_label_mode": {
+                    "true": 1.1174,
+                    "false": 1.4938,
+                    "null_structural": 1.2914,
+                    "null_ambiguous": 1.3459
+                  },
+                  "overall": 1.3308,
+                  "largest_by_label_gap": 0.3764
+                }
+              },
+              "test_dataset_dir": "data/synthetic/generated/lexical/expanded",
+              "test_dataset_noise": "none -- the test tree carries no noise block",
+              "test_dataset_expansion": {
+                "source_dir": "data/synthetic/generated/lexical/clean",
+                "seed": 42,
+                "requested_rate": 0.4,
+                "clean_share": 0.25,
+                "rules_path": "data/expansion/fever_present.rules.json",
+                "rules_sha256": "31cc52905b63dfc3695e07c77f253d7022713cfefb081a4d04de63411d47b843",
+                "rules_signal": "fever_present",
+                "rules_count": 36,
+                "changed_share": null,
+                "substitutions_per_hundred_words": {
+                  "by_label": {
+                    "true": 1.4156,
+                    "false": 1.6061,
+                    "null": 1.5417
+                  },
+                  "by_label_mode": {
+                    "true": 1.4156,
+                    "false": 1.6061,
+                    "null_structural": 1.4329,
+                    "null_ambiguous": 1.6364
+                  },
+                  "overall": 1.5383,
+                  "largest_by_label_gap": 0.1905
+                }
+              },
+              "ruleset": "data/uti1.json",
+              "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+              "examples_per_fold": {
+                "train": 10000,
+                "val": 2000,
+                "test": 2000
+              },
+              "shuffle_seed": 7,
+              "arm": "arm_b_finetune",
+              "base_model": "roberta-base",
+              "pooling": "mean",
+              "max_seq_len": 256,
+              "device": "cuda",
+              "epochs": 3,
+              "batch_size": 32,
+              "lr": 2e-05,
+              "warmup_ratio": 0.1,
+              "determinism": "strict",
+              "train_seed": 1234,
+              "trainable": "all layers unfrozen",
+              "holdout": "data/realistic/uti1_holdout.labels.tsv -- 67 real submissions, scored after test, selects nothing",
+              "validation_guided_decisions": [
+                "pooling mode (DD3) -- mean vs CLS, compared once",
+                "learning rate",
+                "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+                "decision margin (DD9)"
+              ],
+              "artefacts": "models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune",
+              "weights": "not written (--no-weights)",
+              "model_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+              "revision_pinned": false,
+              "tokeniser_lowercases": false,
+              "tokeniser_vocab_size": 50265,
+              "tokeniser_discards_casing": false,
+              "cluster_tag_coverage": "6 of 8 libraries carry cluster markers; 194 of 899 fragments are in libraries with none"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "guard": {
+    "measured_on": "the clean test tree, both arms",
+    "model": "arm_b_finetune",
+    "bound": 0.02,
+    "baseline": {
+      "report": "reports/encoder_training/lexical/clean-trained-clean-test/fever_present.arm_b_finetune.json",
+      "model": "arm_b_finetune",
+      "point": 0.9329250925662205,
+      "low": 0.9118667591950035,
+      "high": 0.9526601830663616,
+      "effective_n": 418,
+      "resamples_used": 2000
+    },
+    "arm": {
+      "report": "reports/encoder_training/lexical/expanded-trained-clean-test/fever_present.arm_b_finetune.json",
+      "model": "arm_b_finetune",
+      "point": 0.9448874964397608,
+      "low": 0.9236482471776589,
+      "high": 0.9632594710507505,
+      "effective_n": 418,
+      "resamples_used": 2000
+    },
+    "drop": -0.011962403873540306,
+    "passed": true,
+    "why": "a flip rate falls to zero for a head that answers `null` to everything, so a lower flip rate is only a win if decisive accuracy held (plan DD7)"
+  },
+  "negative_control": "The clean synthetic test set is drawn from the same libraries under the same vocabulary as the training split, so it cannot contain the failure this pass targets. The pre-registered expectation is that nothing moves on it. A large gain there is a warning -- it means a new shortcut was manufactured -- not a result."
+}

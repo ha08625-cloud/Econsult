@@ -11,8 +11,8 @@
     "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
     "pooling": "mean",
     "max_seq_len": 256,
-    "requested_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
-    "revision_pinned": true,
+    "requested_revision": null,
+    "revision_pinned": false,
     "hidden_size": 768,
     "tokeniser": {
       "reported_do_lower_case": null,
@@ -26,7 +26,7 @@
   },
   "config": {
     "base_model": "roberta-base",
-    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "revision": null,
     "pooling": "mean",
     "max_seq_len": 256,
     "epochs": 3,
@@ -70,8 +70,8 @@
     "kernel_launch_ok": true
   },
   "dataset": {
-    "dir": "data/synthetic/generated/folds",
-    "test_dir": null,
+    "dir": "data/synthetic/generated/lexical/expanded",
+    "test_dir": "data/synthetic/generated/lexical/expanded",
     "folds": 5,
     "generator_version": 4,
     "generator_base_seed": 42,
@@ -96,725 +96,55 @@
       "fold": 0,
       "n_parameters": 124647939,
       "n_trainable": 124647939,
-      "best_epoch": 2,
+      "best_epoch": 1,
       "val_macro_f1_by_epoch": [
-        0.9353612708820015,
-        0.952983307505033,
-        0.9390785180271531
+        0.9543008499171931,
+        0.9519249560289232,
+        0.9501381978993919
       ],
       "train_loss_by_epoch": [
-        0.2639519514902844,
-        8.894538143649697e-05,
-        8.817696662736125e-05
+        0.27440628042477183,
+        8.28349034767598e-05,
+        4.9014642694965005e-05
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
         "effective_n": 85,
-        "accuracy": 0.969,
-        "macro_f1": 0.9566356775315884,
+        "accuracy": 0.97,
+        "macro_f1": 0.9569495277237055,
         "confusion": [
           [
-            522,
-            2,
+            524,
+            0,
             0
           ],
           [
             0,
-            271,
-            14
+            257,
+            28
           ],
           [
-            0,
-            46,
-            1145
-          ]
-        ],
-        "per_class_recall": {
-          "false": 0.9961832061068703,
-          "true": 0.9508771929824561,
-          "null": 0.961376994122586
-        }
-      },
-      "decision_rule": {
-        "margin": 0.55,
-        "gated_class": 1,
-        "gated_class_name": "true",
-        "selected_on": "val",
-        "argmax_null_to_true_rate": 0.04534005037783375,
-        "null_to_true_rate": 0.038623005877413935,
-        "macro_f1": 0.9566356775315884,
-        "margins_considered": [
-          0.0,
-          0.05,
-          0.1,
-          0.15,
-          0.2,
-          0.25,
-          0.3,
-          0.35,
-          0.4,
-          0.45,
-          0.5,
-          0.55,
-          0.6,
-          0.65,
-          0.7,
-          0.75,
-          0.8,
-          0.85,
-          0.9
-        ]
-      },
-      "holdout": {
-        "path": "data/realistic/uti1_holdout.labels.tsv",
-        "n_submissions": 67,
-        "signals_scored": [
-          "fever_present"
-        ],
-        "signals_not_scored": [
-          "dysuria_present",
-          "urinary_frequency_present",
-          "nocturia_present",
-          "flank_pain_present",
-          "haematuria_present",
-          "recent_uti_present"
-        ],
-        "margin": 0.55,
-        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
-        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
-        "bootstrap": {
-          "resamples": 2000,
-          "seed": 0,
-          "alpha": 0.05
-        },
-        "overall": {
-          "n_cells": 67,
-          "n_submissions": 67,
-          "confusion": [
-            [
-              9,
-              0,
-              0
-            ],
-            [
-              0,
-              8,
-              1
-            ],
-            [
-              1,
-              26,
-              22
-            ]
-          ],
-          "accuracy": {
-            "point": 0.582089552238806,
-            "low": 0.4626865671641791,
-            "high": 0.6865671641791045,
-            "effective_n": 67,
-            "resamples_used": 2000
-          },
-          "macro_f1": 0.6435241851398522,
-          "worst_case_half_width": 0.1197238554748142
-        },
-        "decisive": {
-          "n_cells": 18,
-          "n_submissions": 18,
-          "confusion": [
-            [
-              9,
-              0,
-              0
-            ],
-            [
-              0,
-              8,
-              1
-            ],
-            [
-              0,
-              0,
-              0
-            ]
-          ],
-          "accuracy": {
-            "point": 0.9444444444444444,
-            "low": 0.8333333333333334,
-            "high": 1.0,
-            "effective_n": 18,
-            "resamples_used": 2000
-          },
-          "macro_f1": 0.6470588235294118,
-          "worst_case_half_width": 0.2309839707249463
-        },
-        "by_signal": [
-          {
-            "signal": "fever_present",
-            "margin": 0.55,
-            "distribution": {
-              "false": 9,
-              "true": 9,
-              "null": 49,
-              "omitted": 0,
-              "decisive": 18
-            },
-            "all": {
-              "n_cells": 67,
-              "n_submissions": 67,
-              "confusion": [
-                [
-                  9,
-                  0,
-                  0
-                ],
-                [
-                  0,
-                  8,
-                  1
-                ],
-                [
-                  1,
-                  26,
-                  22
-                ]
-              ],
-              "accuracy": {
-                "point": 0.582089552238806,
-                "low": 0.4626865671641791,
-                "high": 0.6865671641791045,
-                "effective_n": 67,
-                "resamples_used": 2000
-              },
-              "macro_f1": 0.6435241851398522,
-              "worst_case_half_width": 0.1197238554748142
-            },
-            "decisive": {
-              "n_cells": 18,
-              "n_submissions": 18,
-              "confusion": [
-                [
-                  9,
-                  0,
-                  0
-                ],
-                [
-                  0,
-                  8,
-                  1
-                ],
-                [
-                  0,
-                  0,
-                  0
-                ]
-              ],
-              "accuracy": {
-                "point": 0.9444444444444444,
-                "low": 0.8333333333333334,
-                "high": 1.0,
-                "effective_n": 18,
-                "resamples_used": 2000
-              },
-              "macro_f1": 0.6470588235294118,
-              "worst_case_half_width": 0.2309839707249463
-            },
-            "per_class": {
-              "false": {
-                "support": 9,
-                "predicted": 10,
-                "recall": 1.0,
-                "precision": 0.9
-              },
-              "true": {
-                "support": 9,
-                "predicted": 34,
-                "recall": 0.8888888888888888,
-                "precision": 0.23529411764705882
-              },
-              "null": {
-                "support": 49,
-                "predicted": 23,
-                "recall": 0.4489795918367347,
-                "precision": 0.9565217391304348
-              }
-            },
-            "null_to_true": {
-              "count": 26,
-              "null_support": 49
-            }
-          }
-        ],
-        "cells": {
-          "fever_present": [
-            {
-              "id": "holdout-0001:fever_present",
-              "unit": "holdout-0001",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0002:fever_present",
-              "unit": "holdout-0002",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0003:fever_present",
-              "unit": "holdout-0003",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0004:fever_present",
-              "unit": "holdout-0004",
-              "truth": 1,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0005:fever_present",
-              "unit": "holdout-0005",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0006:fever_present",
-              "unit": "holdout-0006",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0007:fever_present",
-              "unit": "holdout-0007",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0008:fever_present",
-              "unit": "holdout-0008",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0009:fever_present",
-              "unit": "holdout-0009",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0010:fever_present",
-              "unit": "holdout-0010",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0011:fever_present",
-              "unit": "holdout-0011",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0012:fever_present",
-              "unit": "holdout-0012",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0013:fever_present",
-              "unit": "holdout-0013",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0014:fever_present",
-              "unit": "holdout-0014",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0015:fever_present",
-              "unit": "holdout-0015",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0016:fever_present",
-              "unit": "holdout-0016",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0017:fever_present",
-              "unit": "holdout-0017",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0018:fever_present",
-              "unit": "holdout-0018",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0019:fever_present",
-              "unit": "holdout-0019",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0020:fever_present",
-              "unit": "holdout-0020",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0021:fever_present",
-              "unit": "holdout-0021",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0022:fever_present",
-              "unit": "holdout-0022",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0023:fever_present",
-              "unit": "holdout-0023",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0024:fever_present",
-              "unit": "holdout-0024",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0025:fever_present",
-              "unit": "holdout-0025",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0026:fever_present",
-              "unit": "holdout-0026",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0027:fever_present",
-              "unit": "holdout-0027",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0028:fever_present",
-              "unit": "holdout-0028",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0029:fever_present",
-              "unit": "holdout-0029",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0030:fever_present",
-              "unit": "holdout-0030",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0031:fever_present",
-              "unit": "holdout-0031",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0032:fever_present",
-              "unit": "holdout-0032",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0033:fever_present",
-              "unit": "holdout-0033",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0034:fever_present",
-              "unit": "holdout-0034",
-              "truth": 2,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0035:fever_present",
-              "unit": "holdout-0035",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0036:fever_present",
-              "unit": "holdout-0036",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0037:fever_present",
-              "unit": "holdout-0037",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0038:fever_present",
-              "unit": "holdout-0038",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0039:fever_present",
-              "unit": "holdout-0039",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0040:fever_present",
-              "unit": "holdout-0040",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0041:fever_present",
-              "unit": "holdout-0041",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0042:fever_present",
-              "unit": "holdout-0042",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0043:fever_present",
-              "unit": "holdout-0043",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0044:fever_present",
-              "unit": "holdout-0044",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0045:fever_present",
-              "unit": "holdout-0045",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0046:fever_present",
-              "unit": "holdout-0046",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0047:fever_present",
-              "unit": "holdout-0047",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0048:fever_present",
-              "unit": "holdout-0048",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0049:fever_present",
-              "unit": "holdout-0049",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0050:fever_present",
-              "unit": "holdout-0050",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0051:fever_present",
-              "unit": "holdout-0051",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0052:fever_present",
-              "unit": "holdout-0052",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0053:fever_present",
-              "unit": "holdout-0053",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0054:fever_present",
-              "unit": "holdout-0054",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0055:fever_present",
-              "unit": "holdout-0055",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0056:fever_present",
-              "unit": "holdout-0056",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0057:fever_present",
-              "unit": "holdout-0057",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0058:fever_present",
-              "unit": "holdout-0058",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0059:fever_present",
-              "unit": "holdout-0059",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0060:fever_present",
-              "unit": "holdout-0060",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0061:fever_present",
-              "unit": "holdout-0061",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0062:fever_present",
-              "unit": "holdout-0062",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0063:fever_present",
-              "unit": "holdout-0063",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0064:fever_present",
-              "unit": "holdout-0064",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0065:fever_present",
-              "unit": "holdout-0065",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0066:fever_present",
-              "unit": "holdout-0066",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0067:fever_present",
-              "unit": "holdout-0067",
-              "truth": 0,
-              "predicted": 0
-            }
-          ]
-        },
-        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
-        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
-        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
-      },
-      "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt",
-        "committed": false,
-        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
-      }
-    },
-    {
-      "fold": 1,
-      "n_parameters": 124647939,
-      "n_trainable": 124647939,
-      "best_epoch": 2,
-      "val_macro_f1_by_epoch": [
-        0.8842579879246264,
-        0.8946319494152553,
-        0.8930086970250165
-      ],
-      "train_loss_by_epoch": [
-        0.2111099876161432,
-        0.00030551461252616716,
-        3.943833537050523e-05
-      ],
-      "steps_per_epoch": 313,
-      "warmup_steps": 94,
-      "validation": {
-        "n_examples": 2000,
-        "effective_n": 93,
-        "accuracy": 0.921,
-        "macro_f1": 0.894863712836063,
-        "confusion": [
-          [
-            437,
-            54,
-            18
-          ],
-          [
-            0,
-            281,
-            35
-          ],
-          [
-            20,
+            1,
             31,
-            1124
+            1159
           ]
         ],
         "per_class_recall": {
-          "false": 0.8585461689587426,
-          "true": 0.8892405063291139,
-          "null": 0.9565957446808511
+          "false": 1.0,
+          "true": 0.9017543859649123,
+          "null": 0.9731318219983207
         }
       },
       "decision_rule": {
-        "margin": 0.55,
+        "margin": 0.25,
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.02893617021276596,
-        "null_to_true_rate": 0.026382978723404255,
-        "macro_f1": 0.894863712836063,
+        "argmax_null_to_true_rate": 0.02938706968933669,
+        "null_to_true_rate": 0.026028547439126783,
+        "macro_f1": 0.9569495277237055,
         "margins_considered": [
           0.0,
           0.05,
@@ -851,7 +181,7 @@
           "haematuria_present",
           "recent_uti_present"
         ],
-        "margin": 0.55,
+        "margin": 0.25,
         "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
         "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
         "bootstrap": {
@@ -870,23 +200,23 @@
             ],
             [
               1,
-              6,
-              2
+              5,
+              3
             ],
             [
               1,
-              11,
-              37
+              1,
+              47
             ]
           ],
           "accuracy": {
-            "point": 0.746268656716418,
-            "low": 0.6268656716417911,
-            "high": 0.8507462686567164,
+            "point": 0.8805970149253731,
+            "low": 0.8059701492537313,
+            "high": 0.9552238805970149,
             "effective_n": 67,
             "resamples_used": 2000
           },
-          "macro_f1": 0.6871794871794871,
+          "macro_f1": 0.7917125045837917,
           "worst_case_half_width": 0.1197238554748142
         },
         "decisive": {
@@ -900,8 +230,8 @@
             ],
             [
               1,
-              6,
-              2
+              5,
+              3
             ],
             [
               0,
@@ -910,19 +240,19 @@
             ]
           ],
           "accuracy": {
-            "point": 0.7222222222222222,
-            "low": 0.5,
+            "point": 0.6666666666666666,
+            "low": 0.4444444444444444,
             "high": 0.8888888888888888,
             "effective_n": 18,
             "resamples_used": 2000
           },
-          "macro_f1": 0.5411764705882353,
+          "macro_f1": 0.5126050420168068,
           "worst_case_half_width": 0.2309839707249463
         },
         "by_signal": [
           {
             "signal": "fever_present",
-            "margin": 0.55,
+            "margin": 0.25,
             "distribution": {
               "false": 9,
               "true": 9,
@@ -941,23 +271,23 @@
                 ],
                 [
                   1,
-                  6,
-                  2
+                  5,
+                  3
                 ],
                 [
                   1,
-                  11,
-                  37
+                  1,
+                  47
                 ]
               ],
               "accuracy": {
-                "point": 0.746268656716418,
-                "low": 0.6268656716417911,
-                "high": 0.8507462686567164,
+                "point": 0.8805970149253731,
+                "low": 0.8059701492537313,
+                "high": 0.9552238805970149,
                 "effective_n": 67,
                 "resamples_used": 2000
               },
-              "macro_f1": 0.6871794871794871,
+              "macro_f1": 0.7917125045837917,
               "worst_case_half_width": 0.1197238554748142
             },
             "decisive": {
@@ -971,8 +301,8 @@
                 ],
                 [
                   1,
-                  6,
-                  2
+                  5,
+                  3
                 ],
                 [
                   0,
@@ -981,13 +311,13 @@
                 ]
               ],
               "accuracy": {
-                "point": 0.7222222222222222,
-                "low": 0.5,
+                "point": 0.6666666666666666,
+                "low": 0.4444444444444444,
                 "high": 0.8888888888888888,
                 "effective_n": 18,
                 "resamples_used": 2000
               },
-              "macro_f1": 0.5411764705882353,
+              "macro_f1": 0.5126050420168068,
               "worst_case_half_width": 0.2309839707249463
             },
             "per_class": {
@@ -999,19 +329,19 @@
               },
               "true": {
                 "support": 9,
-                "predicted": 17,
-                "recall": 0.6666666666666666,
-                "precision": 0.35294117647058826
+                "predicted": 6,
+                "recall": 0.5555555555555556,
+                "precision": 0.8333333333333334
               },
               "null": {
                 "support": 49,
-                "predicted": 41,
-                "recall": 0.7551020408163265,
-                "precision": 0.9024390243902439
+                "predicted": 52,
+                "recall": 0.9591836734693877,
+                "precision": 0.9038461538461539
               }
             },
             "null_to_true": {
-              "count": 11,
+              "count": 1,
               "null_support": 49
             }
           }
@@ -1040,7 +370,7 @@
               "id": "holdout-0004:fever_present",
               "unit": "holdout-0004",
               "truth": 1,
-              "predicted": 2
+              "predicted": 1
             },
             {
               "id": "holdout-0005:fever_present",
@@ -1058,19 +388,19 @@
               "id": "holdout-0007:fever_present",
               "unit": "holdout-0007",
               "truth": 2,
-              "predicted": 2
+              "predicted": 1
             },
             {
               "id": "holdout-0008:fever_present",
               "unit": "holdout-0008",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0009:fever_present",
               "unit": "holdout-0009",
               "truth": 0,
-              "predicted": 0
+              "predicted": 2
             },
             {
               "id": "holdout-0010:fever_present",
@@ -1082,7 +412,7 @@
               "id": "holdout-0011:fever_present",
               "unit": "holdout-0011",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0012:fever_present",
@@ -1124,13 +454,13 @@
               "id": "holdout-0018:fever_present",
               "unit": "holdout-0018",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0019:fever_present",
               "unit": "holdout-0019",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0020:fever_present",
@@ -1154,13 +484,13 @@
               "id": "holdout-0023:fever_present",
               "unit": "holdout-0023",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0024:fever_present",
               "unit": "holdout-0024",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0025:fever_present",
@@ -1214,7 +544,7 @@
               "id": "holdout-0033:fever_present",
               "unit": "holdout-0033",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0034:fever_present",
@@ -1226,7 +556,7 @@
               "id": "holdout-0035:fever_present",
               "unit": "holdout-0035",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0036:fever_present",
@@ -1250,7 +580,7 @@
               "id": "holdout-0039:fever_present",
               "unit": "holdout-0039",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0040:fever_present",
@@ -1262,7 +592,7 @@
               "id": "holdout-0041:fever_present",
               "unit": "holdout-0041",
               "truth": 1,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0042:fever_present",
@@ -1292,19 +622,19 @@
               "id": "holdout-0046:fever_present",
               "unit": "holdout-0046",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0047:fever_present",
               "unit": "holdout-0047",
               "truth": 0,
-              "predicted": 2
+              "predicted": 0
             },
             {
               "id": "holdout-0048:fever_present",
               "unit": "holdout-0048",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0049:fever_present",
@@ -1352,7 +682,7 @@
               "id": "holdout-0056:fever_present",
               "unit": "holdout-0056",
               "truth": 1,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0057:fever_present",
@@ -1427,7 +757,677 @@
         "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold1.encoder.pt",
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 1,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 1,
+      "val_macro_f1_by_epoch": [
+        0.8887132844907396,
+        0.8859998812152913,
+        0.8882229375483828
+      ],
+      "train_loss_by_epoch": [
+        0.22170612470973283,
+        0.0010146929945156443,
+        6.277950590010732e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 93,
+        "accuracy": 0.916,
+        "macro_f1": 0.889929386890708,
+        "confusion": [
+          [
+            455,
+            31,
+            23
+          ],
+          [
+            11,
+            253,
+            52
+          ],
+          [
+            36,
+            15,
+            1124
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.8939096267190569,
+          "true": 0.8006329113924051,
+          "null": 0.9565957446808511
+        }
+      },
+      "decision_rule": {
+        "margin": 0.4,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.01446808510638298,
+        "null_to_true_rate": 0.01276595744680851,
+        "macro_f1": 0.889929386890708,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "fever_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.4,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              9,
+              0,
+              0
+            ],
+            [
+              1,
+              2,
+              6
+            ],
+            [
+              3,
+              4,
+              42
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7910447761194029,
+            "low": 0.6865671641791045,
+            "high": 0.8805970149253731,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6502759554305946,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 18,
+          "n_submissions": 18,
+          "confusion": [
+            [
+              9,
+              0,
+              0
+            ],
+            [
+              1,
+              2,
+              6
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6111111111111112,
+            "low": 0.3888888888888889,
+            "high": 0.8333333333333334,
+            "effective_n": 18,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.4370015948963317,
+          "worst_case_half_width": 0.2309839707249463
+        },
+        "by_signal": [
+          {
+            "signal": "fever_present",
+            "margin": 0.4,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  2,
+                  6
+                ],
+                [
+                  3,
+                  4,
+                  42
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7910447761194029,
+                "low": 0.6865671641791045,
+                "high": 0.8805970149253731,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6502759554305946,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  9,
+                  0,
+                  0
+                ],
+                [
+                  1,
+                  2,
+                  6
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6111111111111112,
+                "low": 0.3888888888888889,
+                "high": 0.8333333333333334,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.4370015948963317,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 13,
+                "recall": 1.0,
+                "precision": 0.6923076923076923
+              },
+              "true": {
+                "support": 9,
+                "predicted": 6,
+                "recall": 0.2222222222222222,
+                "precision": 0.3333333333333333
+              },
+              "null": {
+                "support": 49,
+                "predicted": 48,
+                "recall": 0.8571428571428571,
+                "precision": 0.875
+              }
+            },
+            "null_to_true": {
+              "count": 4,
+              "null_support": 49
+            }
+          }
+        ],
+        "cells": {
+          "fever_present": [
+            {
+              "id": "holdout-0001:fever_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:fever_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:fever_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:fever_present",
+              "unit": "holdout-0004",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:fever_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:fever_present",
+              "unit": "holdout-0006",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:fever_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:fever_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:fever_present",
+              "unit": "holdout-0009",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0010:fever_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:fever_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0012:fever_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:fever_present",
+              "unit": "holdout-0013",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0014:fever_present",
+              "unit": "holdout-0014",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0015:fever_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:fever_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:fever_present",
+              "unit": "holdout-0017",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0018:fever_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:fever_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:fever_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:fever_present",
+              "unit": "holdout-0021",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0022:fever_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:fever_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:fever_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:fever_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:fever_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:fever_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:fever_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:fever_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:fever_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:fever_present",
+              "unit": "holdout-0031",
+              "truth": 1,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0032:fever_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:fever_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0034:fever_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0035:fever_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:fever_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:fever_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:fever_present",
+              "unit": "holdout-0038",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0039:fever_present",
+              "unit": "holdout-0039",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:fever_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:fever_present",
+              "unit": "holdout-0041",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0042:fever_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:fever_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0044:fever_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:fever_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:fever_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0047:fever_present",
+              "unit": "holdout-0047",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0048:fever_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:fever_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:fever_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:fever_present",
+              "unit": "holdout-0051",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0052:fever_present",
+              "unit": "holdout-0052",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:fever_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:fever_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:fever_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:fever_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0057:fever_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:fever_present",
+              "unit": "holdout-0058",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0059:fever_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:fever_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:fever_present",
+              "unit": "holdout-0061",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:fever_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0063:fever_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:fever_present",
+              "unit": "holdout-0064",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0065:fever_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:fever_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:fever_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -1436,45 +1436,45 @@
       "fold": 2,
       "n_parameters": 124647939,
       "n_trainable": 124647939,
-      "best_epoch": 3,
+      "best_epoch": 2,
       "val_macro_f1_by_epoch": [
-        0.9225027041139832,
-        0.9424532109039512,
-        0.950652367161137
+        0.9222821061506622,
+        0.9505006422646196,
+        0.9462924534996665
       ],
       "train_loss_by_epoch": [
-        0.2266098031097441,
-        0.0005462250996672083,
-        3.535514509421773e-05
+        0.23022318261478794,
+        0.0004544862662325613,
+        3.9883124333573504e-05
       ],
       "steps_per_epoch": 313,
       "warmup_steps": 94,
       "validation": {
         "n_examples": 2000,
         "effective_n": 93,
-        "accuracy": 0.961,
-        "macro_f1": 0.950652367161137,
+        "accuracy": 0.958,
+        "macro_f1": 0.9505006422646196,
         "confusion": [
           [
-            513,
-            1,
-            0
-          ],
-          [
+            499,
             5,
-            289,
-            24
+            10
           ],
           [
-            18,
-            30,
-            1120
+            0,
+            296,
+            22
+          ],
+          [
+            26,
+            21,
+            1121
           ]
         ],
         "per_class_recall": {
-          "false": 0.9980544747081712,
-          "true": 0.9088050314465409,
-          "null": 0.958904109589041
+          "false": 0.9708171206225681,
+          "true": 0.9308176100628931,
+          "null": 0.9597602739726028
         }
       },
       "decision_rule": {
@@ -1482,9 +1482,9 @@
         "gated_class": 1,
         "gated_class_name": "true",
         "selected_on": "val",
-        "argmax_null_to_true_rate": 0.025684931506849314,
-        "null_to_true_rate": 0.025684931506849314,
-        "macro_f1": 0.950652367161137,
+        "argmax_null_to_true_rate": 0.01797945205479452,
+        "null_to_true_rate": 0.01797945205479452,
+        "macro_f1": 0.9505006422646196,
         "margins_considered": [
           0.0,
           0.05,
@@ -1535,28 +1535,28 @@
           "confusion": [
             [
               8,
-              0,
-              1
+              1,
+              0
             ],
             [
               0,
-              8,
-              1
+              7,
+              2
             ],
             [
               4,
-              10,
-              35
+              5,
+              40
             ]
           ],
           "accuracy": {
-            "point": 0.7611940298507462,
-            "low": 0.6567164179104478,
-            "high": 0.8656716417910447,
+            "point": 0.8208955223880597,
+            "low": 0.7313432835820896,
+            "high": 0.9104477611940298,
             "effective_n": 67,
             "resamples_used": 2000
           },
-          "macro_f1": 0.7228169476231492,
+          "macro_f1": 0.7591297591297591,
           "worst_case_half_width": 0.1197238554748142
         },
         "decisive": {
@@ -1565,13 +1565,13 @@
           "confusion": [
             [
               8,
-              0,
-              1
+              1,
+              0
             ],
             [
               0,
-              8,
-              1
+              7,
+              2
             ],
             [
               0,
@@ -1580,13 +1580,13 @@
             ]
           ],
           "accuracy": {
-            "point": 0.8888888888888888,
-            "low": 0.7222222222222222,
+            "point": 0.8333333333333334,
+            "low": 0.6666666666666666,
             "high": 1.0,
             "effective_n": 18,
             "resamples_used": 2000
           },
-          "macro_f1": 0.6274509803921569,
+          "macro_f1": 0.5882352941176471,
           "worst_case_half_width": 0.2309839707249463
         },
         "by_signal": [
@@ -1606,28 +1606,28 @@
               "confusion": [
                 [
                   8,
-                  0,
-                  1
+                  1,
+                  0
                 ],
                 [
                   0,
-                  8,
-                  1
+                  7,
+                  2
                 ],
                 [
                   4,
-                  10,
-                  35
+                  5,
+                  40
                 ]
               ],
               "accuracy": {
-                "point": 0.7611940298507462,
-                "low": 0.6567164179104478,
-                "high": 0.8656716417910447,
+                "point": 0.8208955223880597,
+                "low": 0.7313432835820896,
+                "high": 0.9104477611940298,
                 "effective_n": 67,
                 "resamples_used": 2000
               },
-              "macro_f1": 0.7228169476231492,
+              "macro_f1": 0.7591297591297591,
               "worst_case_half_width": 0.1197238554748142
             },
             "decisive": {
@@ -1636,13 +1636,13 @@
               "confusion": [
                 [
                   8,
-                  0,
-                  1
+                  1,
+                  0
                 ],
                 [
                   0,
-                  8,
-                  1
+                  7,
+                  2
                 ],
                 [
                   0,
@@ -1651,13 +1651,13 @@
                 ]
               ],
               "accuracy": {
-                "point": 0.8888888888888888,
-                "low": 0.7222222222222222,
+                "point": 0.8333333333333334,
+                "low": 0.6666666666666666,
                 "high": 1.0,
                 "effective_n": 18,
                 "resamples_used": 2000
               },
-              "macro_f1": 0.6274509803921569,
+              "macro_f1": 0.5882352941176471,
               "worst_case_half_width": 0.2309839707249463
             },
             "per_class": {
@@ -1669,1355 +1669,15 @@
               },
               "true": {
                 "support": 9,
-                "predicted": 18,
-                "recall": 0.8888888888888888,
-                "precision": 0.4444444444444444
+                "predicted": 13,
+                "recall": 0.7777777777777778,
+                "precision": 0.5384615384615384
               },
               "null": {
                 "support": 49,
-                "predicted": 37,
-                "recall": 0.7142857142857143,
-                "precision": 0.9459459459459459
-              }
-            },
-            "null_to_true": {
-              "count": 10,
-              "null_support": 49
-            }
-          }
-        ],
-        "cells": {
-          "fever_present": [
-            {
-              "id": "holdout-0001:fever_present",
-              "unit": "holdout-0001",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0002:fever_present",
-              "unit": "holdout-0002",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0003:fever_present",
-              "unit": "holdout-0003",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0004:fever_present",
-              "unit": "holdout-0004",
-              "truth": 1,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0005:fever_present",
-              "unit": "holdout-0005",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0006:fever_present",
-              "unit": "holdout-0006",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0007:fever_present",
-              "unit": "holdout-0007",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0008:fever_present",
-              "unit": "holdout-0008",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0009:fever_present",
-              "unit": "holdout-0009",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0010:fever_present",
-              "unit": "holdout-0010",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0011:fever_present",
-              "unit": "holdout-0011",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0012:fever_present",
-              "unit": "holdout-0012",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0013:fever_present",
-              "unit": "holdout-0013",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0014:fever_present",
-              "unit": "holdout-0014",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0015:fever_present",
-              "unit": "holdout-0015",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0016:fever_present",
-              "unit": "holdout-0016",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0017:fever_present",
-              "unit": "holdout-0017",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0018:fever_present",
-              "unit": "holdout-0018",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0019:fever_present",
-              "unit": "holdout-0019",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0020:fever_present",
-              "unit": "holdout-0020",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0021:fever_present",
-              "unit": "holdout-0021",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0022:fever_present",
-              "unit": "holdout-0022",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0023:fever_present",
-              "unit": "holdout-0023",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0024:fever_present",
-              "unit": "holdout-0024",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0025:fever_present",
-              "unit": "holdout-0025",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0026:fever_present",
-              "unit": "holdout-0026",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0027:fever_present",
-              "unit": "holdout-0027",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0028:fever_present",
-              "unit": "holdout-0028",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0029:fever_present",
-              "unit": "holdout-0029",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0030:fever_present",
-              "unit": "holdout-0030",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0031:fever_present",
-              "unit": "holdout-0031",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0032:fever_present",
-              "unit": "holdout-0032",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0033:fever_present",
-              "unit": "holdout-0033",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0034:fever_present",
-              "unit": "holdout-0034",
-              "truth": 2,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0035:fever_present",
-              "unit": "holdout-0035",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0036:fever_present",
-              "unit": "holdout-0036",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0037:fever_present",
-              "unit": "holdout-0037",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0038:fever_present",
-              "unit": "holdout-0038",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0039:fever_present",
-              "unit": "holdout-0039",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0040:fever_present",
-              "unit": "holdout-0040",
-              "truth": 2,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0041:fever_present",
-              "unit": "holdout-0041",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0042:fever_present",
-              "unit": "holdout-0042",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0043:fever_present",
-              "unit": "holdout-0043",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0044:fever_present",
-              "unit": "holdout-0044",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0045:fever_present",
-              "unit": "holdout-0045",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0046:fever_present",
-              "unit": "holdout-0046",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0047:fever_present",
-              "unit": "holdout-0047",
-              "truth": 0,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0048:fever_present",
-              "unit": "holdout-0048",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0049:fever_present",
-              "unit": "holdout-0049",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0050:fever_present",
-              "unit": "holdout-0050",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0051:fever_present",
-              "unit": "holdout-0051",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0052:fever_present",
-              "unit": "holdout-0052",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0053:fever_present",
-              "unit": "holdout-0053",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0054:fever_present",
-              "unit": "holdout-0054",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0055:fever_present",
-              "unit": "holdout-0055",
-              "truth": 2,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0056:fever_present",
-              "unit": "holdout-0056",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0057:fever_present",
-              "unit": "holdout-0057",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0058:fever_present",
-              "unit": "holdout-0058",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0059:fever_present",
-              "unit": "holdout-0059",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0060:fever_present",
-              "unit": "holdout-0060",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0061:fever_present",
-              "unit": "holdout-0061",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0062:fever_present",
-              "unit": "holdout-0062",
-              "truth": 2,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0063:fever_present",
-              "unit": "holdout-0063",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0064:fever_present",
-              "unit": "holdout-0064",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0065:fever_present",
-              "unit": "holdout-0065",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0066:fever_present",
-              "unit": "holdout-0066",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0067:fever_present",
-              "unit": "holdout-0067",
-              "truth": 0,
-              "predicted": 0
-            }
-          ]
-        },
-        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
-        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
-        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
-      },
-      "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold2.encoder.pt",
-        "committed": false,
-        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
-      }
-    },
-    {
-      "fold": 3,
-      "n_parameters": 124647939,
-      "n_trainable": 124647939,
-      "best_epoch": 3,
-      "val_macro_f1_by_epoch": [
-        0.9529522143659047,
-        0.9681697317455346,
-        0.9713025461047312
-      ],
-      "train_loss_by_epoch": [
-        0.23771698904749938,
-        0.00044827739102765916,
-        4.132166362833232e-05
-      ],
-      "steps_per_epoch": 313,
-      "warmup_steps": 94,
-      "validation": {
-        "n_examples": 2000,
-        "effective_n": 70,
-        "accuracy": 0.98,
-        "macro_f1": 0.9733608524282794,
-        "confusion": [
-          [
-            495,
-            1,
-            6
-          ],
-          [
-            0,
-            283,
-            16
-          ],
-          [
-            0,
-            17,
-            1182
-          ]
-        ],
-        "per_class_recall": {
-          "false": 0.9860557768924303,
-          "true": 0.9464882943143813,
-          "null": 0.9858215179316097
-        }
-      },
-      "decision_rule": {
-        "margin": 0.45,
-        "gated_class": 1,
-        "gated_class_name": "true",
-        "selected_on": "val",
-        "argmax_null_to_true_rate": 0.01751459549624687,
-        "null_to_true_rate": 0.014178482068390326,
-        "macro_f1": 0.9733608524282794,
-        "margins_considered": [
-          0.0,
-          0.05,
-          0.1,
-          0.15,
-          0.2,
-          0.25,
-          0.3,
-          0.35,
-          0.4,
-          0.45,
-          0.5,
-          0.55,
-          0.6,
-          0.65,
-          0.7,
-          0.75,
-          0.8,
-          0.85,
-          0.9
-        ]
-      },
-      "holdout": {
-        "path": "data/realistic/uti1_holdout.labels.tsv",
-        "n_submissions": 67,
-        "signals_scored": [
-          "fever_present"
-        ],
-        "signals_not_scored": [
-          "dysuria_present",
-          "urinary_frequency_present",
-          "nocturia_present",
-          "flank_pain_present",
-          "haematuria_present",
-          "recent_uti_present"
-        ],
-        "margin": 0.45,
-        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
-        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
-        "bootstrap": {
-          "resamples": 2000,
-          "seed": 0,
-          "alpha": 0.05
-        },
-        "overall": {
-          "n_cells": 67,
-          "n_submissions": 67,
-          "confusion": [
-            [
-              9,
-              0,
-              0
-            ],
-            [
-              1,
-              5,
-              3
-            ],
-            [
-              2,
-              6,
-              41
-            ]
-          ],
-          "accuracy": {
-            "point": 0.8208955223880597,
-            "low": 0.7313432835820896,
-            "high": 0.9104477611940298,
-            "effective_n": 67,
-            "resamples_used": 2000
-          },
-          "macro_f1": 0.7462877624167946,
-          "worst_case_half_width": 0.1197238554748142
-        },
-        "decisive": {
-          "n_cells": 18,
-          "n_submissions": 18,
-          "confusion": [
-            [
-              9,
-              0,
-              0
-            ],
-            [
-              1,
-              5,
-              3
-            ],
-            [
-              0,
-              0,
-              0
-            ]
-          ],
-          "accuracy": {
-            "point": 0.7777777777777778,
-            "low": 0.5555555555555556,
-            "high": 0.9444444444444444,
-            "effective_n": 18,
-            "resamples_used": 2000
-          },
-          "macro_f1": 0.5538847117794486,
-          "worst_case_half_width": 0.2309839707249463
-        },
-        "by_signal": [
-          {
-            "signal": "fever_present",
-            "margin": 0.45,
-            "distribution": {
-              "false": 9,
-              "true": 9,
-              "null": 49,
-              "omitted": 0,
-              "decisive": 18
-            },
-            "all": {
-              "n_cells": 67,
-              "n_submissions": 67,
-              "confusion": [
-                [
-                  9,
-                  0,
-                  0
-                ],
-                [
-                  1,
-                  5,
-                  3
-                ],
-                [
-                  2,
-                  6,
-                  41
-                ]
-              ],
-              "accuracy": {
-                "point": 0.8208955223880597,
-                "low": 0.7313432835820896,
-                "high": 0.9104477611940298,
-                "effective_n": 67,
-                "resamples_used": 2000
-              },
-              "macro_f1": 0.7462877624167946,
-              "worst_case_half_width": 0.1197238554748142
-            },
-            "decisive": {
-              "n_cells": 18,
-              "n_submissions": 18,
-              "confusion": [
-                [
-                  9,
-                  0,
-                  0
-                ],
-                [
-                  1,
-                  5,
-                  3
-                ],
-                [
-                  0,
-                  0,
-                  0
-                ]
-              ],
-              "accuracy": {
-                "point": 0.7777777777777778,
-                "low": 0.5555555555555556,
-                "high": 0.9444444444444444,
-                "effective_n": 18,
-                "resamples_used": 2000
-              },
-              "macro_f1": 0.5538847117794486,
-              "worst_case_half_width": 0.2309839707249463
-            },
-            "per_class": {
-              "false": {
-                "support": 9,
-                "predicted": 12,
-                "recall": 1.0,
-                "precision": 0.75
-              },
-              "true": {
-                "support": 9,
-                "predicted": 11,
-                "recall": 0.5555555555555556,
-                "precision": 0.45454545454545453
-              },
-              "null": {
-                "support": 49,
-                "predicted": 44,
-                "recall": 0.8367346938775511,
-                "precision": 0.9318181818181818
-              }
-            },
-            "null_to_true": {
-              "count": 6,
-              "null_support": 49
-            }
-          }
-        ],
-        "cells": {
-          "fever_present": [
-            {
-              "id": "holdout-0001:fever_present",
-              "unit": "holdout-0001",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0002:fever_present",
-              "unit": "holdout-0002",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0003:fever_present",
-              "unit": "holdout-0003",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0004:fever_present",
-              "unit": "holdout-0004",
-              "truth": 1,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0005:fever_present",
-              "unit": "holdout-0005",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0006:fever_present",
-              "unit": "holdout-0006",
-              "truth": 1,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0007:fever_present",
-              "unit": "holdout-0007",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0008:fever_present",
-              "unit": "holdout-0008",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0009:fever_present",
-              "unit": "holdout-0009",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0010:fever_present",
-              "unit": "holdout-0010",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0011:fever_present",
-              "unit": "holdout-0011",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0012:fever_present",
-              "unit": "holdout-0012",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0013:fever_present",
-              "unit": "holdout-0013",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0014:fever_present",
-              "unit": "holdout-0014",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0015:fever_present",
-              "unit": "holdout-0015",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0016:fever_present",
-              "unit": "holdout-0016",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0017:fever_present",
-              "unit": "holdout-0017",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0018:fever_present",
-              "unit": "holdout-0018",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0019:fever_present",
-              "unit": "holdout-0019",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0020:fever_present",
-              "unit": "holdout-0020",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0021:fever_present",
-              "unit": "holdout-0021",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0022:fever_present",
-              "unit": "holdout-0022",
-              "truth": 2,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0023:fever_present",
-              "unit": "holdout-0023",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0024:fever_present",
-              "unit": "holdout-0024",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0025:fever_present",
-              "unit": "holdout-0025",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0026:fever_present",
-              "unit": "holdout-0026",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0027:fever_present",
-              "unit": "holdout-0027",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0028:fever_present",
-              "unit": "holdout-0028",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0029:fever_present",
-              "unit": "holdout-0029",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0030:fever_present",
-              "unit": "holdout-0030",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0031:fever_present",
-              "unit": "holdout-0031",
-              "truth": 1,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0032:fever_present",
-              "unit": "holdout-0032",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0033:fever_present",
-              "unit": "holdout-0033",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0034:fever_present",
-              "unit": "holdout-0034",
-              "truth": 2,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0035:fever_present",
-              "unit": "holdout-0035",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0036:fever_present",
-              "unit": "holdout-0036",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0037:fever_present",
-              "unit": "holdout-0037",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0038:fever_present",
-              "unit": "holdout-0038",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0039:fever_present",
-              "unit": "holdout-0039",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0040:fever_present",
-              "unit": "holdout-0040",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0041:fever_present",
-              "unit": "holdout-0041",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0042:fever_present",
-              "unit": "holdout-0042",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0043:fever_present",
-              "unit": "holdout-0043",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0044:fever_present",
-              "unit": "holdout-0044",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0045:fever_present",
-              "unit": "holdout-0045",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0046:fever_present",
-              "unit": "holdout-0046",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0047:fever_present",
-              "unit": "holdout-0047",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0048:fever_present",
-              "unit": "holdout-0048",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0049:fever_present",
-              "unit": "holdout-0049",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0050:fever_present",
-              "unit": "holdout-0050",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0051:fever_present",
-              "unit": "holdout-0051",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0052:fever_present",
-              "unit": "holdout-0052",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0053:fever_present",
-              "unit": "holdout-0053",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0054:fever_present",
-              "unit": "holdout-0054",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0055:fever_present",
-              "unit": "holdout-0055",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0056:fever_present",
-              "unit": "holdout-0056",
-              "truth": 1,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0057:fever_present",
-              "unit": "holdout-0057",
-              "truth": 2,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0058:fever_present",
-              "unit": "holdout-0058",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0059:fever_present",
-              "unit": "holdout-0059",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0060:fever_present",
-              "unit": "holdout-0060",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0061:fever_present",
-              "unit": "holdout-0061",
-              "truth": 1,
-              "predicted": 1
-            },
-            {
-              "id": "holdout-0062:fever_present",
-              "unit": "holdout-0062",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0063:fever_present",
-              "unit": "holdout-0063",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0064:fever_present",
-              "unit": "holdout-0064",
-              "truth": 0,
-              "predicted": 0
-            },
-            {
-              "id": "holdout-0065:fever_present",
-              "unit": "holdout-0065",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0066:fever_present",
-              "unit": "holdout-0066",
-              "truth": 2,
-              "predicted": 2
-            },
-            {
-              "id": "holdout-0067:fever_present",
-              "unit": "holdout-0067",
-              "truth": 0,
-              "predicted": 0
-            }
-          ]
-        },
-        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
-        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
-        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
-      },
-      "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold3.encoder.pt",
-        "committed": false,
-        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
-      }
-    },
-    {
-      "fold": 4,
-      "n_parameters": 124647939,
-      "n_trainable": 124647939,
-      "best_epoch": 2,
-      "val_macro_f1_by_epoch": [
-        0.9792849774708885,
-        0.9915390721668674,
-        0.9880419218993386
-      ],
-      "train_loss_by_epoch": [
-        0.24404978029904886,
-        0.0010434996075986418,
-        4.7293261013692244e-05
-      ],
-      "steps_per_epoch": 313,
-      "warmup_steps": 94,
-      "validation": {
-        "n_examples": 2000,
-        "effective_n": 82,
-        "accuracy": 0.9945,
-        "macro_f1": 0.9923957524685352,
-        "confusion": [
-          [
-            524,
-            0,
-            0
-          ],
-          [
-            0,
-            298,
-            6
-          ],
-          [
-            0,
-            5,
-            1167
-          ]
-        ],
-        "per_class_recall": {
-          "false": 1.0,
-          "true": 0.9802631578947368,
-          "null": 0.9957337883959044
-        }
-      },
-      "decision_rule": {
-        "margin": 0.1,
-        "gated_class": 1,
-        "gated_class_name": "true",
-        "selected_on": "val",
-        "argmax_null_to_true_rate": 0.004266211604095563,
-        "null_to_true_rate": 0.004266211604095563,
-        "macro_f1": 0.9923957524685352,
-        "margins_considered": [
-          0.0,
-          0.05,
-          0.1,
-          0.15,
-          0.2,
-          0.25,
-          0.3,
-          0.35,
-          0.4,
-          0.45,
-          0.5,
-          0.55,
-          0.6,
-          0.65,
-          0.7,
-          0.75,
-          0.8,
-          0.85,
-          0.9
-        ]
-      },
-      "holdout": {
-        "path": "data/realistic/uti1_holdout.labels.tsv",
-        "n_submissions": 67,
-        "signals_scored": [
-          "fever_present"
-        ],
-        "signals_not_scored": [
-          "dysuria_present",
-          "urinary_frequency_present",
-          "nocturia_present",
-          "flank_pain_present",
-          "haematuria_present",
-          "recent_uti_present"
-        ],
-        "margin": 0.1,
-        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
-        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
-        "bootstrap": {
-          "resamples": 2000,
-          "seed": 0,
-          "alpha": 0.05
-        },
-        "overall": {
-          "n_cells": 67,
-          "n_submissions": 67,
-          "confusion": [
-            [
-              9,
-              0,
-              0
-            ],
-            [
-              1,
-              0,
-              8
-            ],
-            [
-              1,
-              5,
-              43
-            ]
-          ],
-          "accuracy": {
-            "point": 0.7761194029850746,
-            "low": 0.6716417910447762,
-            "high": 0.8656716417910447,
-            "effective_n": 67,
-            "resamples_used": 2000
-          },
-          "macro_f1": 0.5866666666666667,
-          "worst_case_half_width": 0.1197238554748142
-        },
-        "decisive": {
-          "n_cells": 18,
-          "n_submissions": 18,
-          "confusion": [
-            [
-              9,
-              0,
-              0
-            ],
-            [
-              1,
-              0,
-              8
-            ],
-            [
-              0,
-              0,
-              0
-            ]
-          ],
-          "accuracy": {
-            "point": 0.5,
-            "low": 0.2777777777777778,
-            "high": 0.7222222222222222,
-            "effective_n": 18,
-            "resamples_used": 2000
-          },
-          "macro_f1": 0.31578947368421056,
-          "worst_case_half_width": 0.2309839707249463
-        },
-        "by_signal": [
-          {
-            "signal": "fever_present",
-            "margin": 0.1,
-            "distribution": {
-              "false": 9,
-              "true": 9,
-              "null": 49,
-              "omitted": 0,
-              "decisive": 18
-            },
-            "all": {
-              "n_cells": 67,
-              "n_submissions": 67,
-              "confusion": [
-                [
-                  9,
-                  0,
-                  0
-                ],
-                [
-                  1,
-                  0,
-                  8
-                ],
-                [
-                  1,
-                  5,
-                  43
-                ]
-              ],
-              "accuracy": {
-                "point": 0.7761194029850746,
-                "low": 0.6716417910447762,
-                "high": 0.8656716417910447,
-                "effective_n": 67,
-                "resamples_used": 2000
-              },
-              "macro_f1": 0.5866666666666667,
-              "worst_case_half_width": 0.1197238554748142
-            },
-            "decisive": {
-              "n_cells": 18,
-              "n_submissions": 18,
-              "confusion": [
-                [
-                  9,
-                  0,
-                  0
-                ],
-                [
-                  1,
-                  0,
-                  8
-                ],
-                [
-                  0,
-                  0,
-                  0
-                ]
-              ],
-              "accuracy": {
-                "point": 0.5,
-                "low": 0.2777777777777778,
-                "high": 0.7222222222222222,
-                "effective_n": 18,
-                "resamples_used": 2000
-              },
-              "macro_f1": 0.31578947368421056,
-              "worst_case_half_width": 0.2309839707249463
-            },
-            "per_class": {
-              "false": {
-                "support": 9,
-                "predicted": 11,
-                "recall": 1.0,
-                "precision": 0.8181818181818182
-              },
-              "true": {
-                "support": 9,
-                "predicted": 5,
-                "recall": 0.0,
-                "precision": 0.0
-              },
-              "null": {
-                "support": 49,
-                "predicted": 51,
-                "recall": 0.8775510204081632,
-                "precision": 0.8431372549019608
+                "predicted": 42,
+                "recall": 0.8163265306122449,
+                "precision": 0.9523809523809523
               }
             },
             "null_to_true": {
@@ -3068,7 +1728,7 @@
               "id": "holdout-0007:fever_present",
               "unit": "holdout-0007",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0008:fever_present",
@@ -3081,6 +1741,676 @@
               "unit": "holdout-0009",
               "truth": 0,
               "predicted": 0
+            },
+            {
+              "id": "holdout-0010:fever_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:fever_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0012:fever_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:fever_present",
+              "unit": "holdout-0013",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0014:fever_present",
+              "unit": "holdout-0014",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0015:fever_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:fever_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:fever_present",
+              "unit": "holdout-0017",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0018:fever_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:fever_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:fever_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:fever_present",
+              "unit": "holdout-0021",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0022:fever_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:fever_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:fever_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:fever_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:fever_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:fever_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:fever_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0029:fever_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:fever_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:fever_present",
+              "unit": "holdout-0031",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0032:fever_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:fever_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0034:fever_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0035:fever_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:fever_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:fever_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0038:fever_present",
+              "unit": "holdout-0038",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0039:fever_present",
+              "unit": "holdout-0039",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:fever_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:fever_present",
+              "unit": "holdout-0041",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0042:fever_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:fever_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:fever_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:fever_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:fever_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0047:fever_present",
+              "unit": "holdout-0047",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0048:fever_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:fever_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:fever_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:fever_present",
+              "unit": "holdout-0051",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0052:fever_present",
+              "unit": "holdout-0052",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0053:fever_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:fever_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:fever_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0056:fever_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:fever_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0058:fever_present",
+              "unit": "holdout-0058",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0059:fever_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:fever_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:fever_present",
+              "unit": "holdout-0061",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0062:fever_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0063:fever_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0064:fever_present",
+              "unit": "holdout-0064",
+              "truth": 0,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0065:fever_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:fever_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:fever_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 3,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.968299484976631,
+        0.9772785404939722,
+        0.9799699968208353
+      ],
+      "train_loss_by_epoch": [
+        0.23968828640391585,
+        0.0019067200256395155,
+        6.430010469048284e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 70,
+        "accuracy": 0.989,
+        "macro_f1": 0.9826318324912253,
+        "confusion": [
+          [
+            490,
+            12,
+            0
+          ],
+          [
+            0,
+            296,
+            3
+          ],
+          [
+            0,
+            7,
+            1192
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9760956175298805,
+          "true": 0.9899665551839465,
+          "null": 0.994161801501251
+        }
+      },
+      "decision_rule": {
+        "margin": 0.8,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.007506255212677231,
+        "null_to_true_rate": 0.005838198498748957,
+        "macro_f1": 0.9826318324912253,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "fever_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.8,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              8,
+              0,
+              1
+            ],
+            [
+              1,
+              2,
+              6
+            ],
+            [
+              1,
+              4,
+              44
+            ]
+          ],
+          "accuracy": {
+            "point": 0.8059701492537313,
+            "low": 0.7164179104477612,
+            "high": 0.8955223880597015,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6629239766081871,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 18,
+          "n_submissions": 18,
+          "confusion": [
+            [
+              8,
+              0,
+              1
+            ],
+            [
+              1,
+              2,
+              6
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.5555555555555556,
+            "low": 0.3333333333333333,
+            "high": 0.7777777777777778,
+            "effective_n": 18,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.41750841750841744,
+          "worst_case_half_width": 0.2309839707249463
+        },
+        "by_signal": [
+          {
+            "signal": "fever_present",
+            "margin": 0.8,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  8,
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2,
+                  6
+                ],
+                [
+                  1,
+                  4,
+                  44
+                ]
+              ],
+              "accuracy": {
+                "point": 0.8059701492537313,
+                "low": 0.7164179104477612,
+                "high": 0.8955223880597015,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6629239766081871,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  8,
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  2,
+                  6
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.5555555555555556,
+                "low": 0.3333333333333333,
+                "high": 0.7777777777777778,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.41750841750841744,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 10,
+                "recall": 0.8888888888888888,
+                "precision": 0.8
+              },
+              "true": {
+                "support": 9,
+                "predicted": 6,
+                "recall": 0.2222222222222222,
+                "precision": 0.3333333333333333
+              },
+              "null": {
+                "support": 49,
+                "predicted": 51,
+                "recall": 0.8979591836734694,
+                "precision": 0.8627450980392157
+              }
+            },
+            "null_to_true": {
+              "count": 4,
+              "null_support": 49
+            }
+          }
+        ],
+        "cells": {
+          "fever_present": [
+            {
+              "id": "holdout-0001:fever_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:fever_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:fever_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0004:fever_present",
+              "unit": "holdout-0004",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:fever_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:fever_present",
+              "unit": "holdout-0006",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:fever_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0008:fever_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:fever_present",
+              "unit": "holdout-0009",
+              "truth": 0,
+              "predicted": 2
             },
             {
               "id": "holdout-0010:fever_present",
@@ -3134,7 +2464,7 @@
               "id": "holdout-0018:fever_present",
               "unit": "holdout-0018",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0019:fever_present",
@@ -3152,7 +2482,7 @@
               "id": "holdout-0021:fever_present",
               "unit": "holdout-0021",
               "truth": 1,
-              "predicted": 2
+              "predicted": 1
             },
             {
               "id": "holdout-0022:fever_present",
@@ -3224,7 +2554,7 @@
               "id": "holdout-0033:fever_present",
               "unit": "holdout-0033",
               "truth": 2,
-              "predicted": 1
+              "predicted": 2
             },
             {
               "id": "holdout-0034:fever_present",
@@ -3236,7 +2566,7 @@
               "id": "holdout-0035:fever_present",
               "unit": "holdout-0035",
               "truth": 2,
-              "predicted": 2
+              "predicted": 1
             },
             {
               "id": "holdout-0036:fever_present",
@@ -3248,7 +2578,7 @@
               "id": "holdout-0037:fever_present",
               "unit": "holdout-0037",
               "truth": 2,
-              "predicted": 2
+              "predicted": 1
             },
             {
               "id": "holdout-0038:fever_present",
@@ -3272,7 +2602,7 @@
               "id": "holdout-0041:fever_present",
               "unit": "holdout-0041",
               "truth": 1,
-              "predicted": 2
+              "predicted": 1
             },
             {
               "id": "holdout-0042:fever_present",
@@ -3437,7 +2767,677 @@
         "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
       },
       "weights": {
-        "path": "models/encoder/fever_present/arm_b_finetune/weights/fold4.encoder.pt",
+        "path": null,
+        "committed": false,
+        "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
+      }
+    },
+    {
+      "fold": 4,
+      "n_parameters": 124647939,
+      "n_trainable": 124647939,
+      "best_epoch": 3,
+      "val_macro_f1_by_epoch": [
+        0.9250116401468428,
+        0.9818469377501745,
+        0.9837042407415311
+      ],
+      "train_loss_by_epoch": [
+        0.252873974746163,
+        0.003014280366577441,
+        5.624221472535282e-05
+      ],
+      "steps_per_epoch": 313,
+      "warmup_steps": 94,
+      "validation": {
+        "n_examples": 2000,
+        "effective_n": 82,
+        "accuracy": 0.987,
+        "macro_f1": 0.9837042407415311,
+        "confusion": [
+          [
+            519,
+            0,
+            5
+          ],
+          [
+            0,
+            296,
+            8
+          ],
+          [
+            2,
+            11,
+            1159
+          ]
+        ],
+        "per_class_recall": {
+          "false": 0.9904580152671756,
+          "true": 0.9736842105263158,
+          "null": 0.9889078498293515
+        }
+      },
+      "decision_rule": {
+        "margin": 0.0,
+        "gated_class": 1,
+        "gated_class_name": "true",
+        "selected_on": "val",
+        "argmax_null_to_true_rate": 0.00938566552901024,
+        "null_to_true_rate": 0.00938566552901024,
+        "macro_f1": 0.9837042407415311,
+        "margins_considered": [
+          0.0,
+          0.05,
+          0.1,
+          0.15,
+          0.2,
+          0.25,
+          0.3,
+          0.35,
+          0.4,
+          0.45,
+          0.5,
+          0.55,
+          0.6,
+          0.65,
+          0.7,
+          0.75,
+          0.8,
+          0.85,
+          0.9
+        ]
+      },
+      "holdout": {
+        "path": "data/realistic/uti1_holdout.labels.tsv",
+        "n_submissions": 67,
+        "signals_scored": [
+          "fever_present"
+        ],
+        "signals_not_scored": [
+          "dysuria_present",
+          "urinary_frequency_present",
+          "nocturia_present",
+          "flank_pain_present",
+          "haematuria_present",
+          "recent_uti_present"
+        ],
+        "margin": 0.0,
+        "selected_nothing": "scored after the margin was selected on validation and after the synthetic test split was scored. This set selects nothing (README rule 2), and the call order is what makes that structural rather than a promise",
+        "resampling_unit": "the submission (README rule 5); there is no cluster structure here",
+        "bootstrap": {
+          "resamples": 2000,
+          "seed": 0,
+          "alpha": 0.05
+        },
+        "overall": {
+          "n_cells": 67,
+          "n_submissions": 67,
+          "confusion": [
+            [
+              8,
+              0,
+              1
+            ],
+            [
+              1,
+              3,
+              5
+            ],
+            [
+              1,
+              8,
+              40
+            ]
+          ],
+          "accuracy": {
+            "point": 0.7611940298507462,
+            "low": 0.6567164179104478,
+            "high": 0.8656716417910447,
+            "effective_n": 67,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.6614035087719299,
+          "worst_case_half_width": 0.1197238554748142
+        },
+        "decisive": {
+          "n_cells": 18,
+          "n_submissions": 18,
+          "confusion": [
+            [
+              8,
+              0,
+              1
+            ],
+            [
+              1,
+              3,
+              5
+            ],
+            [
+              0,
+              0,
+              0
+            ]
+          ],
+          "accuracy": {
+            "point": 0.6111111111111112,
+            "low": 0.3888888888888889,
+            "high": 0.8333333333333334,
+            "effective_n": 18,
+            "resamples_used": 2000
+          },
+          "macro_f1": 0.46296296296296297,
+          "worst_case_half_width": 0.2309839707249463
+        },
+        "by_signal": [
+          {
+            "signal": "fever_present",
+            "margin": 0.0,
+            "distribution": {
+              "false": 9,
+              "true": 9,
+              "null": 49,
+              "omitted": 0,
+              "decisive": 18
+            },
+            "all": {
+              "n_cells": 67,
+              "n_submissions": 67,
+              "confusion": [
+                [
+                  8,
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  3,
+                  5
+                ],
+                [
+                  1,
+                  8,
+                  40
+                ]
+              ],
+              "accuracy": {
+                "point": 0.7611940298507462,
+                "low": 0.6567164179104478,
+                "high": 0.8656716417910447,
+                "effective_n": 67,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.6614035087719299,
+              "worst_case_half_width": 0.1197238554748142
+            },
+            "decisive": {
+              "n_cells": 18,
+              "n_submissions": 18,
+              "confusion": [
+                [
+                  8,
+                  0,
+                  1
+                ],
+                [
+                  1,
+                  3,
+                  5
+                ],
+                [
+                  0,
+                  0,
+                  0
+                ]
+              ],
+              "accuracy": {
+                "point": 0.6111111111111112,
+                "low": 0.3888888888888889,
+                "high": 0.8333333333333334,
+                "effective_n": 18,
+                "resamples_used": 2000
+              },
+              "macro_f1": 0.46296296296296297,
+              "worst_case_half_width": 0.2309839707249463
+            },
+            "per_class": {
+              "false": {
+                "support": 9,
+                "predicted": 10,
+                "recall": 0.8888888888888888,
+                "precision": 0.8
+              },
+              "true": {
+                "support": 9,
+                "predicted": 11,
+                "recall": 0.3333333333333333,
+                "precision": 0.2727272727272727
+              },
+              "null": {
+                "support": 49,
+                "predicted": 46,
+                "recall": 0.8163265306122449,
+                "precision": 0.8695652173913043
+              }
+            },
+            "null_to_true": {
+              "count": 8,
+              "null_support": 49
+            }
+          }
+        ],
+        "cells": {
+          "fever_present": [
+            {
+              "id": "holdout-0001:fever_present",
+              "unit": "holdout-0001",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0002:fever_present",
+              "unit": "holdout-0002",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0003:fever_present",
+              "unit": "holdout-0003",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0004:fever_present",
+              "unit": "holdout-0004",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0005:fever_present",
+              "unit": "holdout-0005",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0006:fever_present",
+              "unit": "holdout-0006",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0007:fever_present",
+              "unit": "holdout-0007",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0008:fever_present",
+              "unit": "holdout-0008",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0009:fever_present",
+              "unit": "holdout-0009",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0010:fever_present",
+              "unit": "holdout-0010",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0011:fever_present",
+              "unit": "holdout-0011",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0012:fever_present",
+              "unit": "holdout-0012",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0013:fever_present",
+              "unit": "holdout-0013",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0014:fever_present",
+              "unit": "holdout-0014",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0015:fever_present",
+              "unit": "holdout-0015",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0016:fever_present",
+              "unit": "holdout-0016",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0017:fever_present",
+              "unit": "holdout-0017",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0018:fever_present",
+              "unit": "holdout-0018",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0019:fever_present",
+              "unit": "holdout-0019",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0020:fever_present",
+              "unit": "holdout-0020",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0021:fever_present",
+              "unit": "holdout-0021",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0022:fever_present",
+              "unit": "holdout-0022",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0023:fever_present",
+              "unit": "holdout-0023",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0024:fever_present",
+              "unit": "holdout-0024",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0025:fever_present",
+              "unit": "holdout-0025",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0026:fever_present",
+              "unit": "holdout-0026",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0027:fever_present",
+              "unit": "holdout-0027",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0028:fever_present",
+              "unit": "holdout-0028",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0029:fever_present",
+              "unit": "holdout-0029",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0030:fever_present",
+              "unit": "holdout-0030",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0031:fever_present",
+              "unit": "holdout-0031",
+              "truth": 1,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0032:fever_present",
+              "unit": "holdout-0032",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0033:fever_present",
+              "unit": "holdout-0033",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0034:fever_present",
+              "unit": "holdout-0034",
+              "truth": 2,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0035:fever_present",
+              "unit": "holdout-0035",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0036:fever_present",
+              "unit": "holdout-0036",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0037:fever_present",
+              "unit": "holdout-0037",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0038:fever_present",
+              "unit": "holdout-0038",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0039:fever_present",
+              "unit": "holdout-0039",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0040:fever_present",
+              "unit": "holdout-0040",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0041:fever_present",
+              "unit": "holdout-0041",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0042:fever_present",
+              "unit": "holdout-0042",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0043:fever_present",
+              "unit": "holdout-0043",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0044:fever_present",
+              "unit": "holdout-0044",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0045:fever_present",
+              "unit": "holdout-0045",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0046:fever_present",
+              "unit": "holdout-0046",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0047:fever_present",
+              "unit": "holdout-0047",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0048:fever_present",
+              "unit": "holdout-0048",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0049:fever_present",
+              "unit": "holdout-0049",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0050:fever_present",
+              "unit": "holdout-0050",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0051:fever_present",
+              "unit": "holdout-0051",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0052:fever_present",
+              "unit": "holdout-0052",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0053:fever_present",
+              "unit": "holdout-0053",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0054:fever_present",
+              "unit": "holdout-0054",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0055:fever_present",
+              "unit": "holdout-0055",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0056:fever_present",
+              "unit": "holdout-0056",
+              "truth": 1,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0057:fever_present",
+              "unit": "holdout-0057",
+              "truth": 2,
+              "predicted": 1
+            },
+            {
+              "id": "holdout-0058:fever_present",
+              "unit": "holdout-0058",
+              "truth": 0,
+              "predicted": 0
+            },
+            {
+              "id": "holdout-0059:fever_present",
+              "unit": "holdout-0059",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0060:fever_present",
+              "unit": "holdout-0060",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0061:fever_present",
+              "unit": "holdout-0061",
+              "truth": 1,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0062:fever_present",
+              "unit": "holdout-0062",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0063:fever_present",
+              "unit": "holdout-0063",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0064:fever_present",
+              "unit": "holdout-0064",
+              "truth": 0,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0065:fever_present",
+              "unit": "holdout-0065",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0066:fever_present",
+              "unit": "holdout-0066",
+              "truth": 2,
+              "predicted": 2
+            },
+            {
+              "id": "holdout-0067:fever_present",
+              "unit": "holdout-0067",
+              "truth": 0,
+              "predicted": 0
+            }
+          ]
+        },
+        "provenance": "**The labels were proposed by Claude and reviewed by the maintainer.** They were not produced independently of the models being scored. This is a real limitation and it belongs in every report that uses this set: the labeller and the model share an architecture and could in principle share a blind spot, which would inflate the score in a way no amount of resampling would reveal.",
+        "voice": "67 submissions written by one person share that person's voice and that person's idea of what a patient sounds like. Real submissions vary by age, first language, literacy, how ill the person feels while typing, and what they think a GP wants to hear. This is a large improvement on recombinations and it is still not a random sample of patients.",
+        "power": "This set cannot rank two models. Every figure below carries its own `n` and a worst-case half-width -- the widest a 95% interval on a proportion can be at that `n` -- and on the per-signal decisive slices that is +/-20 points or worse. It is a validity instrument: it can show that a number in the nineties on recombinations is really 55% on real text, which is the question that matters most and which nothing else here answers. It cannot separate two arms, and a report that uses it to is misreading it."
+      },
+      "weights": {
+        "path": null,
         "committed": false,
         "note": "~440MB of fine-tuned encoder. Regenerable in about two minutes from the pinned dataset seed and base-model revision recorded above, which is why durable storage is deferred rather than punted"
       }
@@ -3447,18 +3447,12 @@
     "objective": "maximise macro-F1 subject to a null -> true rate no worse than argmax's (DD9)",
     "selected_on": "each fold's own validation split, never test and never pooled",
     "by_fold": {
-      "0": 0.55,
-      "1": 0.55,
+      "0": 0.25,
+      "1": 0.4,
       "2": 0.0,
-      "3": 0.45,
-      "4": 0.1
+      "3": 0.8,
+      "4": 0.0
     }
   },
-  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it.",
-  "negative_control": {
-    "shuffle_seed": 7,
-    "permuted": "training labels only; validation and test left unpermuted",
-    "run_name": "arm_b_finetune__shuffled",
-    "passing_looks_like": "near-zero training loss (the model memorises the permutation) together with chance performance on the unpermuted test split. Either one alone is not the control passing; the per-fold train_loss_by_epoch in this sidecar is where the first half is read"
-  }
+  "encoder_contract": "This head alone cannot satisfy EncoderOutput.validate_against: data/uti1.json declares seven send_to_encoder signals and the contract requires an exact key match. Out of scope for this ticket, and recorded so nobody plans around it."
 }
