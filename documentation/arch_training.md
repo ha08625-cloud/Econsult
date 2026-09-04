@@ -1929,3 +1929,105 @@ before it trains**.
 `planned_updates/urinary_frequency_nocturia_labelling.md` is the provisional
 plan, and it is provisional: two unresolved labelling decisions and a diagnostic
 step that could retire most of it.
+
+### 12.10 Lexical variant expansion — built, not measured
+
+`scripts/synthetic_data/expand.py` rewrites a finished tree with directional,
+scoped, literal substitutions, so that the *choice of word* stops carrying the
+label. `documentation/encoder_plans/lexical_variant_expansion_implementation.md`
+is the plan of record; `reports/synthetic_data/2026-09-03-token-label-association.md`
+(the skew) and `reports/encoder_training/2026-09-03-paraphrase-flip-diagnostic.md`
+(the flip rate, and the decision to proceed on a Judgement reading) are the two
+gates it was built through. **Nothing has been trained on an expanded tree yet**,
+so this subsection has no result to quote.
+
+**The fault it targets is a frequency skew, not an exclusive token.** Section 8
+records two cases where surface form separated a label class perfectly, both
+caught by hand and neither catchable by any check we have. The exclusive-token
+shape is now fixed in the libraries; the skew shape is not. `fever` sits on 41 of
+45 `fever_null_historical` lines and on 0 of 50 `fever_null_attribution` ones;
+`temperature` sits on a quarter of the decisive lines and on no historical line
+at all. A model can learn "temperature implies decisive, fever implies displaced"
+from that as easily as from a token that appears in exactly one file.
+
+**It is post-processing over the JSONL, for 12.6's reasons plus one of its own.**
+`manifest.cluster_key` is `cluster_id or normalise(text)`, so editing a library's
+text moves an untagged line's cluster key and therefore its split. A
+library-level expander would silently repartition the data and the two arms of
+the experiment would stop being comparable. Touching no library file means no
+cluster key moves, no split moves, the generator stays byte-identical, the golden
+digest holds, the decisive draw is untouched — and every expanded example is
+**paired by `example_id`** with its clean original, which is what makes the
+decision metric a paired statistic over `--test-dir` rather than a bespoke
+corpus. The cost is that a rule cannot be scoped to a *library*: the example text
+carries no offsets back to its source fragments, which is what puts aspect and
+opener rewrites (Tier C) out of scope.
+
+**It adds no ideas and no effective sample size.** The expanded tree holds
+*exactly* as many examples as the clean one. No report may quote an example count
+from it as growth. What it buys is the removal of a measured fault, and that is
+the only claim available.
+
+**The label-safety question is the whole of the risk, and it is bounded by three
+layers**, all of which run when the rule file *loads*:
+
+1. a **declared invariant** on every rule — human-written, human-reviewed, and
+   the residual risk;
+2. **structural-token invariance** — the sequence of `noise.STRUCTURAL_FROZEN`
+   tokens must survive the swap, compared after contraction normalisation so
+   `haven't → have not` is not falsely flagged;
+3. **signal-lexicon invariance** — the swap may not change whether the phrase
+   reads as its own signal, and may not introduce another signal's language that
+   the source phrase did not have. This is the per-rule form of "re-run the lint
+   over the expanded tree": cheaper, and precise about which rule is at fault.
+
+`STRUCTURAL_FROZEN` is imported from `noise.py` rather than copied — two lists in
+two modules drifting apart is the outcome that import exists to prevent.
+
+**Rules are directional, and both directions are usually needed.** Flattening the
+fever table needs `fever → temperature` *and* `temperature → fever`, because
+`null_historical` over-uses the first exactly as `fever_true` over-uses the
+second. Each direction is a separate rule with its own invariant and its own
+review; neither implies the other, and a symmetric synonym bag turns "I checked
+my temperature and it was high" into "I checked my fever and it was high".
+Matching is **whole-word only**, because section 8 already records why: "hot"
+appears inside `lithotripsy`, `photos` and `shot`.
+
+**The pass cannot be applied to one label class and not another.** Rules are
+scoped to a signal and applied to whole example text with no sight of the label,
+so the trap of a partial pass manufacturing exactly the shortcut it exists to
+remove is closed by construction rather than by a scope check. The realised
+substitution density is measured per label and per label mode anyway, and a gap
+there is telemetry about the *libraries* — a class whose lines contain fewer
+matchable phrases — rather than evidence of a label-aware pass.
+
+**Two rule kinds are deliberately out of reach**, both found while reading the
+Task 2 result, and both are cases where a plausible rule passes layers 2 and 3
+and only the human-written invariant stands:
+
+* **Numbers.** No lexicon holds a numeric term and `STRUCTURAL_FROZEN` holds no
+  digits, so `38.4 → 37.6` passes both mechanical layers while walking a
+  `fever_true` line into saying the temperature was normal — the fever libraries
+  encode the ~38.0 threshold in their values. The rule format is literal
+  `find`/`replace` strings and **cannot express a numeric range at all**, which
+  is the point: numeric variation needs a per-label-class safe band and a fourth
+  validation layer, and must arrive as an explicit decision.
+* **Certainty adjectives.** `sure`, `certain`, `positive` and `definitely` are in
+  no lexicon and not in `STRUCTURAL_FROZEN`, whose modality block stops at
+  `probably`/`possibly`. So `"I'm pretty sure" → "I'm pretty certain"` passes both
+  layers while moving the axis that *defines* `fever_null_hedged` against
+  `fever_true`. Hedge and certainty rewriting is Tier C and out of scope; the
+  separate small fix worth making regardless is adding those adjectives to
+  `STRUCTURAL_FROZEN`, which is documented to protect modality and currently does
+  not.
+
+**Expansion and the noise pass do not run together.** Both multiply surface
+forms, so running them in one experiment makes the result unattributable, and
+`expand.py` refuses a tree carrying a `noise` block. If they are ever combined
+the order is **expand then noise**: paraphrase first, damage the final surface
+second.
+
+**Where the files live.** Rule files are `data/expansion/<signal>.rules.json`,
+deliberately outside `data/synthetic/`, which a test guards as holding nothing
+but the fragment libraries and the manifest. `data/expansion/README.md` is what a
+rule author reads.
