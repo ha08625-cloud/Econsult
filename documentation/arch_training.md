@@ -2021,6 +2021,28 @@ and only the human-written invariant stands:
   `STRUCTURAL_FROZEN`, which is documented to protect modality and currently does
   not.
 
+**A rule can be individually harmless and still manufacture a hit**, which is
+what `--dry-run-lint` exists to catch. Layer 3 asks whether a *phrase* changes
+signal; a lexicon match needing an anchor and a modifier can be completed by a
+swap that carries neither on its own, so `playing up → aching` passes the load
+check and then turns "my back has been playing up" — a filler line silent on
+flank pain — into flank-pain language. The mode loads the committed libraries
+(`check_cells=False`, the lint's own posture), applies every rule
+**unconditionally** rather than at `--rate` because the worst case is what a dry
+run wants, and diffs `lint.filler_lexicon_hits` and `lint.cross_signal_cells`
+against the same two over the originals. Each rule is run alone and then the
+whole file is run at once, so a hit that only appears when two rules meet is
+attributed to the combination rather than to either rule. A **new** hit of
+either kind is a hard failure — including a cross-signal one, which the ordinary
+report only reports, because an existing hit is a labelling decision somebody
+made and a new one was manufactured by a rule. **Removed** hits are printed and
+are not failures: a rule that makes an existing hit disappear has changed what
+that library says and wants reading. The mode reads the libraries and writes
+nothing. It lives in `expand.py` rather than `lint.py` because the lint's
+contract is that it reports on the tree *as committed*; only fragments a rewrite
+actually changes are passed to the reports, which is exact (an untouched line
+produces untouched hits) and keeps the whole run to a couple of seconds.
+
 **Expansion and the noise pass do not run together.** Both multiply surface
 forms, so running them in one experiment makes the result unattributable, and
 `expand.py` refuses a tree carrying a `noise` block. If they are ever combined

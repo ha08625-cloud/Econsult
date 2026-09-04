@@ -99,6 +99,35 @@ Tier C (aspect and opener rewrites) would need a rule scoped to a *library*, and
 the example text carries no offsets back to its source fragments — so this
 architecture cannot express it, and `expand.py` rejects the tier by name.
 
+## Checking a rule file against the libraries before you run it
+
+```
+python -m scripts.synthetic_data.expand --dry-run-lint [--signal fever_present]
+```
+
+The two mechanical layers above look at a rule's `find` and `replace` in
+isolation. This mode looks at what the rule does to the **committed library
+text**, which is where a rule that is individually harmless can still be wrong:
+a lexicon match needing an anchor and a modifier can be completed by a swap that
+carries neither on its own, so `playing up → aching` passes both layers and then
+turns "my back has been playing up" into flank-pain language.
+
+It applies every rule to every library line **unconditionally** — not at
+`--rate`, because the worst case is the case worth checking — once per rule and
+once with the whole file at play, and diffs the filler-purity and cross-signal
+reports against the same two over the originals.
+
+* A **new** hit of either kind fails the run (exit code 1) and names the rule,
+  the library, the signal and the line before and after. It fails even for the
+  cross-signal report, which ordinarily only reports: an existing hit is a
+  labelling decision somebody made, a new one was manufactured by a rule.
+* A **removed** hit is printed and is not a failure — but a rule that makes an
+  existing hit disappear has changed what that library says, so read it.
+
+The mode reads the libraries and writes nothing: no tree is generated and none
+is expanded. Without `--signal` it checks every `*.rules.json` in this
+directory.
+
 ## Running the pass
 
 ```
