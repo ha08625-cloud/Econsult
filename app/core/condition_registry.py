@@ -30,6 +30,14 @@ from app.core.errors import ConditionNotFound
 
 logger = logging.getLogger(__name__)
 
+#: Immediate subdirectories of ``data/`` that hold offline encoder-training
+#: material rather than clinical rulesets, and which the registry therefore does
+#: not walk. ``synthetic/`` is the fragment libraries and their manifest;
+#: ``expansion/`` is the lexical variant expansion rule files, which are
+#: deliberately outside ``synthetic/`` because a test guards that directory as
+#: holding nothing but libraries and the manifest.
+OFFLINE_DATA_DIRS = frozenset({"synthetic", "expansion"})
+
 # Limits for search_tags validation. Named constants so they are easy to adjust.
 SEARCH_TAGS_MAX_COUNT = 20
 SEARCH_TAGS_MAX_TAG_LENGTH = 60
@@ -56,12 +64,12 @@ class ConditionRegistry:
 
         json_paths = []
         for root, dirs, filenames in os.walk(data_dir):
-            # data/synthetic/ holds offline encoder training data (fragment
-            # libraries, manifest.json), not clinical rulesets. It is never
-            # imported by the app; exclude it so its manifest.json isn't
-            # mistaken for a ruleset. See documentation/architecture.md 3.15.
+            # Offline encoder-training data, not clinical rulesets, and never
+            # imported by the app: excluded so that their JSON is not mistaken
+            # for a ruleset. See documentation/architecture.md 3.15 and
+            # OFFLINE_DATA_DIRS.
             if root == data_dir:
-                dirs[:] = [d for d in dirs if d != "synthetic"]
+                dirs[:] = [d for d in dirs if d not in OFFLINE_DATA_DIRS]
             json_paths.extend(
                 os.path.join(root, filename) for filename in filenames if filename.endswith(".json")
             )
