@@ -155,7 +155,10 @@ the result:
 **Ran 2026-09-04. Flip rate 15.4%, 95% interval [2.6%, 33.3%], 6 of 39 pairs.**
 The gate reads **Judgement** — neither the `Stop` row (point < 10% *and* upper
 bound < 20%) nor the `Proceed` row (point >= 25%). What follows is the written
-addendum the Judgement row requires.
+addendum the Judgement row requires, and it ends in a decision: **the ticket
+proceeds to Task 3.** The reasoning is under *The decision* below; the sections
+before it are the evidence that decision was made on, including the argument
+against proceeding, which is kept rather than tidied away.
 
 ```
 model:  models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt
@@ -250,27 +253,106 @@ Recorded against the two secondary readings this document pre-registered:
    rewriting `fever_null_historical` so it does not lean on "fever" for 41 of
    its 45 lines — over building the pass.
 
-**Recommendation: do not build Task 3 as specified.** 15.4% is a real number and
-the ticket's premise is not refuted; but the evidence that *this pass* addresses
-*this fault* is one pair in thirty-nine, and two of the six flips are of a kind
-the pass was pre-registered as not fixing. Building `expand.py`, a rule format,
-a parallel tree and a split-risk surface on that is not proportionate.
+### What this gate can and cannot weigh
 
-The proportionate next steps, in order of cost:
+Both readings above are about the *narrow* fault: whether swapping a content
+word changes the answer. That is what this instrument measures, on thirteen
+submissions of fever vocabulary, and it is not the whole of the ticket's
+premise.
 
-* **Do the library edit.** Reduce `fever`'s 91% occupancy of
-  `fever_null_historical`. It costs no post-processing pass, no parallel tree,
-  no rule format and no split risk, and it targets the skew Task 1 actually
-  measured.
-* **Then re-run this diagnostic** against a head trained on the edited tree.
-  The command and the set are unchanged, so the re-run is one GPU hour, and it
-  measures whether the edit moved anything.
-* **Widen the paraphrase set before trusting any rate to the point.** Thirteen
-  submissions put the interval at +/-25 points and let one sentence carry a
-  direction. This is the cheapest way to make every future reading sharper.
+The premise is broader: a few hundred fragments recombined thousands of times
+invite the model to fit the libraries' surface regularities rather than their
+meaning. Word-label association is one instance. Repeated n-grams, a repeated
+numeric value, a repeated hedge construction and a repeated sentence shape are
+others, and **none of them is visible to this diagnostic.** A reading of the
+15.4% that treats it as a verdict on the premise is over-reading it in the same
+way the power note warns against for the rate itself.
 
-This is a recommendation, not the decision. The gate's Judgement row puts the
-call with the maintainer, and the numbers above are what it should be made on.
+**One correction to this document's own argument.** The `stop` section above
+cites the A2 arm — 4.5x the recombinations of the same clusters for -0.8 to
++1.3 points — as evidence that surface multiplication buys little. A2 varied
+*volume*: more draws from the same fragments, which adds no ideas and no
+effective sample size, and its null result is sound on that question.
+Expansion varies the *surface distribution* of those fragments, which is a
+different intervention. The A2 evidence transfers less cleanly than the
+sentence implies, and it should not be read as a measured prior against this
+pass.
+
+### The decision
+
+**Proceed to Task 3.** Recorded 2026-09-04 by the maintainer, against the
+Judgement row.
+
+The reasoning, so a later reader does not have to reconstruct it:
+
+* 15.4% is not a refutation, and this gate was always a cheap screen — its job
+  was to avoid spending GPU time on a dead premise, not to settle the question.
+  It came back "maybe", and "maybe" is what Task 6 exists to resolve.
+* **Task 6's diagnostic cell is the instrument this question deserves.** A
+  clean-trained model scored against the expanded test tree asks "does the
+  fault exist?" across the whole synthetic tree at cluster-level resampling,
+  rather than 39 pairs at effective n = 13. Deciding against building on the
+  weaker instrument, while the stronger one is already designed and costs about
+  forty minutes of GPU, is the wrong order to spend evidence in.
+* The machinery is reusable beyond synonym swaps. A deterministic, label-blind,
+  validated text-substitution pass with a rule format is infrastructure for
+  every surface-diversity question this project has, not a single-use fix for
+  the `fever`/`temperature` skew.
+* The system is pre-live and experimental. The cost of building and measuring
+  is bounded and known; the cost of a premise wrongly dismissed is not.
+
+The library edit (reducing `fever`'s 91% occupancy of `fever_null_historical`)
+and widening the paraphrase set both remain worth doing. They are no longer
+alternatives to this ticket — they are cheap, independent, and they make every
+future read-out sharper.
+
+### Two authoring hazards found while deciding, recorded before Task 5
+
+Neither blocks Task 3. Both are places where a plausible rule passes both
+mechanical layers of DD6 and only the human-written invariant stands, so they
+belong in the rule author's hands before the first rule is written.
+
+**1. Numeric variation crosses a clinical threshold, and nothing mechanical
+sees it.** Varying a temperature value looks like the safest possible rewrite
+and is not. `FEVER_LEXICON` (`scripts/synthetic_data/lint.py`) holds no numeric
+terms and `STRUCTURAL_FROZEN` (`scripts/synthetic_data/noise.py`) holds no
+digits, so for a rule `38.4 -> 37.6` DD6 layer 2 and layer 3 both pass
+unchanged. But the fever libraries already encode the ~38.0 threshold —
+
+```
+36.5, 36.8   in the normal-temperature lines
+38.2, 39.5   in the fever lines
+```
+
+— so a sweep across 37.6-41.0 walks a `fever_true` line into saying the
+patient's temperature was normal. That is §2's label-first invariant broken
+silently, by the one pass that edits text after the label is fixed.
+
+Numeric variation is therefore a **different rule kind**, not a Tier B literal
+swap: it needs a per-label-class safe band (`true`: 38.0-41.0; `false`:
+35.5-37.4) and a fourth validation layer asserting the band does not cross the
+threshold. Note also that Task 3's rule format is literal `find`/`replace`
+strings and **cannot express a numeric range at all**, so this is a deliberate
+scope addition rather than a rule anyone can author on day one. Task 3 should
+say so in `expand.py`'s docstring.
+
+**2. Certainty adjectives are unfrozen.** `sure`, `certain`, `positive` and
+`definitely` are in no signal lexicon and not in `STRUCTURAL_FROZEN`, whose
+modality block stops at `maybe`, `might`, `may`, `could`, `think`, `thought`,
+`feel`, `felt`, `seems`, `seemed`, `probably`, `possibly`. So
+`"I'm pretty sure" -> "I'm pretty certain"` passes both mechanical layers while
+moving the axis that *defines* `fever_null_hedged` against `fever_true`.
+
+Two consequences: hedge and certainty rewriting belongs in Tier C (out of scope
+for this pass), not Tier B; and `STRUCTURAL_FROZEN` should gain the certainty
+adjectives as a small standalone change, since the gap is a mismatch between
+what that list is documented to protect and what it actually holds. That fix is
+worth making whatever happens to this ticket.
+
+**Where the instinct is safe:** Tier A. Contraction and orthography pairs
+cannot change which word a token is, and they attack §8's recorded register
+fault — the lowercase library — which is nearer the n-gram concern than any
+Tier B swap.
 
 ### How it was run
 
