@@ -1,0 +1,349 @@
+{
+  "path": "data/realistic/uti1_paraphrases.tsv",
+  "n_submissions": 13,
+  "n_pairs": 39,
+  "signals_scored": [
+    "fever_present"
+  ],
+  "margin": 0.55,
+  "bootstrap": {
+    "resamples": 2000,
+    "seed": 0,
+    "alpha": 0.05
+  },
+  "resampling_unit": "the submission; a submission's variants are not independent",
+  "overall": {
+    "n_pairs": 39,
+    "n_submissions": 13,
+    "flip_rate": {
+      "point": 0.15384615384615385,
+      "low": 0.02564102564102566,
+      "high": 0.33333333333333337,
+      "effective_n": 13,
+      "resamples_used": 2000
+    },
+    "flips": 6,
+    "direction": {
+      "matrix": [
+        [
+          11,
+          1,
+          0
+        ],
+        [
+          1,
+          19,
+          1
+        ],
+        [
+          0,
+          3,
+          3
+        ]
+      ],
+      "rows": "the source's class",
+      "columns": "the variant's class",
+      "transitions": {
+        "null -> true": 3,
+        "false -> true": 1,
+        "true -> false": 1,
+        "true -> null": 1
+      }
+    }
+  },
+  "by_signal": [
+    {
+      "signal": "fever_present",
+      "margin": 0.55,
+      "n_pairs": 39,
+      "n_submissions": 13,
+      "flip_rate": {
+        "point": 0.15384615384615385,
+        "low": 0.02564102564102566,
+        "high": 0.33333333333333337,
+        "effective_n": 13,
+        "resamples_used": 2000
+      },
+      "flips": 6,
+      "direction": {
+        "matrix": [
+          [
+            11,
+            1,
+            0
+          ],
+          [
+            1,
+            19,
+            1
+          ],
+          [
+            0,
+            3,
+            3
+          ]
+        ],
+        "rows": "the source's class",
+        "columns": "the variant's class",
+        "transitions": {
+          "null -> true": 3,
+          "false -> true": 1,
+          "true -> false": 1,
+          "true -> null": 1
+        }
+      }
+    }
+  ],
+  "pairs": {
+    "fever_present": [
+      {
+        "id": "holdout-0004-v1:fever_present",
+        "unit": "holdout-0004",
+        "source": 2,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0004-v2:fever_present",
+        "unit": "holdout-0004",
+        "source": 2,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0004-v3:fever_present",
+        "unit": "holdout-0004",
+        "source": 2,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0006-v1:fever_present",
+        "unit": "holdout-0006",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0006-v2:fever_present",
+        "unit": "holdout-0006",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0006-v3:fever_present",
+        "unit": "holdout-0006",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0009-v1:fever_present",
+        "unit": "holdout-0009",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0009-v2:fever_present",
+        "unit": "holdout-0009",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0009-v3:fever_present",
+        "unit": "holdout-0009",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0013-v1:fever_present",
+        "unit": "holdout-0013",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0013-v2:fever_present",
+        "unit": "holdout-0013",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0013-v3:fever_present",
+        "unit": "holdout-0013",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0014-v1:fever_present",
+        "unit": "holdout-0014",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0014-v2:fever_present",
+        "unit": "holdout-0014",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0014-v3:fever_present",
+        "unit": "holdout-0014",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0017-v1:fever_present",
+        "unit": "holdout-0017",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0017-v2:fever_present",
+        "unit": "holdout-0017",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0017-v3:fever_present",
+        "unit": "holdout-0017",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0021-v1:fever_present",
+        "unit": "holdout-0021",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0021-v2:fever_present",
+        "unit": "holdout-0021",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0021-v3:fever_present",
+        "unit": "holdout-0021",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0024-v1:fever_present",
+        "unit": "holdout-0024",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0024-v2:fever_present",
+        "unit": "holdout-0024",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0024-v3:fever_present",
+        "unit": "holdout-0024",
+        "source": 1,
+        "variant": 2
+      },
+      {
+        "id": "holdout-0030-v1:fever_present",
+        "unit": "holdout-0030",
+        "source": 2,
+        "variant": 2
+      },
+      {
+        "id": "holdout-0030-v2:fever_present",
+        "unit": "holdout-0030",
+        "source": 2,
+        "variant": 2
+      },
+      {
+        "id": "holdout-0030-v3:fever_present",
+        "unit": "holdout-0030",
+        "source": 2,
+        "variant": 2
+      },
+      {
+        "id": "holdout-0031-v1:fever_present",
+        "unit": "holdout-0031",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0031-v2:fever_present",
+        "unit": "holdout-0031",
+        "source": 1,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0031-v3:fever_present",
+        "unit": "holdout-0031",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0038-v1:fever_present",
+        "unit": "holdout-0038",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0038-v2:fever_present",
+        "unit": "holdout-0038",
+        "source": 0,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0038-v3:fever_present",
+        "unit": "holdout-0038",
+        "source": 0,
+        "variant": 0
+      },
+      {
+        "id": "holdout-0041-v1:fever_present",
+        "unit": "holdout-0041",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0041-v2:fever_present",
+        "unit": "holdout-0041",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0041-v3:fever_present",
+        "unit": "holdout-0041",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0052-v1:fever_present",
+        "unit": "holdout-0052",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0052-v2:fever_present",
+        "unit": "holdout-0052",
+        "source": 1,
+        "variant": 1
+      },
+      {
+        "id": "holdout-0052-v3:fever_present",
+        "unit": "holdout-0052",
+        "source": 1,
+        "variant": 1
+      }
+    ]
+  },
+  "provenance": "**The paraphrases were written by Claude and reviewed by the maintainer.** They are not an independent sample of how a different patient would have phrased the same complaint: they are one model's idea of which words are interchangeable, scored against a head built by the same architecture. A flip found here is real -- the two texts make the same claim and the head answered differently. A flip *not* found here is weaker evidence, because the variants may simply not have moved the vocabulary the head is actually reading.",
+  "selects_nothing": "This diagnostic reads the real submissions and scores no label: a flip is a disagreement between two predictions, so `uti1_holdout.labels.tsv` is never opened. It therefore costs the holdout nothing as a descriptive measurement (plan DD8). It would cost the holdout its validity the moment a flip rate were used to choose between two arms, and nothing here does that: the arm comparison in Task 6 runs on the synthetic tree.",
+  "power": "The resampling unit is the submission, not the pair: one submission's variants are rewrites of the same sentence and are not independent of one another. So the effective n is the number of submissions, not the number of pairs, and at a dozen submissions a 95% interval on a proportion is worth roughly +/-25 points at worst. This can separate 'flips are common' from 'flips are rare'. It cannot support a precise rate, and a report that quotes one to the point is over-reading it.",
+  "model": {
+    "path": "models/encoder/fever_present/arm_b_finetune/weights/fold0.encoder.pt",
+    "arm": "arm_b_finetune",
+    "fold": 0,
+    "base_model": "roberta-base",
+    "revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+    "pooling": "mean",
+    "max_seq_len": 256
+  },
+  "decision_rule": "models/encoder/fever_present/arm_b_finetune/fold0.decision.json (margin 0.55, selected on val)",
+  "device": "cuda"
+}

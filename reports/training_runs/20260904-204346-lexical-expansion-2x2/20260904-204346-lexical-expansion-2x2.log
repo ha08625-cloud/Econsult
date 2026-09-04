@@ -1,0 +1,559 @@
+
+=== step 1/9: python -u -m scripts.encoder_training smoke-cuda ===
+device: cuda
+torch_version: 2.13.0+cu130
+torch_cuda_version: 13.0
+cuda_available: True
+deterministic_env: :4096:8
+device_name: NVIDIA GeForce RTX 5070
+compute_capability: [12, 0]
+capability_matches_expected: True
+wheel_covers_blackwell: True
+kernel_launch_ok: True
+
+=== step 2/9: python -u -m scripts.encoder_training generate-folds --folds 5 --signal fever_present --out-dir data/synthetic/generated/lexical/clean ===
+wrote 10000 examples to data/synthetic/generated/lexical/clean/fever_present.fold0.train.jsonl (true=1493, false=2471, null=6036, rejections=80); stats at data/synthetic/generated/lexical/clean/fever_present.fold0.train.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold0.val.jsonl (true=285, false=524, null=1191, rejections=46); stats at data/synthetic/generated/lexical/clean/fever_present.fold0.val.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold0.test.jsonl (true=303, false=488, null=1209, rejections=49); stats at data/synthetic/generated/lexical/clean/fever_present.fold0.test.jsonl.stats.json
+wrote 10000 examples to data/synthetic/generated/lexical/clean/fever_present.fold1.train.jsonl (true=1518, false=2444, null=6038, rejections=102); stats at data/synthetic/generated/lexical/clean/fever_present.fold1.train.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold1.val.jsonl (true=316, false=509, null=1175, rejections=27); stats at data/synthetic/generated/lexical/clean/fever_present.fold1.val.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold1.test.jsonl (true=307, false=491, null=1202, rejections=53); stats at data/synthetic/generated/lexical/clean/fever_present.fold1.test.jsonl.stats.json
+wrote 10000 examples to data/synthetic/generated/lexical/clean/fever_present.fold2.train.jsonl (true=1520, false=2486, null=5994, rejections=115); stats at data/synthetic/generated/lexical/clean/fever_present.fold2.train.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold2.val.jsonl (true=318, false=514, null=1168, rejections=43); stats at data/synthetic/generated/lexical/clean/fever_present.fold2.val.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold2.test.jsonl (true=301, false=491, null=1208, rejections=25); stats at data/synthetic/generated/lexical/clean/fever_present.fold2.test.jsonl.stats.json
+wrote 10000 examples to data/synthetic/generated/lexical/clean/fever_present.fold3.train.jsonl (true=1536, false=2456, null=6008, rejections=90); stats at data/synthetic/generated/lexical/clean/fever_present.fold3.train.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold3.val.jsonl (true=299, false=502, null=1199, rejections=38); stats at data/synthetic/generated/lexical/clean/fever_present.fold3.val.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold3.test.jsonl (true=280, false=505, null=1215, rejections=40); stats at data/synthetic/generated/lexical/clean/fever_present.fold3.test.jsonl.stats.json
+wrote 10000 examples to data/synthetic/generated/lexical/clean/fever_present.fold4.train.jsonl (true=1520, false=2569, null=5911, rejections=105); stats at data/synthetic/generated/lexical/clean/fever_present.fold4.train.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold4.val.jsonl (true=304, false=524, null=1172, rejections=40); stats at data/synthetic/generated/lexical/clean/fever_present.fold4.val.jsonl.stats.json
+wrote 2000 examples to data/synthetic/generated/lexical/clean/fever_present.fold4.test.jsonl (true=290, false=504, null=1206, rejections=36); stats at data/synthetic/generated/lexical/clean/fever_present.fold4.test.jsonl.stats.json
+wrote 15 datasets to data/synthetic/generated/lexical/clean
+
+=== step 3/9: python -u -m scripts.synthetic_data.expand --in-dir data/synthetic/generated/lexical/clean --out-dir data/synthetic/generated/lexical/expanded --rate 0.4 --clean-share 0.25 --seed 42 --force ===
+wrote 70000 examples to data/synthetic/generated/lexical/expanded (substitutions/100 words=1.375, largest by-label gap=0.3016, changed examples=27274 (0.3896))
+
+=== step 4/9: python -u -m scripts.synthetic_data.expand --dry-run-lint --signal fever_present ===
+Rule dry run against the library lint
+=====================================
+manifest: data/synthetic/manifest.json
+signals:  fever_present
+rules:    36, applied unconditionally to 3506 library lines
+lines any rule rewrites: 1968
+
+INTRODUCED hits: none.
+
+REMOVED hits: none.
+
+PASS: no rule manufactures a lexicon hit the committed libraries do not have.
+
+=== step 5/9: python -u -m scripts.encoder_training finetune --folds 5 --signal fever_present --data-dir data/synthetic/generated/lexical/clean --test-dir data/synthetic/generated/lexical/clean --report-dir reports/encoder_training/lexical/clean-trained-clean-test --models-dir models/encoder-lexical/clean-trained-clean-test --predictions models/encoder-lexical/clean-trained-clean-test.predictions.json --base-model roberta-base --determinism strict --no-weights --no-probe --no-baselines --no-control ===
+device: cuda
+torch_version: 2.13.0+cu130
+torch_cuda_version: 13.0
+cuda_available: True
+deterministic_env: :4096:8
+device_name: NVIDIA GeForce RTX 5070
+compute_capability: [12, 0]
+capability_matches_expected: True
+wheel_covers_blackwell: True
+kernel_launch_ok: True
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  60%|██████    | 119/197 [00:00<00:00, 1186.35it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1324.91it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+warning: --revision was not given; recording the resolved commit e2da8e2f811d1448a5b465c236feacd80ffbac7b. Pass it explicitly to make this run repeatable.
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 153/197 [00:00<00:00, 1528.28it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1589.68it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 94.4% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.55
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 152/197 [00:00<00:00, 1499.98it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1763.89it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 72.2% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.55
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▉  | 156/197 [00:00<00:00, 1548.00it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1752.22it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 88.9% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 154/197 [00:00<00:00, 1536.99it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1741.06it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 77.8% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.45
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▊  | 155/197 [00:00<00:00, 1541.54it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1742.74it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 50.0% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.1
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/metadata.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold0.head.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold0.decision.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold1.head.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold1.decision.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold2.head.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold2.decision.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold3.head.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold3.decision.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold4.head.json
+wrote models/encoder-lexical/clean-trained-clean-test/fever_present/arm_b_finetune/fold4.decision.json
+wrote reports/encoder_training/lexical/clean-trained-clean-test/fever_present.arm_b_finetune.json
+wrote reports/encoder_training/lexical/clean-trained-clean-test/fever_present.arm_b_finetune.md
+wrote models/encoder-lexical/clean-trained-clean-test.predictions.json
+
+=== step 6/9: python -u -m scripts.encoder_training finetune --folds 5 --signal fever_present --data-dir data/synthetic/generated/lexical/clean --test-dir data/synthetic/generated/lexical/expanded --report-dir reports/encoder_training/lexical/clean-trained-expanded-test --models-dir models/encoder-lexical/clean-trained-expanded-test --predictions models/encoder-lexical/clean-trained-expanded-test.predictions.json --base-model roberta-base --determinism strict --no-weights --no-probe --no-baselines --no-control ===
+device: cuda
+torch_version: 2.13.0+cu130
+torch_cuda_version: 13.0
+cuda_available: True
+deterministic_env: :4096:8
+device_name: NVIDIA GeForce RTX 5070
+compute_capability: [12, 0]
+capability_matches_expected: True
+wheel_covers_blackwell: True
+kernel_launch_ok: True
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  76%|███████▌  | 149/197 [00:00<00:00, 1481.37it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1797.53it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+warning: --revision was not given; recording the resolved commit e2da8e2f811d1448a5b465c236feacd80ffbac7b. Pass it explicitly to make this run repeatable.
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▎  | 145/197 [00:00<00:00, 1446.41it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1760.67it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 94.4% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.55
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 143/197 [00:00<00:00, 1426.39it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1763.86it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 72.2% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.55
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  75%|███████▍  | 147/197 [00:00<00:00, 1467.04it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1706.14it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 88.9% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 154/197 [00:00<00:00, 1539.39it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1716.19it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 77.8% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.45
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▉  | 156/197 [00:00<00:00, 1557.66it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1737.18it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 50.0% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.1
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/metadata.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold0.head.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold0.decision.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold1.head.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold1.decision.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold2.head.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold2.decision.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold3.head.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold3.decision.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold4.head.json
+wrote models/encoder-lexical/clean-trained-expanded-test/fever_present/arm_b_finetune/fold4.decision.json
+wrote reports/encoder_training/lexical/clean-trained-expanded-test/fever_present.arm_b_finetune.json
+wrote reports/encoder_training/lexical/clean-trained-expanded-test/fever_present.arm_b_finetune.md
+wrote models/encoder-lexical/clean-trained-expanded-test.predictions.json
+
+=== step 7/9: python -u -m scripts.encoder_training finetune --folds 5 --signal fever_present --data-dir data/synthetic/generated/lexical/expanded --test-dir data/synthetic/generated/lexical/clean --report-dir reports/encoder_training/lexical/expanded-trained-clean-test --models-dir models/encoder-lexical/expanded-trained-clean-test --predictions models/encoder-lexical/expanded-trained-clean-test.predictions.json --base-model roberta-base --determinism strict --no-weights --no-probe --no-baselines --no-control ===
+device: cuda
+torch_version: 2.13.0+cu130
+torch_cuda_version: 13.0
+cuda_available: True
+deterministic_env: :4096:8
+device_name: NVIDIA GeForce RTX 5070
+compute_capability: [12, 0]
+capability_matches_expected: True
+wheel_covers_blackwell: True
+kernel_launch_ok: True
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  74%|███████▍  | 146/197 [00:00<00:00, 1457.08it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1878.91it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+warning: --revision was not given; recording the resolved commit e2da8e2f811d1448a5b465c236feacd80ffbac7b. Pass it explicitly to make this run repeatable.
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▉  | 156/197 [00:00<00:00, 1557.95it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1791.65it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 66.7% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.25
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  77%|███████▋  | 152/197 [00:00<00:00, 1516.13it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1816.58it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 61.1% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.4
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  81%|████████  | 160/197 [00:00<00:00, 1595.32it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1755.55it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 83.3% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  81%|████████  | 160/197 [00:00<00:00, 1598.12it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1786.68it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 55.6% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.8
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  86%|████████▋ | 170/197 [00:00<00:00, 1692.23it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1776.35it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 61.1% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/metadata.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold0.head.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold0.decision.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold1.head.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold1.decision.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold2.head.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold2.decision.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold3.head.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold3.decision.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold4.head.json
+wrote models/encoder-lexical/expanded-trained-clean-test/fever_present/arm_b_finetune/fold4.decision.json
+wrote reports/encoder_training/lexical/expanded-trained-clean-test/fever_present.arm_b_finetune.json
+wrote reports/encoder_training/lexical/expanded-trained-clean-test/fever_present.arm_b_finetune.md
+wrote models/encoder-lexical/expanded-trained-clean-test.predictions.json
+
+=== step 8/9: python -u -m scripts.encoder_training finetune --folds 5 --signal fever_present --data-dir data/synthetic/generated/lexical/expanded --test-dir data/synthetic/generated/lexical/expanded --report-dir reports/encoder_training/lexical/expanded-trained-expanded-test --models-dir models/encoder-lexical/expanded-trained-expanded-test --predictions models/encoder-lexical/expanded-trained-expanded-test.predictions.json --base-model roberta-base --determinism strict --no-weights --no-probe --no-baselines --no-control ===
+device: cuda
+torch_version: 2.13.0+cu130
+torch_cuda_version: 13.0
+cuda_available: True
+deterministic_env: :4096:8
+device_name: NVIDIA GeForce RTX 5070
+compute_capability: [12, 0]
+capability_matches_expected: True
+wheel_covers_blackwell: True
+kernel_launch_ok: True
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  78%|███████▊  | 154/197 [00:00<00:00, 1536.82it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1814.32it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+warning: --revision was not given; recording the resolved commit e2da8e2f811d1448a5b465c236feacd80ffbac7b. Pass it explicitly to make this run repeatable.
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  73%|███████▎  | 144/197 [00:00<00:00, 1432.10it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1773.04it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 66.7% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.25
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  69%|██████▉   | 136/197 [00:00<00:00, 1350.33it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1823.72it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 61.1% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.4
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  79%|███████▊  | 155/197 [00:00<00:00, 1538.82it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1760.99it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 83.3% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  80%|███████▉  | 157/197 [00:00<00:00, 1566.21it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1770.67it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 55.6% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.8
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights:  83%|████████▎ | 163/197 [00:00<00:00, 1615.79it/s]Loading weights: 100%|██████████| 197/197 [00:00<00:00, 1797.24it/s]
+[transformers] [1mRobertaModel LOAD REPORT[0m from: roberta-base
+Key                       | Status     | 
+--------------------------+------------+-
+lm_head.layer_norm.bias   | UNEXPECTED | 
+lm_head.bias              | UNEXPECTED | 
+lm_head.dense.bias        | UNEXPECTED | 
+lm_head.layer_norm.weight | UNEXPECTED | 
+lm_head.dense.weight      | UNEXPECTED | 
+pooler.dense.weight       | MISSING    | 
+pooler.dense.bias         | MISSING    | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING:	those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+  holdout: fever_present decisive 61.1% (worst-case +/-23) on 18 cells of 67 real submissions, at margin 0.0
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/metadata.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold0.head.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold0.decision.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold1.head.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold1.decision.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold2.head.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold2.decision.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold3.head.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold3.decision.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold4.head.json
+wrote models/encoder-lexical/expanded-trained-expanded-test/fever_present/arm_b_finetune/fold4.decision.json
+wrote reports/encoder_training/lexical/expanded-trained-expanded-test/fever_present.arm_b_finetune.json
+wrote reports/encoder_training/lexical/expanded-trained-expanded-test/fever_present.arm_b_finetune.md
+wrote models/encoder-lexical/expanded-trained-expanded-test.predictions.json
+
+=== step 9/9: python -u -m scripts.encoder_training paired-flip-rate --signal fever_present --clean-dir data/synthetic/generated/lexical/clean --expanded-dir data/synthetic/generated/lexical/expanded --folds 5 --arm clean_trained models/encoder-lexical/clean-trained-clean-test.predictions.json models/encoder-lexical/clean-trained-expanded-test.predictions.json --arm expanded_trained models/encoder-lexical/expanded-trained-clean-test.predictions.json models/encoder-lexical/expanded-trained-expanded-test.predictions.json --guard-baseline reports/encoder_training/lexical/clean-trained-clean-test/fever_present.arm_b_finetune.json --guard-arm reports/encoder_training/lexical/expanded-trained-clean-test/fever_present.arm_b_finetune.json --guard-bound 0.02 --out reports/encoder_training/lexical/paired_flip_rate.json ===
+10000 paired examples across 5 folds' test splits; 3910 changed by the pass
+clean_trained: paired flips 1.9% [1.0%, 3.4%] of 3910 changed pairs over 417 clusters
+  3910/10000 examples were changed by the pass (39.1%); 6090 could not flip and are excluded
+  direction (clean -> expanded): null -> true x46, null -> false x13, true -> null x7, false -> true x3, true -> false x3, false -> null x2
+  false: 1.4% [0.5%, 2.7%] (15/1041) -- null -> false x9; false -> true x3; false -> null x2; true -> false x1
+  null_ambiguous: 2.8% [1.5%, 4.3%] (34/1231) -- null -> true x28; null -> false x4; true -> false x1; true -> null x1
+  null_structural: 0.0% [0.0%, 0.0%] (0/1067) -- no change
+  true: 4.4% [1.5%, 8.0%] (25/571) -- null -> true x18; true -> null x6; true -> false x1
+expanded_trained: paired flips 0.8% [0.3%, 1.9%] of 3910 changed pairs over 417 clusters
+  3910/10000 examples were changed by the pass (39.1%); 6090 could not flip and are excluded
+  direction (clean -> expanded): false -> null x11, null -> true x10, null -> false x6, false -> true x4, true -> false x1, true -> null x1
+  false: 1.8% [0.2%, 4.1%] (19/1041) -- false -> null x10; false -> true x4; null -> false x4; true -> false x1
+  null_ambiguous: 0.9% [0.3%, 1.7%] (11/1231) -- null -> true x7; null -> false x2; false -> null x1; true -> null x1
+  null_structural: 0.0% [0.0%, 0.0%] (0/1067) -- no change
+  true: 0.5% [0.0%, 1.4%] (3/571) -- null -> true x3
+guard: decisive-cell accuracy on the clean test tree, arm_b_finetune
+  baseline 0.9329 -> arm 0.9449; drop -0.0120 against a bound of 0.0200
+  HELD
+note: The clean synthetic test set is drawn from the same libraries under the same vocabulary as the training split, so it cannot contain the failure this pass targets. The pre-registered expectation is that nothing moves on it. A large gain there is a warning -- it means a new shortcut was manufactured -- not a result.
+wrote reports/encoder_training/lexical/paired_flip_rate.json
+
+=== run succeeded ===
