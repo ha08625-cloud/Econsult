@@ -10,6 +10,8 @@ trainings, `roberta-base`, five folds, `--rate 0.4 --clean-share 0.25`
 `lexical/paired_flip_rate.json` and the four
 `lexical/*/fever_present.arm_b_finetune.json`; where this document and one of
 those disagree, the JSON is right.
+`2026-09-04-lexical-variant-plain-english.md` is the same result in plain
+language, for a reader who has not read `arch_training.md`.
 
 ---
 
