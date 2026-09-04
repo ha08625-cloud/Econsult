@@ -105,11 +105,12 @@ def wait_for(predicate, timeout: float = 20.0) -> bool:
 def test_the_committed_catalogue_loads():
     entries = load_catalogue(DEFAULT_CATALOGUE_PATH)
     assert [entry.id for entry in entries] == [
-        # The two composites come first: they are the buttons that get pressed,
+        # The composites come first: they are the buttons that get pressed,
         # and everything below them is an escape hatch for when one of their
         # steps has to be repeated on its own.
         "decl-sweep-2x2",
         "decl-sweep-register",
+        "lexical-expansion-2x2",
         "smoke-cuda",
         "train-canary",
         "score-companions",
@@ -119,6 +120,134 @@ def test_the_committed_catalogue_loads():
         "decl-compare-2x2",
         "decl-compare-register",
     ]
+
+
+# ---------------------------------------------------------------------------
+# The lexical variant expansion composite (plan Task 6, DD12)
+# ---------------------------------------------------------------------------
+
+LEXICAL = "lexical-expansion-2x2"
+
+
+def _lexical() -> object:
+    return {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}[LEXICAL]
+
+
+def _value(step, flag: str) -> str | None:
+    return step[step.index(flag) + 1] if flag in step else None
+
+
+def _training_steps(entry):
+    return [step for step in entry.steps if "finetune" in step]
+
+
+def test_the_lexical_cells_point_at_exactly_the_two_trees_the_run_writes():
+    """The guard that matters, and the reason the entry is worth committing.
+
+    The four cells differ only in which of two trees ``--data-dir`` and
+    ``--test-dir`` name, and both are literals typed out cell by cell. A path
+    mistyped in one place and not another produces a run that trains for forty
+    minutes and then compares a tree against itself -- which does not fail, and
+    reads as "expansion changed nothing" in the report. Set equality here catches
+    it in under a second, before any GPU time.
+    """
+    entry = _lexical()
+    generated = {
+        _value(step, "--out-dir")
+        for step in entry.steps
+        if "generate-folds" in step or ("--in-dir" in step and "--out-dir" in step)
+    }
+    assert len(generated) == 2, generated
+
+    trained = _training_steps(entry)
+    assert len(trained) == 4, len(trained)
+    assert {_value(step, "--data-dir") for step in trained} == generated
+    assert {_value(step, "--test-dir") for step in trained} == generated
+    # And all four combinations, once each: three cells and a repeat is a 2x2
+    # with a hole in it, and the hole would be invisible in the report.
+    assert len({(_value(s, "--data-dir"), _value(s, "--test-dir")) for s in trained}) == 4
+
+
+def test_the_lexical_run_expands_the_tree_it_generated():
+    """``expand.py`` reads ``--in-dir`` and writes ``--out-dir``. Expanding some
+    other tree than the one just generated would give the two arms different
+    provenance, which is the one thing the post-processing architecture exists
+    to rule out."""
+    entry = _lexical()
+    generated = _value(next(step for step in entry.steps if "generate-folds" in step), "--out-dir")
+    expand = next(step for step in entry.steps if "--in-dir" in step)
+    assert _value(expand, "--in-dir") == generated
+    assert _value(expand, "--out-dir") != generated
+
+
+def test_the_lexical_run_starts_with_the_smoke_test():
+    """Ten seconds, and it fails immediately on a broken driver rather than
+    forty minutes in."""
+    assert _lexical().steps[0] == ("-m", "scripts.encoder_training", "smoke-cuda")
+
+
+def test_the_lexical_run_checks_the_rules_before_it_spends_any_gpu():
+    """``--dry-run-lint`` writes nothing and takes seconds, and it fails the run
+    if the rule file has drifted since it was validated. Putting a guard *inside*
+    the sequence is the point of having a sequence -- after the last training
+    step it would only tell you what the forty minutes had been spent on."""
+    entry = _lexical()
+    positions = [index for index, step in enumerate(entry.steps) if "--dry-run-lint" in step]
+    assert len(positions) == 1
+    assert positions[0] < min(index for index, step in enumerate(entry.steps) if "finetune" in step)
+
+
+def test_every_lexical_cell_writes_to_its_own_directories():
+    """Four cells sharing a report directory would overwrite each other's
+    ``fever_present.arm_b_finetune.json`` and leave one report where four
+    should be -- and the guard reads two of them by path."""
+    trained = _training_steps(_lexical())
+    for flag in ("--report-dir", "--models-dir", "--predictions"):
+        written = [_value(step, flag) for step in trained]
+        assert all(written), flag
+        assert len(set(written)) == len(trained), flag
+
+
+def test_the_paired_flip_step_reads_the_files_the_cells_wrote():
+    """The pairing is by path, and a path that names a cell which never ran is
+    the failure mode a composite is supposed to remove."""
+    entry = _lexical()
+    written = {_value(step, "--predictions") for step in _training_steps(entry)}
+    flip = next(step for step in entry.steps if "paired-flip-rate" in step)
+    read = {
+        element
+        for element in flip
+        if isinstance(element, str) and element.endswith(".predictions.json")
+    }
+    assert read == written
+    # Two arms, three tokens each: a flip rate is computed within an arm and
+    # never across two.
+    assert sum(1 for element in flip if element == "--arm") == 2
+
+
+def test_the_lexical_guard_is_scored_on_the_clean_test_tree_for_both_arms():
+    """DD7. The two arms are only comparable where they were scored on identical
+    text, which is the clean test tree; a guard read off the expanded-test cells
+    would compare two different test sets and mean nothing."""
+    entry = _lexical()
+    flip = next(step for step in entry.steps if "paired-flip-rate" in step)
+    clean_dir = _value(flip, "--clean-dir")
+    clean_test_report_dirs = {
+        _value(step, "--report-dir")
+        for step in _training_steps(entry)
+        if _value(step, "--test-dir") == clean_dir
+    }
+    assert len(clean_test_report_dirs) == 2
+
+    guards = {_value(flip, "--guard-baseline"), _value(flip, "--guard-arm")}
+    assert len(guards) == 2
+    for guard in guards:
+        assert any(guard.startswith(f"{directory}/") for directory in clean_test_report_dirs), guard
+
+    # The bound is a literal in the entry rather than a default picked up
+    # silently: a guard whose bound is invisible in the committed command is not
+    # pre-registered in any useful sense.
+    assert _value(flip, "--guard-bound")
 
 
 def test_every_declarative_cell_writes_to_its_own_directories():

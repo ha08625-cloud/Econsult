@@ -22,21 +22,39 @@ rewrite, and the tidying is exactly the register axis the diagnostic exists to
 probe.
 """
 
+import json
 from pathlib import Path
 
 import pytest
 
-from scripts.encoder_training.dataset import CLASS_FALSE, CLASS_NULL, CLASS_TRUE
+from scripts.encoder_training.dataset import (
+    CLASS_FALSE,
+    CLASS_NULL,
+    CLASS_TRUE,
+    STRUCTURAL_NULL_UNIT,
+    fold_dataset_path,
+    sidecar_path,
+)
 from scripts.encoder_training.flip import (
     DEFAULT_PARAPHRASE_PATH,
     FlipError,
     build_pairs,
+    build_tree_pairs,
+    decided_classes,
     describe_flips,
+    describe_guard,
+    describe_tree_flips,
     flip_rate,
     load_holdout_sources,
     load_paraphrases,
+    load_predictions,
+    pair_trees,
     score_flips,
+    score_guard,
+    score_tree_flips,
+    write_predictions,
 )
+from scripts.encoder_training.metrics import Prediction
 
 HEADER = "variant_id\tsubmission_id\tkind\ttext"
 
@@ -365,3 +383,364 @@ def test_the_decision_rule_is_looked_for_beside_the_head_artefacts():
     assert _default_decision_path(
         Path("models/encoder/fever_present/arm_b_finetune/weights/fold3.encoder.pt")
     ) == Path("models/encoder/fever_present/arm_b_finetune/fold3.decision.json")
+
+
+# ---------------------------------------------------------------------------
+# Task 6: the paired flip rate between two matched trees
+#
+# The three that carry the most weight here:
+#
+# ``test_unchanged_pairs_are_excluded_from_the_denominator`` is the statistic's
+# definition. Including the clean share would drag every arm's rate towards zero
+# by an amount that is a property of `--clean-share` and not of the model.
+#
+# ``test_the_resampling_unit_is_the_cluster`` is the power claim, and it is the
+# one `arch_training.md` section 10 exists to enforce: ten thousand examples over
+# a few hundred clusters is not ten thousand observations.
+#
+# ``test_a_prediction_file_missing_an_example_is_a_hard_error`` is what stops a
+# silently-partial pairing. Two cells scored on different examples do not have a
+# flip rate; they have an intersection, and an intersection is not a result.
+# ---------------------------------------------------------------------------
+
+FIXTURES = Path(__file__).parent / "fixtures" / "encoder_training"
+SIGNAL = "fever_present"
+
+
+def _write_tree(directory: Path, *, folds: int = 1, expand: bool = False) -> Path:
+    """The fixture trio under the fold-file convention, optionally 'expanded'.
+
+    ``expand`` rewrites the text of every *other* example and leaves the rest
+    byte-identical, which is the shape `expand.py` actually produces: a clean
+    share plus the examples holding no match site are untouched, and only the
+    remainder can flip.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    for fold_index in range(folds):
+        for split in ("train", "val", "test"):
+            source = FIXTURES / f"mini.fold0.{split}.jsonl"
+            target = fold_dataset_path(directory, SIGNAL, fold_index, split)
+            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            stats = json.loads(sidecar_path(source).read_text(encoding="utf-8"))
+            stats["folds"] = folds
+            stats["fold_index"] = fold_index
+            # Each fold holds the same six examples in this fixture, and
+            # `load_folds` refuses a cluster held out twice -- rightly, since
+            # pooling would count it twice. Suffixing the cluster keys per fold
+            # is the smallest thing that makes a multi-fold tree legal here
+            # without inventing five fixtures.
+            for info in stats["fragments"].values():
+                info["cluster_key"] = f"{info['cluster_key']}-f{fold_index}"
+            if expand:
+                stats["expansion"] = {"source_dir": "clean", "seed": 42}
+            sidecar_path(target).write_text(json.dumps(stats, indent=2), encoding="utf-8")
+            if expand:
+                records = [
+                    json.loads(line)
+                    for line in target.read_text(encoding="utf-8").splitlines()
+                    if line
+                ]
+                for index, record in enumerate(records):
+                    if index % 2 == 0:
+                        record["text"] = record["text"].replace("fever", "temperature")
+                target.write_text(
+                    "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+                )
+    return directory
+
+
+def _trees(tmp_path: Path, *, folds: int = 1):
+    return (
+        _write_tree(tmp_path / "clean", folds=folds),
+        _write_tree(tmp_path / "expanded", folds=folds, expand=True),
+    )
+
+
+def _predictions(path: Path, pairs, decide) -> Path:
+    """Write a predictions file deciding each pair by ``decide(pair)``."""
+    return write_predictions(
+        path,
+        [
+            Prediction(
+                example_id=pair.example_id,
+                truth=CLASS_NULL,
+                predicted=decide(pair),
+                unit=pair.unit,
+                label_mode=pair.label_mode,
+            )
+            for pair in pairs
+        ],
+        header={"model": "arm_b_finetune"},
+    )
+
+
+def test_pairing_qualifies_ids_by_fold(tmp_path):
+    """The generator numbers examples per split, so ``test-000000`` names one
+    example in each of the folds. An unqualified pairing would collapse five
+    examples into one and compare four fifths of the tree against the wrong
+    row -- the same reason ``report.FoldRun.build`` qualifies."""
+    clean, expanded = _trees(tmp_path, folds=2)
+
+    pairs = pair_trees(clean, expanded, signal=SIGNAL, folds=2)
+
+    ids = [pair.example_id for pair in pairs]
+    assert len(ids) == len(set(ids))
+    assert ids[0].startswith("fold0:")
+    assert any(identifier.startswith("fold1:") for identifier in ids)
+
+
+def test_pairing_marks_only_the_examples_the_pass_changed(tmp_path):
+    clean, expanded = _trees(tmp_path)
+
+    pairs = pair_trees(clean, expanded, signal=SIGNAL, folds=1)
+
+    assert any(pair.changed for pair in pairs)
+    assert any(not pair.changed for pair in pairs)
+
+
+def test_pairing_carries_the_cluster_across(tmp_path):
+    """The unit comes from the *clean* tree's sidecar, which is the only tree
+    whose fragment provenance the expansion pass is guaranteed not to have
+    touched -- and, since expansion edits no library, the two agree anyway."""
+    clean, expanded = _trees(tmp_path)
+
+    pairs = pair_trees(clean, expanded, signal=SIGNAL, folds=1)
+
+    by_id = {pair.example_id: pair for pair in pairs}
+    assert all(pair.unit for pair in pairs)
+    assert by_id["fold0:test-000002"].unit == "fever_null_hedged:c05-f0"
+    # A structural null holds no decisive fragment, so every one of them shares
+    # the single unit `dataset.STRUCTURAL_NULL_UNIT` names.
+    assert by_id["fold0:test-000005"].unit == STRUCTURAL_NULL_UNIT
+
+
+def test_a_tree_with_different_ids_is_a_hard_error(tmp_path):
+    clean, expanded = _trees(tmp_path)
+    target = fold_dataset_path(expanded, SIGNAL, 0, "test")
+    records = [json.loads(line) for line in target.read_text(encoding="utf-8").splitlines() if line]
+    records[0]["example_id"] = "test-999999"
+    target.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+
+    with pytest.raises(FlipError, match="two different generations"):
+        pair_trees(clean, expanded, signal=SIGNAL, folds=1)
+
+
+def test_unchanged_pairs_are_excluded_from_the_denominator(tmp_path):
+    """The statistic's definition, and the one mistake that would make every arm
+    look better than it is. An example the pass left alone is byte-identical on
+    both sides and cannot flip; counting it would lower the rate by exactly the
+    unchanged share, which is a fact about `--clean-share` and not about a head."""
+    clean, expanded = _trees(tmp_path)
+    pairs = pair_trees(clean, expanded, signal=SIGNAL, folds=1)
+    changed = [pair for pair in pairs if pair.changed]
+    assert len(changed) < len(pairs)
+
+    # Every example decides `null` on the clean side and `true` on the expanded
+    # one: every *changed* pair flips, and nothing else may enter the count.
+    built = build_tree_pairs(
+        pairs,
+        {pair.example_id: CLASS_NULL for pair in pairs},
+        {pair.example_id: CLASS_TRUE for pair in pairs},
+    )
+
+    assert len(built) == len(changed)
+    assert {prediction.example_id for prediction in built} == {pair.example_id for pair in changed}
+
+
+def test_the_flip_rate_is_one_when_every_changed_pair_disagrees(tmp_path):
+    clean, expanded = _trees(tmp_path)
+    pairs = pair_trees(clean, expanded, signal=SIGNAL, folds=1)
+    clean_file = _predictions(tmp_path / "a.json", pairs, lambda pair: CLASS_NULL)
+    expanded_file = _predictions(tmp_path / "b.json", pairs, lambda pair: CLASS_TRUE)
+
+    result = score_tree_flips(
+        pairs,
+        decided_classes(load_predictions(clean_file)),
+        decided_classes(load_predictions(expanded_file)),
+        arm="clean_trained",
+        resamples=50,
+    )
+
+    assert result["flip_rate"]["point"] == 1.0
+    assert result["n_unchanged"] == len(pairs) - result["n_pairs"]
+    assert result["direction"]["transitions"] == {"null -> true": result["n_pairs"]}
+
+
+def test_an_arm_that_never_moves_has_a_flip_rate_of_zero(tmp_path):
+    clean, expanded = _trees(tmp_path)
+    pairs = pair_trees(clean, expanded, signal=SIGNAL, folds=1)
+    decided = {pair.example_id: CLASS_NULL for pair in pairs}
+
+    result = score_tree_flips(pairs, decided, decided, arm="expanded_trained", resamples=50)
+
+    assert result["flip_rate"]["point"] == 0.0
+    assert result["direction"]["transitions"] == {}
+
+
+def test_the_resampling_unit_is_the_cluster(tmp_path):
+    """The power claim. Ten thousand examples sit on a few hundred decisive
+    clusters; resampling examples would treat rewrites of one idea as
+    independent observations and report an interval several times too narrow."""
+    clean, expanded = _trees(tmp_path)
+    pairs = pair_trees(clean, expanded, signal=SIGNAL, folds=1)
+    changed = [pair for pair in pairs if pair.changed]
+
+    result = score_tree_flips(
+        pairs,
+        {pair.example_id: CLASS_NULL for pair in pairs},
+        {pair.example_id: CLASS_TRUE for pair in pairs},
+        arm="clean_trained",
+        resamples=50,
+    )
+
+    assert result["n_clusters"] == len({pair.unit for pair in changed})
+    assert result["n_clusters"] <= result["n_pairs"]
+
+
+def test_a_pass_that_changed_nothing_is_a_hard_error(tmp_path):
+    clean = _write_tree(tmp_path / "clean")
+    same = _write_tree(tmp_path / "same")
+    pairs = pair_trees(clean, same, signal=SIGNAL, folds=1)
+    decided = {pair.example_id: CLASS_NULL for pair in pairs}
+
+    with pytest.raises(FlipError, match="changed no example"):
+        score_tree_flips(pairs, decided, decided, arm="clean_trained")
+
+
+def test_a_prediction_file_missing_an_example_is_a_hard_error(tmp_path):
+    clean, expanded = _trees(tmp_path)
+    pairs = pair_trees(clean, expanded, signal=SIGNAL, folds=1)
+    full = {pair.example_id: CLASS_NULL for pair in pairs}
+    partial = dict(list(full.items())[:-1])
+
+    with pytest.raises(FlipError, match="not in both prediction files"):
+        build_tree_pairs(pairs, full, partial)
+
+
+def test_a_predictions_file_naming_one_id_twice_is_rejected(tmp_path):
+    path = tmp_path / "dupe.json"
+    path.write_text(
+        json.dumps(
+            {
+                "predictions": [
+                    {"example_id": "fold0:test-000000", "predicted": 0},
+                    {"example_id": "fold0:test-000000", "predicted": 1},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(FlipError, match="twice"):
+        load_predictions(path)
+
+
+def test_predictions_round_trip_without_scores(tmp_path):
+    """Scores are deliberately not written: the decisions here are the ones the
+    fold's selected rule made, and re-deciding them downstream under some other
+    margin would produce a flip rate for a model nobody ran."""
+    path = write_predictions(
+        tmp_path / "p.json",
+        [Prediction(example_id="fold0:test-000000", truth=0, predicted=1, unit="c01")],
+        header={"model": "arm_b_finetune"},
+    )
+
+    payload = load_predictions(path)
+
+    assert payload["header"]["model"] == "arm_b_finetune"
+    assert decided_classes(payload) == {"fold0:test-000000": 1}
+    assert "scores" not in payload["predictions"][0]
+
+
+# ---------------------------------------------------------------------------
+# The guard (plan DD7)
+# ---------------------------------------------------------------------------
+
+
+def _report(path: Path, accuracy: float, *, model: str = "arm_b_finetune") -> Path:
+    path.write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "name": model,
+                        "pooled": {"ruled": {"decisive": {"accuracy": {"point": accuracy}}}},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_the_guard_holds_when_decisive_accuracy_does(tmp_path):
+    guard = score_guard(
+        _report(tmp_path / "baseline.json", 0.93),
+        _report(tmp_path / "arm.json", 0.925),
+        bound=0.02,
+        model="arm_b_finetune",
+    )
+
+    assert guard["passed"]
+    assert guard["drop"] == pytest.approx(0.005)
+
+
+def test_the_guard_fails_when_the_arm_bought_its_flip_rate(tmp_path):
+    """A head that answers `null` to everything has a flip rate of zero. The
+    guard is the only thing standing between that and a headline result, which
+    is why it is scored in the same invocation as the flip rate rather than in a
+    step somebody might skip."""
+    guard = score_guard(
+        _report(tmp_path / "baseline.json", 0.93),
+        _report(tmp_path / "arm.json", 0.85),
+        bound=0.02,
+        model="arm_b_finetune",
+    )
+
+    assert not guard["passed"]
+    assert "FAILED" in "\n".join(describe_guard(guard))
+
+
+def test_the_guard_names_the_models_it_could_not_find(tmp_path):
+    with pytest.raises(FlipError, match="arm_a_probe"):
+        score_guard(
+            _report(tmp_path / "baseline.json", 0.93),
+            _report(tmp_path / "arm.json", 0.93),
+            bound=0.02,
+            model="arm_a_probe",
+        )
+
+
+def test_a_negative_guard_bound_is_rejected(tmp_path):
+    """A bound is a permitted *drop*. A negative one would silently demand an
+    improvement, which is not what 'the guard held' means anywhere it is read."""
+    with pytest.raises(FlipError, match="must not be negative"):
+        score_guard(
+            _report(tmp_path / "baseline.json", 0.93),
+            _report(tmp_path / "arm.json", 0.93),
+            bound=-0.01,
+            model="arm_b_finetune",
+        )
+
+
+def test_the_summary_says_how_many_examples_could_not_flip(tmp_path):
+    """The denominator has to be legible in the printed output, not only in the
+    JSON. A rate over changed pairs and a rate over every pair differ by the
+    clean share, and a reader who cannot see which one this is cannot compare it
+    with anything."""
+    clean, expanded = _trees(tmp_path)
+    pairs = pair_trees(clean, expanded, signal=SIGNAL, folds=1)
+
+    lines = describe_tree_flips(
+        score_tree_flips(
+            pairs,
+            {pair.example_id: CLASS_NULL for pair in pairs},
+            {pair.example_id: CLASS_TRUE for pair in pairs},
+            arm="clean_trained",
+            resamples=50,
+        )
+    )
+
+    assert any("could not flip and are excluded" in line for line in lines)
+    assert any("clusters" in line for line in lines)
