@@ -37,16 +37,41 @@ each is thirty to sixty paired observations resampled over ten to fifteen
 independent units. That can separate "flips are common" from "flips are rare"
 and nothing finer, and :data:`POWER_NOTE` says so beside every number rather
 than under it.
+
+----
+
+**The second half of this module is Task 6's, and it measures a different thing
+with the same statistic.** Task 2 asks whether a head flips on thirteen
+hand-written rewrites of real submissions; Task 6 asks whether it flips on ten
+thousand machine-made rewrites of its own test split, where the rewrite is
+`expand.py`'s and the pairing is by ``example_id`` rather than by a column in a
+TSV. :func:`score_tree_flips` is that measurement, and three things about it are
+deliberate:
+
+* **It reads written predictions, not a model.** The four cells of Task 6's 2x2
+  are four separate ``finetune`` invocations because ``--test-dir`` is a single
+  path, so no one process ever holds both of an arm's scorings. The flip rate is
+  therefore computed *post hoc* from the per-example predictions each cell wrote
+  (``finetune --predictions``), which also means it costs no GPU and is coverable
+  by CI's unit job like everything else here.
+* **The denominator is the changed pairs.** An example the pass left alone cannot
+  flip, and counting it would dilute the rate towards zero by exactly the clean
+  share (plan DD7). :data:`CHANGED_ONLY_NOTE` is printed beside the number.
+* **The resampling unit is the cluster, not the example.** Ten thousand examples
+  sit on a few hundred decisive fragment clusters, so an example-level bootstrap
+  would report an interval several times too narrow (`arch_training.md` section
+  10). ``Example.resampling_unit`` is what :func:`pair_trees` carries across.
 """
 
 from __future__ import annotations
 
 import csv
-from collections.abc import Callable, Mapping, Sequence
+import json
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from .dataset import CLASS_NAMES, CLASS_TRUE
+from .dataset import CLASS_NAMES, CLASS_TRUE, load_folds
 from .metrics import (
     DEFAULT_ALPHA,
     DEFAULT_RESAMPLES,
@@ -56,6 +81,7 @@ from .metrics import (
     apply_margin,
     bootstrap_confusion_ci,
     confusion_matrix,
+    effective_n,
 )
 
 #: The default paraphrase set, and the only one that exists.
@@ -528,21 +554,435 @@ def describe_flips(result: Mapping[str, object]) -> list[str]:
     return lines
 
 
+# ---------------------------------------------------------------------------
+# Task 6: the paired flip rate between two matched trees
+# ---------------------------------------------------------------------------
+
+#: Why the denominator is the changed pairs and not every pair (plan DD7).
+CHANGED_ONLY_NOTE = (
+    "The denominator is the pairs the expansion pass actually changed. An example it left "
+    "alone -- the clean share, plus every example holding no match site -- is byte-identical "
+    "on both sides and cannot flip, so including it would drag the rate towards zero by an "
+    "amount that says nothing about the model and everything about `--clean-share`. The "
+    "unchanged count is reported beside the rate rather than folded into it."
+)
+
+#: Why the bootstrap resamples clusters (plan DD7, `arch_training.md` section 10).
+CLUSTER_UNIT_NOTE = (
+    "The resampling unit is the decisive fragment's cluster, not the example. Ten thousand "
+    "test examples sit on a few hundred clusters, because every example recombines a decisive "
+    "fragment with filler; resampling examples would treat rewrites of one idea as independent "
+    "observations and report an interval several times too narrow."
+)
+
+#: DD8's negative control, carried into the report rather than left in the plan.
+NO_GROWTH_NOTE = (
+    "The expanded tree holds exactly as many examples as the clean one, paired example_id for "
+    "example_id: expansion creates no fragments and no clusters, so effective sample size is "
+    "identical in every cell. A difference between two cells can therefore only be robustness "
+    "to paraphrase; it can never be better coverage."
+)
+
+#: What a flip is, and what it is not, in the tree setting.
+TREE_FLIP_NOTE = (
+    "A flip is a disagreement between one arm's prediction on the clean test tree and the same "
+    "arm's prediction on the expanded test tree, for the same example_id. The two texts make "
+    "the same claim under rules whose declared invariant is that they change neither tense, "
+    "person, certainty nor polarity, so a flip is an error on one side of the pair, whichever "
+    "side that is. No label is read to see one."
+)
+
+
+@dataclass(frozen=True)
+class TreePair:
+    """One example as it appears in both trees: its cluster, and whether it moved."""
+
+    example_id: str
+    unit: str
+    changed: bool
+    label_mode: str | None = None
+    library: str | None = None
+
+
+def pair_trees(
+    clean_dir: Path | str,
+    expanded_dir: Path | str,
+    *,
+    signal: str,
+    folds: int,
+) -> tuple[TreePair, ...]:
+    """Walk two matched fold trees' test splits and pair them by ``example_id``.
+
+    The ids are qualified with their fold (``fold0:test-000017``) exactly as
+    :func:`report.FoldRun.build` qualifies them, because the generator numbers
+    examples per split and an unqualified id names one example in each of the
+    five folds. Pairing on the unqualified id would silently collapse five
+    examples into one and compare four fifths of the tree against the wrong row.
+
+    Every structural difference is a hard error rather than a dropped pair: two
+    trees that no longer hold the same examples are not two scorings of one test
+    set, and a flip rate computed over whatever they happen to share is a number
+    about the intersection.
+    """
+    clean_folds = load_folds(clean_dir, signal, folds=folds)
+    expanded_folds = load_folds(expanded_dir, signal, folds=folds)
+
+    pairs: list[TreePair] = []
+    for fold_index, (clean_fold, expanded_fold) in enumerate(
+        zip(clean_folds, expanded_folds, strict=True)
+    ):
+        clean_examples = list(clean_fold.test.examples)
+        expanded_examples = list(expanded_fold.test.examples)
+        if len(clean_examples) != len(expanded_examples):
+            raise FlipError(
+                f"fold {fold_index}'s test splits hold {len(clean_examples)} and "
+                f"{len(expanded_examples)} examples; {clean_dir} and {expanded_dir} are not two "
+                "versions of one tree"
+            )
+        for clean, expanded in zip(clean_examples, expanded_examples, strict=True):
+            if clean.example_id != expanded.example_id:
+                raise FlipError(
+                    f"fold {fold_index}'s test splits disagree at {clean.example_id!r} vs "
+                    f"{expanded.example_id!r}; expansion preserves ids and filenames, so a "
+                    "mismatch means these are two different generations rather than one "
+                    "generation expanded"
+                )
+            pairs.append(
+                TreePair(
+                    example_id=f"fold{fold_index}:{clean.id_for(signal)}",
+                    unit=clean.resampling_unit,
+                    changed=clean.text != expanded.text,
+                    label_mode=clean.label_mode,
+                    library=clean.library,
+                )
+            )
+    return tuple(pairs)
+
+
+def write_predictions(
+    path: Path | str,
+    predictions: Iterable[Prediction],
+    *,
+    header: Mapping[str, object] | None = None,
+) -> Path:
+    """Write one model's per-example decisions where a later process can pair them.
+
+    Written rather than returned because the four cells of Task 6's 2x2 are four
+    separate ``finetune`` invocations -- ``--test-dir`` is a single path, not a
+    repeatable one -- so no single process ever holds both of an arm's scorings.
+    The file is the only place the two can meet.
+
+    ``scores`` are deliberately not written. They would triple the file for the
+    sake of a margin sweep that has already happened: the decisions here are the
+    ones the fold's selected rule actually made, and re-deciding them under some
+    other rule downstream would produce a flip rate for a model nobody ran.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "header": dict(header or {}),
+        "classes": list(CLASS_NAMES),
+        "view": "ruled -- each fold's own selected margin, not argmax",
+        "predictions": [
+            {
+                "example_id": prediction.example_id,
+                "unit": prediction.unit,
+                "truth": prediction.truth,
+                "predicted": prediction.predicted,
+                "label_mode": prediction.label_mode,
+                "library": prediction.library,
+                "subclass": prediction.subclass,
+                "fragment_id": prediction.fragment_id,
+            }
+            for prediction in predictions
+        ],
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def load_predictions(path: Path | str) -> dict:
+    """Read a file :func:`write_predictions` wrote, checking it holds distinct ids."""
+    path = Path(path)
+    if not path.is_file():
+        raise FlipError(
+            f"predictions not found: {path}. They are written by `finetune --predictions`; a "
+            "cell run without that flag cannot take part in a paired flip rate"
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise FlipError(f"{path} is not valid JSON: {error}") from error
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("predictions"), list):
+        raise FlipError(f"{path} must be an object holding a 'predictions' list")
+    seen: set[str] = set()
+    for row in payload["predictions"]:
+        if not isinstance(row, Mapping) or "example_id" not in row or "predicted" not in row:
+            raise FlipError(f"{path} holds a row without an example_id and a predicted class")
+        example_id = str(row["example_id"])
+        if example_id in seen:
+            raise FlipError(
+                f"{path} names {example_id!r} twice. Ids are qualified by fold, so a repeat "
+                "means two folds' predictions were pooled without qualification and the pairing "
+                "would compare the wrong rows"
+            )
+        seen.add(example_id)
+    return dict(payload)
+
+
+def decided_classes(payload: Mapping[str, object]) -> dict[str, int]:
+    """``{example_id: predicted class}`` from a loaded predictions file."""
+    return {str(row["example_id"]): int(row["predicted"]) for row in payload["predictions"]}
+
+
+def build_tree_pairs(
+    pairs: Sequence[TreePair],
+    clean: Mapping[str, int],
+    expanded: Mapping[str, int],
+) -> list[Prediction]:
+    """One :class:`~.metrics.Prediction` per *changed* pair, clean vs expanded.
+
+    ``truth`` is the arm's decision on the clean text and ``predicted`` is its
+    decision on the expanded text, so the confusion matrix of the result is the
+    flip-direction matrix and one minus its accuracy is the flip rate -- the
+    same reuse :func:`build_pairs` makes, for the same reason: "the head wobbles
+    between `true` and `null`" and "the head wobbles between `true` and `false`"
+    are different faults and a scalar cannot separate them.
+    """
+    missing = [
+        pair.example_id
+        for pair in pairs
+        if pair.example_id not in clean or pair.example_id not in expanded
+    ]
+    if missing:
+        raise FlipError(
+            f"{len(missing)} example(s) are in the trees but not in both prediction files, "
+            f"starting with {missing[:3]}. The two cells were scored on different examples, so "
+            "there is no pairing to compute"
+        )
+    return [
+        Prediction(
+            example_id=pair.example_id,
+            truth=clean[pair.example_id],
+            predicted=expanded[pair.example_id],
+            unit=pair.unit,
+            label_mode=pair.label_mode,
+            library=pair.library,
+        )
+        for pair in pairs
+        if pair.changed
+    ]
+
+
+def _by_label_mode(
+    predictions: Sequence[Prediction], *, resamples: int, seed: int, alpha: float
+) -> list[dict]:
+    """Flip rate per label mode, so a rate driven by one class is visible as that."""
+    modes: dict[str, list[Prediction]] = {}
+    for prediction in predictions:
+        modes.setdefault(prediction.label_mode or "unlabelled", []).append(prediction)
+    return [
+        {
+            "label_mode": mode,
+            **_block(modes[mode], resamples=resamples, seed=seed, alpha=alpha),
+        }
+        for mode in sorted(modes)
+    ]
+
+
+def score_tree_flips(
+    pairs: Sequence[TreePair],
+    clean: Mapping[str, int],
+    expanded: Mapping[str, int],
+    *,
+    arm: str,
+    resamples: int = DEFAULT_RESAMPLES,
+    seed: int = 0,
+    alpha: float = DEFAULT_ALPHA,
+) -> dict:
+    """One arm's paired flip rate between the clean and expanded test trees."""
+    predictions = build_tree_pairs(pairs, clean, expanded)
+    changed = sum(1 for pair in pairs if pair.changed)
+    if not predictions:
+        raise FlipError(
+            "the expansion pass changed no example in the test split, so there is nothing to "
+            "pair. Check --rate and --clean-share: a rate that changes nothing measures nothing"
+        )
+    return {
+        "arm": arm,
+        "n_examples": len(pairs),
+        "n_changed": changed,
+        "changed_share": round(changed / len(pairs), 4) if pairs else 0.0,
+        "n_unchanged": len(pairs) - changed,
+        **_block(predictions, resamples=resamples, seed=seed, alpha=alpha),
+        # `_block` names the bootstrap's effective n after Task 2's resampling
+        # unit. Here it is the cluster, and a reader of this file should not
+        # have to know that to read the number.
+        "n_clusters": effective_n(predictions),
+        "by_label_mode": _by_label_mode(predictions, resamples=resamples, seed=seed, alpha=alpha),
+        "bootstrap": {"resamples": resamples, "seed": seed, "alpha": alpha},
+        "resampling_unit": "the decisive fragment's cluster",
+        "what_a_flip_is": TREE_FLIP_NOTE,
+        "denominator": CHANGED_ONLY_NOTE,
+        "cluster_unit": CLUSTER_UNIT_NOTE,
+        "no_growth": NO_GROWTH_NOTE,
+    }
+
+
+#: Where a report's decisive-cell accuracy lives, so the guard reads one thing
+#: rather than re-deriving it from a confusion matrix a renderer already
+#: summarised.
+DECISIVE_ACCURACY_PATH = ("pooled", "ruled", "decisive", "accuracy")
+
+
+def read_decisive_accuracy(report_path: Path | str, *, model: str) -> dict:
+    """The named model's pooled decisive-cell accuracy, out of a written report.
+
+    The guard is on the *decisive* cells for the reason `arch_training.md`
+    section 10 gives about the companion run: two thirds of the test tree is
+    ``null``, so a head that answered ``null`` to everything would post a
+    respectable overall accuracy and a flip rate of zero. Decisive accuracy is
+    the number that refuses to be gamed that way, which is why it and not
+    overall accuracy is what the pre-registered bound is written against.
+    """
+    report_path = Path(report_path)
+    if not report_path.is_file():
+        raise FlipError(f"report not found: {report_path}")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise FlipError(f"{report_path} is not valid JSON: {error}") from error
+    models = report.get("models")
+    if not isinstance(models, list):
+        raise FlipError(f"{report_path} holds no 'models' list")
+    for entry in models:
+        if isinstance(entry, Mapping) and entry.get("name") == model:
+            block: object = entry
+            for key in DECISIVE_ACCURACY_PATH:
+                if not isinstance(block, Mapping) or key not in block:
+                    raise FlipError(
+                        f"{report_path}'s {model!r} has no {'.'.join(DECISIVE_ACCURACY_PATH)} block"
+                    )
+                block = block[key]
+            if not isinstance(block, Mapping):
+                raise FlipError(f"{report_path}'s {model!r} decisive accuracy is not a block")
+            return {"report": str(report_path), "model": model, **dict(block)}
+    names = sorted(str(entry.get("name")) for entry in models if isinstance(entry, Mapping))
+    raise FlipError(f"{report_path} holds no model named {model!r}; it holds {names}")
+
+
+def score_guard(
+    baseline_report: Path | str,
+    arm_report: Path | str,
+    *,
+    bound: float,
+    model: str,
+) -> dict:
+    """DD7's guard: did the expanded arm buy its flip rate by getting worse?
+
+    Both numbers are read from the **clean** test tree, which is the only place
+    the two arms are scored on identical text. An arm that lowers the flip rate
+    while losing decisive accuracy has not become robust to paraphrase; it has
+    become less willing to commit, and a flip rate cannot tell the difference.
+
+    ``bound`` is a drop in accuracy points, pre-registered before the first
+    training run. The comparison is against the point estimate deliberately: the
+    intervals here overlap at any effect this experiment could plausibly produce,
+    and a guard that only fires on a separated interval is a guard that never
+    fires.
+    """
+    if bound < 0:
+        raise FlipError(f"the guard bound is a drop and must not be negative: {bound}")
+    baseline = read_decisive_accuracy(baseline_report, model=model)
+    arm = read_decisive_accuracy(arm_report, model=model)
+    if baseline["point"] is None or arm["point"] is None:
+        raise FlipError(
+            "one of the reports has no decisive-cell accuracy, so the guard cannot be scored"
+        )
+    drop = baseline["point"] - arm["point"]
+    return {
+        "measured_on": "the clean test tree, both arms",
+        "model": model,
+        "bound": bound,
+        "baseline": baseline,
+        "arm": arm,
+        "drop": drop,
+        "passed": drop <= bound,
+        "why": (
+            "a flip rate falls to zero for a head that answers `null` to everything, so a "
+            "lower flip rate is only a win if decisive accuracy held (plan DD7)"
+        ),
+    }
+
+
+def describe_tree_flips(result: Mapping[str, object]) -> list[str]:
+    """One arm's paired result as printable lines."""
+    lines = [
+        f"{result['arm']}: paired flips {_format_rate(result)} of {result['n_pairs']} changed "
+        f"pairs over {result['n_clusters']} clusters",
+        f"  {result['n_changed']}/{result['n_examples']} examples were changed by the pass "
+        f"({result['changed_share']:.1%}); {result['n_unchanged']} could not flip and are excluded",
+    ]
+    transitions = result["direction"]["transitions"]
+    if transitions:
+        lines.append(
+            "  direction (clean -> expanded): "
+            + ", ".join(f"{name} x{count}" for name, count in transitions.items())
+        )
+    else:
+        lines.append("  direction: no pair changed class")
+    for entry in result["by_label_mode"]:
+        transitions = entry["direction"]["transitions"]
+        detail = "; ".join(f"{name} x{count}" for name, count in transitions.items()) or "no change"
+        lines.append(
+            f"  {entry['label_mode']}: {_format_rate(entry)} "
+            f"({entry['flips']}/{entry['n_pairs']}) -- {detail}"
+        )
+    return lines
+
+
+def describe_guard(guard: Mapping[str, object]) -> list[str]:
+    """The guard as printable lines, saying plainly whether it held."""
+    baseline = guard["baseline"]["point"]
+    arm = guard["arm"]["point"]
+    return [
+        f"guard: decisive-cell accuracy on the clean test tree, {guard['model']}",
+        f"  baseline {baseline:.4f} -> arm {arm:.4f}; drop {guard['drop']:+.4f} "
+        f"against a bound of {guard['bound']:.4f}",
+        f"  {'HELD' if guard['passed'] else 'FAILED -- the arm bought its flip rate'}",
+    ]
+
+
 __all__ = [
+    "CHANGED_ONLY_NOTE",
+    "CLUSTER_UNIT_NOTE",
     "DEFAULT_PARAPHRASE_PATH",
     "KIND_SOURCE",
     "KIND_VARIANT",
+    "NO_GROWTH_NOTE",
     "POWER_NOTE",
     "PROVENANCE_NOTE",
     "SELECTS_NOTHING_NOTE",
+    "TREE_FLIP_NOTE",
     "FlipError",
     "ParaphraseGroup",
     "ParaphraseSet",
+    "TreePair",
     "Variant",
     "build_pairs",
+    "build_tree_pairs",
+    "decided_classes",
     "describe_flips",
+    "describe_guard",
+    "describe_tree_flips",
     "flip_rate",
     "load_holdout_sources",
     "load_paraphrases",
+    "load_predictions",
+    "pair_trees",
+    "read_decisive_accuracy",
     "score_flips",
+    "score_guard",
+    "score_tree_flips",
+    "write_predictions",
 ]

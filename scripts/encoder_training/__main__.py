@@ -177,10 +177,18 @@ from .embed import POOLING_MODES, EmbedError
 from .flip import (
     DEFAULT_PARAPHRASE_PATH,
     FlipError,
+    decided_classes,
     describe_flips,
+    describe_guard,
+    describe_tree_flips,
     load_holdout_sources,
     load_paraphrases,
+    load_predictions,
+    pair_trees,
     score_flips,
+    score_guard,
+    score_tree_flips,
+    write_predictions,
 )
 from .holdout import DEFAULT_HOLDOUT_PATH, HoldoutError, HoldoutSet, encoder_signals, load_holdout
 from .merge import DEFAULT_SIGNALS, MergeError, merge_folds
@@ -371,7 +379,50 @@ def _test_tree_header(args: argparse.Namespace, folds) -> dict:
         }
     else:
         header["test_dataset_noise"] = "none -- the test tree carries no noise block"
+    header.update(_expansion_header(folds[0].test.stats, key="test_dataset_expansion"))
     return header
+
+
+def _expansion_header(stats: Mapping[str, object], *, key: str) -> dict:
+    """The lexical expansion the test tree was written at, beside the noise block.
+
+    Task 6's four cells differ only in which of two trees each side of the run
+    points at, and the two trees differ only in an ``expansion`` block. A report
+    that cannot say which one it was scored against is not a result: read against
+    the wrong tree, "clean-trained, expanded test" and "clean-trained, clean
+    test" are the same sentence.
+
+    The rule file's digest is what makes the record load-bearing rather than
+    decorative. ``--rate`` and ``--seed`` reproduce a tree only in combination
+    with the rules that were on disk at the time, and the rules are hand-edited
+    between runs.
+    """
+    expansion = stats.get("expansion")
+    if not isinstance(expansion, Mapping):
+        return {key: "none -- the tree carries no expansion block"}
+    requested = expansion.get("requested")
+    requested = requested if isinstance(requested, Mapping) else {}
+    rules = requested.get("rules")
+    rules = rules if isinstance(rules, Mapping) else {}
+    realised = expansion.get("realised")
+    realised = realised if isinstance(realised, Mapping) else {}
+    return {
+        key: {
+            "source_dir": expansion.get("source_dir"),
+            "seed": expansion.get("seed"),
+            "requested_rate": requested.get("rate"),
+            "clean_share": requested.get("clean_share"),
+            "rules_path": rules.get("path"),
+            "rules_sha256": rules.get("sha256"),
+            "rules_signal": rules.get("signal"),
+            "rules_count": rules.get("count"),
+            # DD5's telemetry, carried into the report because a by-label gap is
+            # the one number that would turn this pass from a decorrelation into
+            # a new correlation, and nobody would open a sidecar to check.
+            "changed_share": realised.get("changed_share"),
+            "substitutions_per_hundred_words": realised.get("substitutions_per_hundred_words"),
+        }
+    }
 
 
 def _header(args: argparse.Namespace, folds, extra: dict | None = None) -> dict:
@@ -388,6 +439,7 @@ def _header(args: argparse.Namespace, folds, extra: dict | None = None) -> dict:
         ),
         "split_salt": first.split_salt,
         "dataset_dir": str(args.data_dir),
+        **_expansion_header(first.stats, key="dataset_expansion"),
         **_test_tree_header(args, folds),
         "ruleset": str(args.ruleset),
         "ruleset_hash": hash_ruleset_file(args.ruleset),
@@ -472,7 +524,51 @@ def _emit_report(
     print(f"wrote {json_path}")
     if markdown_path is not None:
         print(f"wrote {markdown_path}")
+    for path in _write_predictions(runs, args, report):
+        print(f"wrote {path}")
     return 0
+
+
+def _write_predictions(runs: Sequence, args: argparse.Namespace, report: Mapping) -> list[Path]:
+    """Write the fine-tuned model's per-example decisions, when asked for them.
+
+    Opt-in rather than always, because this is the one artefact whose only
+    consumer is a second run of a different command: Task 6's paired flip rate
+    is computed between two ``finetune`` invocations that never share a process,
+    since ``--test-dir`` names one tree and each cell needs its own. Nothing else
+    in the package reads it, and writing it unconditionally would add a
+    multi-megabyte file to every run for the sake of one experiment.
+
+    Only the fine-tune is written. The probe, the baselines and the negative
+    control are all scored on the same examples in the same run, so pairing them
+    needs no file; and a flip rate for a model fitted on permuted labels is not
+    a question anybody has.
+    """
+    path = getattr(args, "predictions", None)
+    if path is None:
+        return []
+    candidates = [run for run in runs if run.kind == "finetune" and not run.is_control]
+    if len(candidates) != 1:
+        names = sorted(run.name for run in candidates)
+        raise TrainError(
+            f"--predictions needs exactly one fine-tuned model to write; this run holds {names}. "
+            "A paired flip rate is computed per arm, so a file holding two arms' decisions under "
+            "one set of ids could only be read by guessing which was which"
+        )
+    return [
+        write_predictions(
+            path,
+            candidates[0].pooled("ruled"),
+            header={
+                "model": candidates[0].name,
+                "signal": getattr(args, "signal", None),
+                "dataset_dir": str(args.data_dir),
+                "test_dir": None if args.test_dir is None else str(args.test_dir),
+                "folds": args.folds,
+                "report_header": report.get("header", {}),
+            },
+        )
+    ]
 
 
 def run_baselines(args: argparse.Namespace) -> int:
@@ -842,6 +938,16 @@ def run_arm_b(args: argparse.Namespace) -> int:
 
     if len(signals) == 1 and dataset_name == signals[0]:
         return _run_arm_b_single(args, folds)
+    if getattr(args, "predictions", None) is not None:
+        # The joint path writes one report per head and would write one
+        # predictions file per head to the same path, leaving whichever head
+        # finished last. Refusing costs a message; not refusing costs a paired
+        # flip rate computed for a signal nobody asked about.
+        raise TrainError(
+            "--predictions writes one file of decisions keyed by example_id, and a joint run "
+            "scores several heads against one set of ids. Run the cell you want to pair as a "
+            "single-signal `finetune`"
+        )
     return _run_arm_b_joint(args, folds, dataset_name=dataset_name, signals=signals)
 
 
@@ -2772,6 +2878,111 @@ def run_flip_rate(args: argparse.Namespace) -> int:
     return 0
 
 
+#: Plan DD8, printed with every read-out. The clean synthetic test set is drawn
+#: from the same libraries under the same vocabulary, so it cannot contain the
+#: failure this pass targets; a large gain on it is evidence of a *new* shortcut
+#: rather than a removed one, and that expectation has to travel with the number
+#: rather than sit in a plan nobody reopens.
+DD8_NOTE = (
+    "The clean synthetic test set is drawn from the same libraries under the same vocabulary as "
+    "the training split, so it cannot contain the failure this pass targets. The pre-registered "
+    "expectation is that nothing moves on it. A large gain there is a warning -- it means a new "
+    "shortcut was manufactured -- not a result."
+)
+
+
+def run_paired_flip_rate(args: argparse.Namespace) -> int:
+    """Task 6's read-out: the paired flip rate between two matched trees, per arm.
+
+    No model is loaded and no GPU is touched. The four cells of the 2x2 are four
+    separate ``finetune`` invocations -- ``--test-dir`` names one tree, so an arm
+    scored against both needs two of them -- and each writes its decisions with
+    ``--predictions``. This command pairs those files by ``example_id`` and
+    reports, per arm, how often the same head answered differently when only the
+    words changed.
+
+    The guard is scored in the same invocation deliberately. A flip rate falls to
+    zero for a head that answers ``null`` to everything, so the two numbers only
+    mean anything together, and a sequence that computes one in a step the other
+    is missing from is a sequence that will eventually be read half-finished.
+    """
+    pairs = pair_trees(args.clean_dir, args.expanded_dir, signal=args.signal, folds=args.folds)
+    changed = sum(1 for pair in pairs if pair.changed)
+    print(
+        f"{len(pairs)} paired examples across {args.folds} folds' test splits; "
+        f"{changed} changed by the pass"
+    )
+
+    arms = []
+    for name, clean_path, expanded_path in args.arm:
+        clean = load_predictions(clean_path)
+        expanded = load_predictions(expanded_path)
+        result = score_tree_flips(
+            pairs,
+            decided_classes(clean),
+            decided_classes(expanded),
+            arm=name,
+            resamples=args.resamples,
+            seed=args.seed,
+            alpha=args.alpha,
+        )
+        result["predictions"] = {
+            "clean_test": {"path": str(clean_path), "header": clean.get("header", {})},
+            "expanded_test": {"path": str(expanded_path), "header": expanded.get("header", {})},
+        }
+        arms.append(result)
+
+    guard = None
+    if args.guard_baseline is not None or args.guard_arm is not None:
+        if args.guard_baseline is None or args.guard_arm is None:
+            raise FlipError(
+                "--guard-baseline and --guard-arm are scored against each other and only mean "
+                "anything together; give both or neither"
+            )
+        guard = score_guard(
+            args.guard_baseline,
+            args.guard_arm,
+            bound=args.guard_bound,
+            model=args.guard_model,
+        )
+
+    result = {
+        "signal": args.signal,
+        "folds": args.folds,
+        "clean_dir": str(args.clean_dir),
+        "expanded_dir": str(args.expanded_dir),
+        "n_examples": len(pairs),
+        "n_changed": changed,
+        "arms": arms,
+        "guard": guard,
+        "negative_control": DD8_NOTE,
+    }
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        for arm in arms:
+            for line in describe_tree_flips(arm):
+                print(line)
+        if guard is not None:
+            for line in describe_guard(guard):
+                print(line)
+        print(f"note: {DD8_NOTE}")
+    if args.out:
+        out = Path(args.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {out}")
+
+    if guard is not None and not guard["passed"]:
+        print(
+            "error: the pre-registered decisive-accuracy guard did not hold",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
 def _default_decision_path(weights: Path) -> Path:
     """``.../weights/foldN.encoder.pt`` -> ``.../foldN.decision.json``.
 
@@ -3007,6 +3218,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     finetune.add_argument(
         "--progress", action="store_true", help="print per-epoch training loss and validation score"
+    )
+    finetune.add_argument(
+        "--predictions",
+        type=Path,
+        default=None,
+        help="also write the fine-tuned model's per-example decisions here, so a second run's "
+        "decisions on the same ids can be paired against them (`paired-flip-rate`). Off by "
+        "default: nothing inside one run reads it, and it is a few megabytes",
     )
     finetune.set_defaults(handler=run_arm_b)
 
@@ -3366,6 +3585,62 @@ def build_parser() -> argparse.ArgumentParser:
     flip.add_argument("--out", type=Path, default=None, help="also write the result as JSON here")
     flip.add_argument("--json", action="store_true", help="print JSON instead of the summary")
     flip.set_defaults(handler=run_flip_rate)
+
+    paired = subparsers.add_parser(
+        "paired-flip-rate",
+        help="Task 6's read-out: how often an arm answers differently on the expanded test "
+        "tree than on the clean one, paired by example_id and resampled over clusters",
+    )
+    paired.add_argument("--signal", required=True, help="the signal whose fold trees to pair")
+    paired.add_argument("--clean-dir", type=Path, required=True, help="the generated fold tree")
+    paired.add_argument(
+        "--expanded-dir",
+        type=Path,
+        required=True,
+        help="the same tree after `python -m scripts.synthetic_data.expand`",
+    )
+    paired.add_argument("--folds", type=int, default=5)
+    paired.add_argument(
+        "--arm",
+        nargs=3,
+        action="append",
+        required=True,
+        metavar=("NAME", "CLEAN_TEST_PREDICTIONS", "EXPANDED_TEST_PREDICTIONS"),
+        help="one arm's two scorings, as written by `finetune --predictions`. Repeatable: the "
+        "2x2 has two arms and a flip rate is computed within an arm, never across two",
+    )
+    paired.add_argument(
+        "--guard-baseline",
+        type=Path,
+        default=None,
+        help="the clean-trained arm's report, scored on the CLEAN test tree. With --guard-arm, "
+        "scores DD7's guard: an arm that lowers its flip rate by answering `null` more often "
+        "has not become robust",
+    )
+    paired.add_argument(
+        "--guard-arm",
+        type=Path,
+        default=None,
+        help="the expanded-trained arm's report, scored on the same clean test tree",
+    )
+    paired.add_argument(
+        "--guard-bound",
+        type=float,
+        default=0.02,
+        help="the largest drop in decisive-cell accuracy that still counts as passing. "
+        "Pre-register it before training; a bound chosen after seeing the number is not a guard",
+    )
+    paired.add_argument(
+        "--guard-model",
+        default=ARM_B_NAME,
+        help="which model in each report the guard reads",
+    )
+    paired.add_argument("--resamples", type=int, default=2000)
+    paired.add_argument("--seed", type=int, default=0)
+    paired.add_argument("--alpha", type=float, default=0.05)
+    paired.add_argument("--out", type=Path, default=None, help="also write the result as JSON here")
+    paired.add_argument("--json", action="store_true", help="print JSON instead of the summary")
+    paired.set_defaults(handler=run_paired_flip_rate)
 
     return parser
 

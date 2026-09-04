@@ -28,13 +28,14 @@ fold's training clusters -- which are this fold's validation and test clusters -
 and every disjointness check in the package would still pass.
 """
 
+import argparse
 import dataclasses
 import json
 from pathlib import Path
 
 import pytest
 
-from scripts.encoder_training.__main__ import build_parser
+from scripts.encoder_training.__main__ import _write_predictions, build_parser
 from scripts.encoder_training.dataset import (
     CLASS_FALSE,
     CLASS_NULL,
@@ -48,7 +49,13 @@ from scripts.encoder_training.dataset import (
 from scripts.encoder_training.decision import DecisionRule
 from scripts.encoder_training.embed import EmbeddingSpec
 from scripts.encoder_training.metrics import Prediction
-from scripts.encoder_training.report import BootstrapConfig, FoldRun, build_report, render_markdown
+from scripts.encoder_training.report import (
+    BootstrapConfig,
+    FoldRun,
+    ModelRun,
+    build_report,
+    render_markdown,
+)
 from scripts.encoder_training.smoke_cuda import (
     EXPECTED_CAPABILITY,
     MIN_BLACKWELL_CUDA,
@@ -1593,3 +1600,116 @@ def test_cli_exposes_joint_compare_and_its_three_trees():
     assert args.no_volume_arm is False
     # The negative control is off by default here, as in compare-models.
     assert args.control is False
+
+
+# ---------------------------------------------------------------------------
+# `finetune --predictions`: the artefact Task 6's paired flip rate is built from
+# ---------------------------------------------------------------------------
+
+
+def _model_run(name: str, kind: str, *, predicted: int = CLASS_TRUE):
+    return ModelRun(
+        name=name,
+        kind=kind,
+        description=name,
+        folds=(
+            FoldRun.build(
+                fold_index=0,
+                n_train=1,
+                n_val=1,
+                n_test=1,
+                rule=DecisionRule(margin=0.0, gated_class=CLASS_TRUE, selected_on="validation"),
+                raw=[
+                    Prediction(
+                        example_id="test-000000", truth=CLASS_TRUE, predicted=predicted, unit="c01"
+                    )
+                ],
+                ruled=[
+                    Prediction(
+                        example_id="test-000000", truth=CLASS_TRUE, predicted=predicted, unit="c01"
+                    )
+                ],
+            ),
+        ),
+    )
+
+
+def _predictions_args(tmp_path, predictions):
+    return argparse.Namespace(
+        predictions=predictions,
+        signal="fever_present",
+        data_dir=tmp_path / "clean",
+        test_dir=tmp_path / "expanded",
+        folds=1,
+    )
+
+
+def test_predictions_are_written_only_when_asked_for():
+    """Nothing inside one run reads this file -- the only consumer is a second
+    ``finetune`` invocation's decisions on the same ids -- so writing it by
+    default would add a multi-megabyte artefact to every run for the sake of one
+    experiment."""
+    assert (
+        _write_predictions([_model_run("arm_b_finetune", "finetune")], argparse.Namespace(), {})
+        == []
+    )
+
+
+def test_predictions_carry_the_fold_qualified_ids(tmp_path):
+    """The pairing is by ``example_id`` and the generator numbers examples per
+    split, so an unqualified id names one example in each of the five folds.
+    ``FoldRun.build`` qualifies them; this is the check that the qualification
+    survives into the file the pairing actually reads."""
+    path = tmp_path / "p.json"
+    _write_predictions(
+        [_model_run("arm_b_finetune", "finetune")],
+        _predictions_args(tmp_path, path),
+        {"header": {"signal": "fever_present"}},
+    )
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert [row["example_id"] for row in payload["predictions"]] == ["fold0:test-000000"]
+    assert payload["header"]["model"] == "arm_b_finetune"
+    assert payload["header"]["test_dir"].endswith("expanded")
+
+
+def test_predictions_refuse_a_run_holding_two_fine_tuned_models(tmp_path):
+    """A flip rate is computed per arm. A file holding two arms' decisions under
+    one set of ids could only be read by guessing which was which, and the
+    guess would be silent."""
+    with pytest.raises(TrainError, match="exactly one fine-tuned model"):
+        _write_predictions(
+            [_model_run("a", "finetune"), _model_run("b", "finetune")],
+            _predictions_args(tmp_path, tmp_path / "p.json"),
+            {},
+        )
+
+
+def test_predictions_ignore_the_probe_the_baselines_and_the_control(tmp_path):
+    """All three are scored on the same examples in the same run, so pairing
+    them needs no file -- and a flip rate for a model fitted on permuted labels
+    is not a question anybody has."""
+    path = tmp_path / "p.json"
+    _write_predictions(
+        [
+            _model_run("arm_a_probe", "probe"),
+            _model_run("bag_of_words", "baseline"),
+            _model_run("arm_b_finetune", "finetune"),
+            _model_run("arm_b_control", "negative_control"),
+        ],
+        _predictions_args(tmp_path, path),
+        {},
+    )
+
+    assert json.loads(path.read_text(encoding="utf-8"))["header"]["model"] == "arm_b_finetune"
+
+
+def test_finetune_takes_a_predictions_path():
+    args = build_parser().parse_args(
+        ["finetune", "--signal", "fever_present", "--predictions", "out/p.json"]
+    )
+    assert args.predictions == Path("out/p.json")
+
+
+def test_finetune_writes_no_predictions_by_default():
+    assert build_parser().parse_args(["finetune", "--signal", "fever_present"]).predictions is None

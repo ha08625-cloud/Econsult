@@ -1430,7 +1430,32 @@ python -m scripts.encoder_training merge-folds \
 # damage a finished tree (12.6); filenames and ids are preserved
 python -m scripts.synthetic_data.noise --in-dir <tree> --out-dir <tree>-noisy \
     --rate 0.02 --seed 42
+
+# paraphrase a finished tree (12.10); filenames and ids are preserved, so every
+# expanded example is paired with its clean original by example_id
+python -m scripts.synthetic_data.expand --in-dir <tree> --out-dir <tree>-expanded \
+    --rate 0.4 --clean-share 0.25 --seed 42
+
+# check a rule file against the library lint; reads the libraries, writes nothing
+python -m scripts.synthetic_data.expand --dry-run-lint --signal fever_present
+
+# one cell of 12.10's 2x2, writing the decisions the flip rate is paired from
+python -m scripts.encoder_training finetune --signal fever_present --folds 5 \
+    --data-dir <clean tree> --test-dir <expanded tree> \
+    --predictions models/encoder-lexical/clean-trained-expanded-test.predictions.json
+
+# the read-out: one flip rate per arm, plus the pre-registered accuracy guard
+python -m scripts.encoder_training paired-flip-rate --signal fever_present --folds 5 \
+    --clean-dir <clean tree> --expanded-dir <expanded tree> \
+    --arm clean_trained <clean-test predictions> <expanded-test predictions> \
+    --guard-baseline <clean/clean report> --guard-arm <expanded/clean report> \
+    --guard-bound 0.02
 ```
+
+The whole of that last sequence is one button in the training console
+(`lexical-expansion-2x2`), which is where it should be run from: every path in it
+is a literal, and a cell pointed at the wrong tree does not fail, it silently
+compares a tree with itself.
 
 **The constraints worth knowing.** The generator validates its own flags and
 refuses to start rather than failing partway through a 10,000-example run —
@@ -1930,7 +1955,7 @@ before it trains**.
 plan, and it is provisional: two unresolved labelling decisions and a diagnostic
 step that could retire most of it.
 
-### 12.10 Lexical variant expansion — built, not measured
+### 12.10 Lexical variant expansion — wired and pre-registered, not yet measured
 
 `scripts/synthetic_data/expand.py` rewrites a finished tree with directional,
 scoped, literal substitutions, so that the *choice of word* stops carrying the
@@ -1939,7 +1964,8 @@ is the plan of record; `reports/synthetic_data/2026-09-03-token-label-associatio
 (the skew) and `reports/encoder_training/2026-09-03-paraphrase-flip-diagnostic.md`
 (the flip rate, and the decision to proceed on a Judgement reading) are the two
 gates it was built through. **Nothing has been trained on an expanded tree yet**,
-so this subsection has no result to quote.
+so this subsection has no result to quote. What now exists is the measurement
+itself, unrun: see "How the 2x2 is measured" at the end of this subsection.
 
 **The fault it targets is a frequency skew, not an exclusive token.** Section 8
 records two cases where surface form separated a label class perfectly, both
@@ -2076,3 +2102,71 @@ rule for the quantified form, and the general lesson is that a rule set must be
 read against the *frames* that carry the labels, not only against the hand-written
 libraries. Note also that `declarative_v1` is invisible to the token-association
 lint, which excludes generated libraries because their labels are per line.
+
+**How the 2x2 is measured, and why it is twenty trainings rather than ten.** The
+experiment is four cells of `train tree × test tree` — clean/clean is the
+baseline, clean/expanded asks whether the fault reaches the model at all,
+expanded/clean is the guard, expanded/expanded is the robustness cell. Training
+depends only on the training tree, so ten trainings would suffice for the
+*models*; it does not suffice for the *CLI*, because `--test-dir` is a single
+`Path` rather than a repeatable one, so each cell is its own `finetune` and each
+trains its own five folds. Four cells × five folds = twenty, roughly forty
+minutes of GPU. Teaching `--test-dir` to repeat would save about twenty minutes
+and cost a change to the evaluation path; that is not a trade worth making for
+one experiment, and what matters is that the pre-registration and the time
+estimate both say twenty.
+
+**The decision metric is a paired flip rate, computed post hoc from written
+predictions.** No process holds both of an arm's scorings, so each cell writes
+its per-example decisions with `finetune --predictions` and
+`paired-flip-rate` pairs two of those files by `example_id`.
+Three properties of the statistic are load-bearing and each is pinned by a test
+in `tests/test_encoder_training_flip.py`:
+
+* **The denominator is the changed pairs.** An example the pass left alone is
+  byte-identical on both sides and cannot flip; including it would lower every
+  arm's rate by exactly the unchanged share, which is a property of
+  `--clean-share` rather than of a model.
+* **The resampling unit is the decisive fragment's cluster.** Ten thousand test
+  examples sit on a few hundred clusters (section 10); resampling examples would
+  report an interval several times too narrow.
+* **Ids are qualified by fold.** The generator numbers examples per split, so
+  `test-000017` names one example in each of five folds and an unqualified
+  pairing would compare four fifths of the tree against the wrong row.
+
+**The guard is scored in the same invocation, because the flip rate alone can be
+gamed.** A head that answers `null` to everything has a flip rate of zero, and
+two thirds of the test tree is `null`, so the pre-registered bound is on
+*decisive-cell* accuracy on the **clean** test tree — the only place the two arms
+are scored on identical text. `paired-flip-rate` exits non-zero when it fails.
+This is the same instrument section 10 records the companion run needing, for the
+same reason.
+
+**The reports say which tree they were scored against.** `_expansion_header`
+records the `expansion` block — rate, clean share, seed, and the rule file's
+sha256 — for both the training tree and, where `--test-dir` is set, the test
+tree. Rate and seed reproduce a tree only in combination with the rules that were
+on disk at the time, and rule files are hand-edited between runs. Read against
+the wrong tree, "clean-trained, expanded test" and "clean-trained, clean test"
+are the same sentence.
+
+**The whole sequence is one catalogue entry**, `lexical-expansion-2x2` in
+`scripts/training_gui/runs.json`: smoke test, generate, expand, `--dry-run-lint`,
+four `finetune` calls, `paired-flip-rate`. `runner.py` stops on the first failing
+step, so putting the rule check *inside* the sequence is what makes it a guard
+rather than a thing to remember — after the last training step it would only tell
+you what the forty minutes had been spent on. No console code changed; the
+catalogue already admits `-m` module invocations with literal arguments, which is
+all this needs. `tests/test_training_gui.py` asserts the four cells' `--data-dir`
+and `--test-dir` values are exactly the two trees the generate and expand steps
+write, in all four combinations — the cheap check that catches a cell pointed at
+the wrong tree in CI rather than in a report that silently compared a tree with
+itself.
+
+**The bounds are committed before the first run**, in
+`reports/encoder_training/2026-09-04-lexical-variant-preregistration.md`: a flip
+rate falling by at least 5 points, a decisive-accuracy guard of 0.02, and DD8's
+explicit statement that the expected movement on the clean synthetic test set is
+*nothing* — because that set is drawn from the same libraries under the same
+vocabulary and so cannot contain the failure being targeted. A large synthetic
+gain there is evidence of a new shortcut rather than a removed one.

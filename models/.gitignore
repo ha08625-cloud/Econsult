@@ -10,3 +10,10 @@
 *.pt.partial
 *.safetensors
 *.bin
+
+# Per-example test decisions, written by `finetune --predictions`. Several
+# megabytes each, regenerable from the weights and the dataset seed recorded in
+# the metadata sidecar beside them, and meaningful only inside the one
+# experiment that produced the matched pair -- `paired-flip-rate` reads two of
+# them together and nothing else reads them at all.
+*.predictions.json
