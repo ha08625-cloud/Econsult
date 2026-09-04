@@ -1,0 +1,257 @@
+{
+  "signal": "fever_present",
+  "rules": [
+    {
+      "id": "tier-a-ive-to-i-have",
+      "tier": "A",
+      "find": "I've",
+      "replace": "I have",
+      "invariant": "Contraction expanded. Same first person, same perfect tense, same polarity, and no hedge added or removed; only the orthography of the auxiliary changes."
+    },
+    {
+      "id": "tier-a-i-have-to-ive",
+      "tier": "A",
+      "find": "I have",
+      "replace": "I've",
+      "invariant": "Contraction formed. Same first person, same tense, same polarity, no hedge added or removed. The reverse of tier-a-ive-to-i-have and authored separately because neither direction implies the other."
+    },
+    {
+      "id": "tier-a-im-to-i-am",
+      "tier": "A",
+      "find": "I'm",
+      "replace": "I am",
+      "invariant": "Contraction expanded. Same first person, same present tense, same polarity, no change to certainty."
+    },
+    {
+      "id": "tier-a-i-am-to-im",
+      "tier": "A",
+      "find": "I am",
+      "replace": "I'm",
+      "invariant": "Contraction formed. Same first person, same present tense, same polarity, no change to certainty."
+    },
+    {
+      "id": "tier-a-havent-to-have-not",
+      "tier": "A",
+      "find": "haven't",
+      "replace": "have not",
+      "invariant": "Contraction expanded. The negation survives as the word 'not', so polarity is unchanged; person and tense are untouched."
+    },
+    {
+      "id": "tier-a-didnt-to-did-not",
+      "tier": "A",
+      "find": "didn't",
+      "replace": "did not",
+      "invariant": "Contraction expanded. Negation preserved as 'not', past tense preserved, person untouched."
+    },
+    {
+      "id": "tier-a-did-not-to-didnt",
+      "tier": "A",
+      "find": "did not",
+      "replace": "didn't",
+      "invariant": "Contraction formed. Negation preserved in the auxiliary, past tense preserved, person untouched."
+    },
+    {
+      "id": "tier-a-dont-to-do-not",
+      "tier": "A",
+      "find": "don't",
+      "replace": "do not",
+      "invariant": "Contraction expanded. Negation preserved as 'not', present tense preserved, person untouched."
+    },
+    {
+      "id": "tier-a-repair-ive",
+      "tier": "A",
+      "find": "Ive",
+      "replace": "I've",
+      "invariant": "The same contraction spelled with its apostrophe. Person, tense, certainty and polarity are all carried by words this rule does not touch."
+    },
+    {
+      "id": "tier-a-repair-im",
+      "tier": "A",
+      "find": "im",
+      "replace": "I'm",
+      "invariant": "The same contraction spelled with its apostrophe. Person, tense, certainty and polarity unchanged."
+    },
+    {
+      "id": "tier-a-repair-dont",
+      "tier": "A",
+      "find": "dont",
+      "replace": "don't",
+      "invariant": "The same negated auxiliary spelled with its apostrophe. The negation is still there, so polarity is unchanged."
+    },
+    {
+      "id": "tier-a-repair-didnt",
+      "tier": "A",
+      "find": "didnt",
+      "replace": "didn't",
+      "invariant": "The same negated auxiliary spelled with its apostrophe. Negation, tense and person unchanged."
+    },
+    {
+      "id": "tier-a-repair-havent",
+      "tier": "A",
+      "find": "havent",
+      "replace": "haven't",
+      "invariant": "The same negated auxiliary spelled with its apostrophe. Negation, tense and person unchanged."
+    },
+    {
+      "id": "tier-a-repair-cant",
+      "tier": "A",
+      "find": "cant",
+      "replace": "can't",
+      "invariant": "The same negated modal spelled with its apostrophe. Negation and modality unchanged."
+    },
+    {
+      "id": "tier-a-repair-wasnt",
+      "tier": "A",
+      "find": "wasnt",
+      "replace": "wasn't",
+      "invariant": "The same negated auxiliary spelled with its apostrophe. Negation, past tense and person unchanged."
+    },
+    {
+      "id": "tier-b-had-a-fever-to-temperature",
+      "tier": "B",
+      "find": "had a fever",
+      "replace": "had a temperature",
+      "invariant": "Both name the same raised-temperature state as a past event of the same subject. The auxiliary 'had' is kept, so tense and person are unchanged; no negation and no hedge is added or removed."
+    },
+    {
+      "id": "tier-b-with-a-fever-to-temperature",
+      "tier": "B",
+      "find": "with a fever",
+      "replace": "with a temperature",
+      "invariant": "A prepositional phrase naming the same state. Whatever verb, subject, tense and polarity precede it are untouched."
+    },
+    {
+      "id": "tier-b-have-a-fever-to-temperature",
+      "tier": "B",
+      "find": "have a fever",
+      "replace": "have a temperature",
+      "invariant": "Both name the same state under the same auxiliary, so tense and person are unchanged. It reads the same after a negation or a hedge as after a plain assertion, because neither is inside the phrase."
+    },
+    {
+      "id": "tier-b-running-a-fever-to-temperature",
+      "tier": "B",
+      "find": "running a fever",
+      "replace": "running a temperature",
+      "invariant": "Both are the same idiom for the same state, in the same progressive aspect. Person, tense, certainty and polarity all sit outside the phrase."
+    },
+    {
+      "id": "tier-b-got-a-fever-to-temperature",
+      "tier": "B",
+      "find": "got a fever",
+      "replace": "got a temperature",
+      "invariant": "Both name the same state under the same verb. Tense, person and polarity unchanged."
+    },
+    {
+      "id": "tier-b-get-a-fever-to-temperature",
+      "tier": "B",
+      "find": "get a fever",
+      "replace": "get a temperature",
+      "invariant": "Both name the same state under the same verb, habitual or future alike. Tense, person and polarity unchanged."
+    },
+    {
+      "id": "tier-b-getting-a-fever-to-temperature",
+      "tier": "B",
+      "find": "getting a fever",
+      "replace": "getting a temperature",
+      "invariant": "Both name the same state in the same progressive aspect. Tense, person and polarity unchanged."
+    },
+    {
+      "id": "tier-b-having-a-fever-to-temperature",
+      "tier": "B",
+      "find": "having a fever",
+      "replace": "having a temperature",
+      "invariant": "Both name the same state in the same gerund. Tense, person and polarity unchanged."
+    },
+    {
+      "id": "tier-b-ran-a-fever-to-temperature",
+      "tier": "B",
+      "find": "ran a fever",
+      "replace": "ran a temperature",
+      "invariant": "The same idiom for the same state in the same past tense. Person and polarity unchanged."
+    },
+    {
+      "id": "tier-b-run-a-fever-to-temperature",
+      "tier": "B",
+      "find": "run a fever",
+      "replace": "run a temperature",
+      "invariant": "The same idiom for the same state under the same auxiliary. Tense, person and polarity unchanged."
+    },
+    {
+      "id": "tier-b-developed-a-fever-to-temperature",
+      "tier": "B",
+      "find": "developed a fever",
+      "replace": "developed a temperature",
+      "invariant": "Both name the same state beginning at the same past point. Tense, person and polarity unchanged."
+    },
+    {
+      "id": "tier-b-any-fever-to-any-temperature",
+      "tier": "B",
+      "find": "any fever",
+      "replace": "any temperature",
+      "invariant": "Both are the same bare noun phrase under the same quantifier, naming the same state. 'Any' is the form the negative and interrogative frames use, and it is kept, so a denial stays a denial: the negation sits outside the phrase and is untouched. Tense and person likewise."
+    },
+    {
+      "id": "tier-b-fevers-to-temperatures",
+      "tier": "B",
+      "find": "fevers",
+      "replace": "temperatures",
+      "invariant": "Plural for plural, naming the same repeated state. Carries no auxiliary, so tense, person, certainty and polarity are all outside it."
+    },
+    {
+      "id": "tier-b-had-a-temperature-to-fever",
+      "tier": "B",
+      "find": "had a temperature",
+      "replace": "had a fever",
+      "invariant": "The reverse of tier-b-had-a-fever-to-temperature, authored on its own because neither direction implies the other. Same past event, same subject, same auxiliary; no negation or hedge added or removed."
+    },
+    {
+      "id": "tier-b-have-a-temperature-to-fever",
+      "tier": "B",
+      "find": "have a temperature",
+      "replace": "have a fever",
+      "invariant": "Same state under the same auxiliary, so tense and person are unchanged. Reads the same after a negation or a hedge as after an assertion, because neither is inside the phrase."
+    },
+    {
+      "id": "tier-b-running-a-temperature-to-fever",
+      "tier": "B",
+      "find": "running a temperature",
+      "replace": "running a fever",
+      "invariant": "The same idiom for the same state in the same progressive aspect. Person, tense, certainty and polarity all sit outside the phrase."
+    },
+    {
+      "id": "tier-b-with-a-temperature-to-fever",
+      "tier": "B",
+      "find": "with a temperature",
+      "replace": "with a fever",
+      "invariant": "A prepositional phrase naming the same state. Whatever verb, subject, tense and polarity precede it are untouched."
+    },
+    {
+      "id": "tier-b-get-a-temperature-to-fever",
+      "tier": "B",
+      "find": "get a temperature",
+      "replace": "get a fever",
+      "invariant": "Both name the same state under the same verb, habitual or future alike. Tense, person and polarity unchanged."
+    },
+    {
+      "id": "tier-b-run-a-temperature-to-fever",
+      "tier": "B",
+      "find": "run a temperature",
+      "replace": "run a fever",
+      "invariant": "The same idiom for the same state under the same auxiliary. Tense, person and polarity unchanged."
+    },
+    {
+      "id": "tier-b-a-high-temperature-to-a-fever",
+      "tier": "B",
+      "find": "a high temperature",
+      "replace": "a fever",
+      "invariant": "'A fever' is the same claim as 'a high temperature': both assert the state, neither quantifies it, and 'high' is the modifier that makes the phrase name the state at all rather than an intensifier that could be dropped to weaken it. Tense, person, certainty and polarity all sit outside the noun phrase."
+    },
+    {
+      "id": "tier-b-high-temperatures-to-fevers",
+      "tier": "B",
+      "find": "high temperatures",
+      "replace": "fevers",
+      "invariant": "Plural for plural, the same state asserted of the same subjects. Carries no auxiliary, so tense, person, certainty and polarity are all outside it."
+    }
+  ]
+}

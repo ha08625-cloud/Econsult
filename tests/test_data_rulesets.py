@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.condition_registry import ConditionRegistry
+from app.core.condition_registry import OFFLINE_DATA_DIRS, ConditionRegistry
 from app.core.wiring import validate_rulesets
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
@@ -39,13 +39,14 @@ def test_every_committed_ruleset_loads_and_validates(registry: ConditionRegistry
 
 
 def test_registry_discovers_every_json_file_on_disk(registry: ConditionRegistry) -> None:
-    # data/synthetic/ holds offline encoder training data (fragment
-    # libraries, manifest.json), not clinical rulesets, and is excluded by
-    # the registry -- see app/core/condition_registry.py::_load_all.
+    # data/synthetic/ and data/expansion/ hold offline encoder training data
+    # (fragment libraries and their manifest; lexical expansion rule files),
+    # not clinical rulesets, and are excluded by the registry -- see
+    # app/core/condition_registry.py::OFFLINE_DATA_DIRS.
     json_file_count = sum(
         1
         for path in DATA_DIR.rglob("*.json")
-        if "synthetic" not in path.relative_to(DATA_DIR).parts[:-1]
+        if not OFFLINE_DATA_DIRS & set(path.relative_to(DATA_DIR).parts[:-1])
     )
     assert json_file_count == len(registry.list_conditions())
 

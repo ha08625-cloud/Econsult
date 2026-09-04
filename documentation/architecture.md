@@ -100,6 +100,8 @@ When modifying or adding features, locate the relevant capability below to ident
 ### 3.15 Encoder Training Data (Synthetic Generation)
 * **Scope:** Building the encoder's training dataset by recombining hand-written sentence fragments. Offline only
 * **Domain Doc:** `docs/arch_training.md`
+* **Invariants:**
+  * Its data lives under `data/` but is not clinical rulesets, so `ConditionRegistry` does not walk it: `OFFLINE_DATA_DIRS` names the excluded subdirectories (`synthetic/`, the fragment libraries and their manifest; `expansion/`, the lexical variant expansion rule files). Adding a directory of offline JSON under `data/` without adding it there fails `tests/test_data_rulesets.py`, which is the intended behaviour — a stray file that *is* a ruleset should not be silently ignored.
 
 ### 3.16 Encoder Training & Evaluation (Offline Tooling)
 * **Scope:** Training and evaluating one encoder head against those datasets. Offline only.

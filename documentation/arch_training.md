@@ -2053,3 +2053,26 @@ second.
 deliberately outside `data/synthetic/`, which a test guards as holding nothing
 but the fragment libraries and the manifest. `data/expansion/README.md` is what a
 rule author reads.
+
+**The rate is load-bearing, and 1.0 is wrong** — measured while authoring the
+`fever_present` rules (`reports/synthetic_data/2026-09-04-fever-expansion-rules.md`).
+Applying every rule at every site does not flatten a vocabulary association, it
+*inverts* it: `temperature`'s decisive-minus-displaced gap runs +0.140 at p = 0
+through zero at p ≈ 0.30 to −0.298 at p = 1, where p = (1 − `clean_share`) ×
+`rate`. The `DEFAULT_CLEAN_SHARE` docstring anticipates this; the sweep is the
+measurement of it. A rule set therefore has an operating point rather than a
+switch, and it has to be found per signal from the library statistics before any
+model is trained.
+
+**A rule set can be label-blind and still unbalanced.** DD5 closes the trap of a
+pass applied to one label class and not another; it does not close a rule set
+that happens to cover the phrasing one class uses and not the other's. The
+generated `declarative_v1` library states a negative frame as "not had *any
+fever*" and "not *a high temperature*", where the positive frame says "had *a
+fever*"; a first draft of the fever rules rewrote the negative frame's
+temperature phrasing and not its `any fever`, manufacturing a true/false
+vocabulary gap of 0.218 at p = 1 where the library had 0.014. The remedy is a
+rule for the quantified form, and the general lesson is that a rule set must be
+read against the *frames* that carry the labels, not only against the hand-written
+libraries. Note also that `declarative_v1` is invisible to the token-association
+lint, which excludes generated libraries because their labels are per line.
