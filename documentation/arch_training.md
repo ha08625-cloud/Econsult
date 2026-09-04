@@ -1965,7 +1965,9 @@ is the plan of record; `reports/synthetic_data/2026-09-03-token-label-associatio
 (the flip rate, and the decision to proceed on a Judgement reading) are the two
 gates it was built through, and
 `reports/encoder_training/2026-09-04-lexical-variant.md` is the result, read
-against the pre-registration committed beside it.
+against the pre-registration committed beside it, with
+`2026-09-04-lexical-variant-plain-english.md` as the standalone version for a
+reader who has not read this document.
 
 **The short version, so it is not reconstructed from the tables below.** The
 mechanism the pass targets is real and the pass removes it: under paraphrase the

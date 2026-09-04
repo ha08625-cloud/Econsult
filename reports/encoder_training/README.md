@@ -17,7 +17,9 @@ would overwrite each other's `<signal>.arm_b_finetune.json`. `noise/` and `decl/
 are 12.6's and 12.5's; `lexical/` is 12.10's 2x2, plus `paired_flip_rate.json` —
 the flip rate and the decisive-accuracy guard, computed across the four cells
 after they ran. The dated write-up for each sits at this level, not inside the
-sub-directory.
+sub-directory — `2026-09-04-lexical-variant.md` for 12.10, with
+`-plain-english.md` beside it and `-preregistration.md` holding the bounds it is
+read against.
 
 `<stem>` is `baselines`, `arm_a_probe`, `arm_b_finetune`, `joint_comparison`
 (the three-arm single/volume/joint sweep) or `companion_comparison` (Arm 0, Arm
