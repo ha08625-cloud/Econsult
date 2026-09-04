@@ -1929,3 +1929,100 @@ before it trains**.
 `planned_updates/urinary_frequency_nocturia_labelling.md` is the provisional
 plan, and it is provisional: two unresolved labelling decisions and a diagnostic
 step that could retire most of it.
+
+### 12.10 Lexical variant expansion — the pass is built, nothing is measured
+
+`scripts/synthetic_data/expand.py` rewrites a finished tree with literal,
+directional, whole-word substitutions, so that the *choice of word* stops
+carrying information about the label.
+`documentation/encoder_plans/lexical_variant_expansion_implementation.md` is the
+plan of record and carries the design decisions and the task breakdown;
+`data/expansion/README.md` is the rule-file reference.
+
+**Only the pass exists.** No rule set is authored, nothing has been trained, and
+there is no result. The two gates in front of it read out as follows, and both
+reports are worth having whatever happens next:
+
+* `reports/synthetic_data/2026-09-03-token-label-association.md` measured the
+  libraries and found the largest content-word association in the tree: `fever`
+  on 41 of 45 `fever_null_historical` lines and 0 of 50
+  `fever_null_attribution` ones, a within-`null` skew of 0.911. The §8 fault
+  this report was built to catch — a token confined to one library — is
+  therefore no longer uncatchable.
+* `reports/encoder_training/2026-09-03-paraphrase-flip-diagnostic.md` asked
+  whether a trained head *uses* that skew: 15.4% of paraphrase pairs flipped,
+  95% interval [2.6%, 33.3%], on 13 real submissions. That landed in the
+  pre-registered Judgement band, and the maintainer resolved it in favour of
+  proceeding. **Read that report's direction matrix before reading the rate**:
+  one flipped pair of thirty-nine is the shape this pass targets, two are
+  polarity flips it is pre-registered as not fixing, and half the flips are the
+  head becoming *correct* once the wording moves.
+
+**It is post-processing over the JSONL, in 12.6's shape and for 12.6's reasons.**
+Editing library text would change each untagged line's cluster key
+(`manifest.cluster_key` is `cluster_id or normalise(text)`) and therefore its
+split, so a library-level expander silently repartitions the data and the two
+arms stop being comparable. Touching no library file means no cluster key moves,
+the generator stays byte-identical, the golden digest holds, and every expanded
+example is paired by `example_id` with its clean original — which is what makes
+the eventual decision metric a paired statistic rather than a bespoke corpus.
+
+**The label-safety question is the whole of the risk, and it is answered at rule
+load time.** This is the second pass that edits text after the label is fixed.
+Three layers stand against it, and a rule failing any of them stops the run
+before a byte is written:
+
+1. a **declared invariant** on every rule, stating what it preserves — tense,
+   person, certainty, polarity. Human-written and human-reviewed, and the
+   residual risk: nothing mechanical catches a swap that changes the referent
+   without touching a structural token;
+2. **structural-token invariance** — the `noise.STRUCTURAL_FROZEN` subsequence
+   must be identical between `find` and `replace`, compared after contraction
+   normalisation so Tier A's `haven't → have not` is not falsely flagged by the
+   layer that exists to catch a *dropped* negation;
+3. **signal-lexicon invariance** — via `lint.lexicon_matches`, a rule may not
+   change whether its phrase reads as its own signal's language, nor introduce
+   another signal's language that `find` did not carry. This is the per-rule
+   form of "re-run the lint over the expanded tree": cheaper, and it says which
+   rule is at fault.
+
+**Label-blindness is a property of the architecture, not a discipline.** Rules
+are scoped to a *signal* and applied to whole example text with no sight of the
+label, so a rule **cannot** be applied to `true` examples and not to `null` ones
+— the trap of a partial pass manufacturing exactly the shortcut the ticket
+exists to remove is closed by construction. It is measured anyway: the sidecar
+reports realised substitutions per hundred words by label and by label mode, and
+a gap there is telemetry about the libraries (a class whose lines carry fewer
+matchable phrases) rather than a label-aware pass.
+
+**Two things the rule format deliberately cannot express**, both recorded here
+because they look safe and are not:
+
+* **Numeric ranges.** The fever libraries already encode the ~38.0 threshold —
+  36.5 and 36.8 in the normal-temperature lines, 38.2 and 39.5 in the fever ones
+  — so sweeping a temperature across it walks a `fever_true` line into saying
+  the patient's temperature was normal, and *neither mechanical layer can see
+  it*: the fever lexicon holds no numeric terms and `STRUCTURAL_FROZEN` holds no
+  digits. Numeric variation is a different rule kind, wanting a per-label-class
+  safe band and a fourth layer.
+* **Certainty adjectives.** `sure`, `certain`, `positive` and `definitely` are
+  in no lexicon and not in `STRUCTURAL_FROZEN`, whose modality group stops at
+  `maybe`, `might`, `think` and `probably`. So `"I'm pretty sure" → "I'm pretty
+  certain"` passes both mechanical layers while moving the axis that *defines*
+  `<signal>_null_hedged` against `<signal>_true`. That gap between what the
+  frozen list is documented to protect and what it holds is worth closing on its
+  own account, independently of this ticket.
+
+**What it will be worth, stated the way section 9 states things.** It **adds no
+ideas and no effective sample size** — one line written twelve ways is one idea,
+and the expanded tree holds exactly as many examples as the clean one, carrying
+the same `fragments` provenance and the same cluster keys. No report may quote
+it as growth. What it could buy is the removal of a measured fault, and whether
+it does is Task 6's four-cell measurement, which is not built.
+
+**DD9: expansion and the noise pass do not run together.** Both multiply surface
+forms, so a single experiment carrying both is unattributable. `expand.py`
+refuses a tree already carrying a `noise` block; the reverse is documented
+rather than enforced, because 12.6 is built and measured and this plan does not
+edit it. If the two are ever combined the order is **expand then noise** —
+paraphrase first, damage the final surface second.
