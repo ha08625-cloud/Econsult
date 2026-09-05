@@ -13,9 +13,8 @@ were written down before the run in `2026-09-04-lexical-variant-preregistration.
 ## 0. The one-sentence version
 
 The problem is real and the fix works, but both are **much smaller than expected**
-— and the safety check we built to catch the fix going wrong was pointed at the
-wrong data, so it said "fine" while the one instrument that could see real
-patients' writing said something more worrying.
+— mostly because the fix itself was small: it only ever swapped one word for
+another, and barely widened the range of phrasings the model sees.
 
 ---
 
@@ -169,12 +168,28 @@ of nothing dropped from about 12 of 49 cases to about 4 — that is a genuine
 improvement on a failure mode this project has tracked since August. But noticing
 a real fever fell from about 5 of 9 to about 4 of 9.
 
-**None of this is statistically separated.** Nine submissions, five folds, error
-bars wider than the effect. Two things still make it worth taking seriously: the
-direction is consistent across four of the five folds, and it is **not** a
-side-effect of how the model's confidence dial was set — that dial moved the
-*opposite* way, which should have made the model say "yes" more, and it said
-"yes" less anyway.
+**None of this is statistically separated, and a later check showed it is weaker
+than we first wrote.** *(Corrected 5 September.)* This section originally read as
+a warning. Then we compared it with the typo experiment, which ran the same 67
+submissions over four models built by a different method:
+
+| model trained on | scored on real writing |
+|---|---|
+| clean text | 76.7% |
+| 3% typos | 76.7% |
+| 6% typos | 78.9% |
+| 12% typos | **64.4%** |
+
+The 12% model dropped **12.3 points** — more than the reworded model's 11 — and
+the typo experiment concluded that model was good and harmless. With only 18
+messages in this slice and an error bar of ±23 points, **a swing of this size is
+what this measurement does when nothing is wrong.**
+
+So the honest reading is: this instrument cannot tell us whether the reworded
+model got worse at real writing, or better, or neither. It is a check for
+something going badly wrong, not a way to compare two models — which is exactly
+what we have always said about these 67 submissions, and what this section
+originally forgot to apply to its own numbers.
 
 ---
 
@@ -192,17 +207,23 @@ which is built from the same sentence fragments as the training data, could ever
 produce a number that big. It can't, and we had already written down the reason
 why in the same document, about a different measurement.
 
-**We put the safety check on the wrong data.** We knew in advance that a model
-could cheat this test by simply answering "didn't mention it" to everything —
-that scores a flip rate of zero. So we added a guard: the model isn't allowed to
-get worse at the messages that matter. It passed comfortably; on our synthetic
-data the reworded-trained model got *better* at those.
+**We over-read a wobble as a finding.** *(Corrected 5 September — this section
+originally claimed the safety check had failed.)*
 
-Then section 5 happened. On real patients' writing the reworded model did become
-more cautious, and it did get worse at the messages that matter — by 11 points.
-**The guard we built specifically to catch that behaviour was measuring somewhere
-the behaviour doesn't show up.** That's the most useful thing this run taught us,
-and it applies to any guard of this shape we build in future.
+We knew in advance that a model could cheat this test by answering "didn't
+mention it" to everything, which scores a flip rate of zero. So we added a guard:
+the model isn't allowed to get worse at the messages that matter. It passed
+comfortably.
+
+Section 5 then appeared to show the reworded model getting worse at exactly that,
+by 11 points, on real patients' writing — so we wrote up the guard as having
+looked in the wrong place. **That was wrong**, and section 5 now explains why: a
+model everyone agrees is fine swung 12.3 points on the same measurement. An
+11-point move there is what the instrument does at rest.
+
+The real lesson is smaller and more boring, and it's still worth having: **we
+have no way of knowing whether that guard works, because nothing in this run
+actually tried to cheat it.** It passed a test it was never given.
 
 ---
 
@@ -211,7 +232,7 @@ and it applies to any guard of this shape we build in future.
 | what we predicted | what happened |
 |---|---|
 | **Flips fall by at least 5 points** | **Not met** — and it was never possible. Fell 1.05 points, from 1.89% to 0.84%. |
-| **The model doesn't get worse at the messages that matter** | **Held** on synthetic data (it got 1.2 points better). Did **not** hold on the 67 real submissions. |
+| **The model doesn't get worse at the messages that matter** | **Held** on synthetic data (it got 1.2 points better). The 67 real submissions looked worse, but section 5 shows that slice cannot tell the difference either way. |
 | **Nothing should move on our own test data** | **Roughly held.** Everything moved by 1.2 points or less and nothing is separated. |
 | **The data set does not get bigger** | **Held, mechanically.** Same 10,000 messages, same 417 underlying ideas. One sentence written twelve ways is one idea. |
 | **The 67 real submissions are a sanity check, not a scoreboard** | **Held, and they earned their keep** — they're the only place anything visible happened. |
@@ -242,27 +263,45 @@ and it applies to any guard of this shape we build in future.
 
 ## 9. What to do next
 
-1. **Don't roll this out to the other six symptoms.** The accuracy case is 0.21
-   points on our own data and unmeasurable on real writing. Extending a piece of
-   machinery across six symptoms on a result that isn't separated is how a
-   project ends up with a component nobody can later evaluate.
-2. **Keep the finding, though.** "Change one word and the model starts inventing
-   fevers, 46 times out of 74" is worth knowing, and the same shape shows up in
-   the real-submission numbers. It's the strongest evidence yet that the concern
-   in section 1 is about the model and not just about the data.
-3. **The blocker is measurement, not method.** Every target in this experiment
-   was set against test data that — by our own argument — cannot contain the
-   problem we were hunting. The only instrument that saw anything was 67
-   submissions with a ±12-point error bar. **More real, hand-labelled patient
-   writing is the prerequisite for spending more time here**, not more synthetic
-   experiments.
-4. **Rewrite the safety check.** Any future guard against "the model went quiet"
-   has to be measured where going quiet is visible.
+*(Revised 5 September, alongside the corrections in sections 5 and 6. The
+original recommended stopping, partly on the strength of a real-text harm we can
+no longer claim to have seen.)*
+
+1. **Don't roll *these particular rules* out to the other six symptoms.** Not
+   because they're dangerous — see point 3 — but because they're **small**. All 36
+   rules do two things: toggle apostrophes, and swap the word "fever" for the word
+   "temperature". Measured over the sentence library, that widens the range of
+   phrasings the model can ever see by **10.8%**, and the run used about a quarter
+   of that. Six more symptoms would mean roughly 200 more hand-written promises
+   for a share of a 3% change.
+2. **Keep the finding.** "Change one word and the model starts inventing fevers,
+   46 times out of 74" is worth knowing. It's the strongest evidence yet that the
+   concern in section 1 is about the model and not just about the data.
+3. **The risk of continuing is lower than this document first said.** The typo
+   experiment measured this same kind of rewriting four times on the same data.
+   None of the four made the model worse on clean text and all four made it
+   slightly better (93.3% → 93.5% → 93.8% → 94.3%). The one piece of evidence
+   pointing the other way here was the real-writing wobble, and section 5 now
+   shows that's what the measurement does at rest. **What is still true:** this
+   kind of rewriting *can* do harm if it's turned up too high — that was measured
+   while the rules were being written — so "unlikely to harm" holds at a sensible
+   setting with the automatic checks passing, and those conditions matter.
+4. **Do the bigger version instead.** The plan is
+   `lexical_variant_expansion_v2_provisional.md`. Instead of swapping one medical
+   word, it swaps whole classes of interchangeable people — sister, brother,
+   cousin, neighbour, colleague — which are scattered through every symptom's
+   sentences rather than concentrated in fever's. Six word lists reach **25.8%**
+   where thirty-six hand-written rules reached 10.8%, and 82% of the sentences
+   they touch are outside fever, so one set of lists covers all seven symptoms.
+5. **More real, hand-labelled patient writing remains the real blocker.** Every
+   target in this experiment was set against our own recombined data, which by our
+   own argument can't contain the problem we were hunting. The 67 real submissions
+   can catch a disaster and nothing finer.
 
 The honest summary: we suspected the model was reading our writing habits rather
 than what patients actually said, and we caught it doing exactly that, in a
 specific and nameable way. Then we found the habit costs almost nothing on our own
-test data, that the fix's benefit can't be told apart from noise, and that on real
-patients' writing the fix may have made the model more timid in a way our safety
-check was built to catch and couldn't see. The mechanism is confirmed. The case
-for acting on it is not.
+test data, and that the fix's benefit can't be told apart from noise — largely
+because the fix only ever changed one word. The mechanism is confirmed. The case
+for acting on it *at this size* is not, and the next step is to do it at a size
+where the question can actually be answered.
