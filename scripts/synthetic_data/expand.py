@@ -140,6 +140,72 @@ RULE_KEYS = RULE_REQUIRED_KEYS | RULE_OPTIONAL_KEYS
 #: Top-level keys of a rule file. Closed for the same reason.
 FILE_KEYS = frozenset({"signal", "rules"})
 
+#: Where swap-class files live, one per group, named ``<group>.classes.json``.
+#:
+#: A subdirectory of :data:`RULES_ROOT` rather than a sibling of the rule
+#: files, because the two formats are selected independently at run time and a
+#: glob over one must never pick up the other.
+CLASSES_ROOT = RULES_ROOT / "classes"
+
+#: Every key a swap class may carry. Closed, exactly as :data:`RULE_KEYS` is
+#: and for a sharper version of the same reason: one class invariant now stands
+#: for dozens of generated rules, so a misspelt key removes the safety argument
+#: for all of them at once rather than for one.
+CLASS_REQUIRED_KEYS = frozenset(
+    {"id", "gender", "life_stage", "number", "person", "tier", "members", "invariant"}
+)
+CLASS_KEYS = CLASS_REQUIRED_KEYS
+
+#: Top-level keys of a class file. Closed for the same reason.
+CLASS_FILE_KEYS = frozenset({"group", "classes"})
+
+#: The closed vocabularies the four declaration keys draw from (DD11).
+#:
+#: They are **declarations, not machinery**: nothing downstream reads them, and
+#: the loader checks only that each is a known word and that no member appears
+#: in two classes of a group. The format cannot check agreement -- that "my
+#: kids were" survives ``kids -> child`` is a human's judgement -- and DD11 is
+#: explicit that it never will. What they buy is a reviewer's job made small
+#: and concrete: every member of one class must answer to the same four words,
+#: so a list is checkable by reading it rather than by imagining the sentences
+#: it lands in.
+#:
+#: ``neutral`` is a person whose gender the class does not fix; ``none`` is a
+#: class whose members are not people at all (weekdays, places), and the same
+#: distinction is why ``life_stage`` and ``person`` carry ``none`` too.
+GENDERS = ("female", "male", "neutral", "none")
+LIFE_STAGES = ("adult", "elder", "child", "none")
+NUMBERS = ("singular", "plural")
+PERSONS = ("first-person", "third-party", "none")
+
+#: A class smaller than this generates nothing; a class larger than it stops
+#: being reviewable, in both the pair count (13 members is 156 ordered pairs)
+#: and the number of sentences a reader has to hold in their head at once.
+MIN_CLASS_MEMBERS = 2
+MAX_CLASS_MEMBERS = 12
+
+#: Floor on a class invariant, in characters. Twice the floor the committed
+#: rule files are held to, because of that concentration of risk: a rule
+#: invariant answers for one swap and a class invariant answers for every
+#: ordered pair the list generates (DD6 layer 1).
+MIN_CLASS_INVARIANT = 120
+
+#: Vowels for the multi-word member check (v2 review, F6). A vowel-initial
+#: member landing where the library wrote "a" produces "a other half", and no
+#: mechanical layer sees it: neither a structural token nor a signal lexicon
+#: has moved.
+#:
+#: The check refuses a vowel-initial member only when it is **multi-word**,
+#: which is the line the plan draws and is a floor rather than a fix. A
+#: single vowel-initial word ("aunt", "uncle", "eldest") has the same failure
+#: mode and the loader does not catch it; what stands behind those is the
+#: class invariant and the dry-run read (Task 6), the same as for every other
+#: agreement question the format cannot express (DD11).
+#:
+#: Orthographic, so "hour" passes and "unit" does not. Both are wrong about
+#: English and neither matters at this floor.
+_VOWELS = frozenset("aeiou")
+
 #: The two tiers this pass will run (DD4). Tier A is orthography and
 #: contraction -- it cannot change which word a token is. Tier B is signal
 #: vocabulary -- a real risk, and the one the three layers exist to bound.
@@ -425,16 +491,38 @@ def _check_structural(rule: Rule) -> None:
         )
 
 
-def _check_lexicons(rule: Rule, signal: str) -> None:
+def _check_lexicons(rule: Rule, signal: str | None) -> None:
     """Layer 3 of the load check: DD6's signal-lexicon invariance.
 
-    Two halves. The rule may not change whether its phrase reads as **its own**
-    signal -- ``fever -> temperature`` is a swap inside the lexicon, ``fever ->
-    headache`` walks a decisive line into saying nothing about fever. And it may
-    not introduce **another** signal's language that ``find`` did not have,
-    which is the one thing re-running the whole lint over the expanded tree was
-    ever for, done per-rule: cheaper, and precise about which rule is at fault.
+    For a rule read from a ``*.rules.json`` file, ``signal`` is that file's
+    signal and the check has two halves. The rule may not change whether its
+    phrase reads as **its own** signal -- ``fever -> temperature`` is a swap
+    inside the lexicon, ``fever -> headache`` walks a decisive line into saying
+    nothing about fever. And it may not introduce **another** signal's language
+    that ``find`` did not have, which is the one thing re-running the whole
+    lint over the expanded tree was ever for, done per-rule: cheaper, and
+    precise about which rule is at fault.
+
+    A class-generated rule has **no signal** -- that is DD2, and it is what
+    makes one class file worth thirteen reviews across seven libraries -- so
+    ``signal`` is ``None`` and the check is strictly stronger instead: the set
+    of matched terms must be unchanged for *every* signal. There is no "own"
+    lexicon to swap inside, so a class that moves signal language at all is a
+    class doing a signal rule file's job in a file no signal reviewed.
     """
+    if signal is None:
+        for other in sorted(SIGNAL_LEXICONS):
+            before = set(lexicon_matches(rule.find, other))
+            after = set(lexicon_matches(rule.replace, other))
+            if before != after:
+                moved = ", ".join(sorted(before ^ after))
+                raise ExpansionError(
+                    f"rule {rule.id!r} (class {rule.origin!r}): signal-lexicon invariance "
+                    f"(DD6 layer 3). {rule.find!r} -> {rule.replace!r} moves {other} language "
+                    f"({moved}). A swap class belongs to no signal, so it may not move any "
+                    "signal's vocabulary; that swap belongs in that signal's rule file"
+                )
+        return
     own_before = bool(lexicon_matches(rule.find, signal))
     own_after = bool(lexicon_matches(rule.replace, signal))
     if own_before != own_after:
@@ -527,6 +615,327 @@ def rules_path(signal: str, rules_dir: Path | None = None) -> Path:
     """Where ``signal``'s rule file lives."""
     root = RULES_ROOT if rules_dir is None else rules_dir
     return root / f"{signal}.rules.json"
+
+
+# ---------------------------------------------------------------------------
+# The swap-class format
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SwapClass:
+    """One hand-written list of interchangeable members, and its invariant.
+
+    The whole point of the format is arithmetic: a list of eight members is
+    one review and fifty-six ordered pairs, and because the members belong to
+    no signal those pairs apply to every library rather than to one (DD2,
+    DD3). Thirteen such lists are the ticket.
+
+    ``gender``, ``life_stage``, ``number`` and ``person`` are declarations. The
+    loader checks they are known words and that no member sits in two classes
+    of a group; nothing checks that the members *are* what they say, and
+    nothing can -- see :data:`GENDERS`. They exist so a reviewer reads one list
+    against one sentence ("my X was up all night") instead of reading fifty-six
+    pairs.
+
+    ``invariant`` is DD6 layer 1 for every pair the class generates, which is
+    why it is held to twice a rule's floor.
+    """
+
+    id: str
+    gender: str
+    life_stage: str
+    number: str
+    person: str
+    tier: str
+    members: tuple[str, ...]
+    invariant: str
+
+    def rules(self) -> tuple[Rule, ...]:
+        """Every ordered pair of distinct members, as generated rules.
+
+        Members are paired in sorted order rather than authored order, so the
+        rule sequence is a function of the *set* of members and reordering the
+        JSON list cannot move a rule id or reorder the pass's draws.
+        """
+        ordered = sorted(self.members)
+        return tuple(
+            Rule(
+                id=_class_rule_id(self.id, find, replace),
+                tier=self.tier,
+                find=find,
+                replace=replace,
+                invariant=self.invariant,
+                weight=1.0,
+                origin=self.id,
+            )
+            for find in ordered
+            for replace in ordered
+            if find != replace
+        )
+
+
+@dataclass(frozen=True)
+class ClassSet:
+    """One group's classes, the rules they expand to, and its provenance.
+
+    ``path`` and ``digest`` are ``None`` for a set parsed from a document in
+    memory, which is what lets the tests put a malformed class in front of
+    every check without a disk; :func:`load_classes` fills them in.
+    """
+
+    group: str
+    classes: tuple[SwapClass, ...]
+    rules: tuple[Rule, ...]
+    path: Path | None = None
+    digest: str | None = None
+
+
+def _class_rule_id(class_id: str, find: str, replace: str) -> str:
+    """The deterministic id of one generated rule.
+
+    Spaces become underscores so that a member like "little one" leaves an id
+    that reads as a single token in a log line, a sidecar and a test failure.
+    """
+    return f"{class_id}:{find}->{replace}".replace(" ", "_")
+
+
+def _check_class_shape(raw: Mapping[str, object], group: str, index: int) -> SwapClass:
+    """Turn one JSON object into a :class:`SwapClass`, or say why it is not one."""
+    where = f"class {index}"
+    keys = set(raw)
+    unknown = keys - CLASS_KEYS
+    if unknown:
+        raise ExpansionError(
+            f"{where}: unknown key(s) {', '.join(sorted(unknown))}; a class carries only "
+            f"{', '.join(sorted(CLASS_KEYS))} and the key set is closed, so a misspelt key is a "
+            "silently ignored declaration rather than a comment"
+        )
+    missing = CLASS_REQUIRED_KEYS - keys
+    if missing:
+        raise ExpansionError(f"{where}: missing required key(s) {', '.join(sorted(missing))}")
+
+    for name in ("id", "gender", "life_stage", "number", "person", "tier", "invariant"):
+        value = raw[name]
+        if not isinstance(value, str) or not value.strip():
+            raise ExpansionError(f"{where}: {name!r} must be a non-empty string, got {value!r}")
+
+    class_id = str(raw["id"]).strip()
+    where = f"class {class_id!r}"
+    if not class_id.startswith(f"{group}."):
+        raise ExpansionError(
+            f"{where}: a class id is '<group>.<name>', so this one must start with "
+            f"{group + '.'!r}. The id is carried on every rule the class generates and is the "
+            "only provenance a reader of the sidecar gets"
+        )
+
+    for name, vocabulary in (
+        ("gender", GENDERS),
+        ("life_stage", LIFE_STAGES),
+        ("number", NUMBERS),
+        ("person", PERSONS),
+    ):
+        value = str(raw[name]).strip()
+        if value not in vocabulary:
+            raise ExpansionError(
+                f"{where}: {name} {value!r} is not one of {', '.join(vocabulary)}. The "
+                "vocabularies are closed so that a declaration is a word a reviewer can check "
+                "the whole list against, not free text"
+            )
+
+    tier = str(raw["tier"]).strip()
+    if tier not in TIERS:
+        raise ExpansionError(f"{where}: tier {tier!r} is not one of {', '.join(TIERS)}")
+
+    invariant = str(raw["invariant"]).strip()
+    if len(invariant) < MIN_CLASS_INVARIANT:
+        raise ExpansionError(
+            f"{where}: invariant is {len(invariant)} characters and the floor is "
+            f"{MIN_CLASS_INVARIANT}. It is the declared invariant for every ordered pair this "
+            "class generates, and after DD6a no mechanical layer stands behind it -- say what "
+            "makes these members interchangeable and in what sentence you checked it"
+        )
+
+    raw_members = raw["members"]
+    if not isinstance(raw_members, list):
+        raise ExpansionError(f"{where}: 'members' must be a list, got {raw_members!r}")
+    members: list[str] = []
+    for member in raw_members:
+        if not isinstance(member, str) or not member.strip():
+            raise ExpansionError(f"{where}: member {member!r} must be a non-empty string")
+        if member != member.strip():
+            raise ExpansionError(f"{where}: member {member!r} has leading or trailing whitespace")
+        if not _WORD_CHARACTER.match(member[0]) or not _WORD_CHARACTER.match(member[-1]):
+            raise ExpansionError(
+                f"{where}: member {member!r} must start and end on a word character, or the "
+                "whole-word boundary around a match site means nothing"
+            )
+        if " " in member and member[0].lower() in _VOWELS:
+            raise ExpansionError(
+                f"{where}: member {member!r} is vowel-initial and multi-word. Landing it where "
+                "the library wrote 'a' produces 'a other half', and neither mechanical layer "
+                "sees it; write it as a determiner-anchored swap in a rule file instead"
+            )
+        members.append(member)
+
+    if not MIN_CLASS_MEMBERS <= len(members) <= MAX_CLASS_MEMBERS:
+        raise ExpansionError(
+            f"{where}: {len(members)} member(s); a class holds between {MIN_CLASS_MEMBERS} and "
+            f"{MAX_CLASS_MEMBERS}. Below the floor it generates no pairs at all; above the "
+            "ceiling the pair count and the review both stop being something a person finishes"
+        )
+    duplicates = sorted(
+        {
+            folded
+            for folded in (fold_haystack(member) for member in members)
+            if [fold_haystack(other) for other in members].count(folded) > 1
+        }
+    )
+    if duplicates:
+        raise ExpansionError(
+            f"{where}: member(s) {', '.join(duplicates)} listed more than once; a repeated "
+            "member is a rule that would be generated twice and a list nobody has read"
+        )
+
+    return SwapClass(
+        id=class_id,
+        gender=str(raw["gender"]).strip(),
+        life_stage=str(raw["life_stage"]).strip(),
+        number=str(raw["number"]).strip(),
+        person=str(raw["person"]).strip(),
+        tier=tier,
+        members=tuple(members),
+        invariant=invariant,
+    )
+
+
+def parse_classes(payload: object, *, source: str) -> ClassSet:
+    """Validate a loaded class document, expand it, and return a :class:`ClassSet`.
+
+    File-free, so the tests can put a malformed document in front of every
+    check without touching a disk.
+
+    Generation is a convenience for the author and not a hole in the safety
+    argument (DD3): every ordered pair the classes expand to runs the same
+    per-rule layers a hand-written rule does -- layer 1 whole-word matchability,
+    layer 2 structural invariance (on person *class*, because these rules carry
+    an ``origin``), layer 3 signal-lexicon invariance in its stronger
+    signal-agnostic form.
+    """
+    if not isinstance(payload, dict):
+        raise ExpansionError(f"{source} is not a JSON object")
+    unknown = set(payload) - CLASS_FILE_KEYS
+    if unknown:
+        raise ExpansionError(f"{source}: unknown top-level key(s) {', '.join(sorted(unknown))}")
+    group = payload.get("group")
+    if not isinstance(group, str) or not group.strip():
+        raise ExpansionError(f"{source}: 'group' must be a non-empty string, got {group!r}")
+    group = group.strip()
+    raw_classes = payload.get("classes")
+    if not isinstance(raw_classes, list) or not raw_classes:
+        raise ExpansionError(f"{source}: 'classes' must be a non-empty list")
+
+    classes: list[SwapClass] = []
+    rules: list[Rule] = []
+    seen_ids: set[str] = set()
+    #: Folded member -> the class that already claimed it. A word in two
+    #: classes of one group is a swap that escapes its own declared gender,
+    #: life stage or number: "sister" in both the female and the neutral class
+    #: generates "sister -> brother" through the neutral list (DD11).
+    seen_members: dict[str, str] = {}
+    for index, raw in enumerate(raw_classes):
+        if not isinstance(raw, dict):
+            raise ExpansionError(f"{source}: class {index} is not a JSON object")
+        try:
+            swap_class = _check_class_shape(raw, group, index)
+            if swap_class.id in seen_ids:
+                raise ExpansionError(f"class {swap_class.id!r}: duplicate id")
+            seen_ids.add(swap_class.id)
+            for member in swap_class.members:
+                folded = fold_haystack(member)
+                owner = seen_members.get(folded)
+                if owner is not None:
+                    raise ExpansionError(
+                        f"class {swap_class.id!r}: member {member!r} is already in class "
+                        f"{owner!r}. A word in two classes of one group is a pair that escapes "
+                        "the declaration both classes make about it"
+                    )
+                seen_members[folded] = swap_class.id
+            for rule in swap_class.rules():
+                _check_matchable(rule)
+                _check_structural(rule)
+                _check_lexicons(rule, None)
+                rules.append(rule)
+        except ExpansionError as error:
+            raise ExpansionError(f"{source}: {error}") from None
+        classes.append(swap_class)
+
+    return ClassSet(group=group, classes=tuple(classes), rules=tuple(rules))
+
+
+def load_classes(path: Path) -> ClassSet:
+    """Load and validate one group's class file.
+
+    Every layer runs here, before the pass has opened a single dataset, for the
+    reason :func:`load_rules` gives: a class file is authored by a human and
+    the rejection message is the whole of that person's feedback loop.
+    """
+    if not path.is_file():
+        raise ExpansionError(f"no class file at {path}")
+    raw = path.read_bytes()
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ExpansionError(f"{path} is not valid JSON: {error}") from error
+    parsed = parse_classes(payload, source=str(path))
+    expected = path.name.removesuffix(".classes.json")
+    if parsed.group != expected:
+        raise ExpansionError(
+            f"{path}: declares group {parsed.group!r} but is named for {expected!r}; the "
+            "filename is how an arm selects a group, so the two disagreeing means one of them "
+            "is silently not what was run"
+        )
+    return dataclass_replace(parsed, path=path, digest=hashlib.sha256(raw).hexdigest())
+
+
+def classes_path(group: str, classes_dir: Path | None = None) -> Path:
+    """Where ``group``'s class file lives."""
+    root = CLASSES_ROOT if classes_dir is None else classes_dir
+    return root / f"{group}.classes.json"
+
+
+def load_class_groups(
+    groups: Sequence[str], classes_dir: Path | None = None
+) -> tuple[ClassSet, ...]:
+    """Load several groups, refusing a class id or a member shared between them.
+
+    Uniqueness inside a group is :func:`parse_classes`'s job; this is the same
+    check one level up, because two files are exactly where a member gets
+    copied and forgotten.
+    """
+    loaded: list[ClassSet] = []
+    seen_ids: dict[str, Path] = {}
+    seen_members: dict[str, str] = {}
+    for group in groups:
+        class_set = load_classes(classes_path(group, classes_dir))
+        for swap_class in class_set.classes:
+            first = seen_ids.get(swap_class.id)
+            if first is not None:
+                raise ExpansionError(
+                    f"class {swap_class.id!r} is declared in both {first} and {class_set.path}"
+                )
+            seen_ids[swap_class.id] = class_set.path or Path(group)
+            for member in swap_class.members:
+                folded = fold_haystack(member)
+                owner = seen_members.get(folded)
+                if owner is not None:
+                    raise ExpansionError(
+                        f"{class_set.path}: member {member!r} of class {swap_class.id!r} is "
+                        f"already in class {owner!r}"
+                    )
+                seen_members[folded] = swap_class.id
+        loaded.append(class_set)
+    return tuple(loaded)
 
 
 # ---------------------------------------------------------------------------

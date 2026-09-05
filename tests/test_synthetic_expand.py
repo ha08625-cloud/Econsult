@@ -14,6 +14,7 @@ apart is worse than the import.
 
 import json
 import random
+import re
 from pathlib import Path
 
 import pytest
@@ -27,8 +28,10 @@ from scripts.synthetic_data.expand import (
     expand_example,
     expand_text,
     fold_haystack,
+    load_classes,
     load_rules,
     match_sites,
+    parse_classes,
     parse_rules,
     structural_sequence,
 )
@@ -299,6 +302,303 @@ def test_a_missing_rule_file_is_refused(tmp_path):
 def test_rule_files_live_outside_the_library_tree():
     """DD11. ``data/synthetic/`` is guarded as libraries and manifest only."""
     assert not RULES_ROOT.is_relative_to("data/synthetic")
+
+
+# ---------------------------------------------------------------------------
+# The swap-class format and its loader (DD3, DD11)
+# ---------------------------------------------------------------------------
+
+#: Long enough to clear the class floor, which is twice the rule floor.
+CLASS_INVARIANT = (
+    "Every member names an adult female third party, so the third-party null axis does not "
+    "move whichever way the pair runs; read against 'my X was up all night with it'."
+)
+
+
+def swap_class(**overrides):
+    """A valid class, with whatever the caller wants changed."""
+    base = {
+        "id": "referent.adult_female",
+        "gender": "female",
+        "life_stage": "adult",
+        "number": "singular",
+        "person": "third-party",
+        "tier": "B",
+        "members": ["mum", "mother", "sister"],
+        "invariant": CLASS_INVARIANT,
+    }
+    base.update(overrides)
+    return base
+
+
+def load_class(*raw_classes, group="referent"):
+    """Validate a class document built from ``raw_classes`` and return the set."""
+    return parse_classes({"group": group, "classes": list(raw_classes)}, source="<test>")
+
+
+def test_a_well_formed_class_file_loads():
+    loaded = load_class(swap_class())
+    assert loaded.group == "referent"
+    assert [one.id for one in loaded.classes] == ["referent.adult_female"]
+    assert loaded.classes[0].members == ("mum", "mother", "sister")
+    assert loaded.path is None and loaded.digest is None
+
+
+def test_a_class_expands_to_every_ordered_pair():
+    """DD3's arithmetic: n members are n*(n-1) rules from one review."""
+    rules = load_class(swap_class()).rules
+    assert len(rules) == 6
+    assert {(one.find, one.replace) for one in rules} == {
+        (find, replace)
+        for find in ("mum", "mother", "sister")
+        for replace in ("mum", "mother", "sister")
+        if find != replace
+    }
+    assert all(one.origin == "referent.adult_female" for one in rules)
+    assert all(one.tier == "B" for one in rules)
+    assert all(one.invariant == CLASS_INVARIANT for one in rules)
+    assert all(one.weight == 1.0 for one in rules)
+
+
+def test_generated_ids_are_deterministic_and_survive_a_reordered_list():
+    """Two loads produce byte-identical rule order, and so do two orderings."""
+    first = [one.id for one in load_class(swap_class()).rules]
+    again = [one.id for one in load_class(swap_class()).rules]
+    shuffled = [one.id for one in load_class(swap_class(members=["sister", "mum", "mother"])).rules]
+    assert first == again == shuffled
+    assert first == sorted(first)
+    assert "referent.adult_female:mum->sister" in first
+
+
+def test_a_multi_word_member_leaves_an_id_with_no_spaces():
+    loaded = load_class(
+        swap_class(
+            id="referent.child_neutral_singular",
+            gender="neutral",
+            life_stage="child",
+            members=["kid", "little one"],
+            invariant=CLASS_INVARIANT,
+        )
+    )
+    assert {one.id for one in loaded.rules} == {
+        "referent.child_neutral_singular:kid->little_one",
+        "referent.child_neutral_singular:little_one->kid",
+    }
+
+
+@pytest.mark.parametrize(
+    ("overrides", "fragment"),
+    [
+        ({"note": "a comment"}, "unknown key"),
+        ({"gender": "woman"}, "not one of female, male, neutral, none"),
+        ({"life_stage": "grown"}, "not one of adult, elder, child, none"),
+        ({"number": "many"}, "not one of singular, plural"),
+        ({"person": "second-person"}, "not one of first-person, third-party, none"),
+        ({"tier": "C"}, "not one of A, B"),
+        ({"invariant": "   "}, "non-empty string"),
+        ({"members": "mum"}, "must be a list"),
+        ({"members": ["mum", ""]}, "non-empty string"),
+        ({"members": ["mum", " sister"]}, "leading or trailing whitespace"),
+        ({"members": ["mum", "(sister)"]}, "start and end on a word character"),
+        ({"id": "adult_female"}, "must start with 'referent.'"),
+    ],
+)
+def test_the_class_key_set_is_closed_and_typed(overrides, fragment):
+    with pytest.raises(ExpansionError, match=re.escape(fragment)):
+        load_class(swap_class(**overrides))
+
+
+def test_a_missing_class_key_is_refused():
+    raw = swap_class()
+    del raw["person"]
+    with pytest.raises(ExpansionError, match="missing required key"):
+        load_class(raw)
+
+
+def test_an_unknown_top_level_key_in_a_class_file_is_refused():
+    with pytest.raises(ExpansionError, match="unknown top-level key"):
+        parse_classes(
+            {"group": "referent", "classes": [swap_class()], "notes": "hello"},
+            source="<test>",
+        )
+
+
+def test_a_class_file_carries_no_signal():
+    """DD2. A class belongs to no signal, so 'signal' is not a key it may carry."""
+    assert "signal" not in expand.CLASS_KEYS
+    with pytest.raises(ExpansionError, match="unknown top-level key"):
+        parse_classes(
+            {"group": "referent", "classes": [swap_class()], "signal": SIGNAL},
+            source="<test>",
+        )
+
+
+def test_duplicate_class_ids_are_refused():
+    with pytest.raises(ExpansionError, match="duplicate id"):
+        load_class(swap_class(), swap_class(members=["aunt", "auntie"]))
+
+
+def test_a_member_in_two_classes_of_a_group_is_refused():
+    """DD11. A word in two classes is a swap that escapes its declared gender."""
+    with pytest.raises(ExpansionError, match="already in class 'referent.adult_female'"):
+        load_class(
+            swap_class(),
+            swap_class(
+                id="referent.adult_neutral",
+                gender="neutral",
+                members=["partner", "sister"],
+            ),
+        )
+
+
+def test_a_member_repeated_within_a_class_is_refused():
+    with pytest.raises(ExpansionError, match="listed more than once"):
+        load_class(swap_class(members=["mum", "mother", "Mum"]))
+
+
+@pytest.mark.parametrize("count", [1, 13])
+def test_a_class_that_is_too_small_or_too_large_is_refused(count):
+    members = [f"mum{index}" for index in range(count)]
+    with pytest.raises(ExpansionError, match="a class holds between 2 and 12"):
+        load_class(swap_class(members=members))
+
+
+def test_a_thin_invariant_is_refused():
+    """One class invariant stands for dozens of rules, so the floor is doubled."""
+    with pytest.raises(ExpansionError, match="the floor is 120"):
+        load_class(swap_class(invariant="Both name a third party."))
+    assert expand.MIN_CLASS_INVARIANT == 120
+
+
+def test_a_vowel_initial_multi_word_member_is_refused():
+    """Review F6: 'a other half', and no mechanical layer sees it."""
+    with pytest.raises(ExpansionError, match="vowel-initial and multi-word"):
+        load_class(
+            swap_class(
+                id="referent.adult_neutral",
+                gender="neutral",
+                members=["partner", "other half"],
+            )
+        )
+
+
+def test_a_vowel_initial_single_word_member_still_loads():
+    assert len(load_class(swap_class(members=["mum", "aunt"])).rules) == 2
+
+
+def test_every_generated_rule_runs_layer_one():
+    with pytest.raises(ExpansionError, match="start and end on a word character"):
+        load_class(swap_class(members=["mum", "sister-"]))
+
+
+def test_a_member_missing_from_the_person_map_is_refused_by_layer_two():
+    """DD6a's total map, seen from the loader: the message names the class."""
+    with pytest.raises(ExpansionError) as error:
+        load_class(swap_class(members=["mum", "matriarch"]))
+    message = str(error.value)
+    assert "structural-token invariance" in message
+    assert "referent.adult_female" in message
+
+
+def test_layer_two_still_refuses_a_class_that_crosses_the_person_axis():
+    with pytest.raises(ExpansionError, match="structural-token invariance"):
+        load_class(swap_class(members=["mum", "my mum"]))
+
+
+def test_layer_three_is_signal_agnostic_for_a_class():
+    """A class belongs to no signal, so it may not move *any* signal's language.
+
+    Neither member is a person, so layer 2 passes both as ``()`` and layer 3 is
+    the only thing standing between the class and a swap that walks a decisive
+    fever line into saying nothing about fever.
+    """
+    with pytest.raises(ExpansionError, match="moves fever_present language"):
+        load_class(
+            swap_class(
+                id="affect.worried",
+                gender="none",
+                life_stage="none",
+                person="none",
+                members=["worried", "feverish"],
+            ),
+            group="affect",
+        )
+
+
+def test_load_classes_reports_the_path_and_a_digest(tmp_path):
+    path = tmp_path / "referent.classes.json"
+    path.write_text(json.dumps({"group": "referent", "classes": [swap_class()]}), encoding="utf-8")
+    loaded = load_classes(path)
+    assert loaded.group == "referent"
+    assert loaded.path == path
+    assert len(loaded.digest) == 64
+    assert len(loaded.rules) == 6
+
+
+def test_a_class_file_named_for_another_group_is_refused(tmp_path):
+    path = tmp_path / "weekday.classes.json"
+    path.write_text(json.dumps({"group": "referent", "classes": [swap_class()]}), encoding="utf-8")
+    with pytest.raises(ExpansionError, match="declares group 'referent' but is named for"):
+        load_classes(path)
+
+
+def test_a_missing_class_file_is_refused(tmp_path):
+    with pytest.raises(ExpansionError, match="no class file at"):
+        load_classes(tmp_path / "absent.classes.json")
+
+
+def _write_group(directory, group, *raw_classes):
+    path = directory / f"{group}.classes.json"
+    path.write_text(json.dumps({"group": group, "classes": list(raw_classes)}), encoding="utf-8")
+    return path
+
+
+def test_load_class_groups_loads_several(tmp_path):
+    _write_group(tmp_path, "referent", swap_class())
+    _write_group(
+        tmp_path,
+        "weekday",
+        swap_class(
+            id="weekday.working",
+            gender="none",
+            life_stage="none",
+            person="none",
+            members=["Monday", "Tuesday", "Friday"],
+        ),
+    )
+    loaded = expand.load_class_groups(["referent", "weekday"], tmp_path)
+    assert [one.group for one in loaded] == ["referent", "weekday"]
+    assert sum(len(one.rules) for one in loaded) == 12
+
+
+def test_a_class_id_shared_between_two_files_is_refused(tmp_path):
+    """Reachable only by naming a group twice: the id prefix rule closes the rest.
+
+    A class id must start with its file's group and a file's group must match
+    its name, so two *different* groups cannot collide. The same group asked
+    for twice can, and it is the mistake a hand-typed ``--class-groups`` makes.
+    """
+    _write_group(tmp_path, "referent", swap_class())
+    with pytest.raises(ExpansionError, match="declared in both"):
+        expand.load_class_groups(["referent", "referent"], tmp_path)
+
+
+def test_a_member_shared_between_two_files_is_refused(tmp_path):
+    _write_group(tmp_path, "referent", swap_class())
+    _write_group(
+        tmp_path,
+        "kin",
+        swap_class(id="kin.adults", members=["sister", "cousin"]),
+    )
+    with pytest.raises(ExpansionError, match="already in class 'referent.adult_female'"):
+        expand.load_class_groups(["referent", "kin"], tmp_path)
+
+
+def test_classes_live_under_the_rules_root_and_outside_the_library_tree():
+    """DD11, and a glob over one format must never pick up the other."""
+    assert expand.CLASSES_ROOT.is_relative_to(RULES_ROOT)
+    assert not expand.CLASSES_ROOT.is_relative_to("data/synthetic")
+    assert expand.classes_path("referent") == expand.CLASSES_ROOT / "referent.classes.json"
 
 
 # ---------------------------------------------------------------------------
