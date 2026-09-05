@@ -2306,7 +2306,10 @@ step, so putting the rule check *inside* the sequence is what makes it a guard
 rather than a thing to remember — after the last training step it would only tell
 you what the forty minutes had been spent on. No console code changed; the
 catalogue already admits `-m` module invocations with literal arguments, which is
-all this needs. `tests/test_training_gui.py` asserts the four cells' `--data-dir`
+all this needs. The swap-class batch of 12.10b is the same shape one size
+up, `swap-class-batch`: five arms, thirteen `finetune` invocations and four
+`paired-flip-rate` calls, because `--test-dir` is a single path and an arm scored
+against two test trees therefore trains its folds twice. `tests/test_training_gui.py` asserts the four cells' `--data-dir`
 and `--test-dir` values are exactly the two trees the generate and expand steps
 write, in all four combinations — the cheap check that catches a cell pointed at
 the wrong tree in CI rather than in a report that silently compared a tree with

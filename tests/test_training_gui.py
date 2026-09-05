@@ -111,6 +111,7 @@ def test_the_committed_catalogue_loads():
         "decl-sweep-2x2",
         "decl-sweep-register",
         "lexical-expansion-2x2",
+        "swap-class-batch",
         "smoke-cuda",
         "train-canary",
         "score-companions",
@@ -248,6 +249,232 @@ def test_the_lexical_guard_is_scored_on_the_clean_test_tree_for_both_arms():
     # silently: a guard whose bound is invisible in the committed command is not
     # pre-registered in any useful sense.
     assert _value(flip, "--guard-bound")
+
+
+# ---------------------------------------------------------------------------
+# The swap-class batch (plan Task 9, pre-registered 2026-09-05)
+# ---------------------------------------------------------------------------
+
+SWAP = "swap-class-batch"
+
+#: The four expanded arms, and the tree each one writes. `clean` is the fifth
+#: tree and is generated rather than expanded.
+SWAP_TREE = "data/synthetic/generated/swapclass"
+SWAP_ARMS = ("v1", "classes", "combined", "affect")
+
+
+def _swap():
+    return {entry.id: entry for entry in load_catalogue(DEFAULT_CATALOGUE_PATH)}[SWAP]
+
+
+def _expansions(entry):
+    return [step for step in entry.steps if "--in-dir" in step]
+
+
+def _flips(entry):
+    return [step for step in entry.steps if "paired-flip-rate" in step]
+
+
+def test_the_swap_batch_writes_the_five_trees_the_pre_registration_names():
+    """One clean tree and one per arm, all expanded from that clean tree.
+
+    An arm expanded from anything but the tree the cells train on would break
+    the pairing every flip rate in the batch is computed over, and it would not
+    fail -- `paired-flip-rate` pairs by `example_id`, so it would silently
+    compare two unrelated trees.
+    """
+    entry = _swap()
+    clean = _value(next(step for step in entry.steps if "generate-folds" in step), "--out-dir")
+    assert clean == f"{SWAP_TREE}/clean"
+
+    expansions = _expansions(entry)
+    assert len(expansions) == len(SWAP_ARMS)
+    assert {_value(step, "--in-dir") for step in expansions} == {clean}
+    assert {_value(step, "--out-dir") for step in expansions} == {
+        f"{SWAP_TREE}/exp-{arm}" for arm in SWAP_ARMS
+    }
+
+
+def test_every_swap_arm_expands_at_the_one_operating_point():
+    """The rate is held rather than swept (pre-registration §7), and it is the
+    v1 run's operating point. Two arms at two rates would confound the thing the
+    batch is built to measure with the thing it deliberately did not vary."""
+    for step in _expansions(_swap()):
+        assert _value(step, "--rate") == "0.4"
+        assert _value(step, "--clean-share") == "0.25"
+        assert _value(step, "--seed") == "42"
+
+
+def test_the_v1_arm_pins_the_hand_written_rules_and_nothing_else():
+    """The batch's only external anchor. `--rules signal` with no class groups is
+    what reproduces 2026-09-04 byte for byte; a class group leaking into this arm
+    would leave the batch with nothing to be read against."""
+    v1 = next(
+        step for step in _expansions(_swap()) if _value(step, "--out-dir").endswith("/exp-v1")
+    )
+    assert _value(v1, "--rules") == "signal"
+    assert "--class-groups" not in v1
+
+
+def test_the_decision_arm_carries_both_kinds_of_rule():
+    """`combined` is the arm the pre-registration decides on, and it is defined
+    as the hand-written rules *and* the classes. An arm named combined that ran
+    one of the two would be read as though it had run both."""
+    combined = next(
+        step for step in _expansions(_swap()) if _value(step, "--out-dir").endswith("/exp-combined")
+    )
+    assert _value(combined, "--rules") == "both"
+    assert _value(combined, "--class-groups") == "referent,calendar,setting"
+
+
+def test_affect_is_expanded_on_its_own():
+    """DD10: affect is a register swap of v1's kind and is reported separately,
+    so it may not be bundled with the referent classes in any arm."""
+    entry = _swap()
+    groups = {
+        _value(step, "--out-dir"): _value(step, "--class-groups") for step in _expansions(entry)
+    }
+    assert groups[f"{SWAP_TREE}/exp-affect"] == "affect"
+    for tree, group in groups.items():
+        if tree != f"{SWAP_TREE}/exp-affect" and group is not None:
+            assert "affect" not in group, tree
+
+
+def test_the_swap_batch_trains_the_thirteen_cells_the_pre_registration_costs():
+    """Thirteen invocations, because `--test-dir` is a single path: the
+    clean-trained arm is the paired baseline for every expanded arm and so is
+    scored against all five trees, and each expanded arm against the clean tree
+    (its guard cell) and its own. A missing cell is a flip rate that cannot be
+    computed, discovered after the trainings that would have fed it."""
+    entry = _swap()
+    trained = _training_steps(entry)
+    assert len(trained) == 13
+
+    trees = {f"{SWAP_TREE}/clean"} | {f"{SWAP_TREE}/exp-{arm}" for arm in SWAP_ARMS}
+    pairs = {(_value(step, "--data-dir"), _value(step, "--test-dir")) for step in trained}
+    assert len(pairs) == 13
+    assert {data for data, _ in pairs} == trees
+    assert {test for _, test in pairs} == trees
+
+    expected = {(f"{SWAP_TREE}/clean", test) for test in trees}
+    for arm in SWAP_ARMS:
+        expected |= {
+            (f"{SWAP_TREE}/exp-{arm}", f"{SWAP_TREE}/clean"),
+            (f"{SWAP_TREE}/exp-{arm}", f"{SWAP_TREE}/exp-{arm}"),
+        }
+    assert pairs == expected
+
+
+def test_every_swap_cell_writes_to_its_own_directories():
+    """Thirteen cells sharing a report directory would overwrite each other's
+    `fever_present.arm_b_finetune.json`, and four guards read that file by
+    path."""
+    trained = _training_steps(_swap())
+    for flag in ("--report-dir", "--models-dir", "--predictions"):
+        written = [_value(step, flag) for step in trained]
+        assert all(written), flag
+        assert len(set(written)) == len(trained), flag
+
+
+def test_the_swap_batch_starts_with_the_smoke_test_and_the_lint():
+    """A wasted night should fail in minute five, not hour eight (Task 9). The
+    smoke test also prints the torch version and device name the canary's
+    condition is stated against."""
+    entry = _swap()
+    assert entry.steps[0] == ("-m", "scripts.encoder_training", "smoke-cuda")
+
+    lint = [index for index, step in enumerate(entry.steps) if "--dry-run-lint" in step]
+    assert len(lint) == 1
+    assert lint[0] < min(index for index, step in enumerate(entry.steps) if "finetune" in step)
+    # No --signal and no --class-groups: after DD6a the declared invariants and
+    # this lint are the whole safety argument, so it covers every rule file and
+    # every class file exactly as CI does.
+    linted = entry.steps[lint[0]]
+    assert "--signal" not in linted
+    assert "--class-groups" not in linted
+
+
+def test_the_swap_reproduce_check_runs_before_any_gpu_time():
+    """The v1 expansion is the reproduce check: its printed statistics are what
+    say Tasks 2-5 left the 2026-09-04 anchor alone. Running it after the
+    trainings would report at hour eight what the night depended on at minute
+    five."""
+    entry = _swap()
+    v1 = next(
+        index
+        for index, step in enumerate(entry.steps)
+        if "--out-dir" in step and _value(step, "--out-dir").endswith("/exp-v1")
+    )
+    assert v1 < min(index for index, step in enumerate(entry.steps) if "finetune" in step)
+
+
+def test_the_first_swap_cell_is_the_canary():
+    """The canary is a trained-model measurement: cell 1 must be the identical
+    configuration on the identical tree that produced 0.9329, and it must be the
+    first thing trained so a miss stops the night before the other twelve."""
+    entry = _swap()
+    first = next(step for step in entry.steps if "finetune" in step)
+    assert _value(first, "--data-dir") == f"{SWAP_TREE}/clean"
+    assert _value(first, "--test-dir") == f"{SWAP_TREE}/clean"
+    assert _value(first, "--determinism") == "strict"
+    assert _value(first, "--base-model") == "roberta-base"
+
+
+def test_each_swap_flip_rate_reads_the_four_cells_of_its_own_arm():
+    """One flip rate per expanded arm, each pairing that arm against the
+    clean-trained arm on that arm's tree. A path naming a cell that never ran is
+    the failure mode a composite exists to remove; an arm crossed with another
+    arm's predictions would compare two models on two different test sets."""
+    entry = _swap()
+    written = {_value(step, "--predictions") for step in _training_steps(entry)}
+    flips = _flips(entry)
+    assert len(flips) == len(SWAP_ARMS)
+    assert {_value(step, "--expanded-dir") for step in flips} == {
+        f"{SWAP_TREE}/exp-{arm}" for arm in SWAP_ARMS
+    }
+
+    for flip in flips:
+        arm = _value(flip, "--expanded-dir").rsplit("/exp-", 1)[1]
+        assert _value(flip, "--clean-dir") == f"{SWAP_TREE}/clean"
+        assert sum(1 for element in flip if element == "--arm") == 2
+
+        read = [element for element in flip if element.endswith(".predictions.json")]
+        assert set(read) <= written
+        assert read == [
+            "models/encoder-swapclass/clean-trained-clean-test.predictions.json",
+            f"models/encoder-swapclass/clean-trained-{arm}-test.predictions.json",
+            f"models/encoder-swapclass/{arm}-trained-clean-test.predictions.json",
+            f"models/encoder-swapclass/{arm}-trained-{arm}-test.predictions.json",
+        ]
+
+
+def test_every_swap_guard_is_scored_on_the_clean_test_tree_at_the_pre_registered_bound():
+    """§4.4: four guards, one per arm, both sides read off the clean test tree so
+    the two arms are compared on identical text, and the bound is the literal
+    0.02 that was pre-registered rather than the CLI default."""
+    entry = _swap()
+    clean_test_reports = {
+        _value(step, "--report-dir")
+        for step in _training_steps(entry)
+        if _value(step, "--test-dir") == f"{SWAP_TREE}/clean"
+    }
+    assert len(clean_test_reports) == 5
+
+    for flip in _flips(entry):
+        arm = _value(flip, "--expanded-dir").rsplit("/exp-", 1)[1]
+        baseline = _value(flip, "--guard-baseline")
+        guarded = _value(flip, "--guard-arm")
+        assert baseline.startswith("reports/encoder_training/swapclass/clean-trained-clean-test/")
+        assert guarded.startswith(f"reports/encoder_training/swapclass/{arm}-trained-clean-test/")
+        for report in (baseline, guarded):
+            assert any(report.startswith(f"{directory}/") for directory in clean_test_reports)
+        assert _value(flip, "--guard-bound") == "0.02"
+
+
+def test_the_swap_batch_takes_no_parameters():
+    """Like the other composites: with nothing declared, no browser-supplied
+    string reaches its argv at all."""
+    assert _swap().parameters == ()
 
 
 def test_every_declarative_cell_writes_to_its_own_directories():
