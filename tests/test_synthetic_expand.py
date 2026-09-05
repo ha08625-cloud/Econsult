@@ -684,6 +684,158 @@ def test_weight_zero_is_refused_rather_than_silently_disabling_a_rule():
 
 
 # ---------------------------------------------------------------------------
+# Per-example memoisation and per-class injectivity (DD12, v2 review F7)
+# ---------------------------------------------------------------------------
+
+#: Four adult-female members, which is the smallest class that leaves a *choice*
+#: after injectivity has excluded the two words already standing in "my wife and
+#: my sister". A three-member class would make every assertion below true by
+#: arithmetic rather than by the code under test.
+REFERENT_CLASS = swap_class(members=["wife", "sister", "mum", "mother"])
+REFERENT_RULES = load_class(REFERENT_CLASS).rules
+
+#: The two members of one class, which is the *only* way to force a collision:
+#: with one candidate per site and that candidate already spoken for, the
+#: candidate list empties and the site has to be skipped.
+PAIR_RULES = load_class(swap_class(members=["wife", "sister"])).rules
+
+#: Every folded word any of the classes above could put into a text.
+MEMBERS = ("wife", "sister", "mum", "mother")
+
+
+def members_in(text):
+    """The class members present in ``text``, in order, folded."""
+    return re.findall(rf"\b(?:{'|'.join(MEMBERS)})\b", text.lower())
+
+
+def test_a_repeated_referent_takes_one_decision_at_every_site():
+    """DD12's first half. The rate coin fires per site and *before* the
+    substitution, so memoising only the target would still let the second site
+    lose its coin and leave "my sister ... my wife" in the line. The decision is
+    what is memoised: three mentions of one person move together or not at all,
+    and the two repeats spend no coin."""
+    text = "My sister rang, my sister was up all night, and my sister is still poorly"
+    for seed in range(VOLUME):
+        result = expand_example(text, REFERENT_RULES, random.Random(seed), rate=0.5)
+        assert len(set(members_in(result.text))) == 1
+        assert result.applied in (0, 3)
+        assert result.memoised == 2
+        assert result.skipped["memo"] == (2 if not result.applied else 0)
+
+
+def test_two_referents_never_collapse_onto_one_person():
+    """DD12's second half. Keying the memo on the *source* does not stop two
+    sources landing on one target: "my wife and my sister" with ``wife ->
+    sister`` firing gives "my sister and my sister", which is one person where
+    the line had two."""
+    text = "My wife and my sister"
+    seen = set()
+    for seed in range(VOLUME):
+        result = expand_example(text, REFERENT_RULES, random.Random(seed), rate=1.0)
+        present = members_in(result.text)
+        assert len(present) == 2
+        assert len(set(present)) == 2
+        seen.add(result.text)
+    #: Not one frozen answer: injectivity narrows the draw, it does not replace it.
+    assert len(seen) > 1
+
+
+def test_a_member_already_in_the_source_text_is_excluded_as_a_target():
+    """The half of injectivity the committed set cannot cover. Nothing has been
+    substituted yet at the first site, so only the *source text* says that
+    "sister" is taken."""
+    text = "My wife and my sister"
+    for seed in range(VOLUME):
+        result = expand_example(text, REFERENT_RULES, random.Random(seed), rate=1.0)
+        assert not result.text.lower().startswith("my sister ")
+
+
+def test_an_emptied_candidate_list_skips_the_site_and_says_why():
+    """A skipped site is telemetry, not silence: ``class_collision`` is what
+    distinguishes "injectivity had nowhere to go" from "the coin came up short",
+    and the two would otherwise be indistinguishable in the sidecar."""
+    text = "My wife and my sister"
+    for seed in range(VOLUME // 20):
+        result = expand_example(text, PAIR_RULES, random.Random(seed), rate=1.0)
+        assert result.text == text
+        assert result.applied == 0
+        assert result.skipped["class_collision"] == 2
+
+
+def test_injectivity_is_scoped_to_the_class_and_not_to_the_rule_set():
+    """Repeating ``temperature`` in a line is correct English and correct data;
+    repeating a person is not. A hand-written rule firing twice onto the same
+    replacement is therefore untouched by any of this."""
+    text = "I had a fever on Monday and a fever on Tuesday"
+    counts = {
+        expand_example(text, RULES, random.Random(seed), rate=1.0).applied
+        for seed in range(VOLUME // 20)
+    }
+    assert counts == {2}
+
+
+def test_a_class_rule_and_a_hand_written_rule_in_one_example_do_not_share_a_memo():
+    """The gate is ``origin``, so the two paths coexist inside one example: the
+    referent moves as one person, and the two mentions of "a fever" still draw
+    independently as DD3 requires."""
+    text = "I had a fever, my sister had a fever, and my sister was fine"
+    combined = (*RULES, *REFERENT_RULES)
+    hand_counts = set()
+    for seed in range(VOLUME):
+        result = expand_example(text, combined, random.Random(seed), rate=0.5)
+        hand = sum(
+            count for rule_id, count in result.applications.items() if not rule_id.startswith("ref")
+        )
+        hand_counts.add(hand)
+        assert len(set(members_in(result.text))) == 1
+        assert result.memoised == 1
+    assert hand_counts == {0, 1, 2}
+
+
+def test_a_fever_only_rule_set_reproduces_the_pre_memo_output_byte_for_byte():
+    """DD5's ``v1`` arm is the anchor against 2026-09-04, and an anchor that
+    does not reproduce is not an anchor.
+
+    The expected string below was produced by the committed rule file under the
+    code as it stood *before* the memo, and is inline rather than computed so
+    that a change to the substitution path has to edit it deliberately. The
+    accounting either side of it matters as much as the text: no rule in a
+    ``*.rules.json`` file carries an ``origin``, so every site spends its own
+    coin, ``memoised`` stays at zero and no site is ever refused for a
+    collision. Memoising a repeat would move the RNG stream, and the stream
+    position is what makes the arm reproducible at all.
+    """
+    rules = load_rules(RULES_ROOT / "fever_present.rules.json").rules
+    text = (
+        "I've had a fever since Tuesday and I didn't sleep; my son had a temperature too, "
+        "and I'm still running a temperature this morning."
+    )
+    result = expand_example(text, rules, random.Random(7), rate=0.6)
+    assert result.text == (
+        "I have had a fever since Tuesday and I did not sleep; my son had a fever too, "
+        "and I am still running a fever this morning."
+    )
+    assert (result.sites, result.applied) == (6, 5)
+    assert dict(result.skipped) == {"rate_coin": 1}
+    assert result.memoised == 0
+
+    for seed in range(VOLUME // 4):
+        other = expand_example(text, rules, random.Random(seed), rate=0.6)
+        assert other.memoised == 0
+        assert "class_collision" not in other.skipped
+        assert "memo" not in other.skipped
+
+
+def test_every_site_lands_in_exactly_one_of_applied_and_skipped():
+    """The three skip reasons and the applications have to add to the sites, or
+    the sidecar's ``sites`` block is describing a different run."""
+    text = "My wife rang about my sister, and my sister rang about my wife"
+    for seed in range(VOLUME // 20):
+        result = expand_example(text, REFERENT_RULES, random.Random(seed), rate=0.5)
+        assert result.applied + sum(result.skipped.values()) == result.sites
+
+
+# ---------------------------------------------------------------------------
 # Label blindness (DD5), the whole safety argument for section 2
 # ---------------------------------------------------------------------------
 
@@ -814,6 +966,9 @@ def test_the_expansion_block_is_the_marker_that_a_tree_is_expanded(tree, rules_d
     assert set(block["realised"]["substitutions_per_hundred_words"]["by_label_mode"]) == set(
         noise.LABEL_MODES
     )
+    # DD12. Zero here is the assertion, not a placeholder: a hand-written rule
+    # file carries no ``origin``, so nothing on this run could be memoised.
+    assert block["realised"]["sites"]["memoised"] == 0
     assert "fragments" in stats
     assert stats["generator_version"] == "7"
 

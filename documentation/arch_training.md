@@ -2150,6 +2150,30 @@ missing `<signal>.rules.json` *when and only when* `--rules` asks for one — a
 classes-only arm runs against a signal that has no rule file, which is the whole
 point of a class belonging to no signal.
 
+**A class rule moves a person, not a word, and the substitution path knows the
+difference.** Per-site independence is right for a word and wrong for a
+referent: 40 of 2,506 library lines already carry two, and recombination is
+where the exposure actually is. So at a site whose candidate rules *all* carry
+an `origin` — every one of them generated from a class file — `expand_example`
+memoises the **decision** rather than the target: once a source word has been
+drawn for in an example, every later occurrence of it takes the same outcome and
+spends no coin of its own. Memoising only the replacement would not be enough,
+because the rate coin fires per site and *before* the substitution, so the
+second mention would still lose its own coin and leave "my sister … my wife".
+Targets are then drawn **injectively within the class**: a candidate whose
+replacement is already committed in this example, or already standing in the
+source text as another member of the same class, is excluded before the weighted
+draw, and a site that empties is skipped and counted as `class_collision`.
+Injectivity is scoped to the class and not to the rule set, because `fever →
+temperature` firing three times in a line is not a fault at all while `Monday …
+Tuesday` both landing on `Friday` is the same fault as the referent one. Both
+behaviours are gated on `origin` rather than on a flag, and that gate is what
+lets the `v1` arm reproduce 2026-09-04 byte for byte: memoising a repeat removes
+a draw and therefore moves the RNG stream, and an anchor whose stream moves is
+not an anchor. The sidecar's `expansion.realised.sites` block reports
+`memoised` beside `found` and `applied`, because that number is also the size of
+the bug the memo prevents.
+
 **The library statistics a rule author decides from are committed code.**
 `scripts/synthetic_data/class_stats.py` counts candidate swap-class members over
 `data/synthetic/**/*.txt` — occurrences, lines carrying one and lines carrying

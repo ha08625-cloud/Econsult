@@ -1128,9 +1128,18 @@ class ExpansionResult:
     """One example's rewritten text and the telemetry the sidecar reports.
 
     ``sites`` is how many places a rule could have fired, ``applied`` how many
-    it did, and ``skipped`` why the rest did not -- today only the per-site rate
-    coin, kept as a counter because a second reason is exactly the kind of thing
-    that otherwise arrives unmeasured.
+    it did, and ``skipped`` why the rest did not. Three reasons exist now: the
+    per-site rate coin, ``class_collision`` where injectivity emptied the
+    candidate list, and ``memo`` where a repeat of an already-decided source
+    word inherited a decision of "leave it alone" (DD12). Every site lands in
+    exactly one of ``applied`` and ``skipped``, so the two still add to
+    ``sites``.
+
+    ``memoised`` counts the sites the memo decided either way -- applied and
+    skipped both -- because that number is also the size of the bug DD12
+    prevents: without the memo each of those sites would have drawn its own
+    coin and its own replacement, and one person in one example would have
+    become two.
     """
 
     text: str
@@ -1139,6 +1148,7 @@ class ExpansionResult:
     sites: int
     applied: int
     skipped: Counter[str]
+    memoised: int = 0
 
 
 def expand_example(
@@ -1155,17 +1165,96 @@ def expand_example(
     have one, two, three or none of them moved, and the pass does not turn a
     long line into a wholesale rewrite. Where more than one rule matches a site
     the choice among them is by weight.
+
+    **Class-generated rules take a narrower path** (DD12, v2 review F7), because
+    per-site independence is right for a word and wrong for a person. Two things
+    change, and both are gated on ``origin`` rather than on a flag so that a
+    fever-only rule set walks the code below byte for byte -- DD5's ``v1`` arm is
+    the 2026-09-04 anchor and an anchor that does not reproduce is not one:
+
+    * **The decision is memoised, not the target.** The rate coin fires per site
+      and *before* the substitution, so memoising only the replacement would
+      still produce "my sister ... my wife" whenever the second site lost its
+      coin. Once a source word has been drawn for in an example, every later
+      occurrence of it takes the same outcome -- substituted, with the same
+      replacement, or left alone -- and spends no coin of its own.
+    * **Targets are drawn injectively within a class.** Keying on the source
+      does not stop two sources collapsing onto one target: "my wife and my
+      sister" with ``wife -> sister`` firing gives "my sister and my sister". A
+      candidate whose replacement is already committed in this example, or is
+      already in the source text as another member of the same class, is
+      excluded before the weighted draw; if that empties the list the site is
+      skipped as a ``class_collision``.
+
+    Injectivity is scoped to the **class**, not to the rule set: "Monday and
+    again on Tuesday" both landing on "Friday" is the same fault as the referent
+    one, while ``fever -> temperature`` firing three times in a line is not a
+    fault at all.
+
+    Two deliberate conservatisms in the exclusion set. A member present in the
+    source *stays* blocked even if this pass replaces it, so "my wife and my
+    sister" will not reuse "wife" after moving it -- over-blocking costs a
+    substitution and under-blocking costs a mislabelled line. And a site is on
+    the class path only if **every** candidate rule at it carries an ``origin``;
+    a site where a hand-written rule and a class rule share a ``find`` verbatim
+    keeps today's path, because the hand-written rule is not a class member and
+    excluding it on a class's behalf would be the loader's job, not this one's.
     """
     sites = match_sites(text, rules)
+    haystack = fold_haystack(text)
+
+    #: Per class id, the folded replacements that are no longer available: every
+    #: member of that class already standing in the source text, plus every
+    #: replacement committed as the pass walks left to right.
+    blocked: dict[str, set[str]] = {}
+    for site in sites:
+        folded = haystack[site.start : site.end]
+        for candidate in site.rules:
+            if candidate.origin is not None:
+                blocked.setdefault(candidate.origin, set()).add(folded)
+
+    #: The outcome already drawn for a folded source word in *this* example.
+    #: A local, so the key needs no example id and no leak is possible.
+    memo: dict[str, Rule | None] = {}
+    memoised = 0
+
     applications: Counter[str] = Counter()
     skipped: Counter[str] = Counter()
     pieces: list[str] = []
     cursor = 0
     for site in sites:
-        if rng.random() >= rate:
-            skipped["rate_coin"] += 1
-            continue
-        chosen = rng.choices(site.rules, weights=[rule.weight for rule in site.rules], k=1)[0]
+        from_class = all(candidate.origin is not None for candidate in site.rules)
+        folded = haystack[site.start : site.end]
+        if from_class and folded in memo:
+            chosen = memo[folded]
+            memoised += 1
+            if chosen is None:
+                skipped["memo"] += 1
+                continue
+        else:
+            if rng.random() >= rate:
+                if from_class:
+                    memo[folded] = None
+                skipped["rate_coin"] += 1
+                continue
+            candidates = site.rules
+            if from_class:
+                candidates = tuple(
+                    candidate
+                    for candidate in site.rules
+                    if fold_haystack(candidate.replace) not in blocked.get(candidate.origin, ())
+                )
+                if not candidates:
+                    memo[folded] = None
+                    skipped["class_collision"] += 1
+                    continue
+            chosen = rng.choices(
+                candidates, weights=[candidate.weight for candidate in candidates], k=1
+            )[0]
+            if from_class:
+                memo[folded] = chosen
+        if chosen.origin is not None:
+            blocked.setdefault(chosen.origin, set()).add(fold_haystack(chosen.replace))
         pieces.append(text[cursor : site.start])
         pieces.append(_match_leading_case(text[site.start : site.end], chosen.replace))
         cursor = site.end
@@ -1179,6 +1268,7 @@ def expand_example(
         sites=len(sites),
         applied=sum(applications.values()),
         skipped=skipped,
+        memoised=memoised,
     )
 
 
@@ -1224,6 +1314,7 @@ class ExpansionTally:
     total_words: int = 0
     total_sites: int = 0
     total_applied: int = 0
+    total_memoised: int = 0
     changed: int = 0
 
     def add(self, result: ExpansionResult, *, label: str, label_mode: str, was_clean: bool) -> None:
@@ -1238,6 +1329,7 @@ class ExpansionTally:
         self.total_words += result.words
         self.total_sites += result.sites
         self.total_applied += result.applied
+        self.total_memoised += result.memoised
         self.changed += int(bool(result.applied))
 
     def merge(self, other: ExpansionTally) -> None:
@@ -1255,6 +1347,7 @@ class ExpansionTally:
         self.total_words += other.total_words
         self.total_sites += other.total_sites
         self.total_applied += other.total_applied
+        self.total_memoised += other.total_memoised
         self.changed += other.changed
 
     @staticmethod
@@ -1390,6 +1483,11 @@ def build_expansion_stats(
             "sites": {
                 "found": tally.total_sites,
                 "applied": tally.total_applied,
+                # DD12 asks for this one because it is also the size of the bug
+                # the memo prevents: every one of these sites would otherwise
+                # have drawn independently of the site that named the same
+                # person or the same day earlier in the line.
+                "memoised": tally.total_memoised,
                 "skipped": dict(sorted(tally.skipped.items())),
             },
             # The flip rate's denominator (DD7).
