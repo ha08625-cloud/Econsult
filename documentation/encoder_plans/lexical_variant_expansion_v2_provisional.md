@@ -96,23 +96,44 @@ against the sequence in `replace` and raises on any difference, so every pair
 touching a frozen word is refused when the file loads. That includes
 `mum → mother`, where both sides are frozen but the sequences differ.
 
-Measured against revision 1's own six lists:
+Measured against the **revision 2** lists of §3, which is the set this plan
+actually proposes (revision 1's narrower six-list table is dropped: it made DD6a
+look like a rule-count argument, and it is not one — review F2):
 
-| class | rules revision 1 claimed | rules that survive layer 2 |
-|---|---|---|
-| adult female | 30 | 6 |
-| adult male | 30 | 6 |
-| elder female | 12 | 2 |
-| elder male | 6 | 6 |
-| adult neutral | 90 | 72 |
-| weekday | 42 | 42 |
-| **total** | **210** | **134** |
+| class | ordered pairs | survive layer 2 today | occurrences | on a frozen member |
+|---|---|---|---|---|
+| adult female (9) | 72 | 30 | 150 | 107 |
+| adult male (7) | 42 | 12 | 100 | 68 |
+| elder female (7) | 42 | 20 | 20 | 17 |
+| elder male (5) | 20 | 20 | 5 | 0 |
+| adult neutral (12) | 132 | 110 | 151 | 51 |
+| child neutral sg (5) | 20 | 20 | 27 | 0 |
+| child neutral pl (2) | 2 | 2 | 31 | 0 |
+| child female (2) | 2 | **0** | 49 | 46 |
+| child male (2) | 2 | **0** | 40 | 35 |
+| weekday (7) | 42 | 42 | 68 | 0 |
+| healthcare place / person / encounter | 24 | 24 | 97 | 0 |
+| affect (6) | 30 | 30 | 71 | 0 |
+| **total** | **430** | **310** | **809** | **324** |
 
-Rule count understates it, because the frozen words are the frequent ones.
-Counting occurrences across the 2,506 hand-written library lines: `mum` 42,
-`partner` 41, `daughter` 33, `wife` 27, `husband` 25, `son` 25. **190 of the 313
-referent occurrences on revision 1's lists — 61% — sit on a frozen word**, and
-the wider lists of §3 do not change the picture (248 of 452, 55%).
+*Provenance: the occurrence and frozen-member columns are output of `python -m
+scripts.synthetic_data.class_stats` (run 2026-09-05, 49 files, 2,506 non-blank
+non-comment lines). The layer-2 column is `expand.structural_sequence` over
+every ordered pair, per the review's §6. No number in this section is carried
+forward from prose (DD15).*
+
+**So 72% of the v2 rule set already loads today, and the case for DD6a is an
+occurrence case rather than a rule-count one.** Widening the lists with
+colloquial members — which are not frozen — quietly solved most of the
+rule-count problem §2 opens by describing. What it did not solve:
+
+* **324 of the 573 referent occurrences — 57% — sit on a frozen member**, because
+  the frozen words are the frequent ones: `mum` 59, `partner` 51, `daughter` 46,
+  `son` 35, `wife` 34, `husband` 33.
+* **Both gendered child sub-classes yield zero loadable rules today.**
+  `daughter` and `son` are frozen and `girl` and `boy` are not, and those two
+  lists carry 89 occurrences between them — the third and fourth most frequent
+  referents in the corpus.
 
 **Consequences for the plan.**
 
@@ -136,26 +157,53 @@ rule, so an *N*-member list yields *N*×(*N*−1) rules from one review. That is
 entire cost argument, and it is why adding colloquial members is close to free:
 taking a 6-member list to 9 members takes it from 30 rules to 72.
 
-The proposed classes, with occurrence counts measured over the committed
-hand-written libraries (`data/synthetic/**/*.txt`, 2,506 lines):
+The proposed classes, measured over the committed hand-written libraries
+(`data/synthetic/**/*.txt`, 49 files, 2,506 non-blank non-comment lines). The
+splits are the ones DD11 forces: the child group four ways by gender and number,
+healthcare three ways, so the count is **fourteen lists**, not the thirteen
+earlier drafts said:
 
-| group | class | members (indicative) | occurrences | rules |
-|---|---|---|---|---|
-| referent | adult female | mum, mummy, mother, wife, missus, sister, aunt, auntie, girlfriend | 114 | 72 |
-| referent | adult male | dad, daddy, father, husband, brother, uncle, boyfriend | 78 | 42 |
-| referent | elder female | nan, nanna, nana, gran, granny, grandma, grandmother | 18 | 42 |
-| referent | elder male | grandad, granddad, grandpa, grandfather, gramps | 3 | 20 |
-| referent | adult neutral | partner, other half, friend, neighbour, colleague, coworker, cousin, flatmate, housemate, mate, boss, carer | 113 | 132 |
-| referent | child (four sub-classes by gender and number) | kid, child, little one, youngest, eldest / kids, children / daughter, girl / son, boy | 126 | 30 |
-| calendar | weekday | monday … sunday | 68 | 42 |
-| setting | healthcare place / person / encounter | surgery, practice, clinic / gp, doctor, nurse, clinician / appointment, consultation, call-back | ~118 | ~24 |
-| affect | worry (DD10: separate arm) | worried, concerned, anxious, nervous, uneasy, on edge | 71 | 30 |
-| | **total** | **~66 words in 13 lists** | **~709** | **~434** |
+| group | class | members | occ | pairs | absent |
+|---|---|---|---|---|---|
+| referent | adult female | mum, mummy, mother, wife, missus, sister, aunt, auntie, girlfriend | 150 | 72 | missus |
+| referent | adult male | dad, daddy, father, husband, brother, uncle, boyfriend | 100 | 42 | daddy |
+| referent | elder female | nan, nanna, nana, gran, granny, grandma, grandmother | 20 | 42 | nanna, nana, granny |
+| referent | elder male | grandad, granddad, grandpa, grandfather, gramps | 5 | 20 | granddad, grandpa, grandfather, gramps |
+| referent | adult neutral | partner, other half, friend, neighbour, colleague, coworker, cousin, flatmate, housemate, mate, boss, carer | 151 | 132 | coworker |
+| referent | child neutral sg | kid, child, little one, youngest, eldest | 27 | 20 | — |
+| referent | child neutral pl | kids, children | 31 | 2 | — |
+| referent | child female | daughter, girl | 49 | 2 | — |
+| referent | child male | son, boy | 40 | 2 | — |
+| calendar | weekday | monday … sunday | 68 | 42 | — |
+| setting | healthcare place | surgery, practice, clinic | 25 | 6 | — |
+| setting | healthcare person | gp, doctor, nurse, clinician | 49 | 12 | clinician |
+| setting | healthcare encounter | appointment, consultation, call-back | 23 | 6 | call-back |
+| affect | worry (DD10: separate arm) | worried, concerned, anxious, nervous, uneasy, on edge | 71 | 30 | uneasy, on edge |
+| | **total** | **74 words in 14 lists** | **809** | **430** | **12** |
 
-Against v1's 36 rules from 36 individual reviews. **470 of the 2,506 library
-lines — 19% — carry at least one referent**, and they are spread across every
+*Provenance: `python -m scripts.synthetic_data.class_stats`, run 2026-09-05.
+Every figure in this section is that command's output; none is carried forward
+from prose (DD15). Re-run it after any edit to `data/synthetic/**/*.txt` and
+replace this table with the new output rather than patching a cell.*
+
+Against v1's 36 rules from 36 individual reviews. **527 of the 2,506 library
+lines — 21% — carry at least one referent**, and they are spread across every
 signal, which is the roll-out argument: one list set covers all seven signals
-where v1's fever rules would have needed authoring seven times.
+where v1's fever rules would have needed authoring seven times. **40 lines carry
+more than one referent occurrence**, which is the population DD12's memo and its
+per-class injectivity exist for.
+
+Three rows moved enough to change an authoring decision, and all three are
+corrections to this document rather than to the libraries:
+
+* **Referent opportunity is ~25% larger than earlier drafts claimed** (573
+  occurrences against 452), which strengthens the case for the referent classes.
+* **Healthcare is ~20% smaller** (97 against ~118), and `surgery` and `practice`
+  are separately unsafe as bare nouns — see DD11 and the scope note on the place
+  class.
+* **Twelve of the 74 members never occur** and can never be a `find`. That is the
+  mechanism working, not a fault: they exist to widen the *target* vocabulary,
+  which is what DD14 says the "every rule fires somewhere" guard has to become.
 
 **Colloquial members are kept British.** `grammy` is American and the only
 real-text instrument this project has is 67 NHS submissions; `nan`, `nanna`,

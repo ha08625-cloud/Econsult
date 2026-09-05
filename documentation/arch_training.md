@@ -2135,6 +2135,17 @@ deliberately outside `data/synthetic/`, which a test guards as holding nothing
 but the fragment libraries and the manifest. `data/expansion/README.md` is what a
 rule author reads.
 
+**The library statistics a rule author decides from are committed code.**
+`scripts/synthetic_data/class_stats.py` counts candidate swap-class members over
+`data/synthetic/**/*.txt` — occurrences, lines carrying one and lines carrying
+more than one, which members `noise.STRUCTURAL_FROZEN` holds frozen, which match
+a signal lexicon, and the determiner sitting directly before each occurrence. It
+prints and never asserts: it is the instrument authoring decisions are made
+against, not a gate, and the gate stays `--dry-run-lint` plus the committed-file
+tests. The reason it exists is that the v2 plan's hand-quoted statistics did not
+reproduce (referent occurrences ~25% low, healthcare ~20% high), and a table with
+no reproducible provenance cannot tell a library edit from a counting error.
+
 **The rate is load-bearing, and 1.0 is wrong** — measured while authoring the
 `fever_present` rules (`reports/synthetic_data/2026-09-04-fever-expansion-rules.md`).
 Applying every rule at every site does not flatten a vocabulary association, it
