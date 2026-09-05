@@ -103,7 +103,7 @@ scikit-learn==1.9.0
 # says BERT-base at batch 32 / seq 256 fits in 12GB with room to spare, so a
 # dependency bought to save memory would be a dependency bought for nothing.
 torch==2.13.0            # PyPI default wheel is a cu130 build; see the note above
-transformers==5.15.0
+transformers==5.16.1
 
 # --- compare-models: other base encoders ------------------------------------
 # Everything here trains on `roberta-base` (arch_encoder_training.md section 4a),
