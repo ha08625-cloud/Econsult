@@ -121,4 +121,4 @@ transformers==5.15.0
 # Mirrors requirements.txt exactly; see the note above. Do not bump one file
 # without the other.
 fastapi==0.141.1
-uvicorn==0.52.3
+uvicorn==0.52.4
