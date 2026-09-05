@@ -12,6 +12,7 @@ two passes consume the same tree shape, and two fixtures for one shape drifting
 apart is worse than the import.
 """
 
+import hashlib
 import json
 import random
 import re
@@ -800,9 +801,13 @@ def test_the_expansion_block_is_the_marker_that_a_tree_is_expanded(tree, rules_d
     path = next(target.glob("*.jsonl"))
     stats = json.loads(noise.sidecar_path(path).read_text(encoding="utf-8"))
     block = stats["expansion"]
-    assert block["requested"]["rules"]["signal"] == SIGNAL
-    assert len(block["requested"]["rules"]["sha256"]) == 64
-    assert block["requested"]["rules"]["count"] == 2
+    assert block["requested"]["class_groups"] == []
+    assert len(block["requested"]["rule_sources"]) == 1
+    (source,) = block["requested"]["rule_sources"]
+    assert source["kind"] == "rules"
+    assert source["signal"] == SIGNAL
+    assert len(source["sha256"]) == 64
+    assert source["count"] == 2
     assert set(block["realised"]["substitutions_per_hundred_words"]["by_label"]) == set(
         noise.LABELS
     )
@@ -896,6 +901,199 @@ def test_the_clean_share_leaves_examples_untouched(tree, rules_dir, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Arm selection: --rules and --class-groups (DD2, DD5)
+# ---------------------------------------------------------------------------
+
+#: A class whose members are neither persons nor any signal's vocabulary, so
+#: every layer passes and the only thing under test is the *selection*. "kitchen"
+#: is in the fixture tree's word pool, so the class actually fires.
+SETTING_CLASS = swap_class(
+    id="setting.rooms",
+    gender="none",
+    life_stage="none",
+    number="singular",
+    person="none",
+    members=["kitchen", "hallway", "landing"],
+    invariant=(
+        "Every member names a room of the same house, so no member says anything about a "
+        "symptom, a person or a time; read against 'I was in the X when it started'."
+    ),
+)
+
+
+@pytest.fixture
+def classes_dir(tmp_path):
+    directory = tmp_path / "expansion-classes"
+    directory.mkdir()
+    _write_group(directory, "setting", SETTING_CLASS)
+    return directory
+
+
+def sidecar_expansion(target):
+    """The ``expansion.requested`` block of the first sidecar in ``target``."""
+    path = next(target.glob("*.jsonl"))
+    stats = json.loads(noise.sidecar_path(path).read_text(encoding="utf-8"))
+    return stats["expansion"]["requested"]
+
+
+@pytest.mark.parametrize(
+    ("rule_kinds", "class_groups", "kinds"),
+    [
+        ("signal", None, ["rules"]),
+        ("classes", None, ["classes"]),
+        ("classes", ("setting",), ["classes"]),
+        ("both", None, ["rules", "classes"]),
+        ("both", ("setting",), ["rules", "classes"]),
+    ],
+)
+def test_each_arm_loads_exactly_the_rule_files_it_names(
+    tree, rules_dir, classes_dir, tmp_path, rule_kinds, class_groups, kinds
+):
+    """DD5's five arms are a selection over files, and the sidecar says which."""
+    target = tmp_path / "expanded"
+    run_tree(
+        tree,
+        target,
+        rules_dir,
+        classes_dir=classes_dir,
+        rule_kinds=rule_kinds,
+        class_groups=class_groups,
+    )
+
+    requested = sidecar_expansion(target)
+    assert [source["kind"] for source in requested["rule_sources"]] == kinds
+    assert requested["class_groups"] == (["setting"] if "classes" in kinds else [])
+
+
+def test_a_classes_only_arm_needs_no_rule_file_for_the_signal(tree, classes_dir, tmp_path):
+    """DD2: the classes belong to no signal, so requiring one signal's rule file
+    would tie a signal-agnostic pass back to the only signal that has one."""
+    empty = tmp_path / "no-rules"
+    empty.mkdir()
+    target = tmp_path / "expanded"
+    tally = run_tree(tree, target, empty, classes_dir=classes_dir, rule_kinds="classes", rate=1.0)
+
+    assert tally.total_applied > 0
+    (source,) = sidecar_expansion(target)["rule_sources"]
+    assert source["kind"] == "classes" and source["signal"] is None
+
+
+def test_a_selection_that_leaves_a_signal_with_no_rules_is_refused(tree, tmp_path):
+    """Writing an untouched copy under a name that says "expanded" is the one
+    silent no-op an arm comparison cannot see."""
+    empty_rules = tmp_path / "no-rules"
+    empty_rules.mkdir()
+    empty_classes = tmp_path / "no-classes"
+    empty_classes.mkdir()
+    with pytest.raises(ExpansionError, match="no rules at all"):
+        run_tree(
+            tree,
+            tmp_path / "expanded",
+            empty_rules,
+            classes_dir=empty_classes,
+            rule_kinds="classes",
+        )
+
+
+def test_a_missing_rule_file_is_fatal_only_when_the_arm_asks_for_one(tree, classes_dir, tmp_path):
+    empty = tmp_path / "no-rules"
+    empty.mkdir()
+    with pytest.raises(ExpansionError, match="no rule file at"):
+        run_tree(tree, tmp_path / "signal-arm", empty, classes_dir=classes_dir, rule_kinds="both")
+    run_tree(tree, tmp_path / "classes-arm", empty, classes_dir=classes_dir, rule_kinds="classes")
+
+
+def test_a_named_class_group_with_no_file_is_refused(tree, rules_dir, classes_dir, tmp_path):
+    """A named group that is not on disk is a typo, never an empty selection."""
+    with pytest.raises(ExpansionError, match="no class file at"):
+        run_tree(
+            tree,
+            tmp_path / "expanded",
+            rules_dir,
+            classes_dir=classes_dir,
+            class_groups=("referent",),
+        )
+
+
+def test_the_sidecar_carries_one_entry_per_file_with_its_own_digest(
+    tree, rules_dir, classes_dir, tmp_path
+):
+    """The digests are the only provenance that survives the concatenation."""
+    target = tmp_path / "expanded"
+    run_tree(tree, target, rules_dir, classes_dir=classes_dir, rule_kinds="both")
+
+    sources = sidecar_expansion(target)["rule_sources"]
+    on_disk = {
+        str(rules_dir / f"{SIGNAL}.rules.json"): (rules_dir / f"{SIGNAL}.rules.json"),
+        str(classes_dir / "setting.classes.json"): (classes_dir / "setting.classes.json"),
+    }
+    assert {source["path"] for source in sources} == set(on_disk)
+    for source in sources:
+        digest = hashlib.sha256(on_disk[source["path"]].read_bytes()).hexdigest()
+        assert source["sha256"] == digest
+        assert source["count"] > 0
+    assert [source["signal"] for source in sources] == [SIGNAL, None]
+
+
+def test_the_signal_arm_is_byte_identical_to_a_run_with_no_classes_on_disk(
+    tree, rules_dir, classes_dir, tmp_path
+):
+    """DD5's ``v1`` arm is the 2026-09-04 anchor, and an anchor that does not
+    reproduce is not an anchor."""
+    empty = tmp_path / "no-classes"
+    empty.mkdir()
+    first = tmp_path / "with-classes-on-disk"
+    second = tmp_path / "without"
+    run_tree(tree, first, rules_dir, classes_dir=classes_dir, rule_kinds="signal")
+    run_tree(tree, second, rules_dir, classes_dir=empty, rule_kinds="signal")
+
+    for path in sorted(first.rglob("*.jsonl")):
+        assert path.read_bytes() == (second / path.relative_to(first)).read_bytes()
+
+
+def test_a_hand_written_rule_and_a_class_rule_compete_on_length_at_one_site():
+    """Newly reachable in the ``combined`` arm, so it is worth saying explicitly:
+    the two rule sources are concatenated and ``match_sites`` prefers the longest
+    needle, exactly as it does between two hand-written rules."""
+    hand = load(
+        rule(
+            id="the-kitchen",
+            tier="A",
+            find="the kitchen",
+            replace="the hallway",
+            invariant="Both name a room of the same house.",
+        )
+    )
+    class_rules = load_class(SETTING_CLASS, group="setting").rules
+    text = "I was in the kitchen"
+    (site,) = match_sites(text, (*hand, *class_rules))
+
+    assert text[site.start : site.end] == "the kitchen"
+    assert {one.id for one in site.rules} == {"the-kitchen"}
+
+
+def test_an_unknown_rule_kind_is_refused():
+    with pytest.raises(ExpansionError, match="--rules must be one of"):
+        expand.check_tree([], [], rule_kinds="everything")
+
+
+def test_the_cli_parses_the_arm_flags():
+    parser = expand.build_parser()
+    assert parser.parse_args([]).rule_kinds == "both"
+    assert parser.parse_args([]).class_groups is None
+    args = parser.parse_args(["--rules", "classes", "--class-groups", "referent, calendar"])
+    assert args.rule_kinds == "classes"
+    assert args.class_groups == ("referent", "calendar")
+
+
+@pytest.mark.parametrize("raw", ["", "referent,", "referent,referent"])
+def test_an_ill_formed_class_group_list_is_refused(raw):
+    parser = expand.build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--class-groups", raw])
+
+
+# ---------------------------------------------------------------------------
 # The dry run against the library lint (Task 4)
 # ---------------------------------------------------------------------------
 
@@ -941,9 +1139,9 @@ def write_manifest(base, lines=None):
 
 
 def ruleset(*raw_rules, signal=SIGNAL):
-    """A :class:`RuleSet` built in memory, so the dry run needs no rule file."""
+    """A :class:`RuleSource` built in memory, so the dry run needs no rule file."""
     _, rules = parse_rules({"signal": signal, "rules": list(raw_rules)}, source="<test>")
-    return expand.RuleSet(signal=signal, path=Path("<test>"), digest="0" * 64, rules=rules)
+    return expand.RuleSet(signal=signal, path=Path("<test>"), digest="0" * 64, rules=rules).source
 
 
 HARMLESS = rule(
@@ -1078,7 +1276,15 @@ def test_the_dry_run_exits_nonzero_on_a_manufactured_hit(tmp_path, capsys):
     )
 
     code = expand.main(
-        ["--dry-run-lint", "--manifest", str(manifest), "--rules-dir", str(rules_dir)]
+        [
+            "--dry-run-lint",
+            "--manifest",
+            str(manifest),
+            "--rules-dir",
+            str(rules_dir),
+            "--classes-dir",
+            str(tmp_path / "no-classes"),
+        ]
     )
 
     assert code == 1
@@ -1089,6 +1295,62 @@ def test_the_dry_run_needs_no_tree_but_expanding_still_does(capsys):
     with pytest.raises(SystemExit):
         expand.main([])
     assert "--in-dir" in capsys.readouterr().err
+
+
+def test_the_dry_run_defaults_to_every_rule_file_and_every_class_file(rules_dir, classes_dir):
+    """What CI runs (Task 7): no flags, everything committed, both formats."""
+    sources = expand.load_rulesets(None, rules_dir, classes_dir=classes_dir)
+
+    assert [source.label for source in sources] == [f"{SIGNAL} (rules)", "setting (classes)"]
+    assert [source.kind for source in sources] == ["rules", "classes"]
+
+
+@pytest.mark.parametrize(
+    ("rule_kinds", "labels"),
+    [
+        ("signal", [f"{SIGNAL} (rules)"]),
+        ("classes", ["setting (classes)"]),
+        ("both", [f"{SIGNAL} (rules)", "setting (classes)"]),
+    ],
+)
+def test_the_dry_run_checks_only_the_kinds_it_was_asked_for(
+    rules_dir, classes_dir, rule_kinds, labels
+):
+    sources = expand.load_rulesets(None, rules_dir, classes_dir=classes_dir, rule_kinds=rule_kinds)
+    assert [source.label for source in sources] == labels
+
+
+def test_an_empty_classes_directory_is_a_true_answer_for_the_dry_run(rules_dir, tmp_path):
+    """The dry run lints what is committed and writes nothing, so "no class
+    files" is a state rather than a mistake -- and the header says so."""
+    sources = expand.load_rulesets(None, rules_dir, classes_dir=tmp_path / "no-classes")
+
+    assert [source.kind for source in sources] == ["rules"]
+
+
+def test_a_dry_run_that_selects_nothing_at_all_is_refused(rules_dir, tmp_path):
+    with pytest.raises(ExpansionError, match="selected no rule files at all"):
+        expand.load_rulesets(
+            None, rules_dir, classes_dir=tmp_path / "no-classes", rule_kinds="classes"
+        )
+
+
+def test_the_dry_run_header_names_every_source_it_checked(tmp_path):
+    diff = expand.dry_run_lint(write_manifest(tmp_path), [ruleset(HARMLESS)])
+
+    assert diff.sources == (f"{SIGNAL} (rules)",)
+    assert f"sources:  {SIGNAL} (rules)" in "\n".join(expand.render_dry_run(diff))
+
+
+def test_the_dry_run_covers_class_rules_too(tmp_path, classes_dir):
+    """A class file is a rule file for this mode's purposes, and the pairs it
+    generates are exactly what nothing else lints in aggregate (DD10)."""
+    source = expand.load_classes(classes_dir / "setting.classes.json").source
+    diff = expand.dry_run_lint(write_manifest(tmp_path), [source])
+
+    assert diff.sources == ("setting (classes)",)
+    assert diff.rules == 6
+    assert not diff.failed
 
 
 # ---------------------------------------------------------------------------
@@ -1198,7 +1460,7 @@ def test_the_committed_rules_pass_the_dry_run_against_the_real_libraries(committ
     a swap that carries neither on its own, and that fault appears in library
     text the rule's author never saw.
     """
-    diff = expand.dry_run_lint(expand.DEFAULT_MANIFEST, [committed])
+    diff = expand.dry_run_lint(expand.DEFAULT_MANIFEST, [committed.source])
 
     assert not diff.failed, "\n".join(expand.render_dry_run(diff))
     assert diff.rewritten, "no library line is rewritten at all"

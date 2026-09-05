@@ -213,6 +213,22 @@ _VOWELS = frozenset("aeiou")
 #: which post-processing cannot express, and is out of scope.
 TIERS = ("A", "B")
 
+#: What ``--rules`` selects. ``signal`` is DD5's ``v1`` arm and is byte-for-byte
+#: what the 2026-09-04 anchor ran; ``classes`` is the swap classes alone;
+#: ``both`` concatenates them, which is the decision arm.
+RULE_KINDS = ("signal", "classes", "both")
+
+
+def selects_signal_rules(rule_kinds: str) -> bool:
+    """Whether ``--rules`` asks for the hand-written per-signal rule file."""
+    return rule_kinds in ("signal", "both")
+
+
+def selects_classes(rule_kinds: str) -> bool:
+    """Whether ``--rules`` asks for the swap classes."""
+    return rule_kinds in ("classes", "both")
+
+
 #: Share of examples the pass leaves untouched.
 #:
 #: Same default as the noise pass, and for a related reason: the point is to
@@ -328,6 +344,59 @@ class RuleSet:
     path: Path
     digest: str
     rules: tuple[Rule, ...]
+
+    @property
+    def source(self) -> RuleSource:
+        """This file as the sidecar records it."""
+        return RuleSource(
+            path=self.path,
+            digest=self.digest,
+            kind="rules",
+            name=self.signal,
+            signal=self.signal,
+            rules=self.rules,
+        )
+
+
+@dataclass(frozen=True)
+class RuleSource:
+    """One *file* a run's rules came from.
+
+    A run no longer has "the rule file": an arm is a selection over a per-signal
+    ``*.rules.json`` and any number of ``*.classes.json`` groups (DD5), and the
+    rules of several files are concatenated before the pass sees them. What
+    survives that concatenation -- and what a report needs in order to be
+    reproducible at all -- is the *sources*, one entry per file with its digest.
+
+    ``name`` is the signal for a rule file and the group for a class file, and
+    is what a log line or a dry-run header prints. ``signal`` is deliberately
+    ``None`` for a class file rather than absent: a swap class belongs to no
+    signal (DD2), and a null there says so where a missing key would only look
+    like an older sidecar.
+    """
+
+    path: Path
+    digest: str
+    kind: str
+    name: str
+    signal: str | None
+    rules: tuple[Rule, ...]
+
+    def as_dict(self) -> dict:
+        """The sidecar entry. Ordered as a reader would want to read it."""
+        return {
+            "path": str(self.path),
+            "sha256": self.digest,
+            "kind": self.kind,
+            "signal": self.signal,
+            "count": len(self.rules),
+            "by_tier": dict(sorted(Counter(rule.tier for rule in self.rules).items())),
+        }
+
+    @property
+    def label(self) -> str:
+        """``fever_present (rules)`` or ``referent (classes)``."""
+        return f"{self.name} ({self.kind})"
 
 
 def fold_haystack(text: str) -> str:
@@ -690,6 +759,28 @@ class ClassSet:
     path: Path | None = None
     digest: str | None = None
 
+    @property
+    def source(self) -> RuleSource:
+        """This file as the sidecar records it.
+
+        Only meaningful for a set that came off a disk: a set parsed in memory
+        has no path and no digest to record, and asking for its provenance is
+        a bug rather than a degraded answer.
+        """
+        if self.path is None or self.digest is None:
+            raise ExpansionError(
+                f"class group {self.group!r} was parsed from memory and has no path or digest "
+                "to record; only a loaded class file can be a rule source"
+            )
+        return RuleSource(
+            path=self.path,
+            digest=self.digest,
+            kind="classes",
+            name=self.group,
+            signal=None,
+            rules=self.rules,
+        )
+
 
 def _class_rule_id(class_id: str, find: str, replace: str) -> str:
     """The deterministic id of one generated rule.
@@ -902,6 +993,21 @@ def classes_path(group: str, classes_dir: Path | None = None) -> Path:
     """Where ``group``'s class file lives."""
     root = CLASSES_ROOT if classes_dir is None else classes_dir
     return root / f"{group}.classes.json"
+
+
+def discover_class_groups(classes_dir: Path | None = None) -> tuple[str, ...]:
+    """Every group with a file in ``classes_dir``, sorted.
+
+    The default of ``--class-groups`` and therefore of an arm that names none:
+    whatever is committed. Sorted so that adding a group cannot reorder the
+    rules of the groups already there.
+    """
+    root = CLASSES_ROOT if classes_dir is None else classes_dir
+    if not root.is_dir():
+        return ()
+    return tuple(
+        sorted(path.name.removesuffix(".classes.json") for path in root.glob("*.classes.json"))
+    )
 
 
 def load_class_groups(
@@ -1209,7 +1315,8 @@ def build_expansion_stats(
     *,
     tally: ExpansionTally,
     texts: Sequence[tuple[str, str, str, str]],
-    ruleset: RuleSet,
+    sources: Sequence[RuleSource],
+    class_groups: Sequence[str],
     source_dir: str,
     seed: int,
     rate: float,
@@ -1255,13 +1362,14 @@ def build_expansion_stats(
         "requested": {
             "rate": rate,
             "clean_share": clean_share,
-            "rules": {
-                "path": str(ruleset.path),
-                "sha256": ruleset.digest,
-                "signal": ruleset.signal,
-                "count": len(ruleset.rules),
-                "by_tier": dict(sorted(Counter(rule.tier for rule in ruleset.rules).items())),
-            },
+            "class_groups": list(class_groups),
+            # One entry per *file*, not one block for "the" rule file. An arm is
+            # a selection over several files (DD5) whose rules are concatenated
+            # before the pass sees them, and the digests are the only thing that
+            # survives the concatenation -- without them --rate and --seed
+            # reproduce a tree only in combination with whatever happened to be
+            # on disk, and the files are hand-edited between runs.
+            "rule_sources": [source.as_dict() for source in sources],
         },
         "realised": {
             # DD5. A gap here is a statement about the libraries, not about the
@@ -1294,12 +1402,75 @@ def build_expansion_stats(
     return output
 
 
+@dataclass(frozen=True)
+class TreeRules:
+    """The rules one run will apply, and where they came from.
+
+    ``by_signal`` is what the pass needs -- one flat tuple per signal, the
+    signal's own hand-written rules followed by every selected class rule --
+    and it is deliberately *not* keyed by file: :func:`match_sites` prefers the
+    longest needle and breaks a tie by weight, so a class rule and a
+    hand-written rule matching the same site compete on equal terms and there
+    is no sense in which one file's rules run "first".
+
+    ``sources`` is what the sidecar records, because that competition is
+    exactly what destroys the old ``expansion.requested.rules`` block's
+    one-file-per-run assumption: after the concatenation there is nothing left
+    to point a digest at except the files themselves.
+    """
+
+    by_signal: dict[str, tuple[Rule, ...]]
+    sources: tuple[RuleSource, ...]
+    class_groups: tuple[str, ...]
+
+    def sources_for(self, signal: str) -> tuple[RuleSource, ...]:
+        """The files whose rules actually reached ``signal``.
+
+        A tree of one signal is the usual case and there the answer is every
+        source; a merged tree is not, and recording another signal's rule file
+        in this signal's sidecar would say a file was applied that never was.
+        """
+        return tuple(
+            source for source in self.sources if source.signal is None or source.signal == signal
+        )
+
+
+def _selected_class_sets(
+    rule_kinds: str,
+    *,
+    classes_dir: Path | None,
+    class_groups: Sequence[str] | None,
+) -> tuple[ClassSet, ...]:
+    """Load the class files an arm selects, or none if it selects none.
+
+    A *named* group with no file on disk is fatal, because a named group that
+    is not there is a typo and never a state -- and naming them is how DD5's
+    ``classes`` and ``combined`` arms are actually invoked, so that is where
+    the strictness is worth having. Discovery finding nothing is not fatal
+    here: the caller decides what an empty selection means, and
+    :func:`check_tree`'s zero-rules check is what stops it becoming a silent
+    no-op.
+    """
+    if not selects_classes(rule_kinds):
+        return ()
+    if class_groups is None:
+        groups = discover_class_groups(classes_dir)
+    else:
+        groups = tuple(class_groups)
+        if not groups:
+            raise ExpansionError("--class-groups was given no groups")
+    return load_class_groups(groups, classes_dir)
+
+
 def check_tree(
     paths: Sequence[Path],
     sidecars: Sequence[Mapping[str, object]],
     *,
     rules_dir: Path | None = None,
-) -> dict[str, RuleSet]:
+    classes_dir: Path | None = None,
+    rule_kinds: str = "both",
+    class_groups: Sequence[str] | None = None,
+) -> TreeRules:
     """Refuse an input tree that cannot be expanded honestly, and load its rules.
 
     Four checks and one side effect, all of them startup failures. A tree that
@@ -1308,18 +1479,33 @@ def check_tree(
     passes multiply surface forms, so running them in the same experiment makes
     the result unattributable, and if they are ever combined the order is
     expand-then-noise -- paraphrase first, damage the final surface second. A
-    signal with no rule file has nothing to expand *with*, and writing an
-    untouched copy of a tree under a name that says "expanded" is the kind of
-    silent no-op an arm comparison cannot see. And a tree whose files disagree
-    on the fold configuration was half-regenerated.
+    signal that ends up with **no rules at all** has nothing to expand *with*,
+    and writing an untouched copy of a tree under a name that says "expanded"
+    is the kind of silent no-op an arm comparison cannot see. And a tree whose
+    files disagree on the fold configuration was half-regenerated.
 
-    The rule files are loaded here rather than later so that every layer of DD6
-    has run before the first byte is written.
+    ``rule_kinds`` is DD5's arm selection. A missing ``<signal>.rules.json`` is
+    fatal only when ``signal`` is selected -- a classes-only arm has no use for
+    one and requiring it would tie a signal-agnostic pass back to the one
+    signal that happens to have a rule file. The zero-rules check is what stops
+    that permissiveness becoming a no-op: it asks about the *result* of the
+    selection rather than about any one file.
+
+    Every file is loaded here rather than later so that every layer of DD6 has
+    run before the first byte is written.
     """
+    if rule_kinds not in RULE_KINDS:
+        raise ExpansionError(f"--rules must be one of {', '.join(RULE_KINDS)}, got {rule_kinds!r}")
     if not paths:
         raise ExpansionError("no *.jsonl files found under --in-dir")
 
-    loaded: dict[str, RuleSet] = {}
+    class_sets = _selected_class_sets(
+        rule_kinds, classes_dir=classes_dir, class_groups=class_groups
+    )
+    class_rules = tuple(rule for class_set in class_sets for rule in class_set.rules)
+
+    signals: list[str] = []
+    rulesets: dict[str, RuleSet] = {}
     for path, stats in zip(paths, sidecars, strict=True):
         if "expansion" in stats:
             raise ExpansionError(
@@ -1335,11 +1521,26 @@ def check_tree(
         signal = stats.get("signal")
         if not isinstance(signal, str) or not signal:
             raise ExpansionError(f"{sidecar_path(path)} records no 'signal'")
-        if signal not in loaded:
+        if signal in signals:
+            continue
+        signals.append(signal)
+        if selects_signal_rules(rule_kinds):
             try:
-                loaded[signal] = load_rules(rules_path(signal, rules_dir))
+                rulesets[signal] = load_rules(rules_path(signal, rules_dir))
             except ExpansionError as error:
                 raise ExpansionError(f"{sidecar_path(path)}: {error}") from None
+
+    by_signal: dict[str, tuple[Rule, ...]] = {}
+    for signal in signals:
+        ruleset = rulesets.get(signal)
+        combined = (ruleset.rules if ruleset is not None else ()) + class_rules
+        if not combined:
+            raise ExpansionError(
+                f"the selection --rules {rule_kinds!r} leaves {signal!r} with no rules at all; "
+                "writing an untouched copy of a tree under a name that says 'expanded' is a "
+                "silent no-op an arm comparison cannot see"
+            )
+        by_signal[signal] = combined
 
     for field_name in TREE_AGREEMENT_FIELDS:
         values = {json.dumps(stats.get(field_name), sort_keys=True) for stats in sidecars}
@@ -1349,7 +1550,14 @@ def check_tree(
                 f"({', '.join(sorted(values))}); this tree was half-regenerated, and expanding "
                 "it would hide that until training time"
             )
-    return loaded
+
+    sources = tuple(rulesets[signal].source for signal in signals if signal in rulesets)
+    sources += tuple(class_set.source for class_set in class_sets)
+    return TreeRules(
+        by_signal=by_signal,
+        sources=sources,
+        class_groups=tuple(class_set.group for class_set in class_sets),
+    )
 
 
 def _read_records(path: Path) -> list[dict]:
@@ -1370,7 +1578,10 @@ def expand_file(
     in_path: Path,
     out_path: Path,
     *,
-    ruleset: RuleSet,
+    rules: Sequence[Rule],
+    signal: str,
+    sources: Sequence[RuleSource],
+    class_groups: Sequence[str] = (),
     rate: float,
     seed: int,
     clean_share: float,
@@ -1406,10 +1617,10 @@ def expand_file(
                 skipped=Counter(),
             )
         else:
-            result = expand_example(record["text"], ruleset.rules, rng, rate=rate)
+            result = expand_example(record["text"], rules, rng, rate=rate)
         record["text"] = result.text
         meta = record.get("meta", {})
-        label = label_name(record.get("labels", {}).get(ruleset.signal))
+        label = label_name(record.get("labels", {}).get(signal))
         label_mode = meta.get("label_mode", "unknown")
         tally.add(result, label=label, label_mode=label_mode, was_clean=was_clean)
         rows.append((result.text, label, label_mode, str(len(meta.get("fragment_ids", [])))))
@@ -1425,7 +1636,8 @@ def expand_file(
         stats,
         tally=tally,
         texts=rows,
-        ruleset=ruleset,
+        sources=sources,
+        class_groups=class_groups,
         source_dir=str(in_path.parent),
         seed=seed,
         rate=rate,
@@ -1445,6 +1657,9 @@ def expand_tree(
     seed: int = 42,
     clean_share: float = DEFAULT_CLEAN_SHARE,
     rules_dir: Path | None = None,
+    classes_dir: Path | None = None,
+    rule_kinds: str = "both",
+    class_groups: Sequence[str] | None = None,
     force: bool = False,
     root: Path | None = None,
 ) -> ExpansionTally:
@@ -1467,7 +1682,14 @@ def expand_tree(
         sidecars = [read_sidecar(path) for path in paths]
     except NoiseError as error:
         raise ExpansionError(str(error)) from None
-    rulesets = check_tree(paths, sidecars, rules_dir=rules_dir)
+    loaded = check_tree(
+        paths,
+        sidecars,
+        rules_dir=rules_dir,
+        classes_dir=classes_dir,
+        rule_kinds=rule_kinds,
+        class_groups=class_groups,
+    )
 
     known = set(paths) | {sidecar_path(path) for path in paths}
     total = ExpansionTally()
@@ -1477,7 +1699,10 @@ def expand_tree(
             expand_file(
                 path,
                 target,
-                ruleset=rulesets[stats["signal"]],
+                rules=loaded.by_signal[stats["signal"]],
+                signal=str(stats["signal"]),
+                sources=loaded.sources_for(str(stats["signal"])),
+                class_groups=loaded.class_groups,
                 rate=rate,
                 seed=seed,
                 clean_share=clean_share,
@@ -1553,7 +1778,7 @@ class DryRunDiff:
     """What a whole dry run found. ``introduced`` is the failure."""
 
     manifest: Path
-    signals: tuple[str, ...]
+    sources: tuple[str, ...]
     rules: int
     fragments: int
     rewritten: int
@@ -1653,7 +1878,7 @@ def _diff_variant(
 
 def dry_run_lint(
     manifest_path: Path,
-    rulesets: Sequence[RuleSet],
+    sources: Sequence[RuleSource],
 ) -> DryRunDiff:
     """Apply every rule to every library line and diff the two library reports.
 
@@ -1685,12 +1910,10 @@ def dry_run_lint(
     introduced: list[HitChange] = []
     removed: list[HitChange] = []
     rewritten: set[str] = set()
-    for ruleset in rulesets:
-        variants: list[tuple[str, tuple[Rule, ...]]] = [
-            (rule.id, (rule,)) for rule in ruleset.rules
-        ]
-        if len(ruleset.rules) > 1:
-            variants.append((COMBINED, ruleset.rules))
+    for source in sources:
+        variants: list[tuple[str, tuple[Rule, ...]]] = [(rule.id, (rule,)) for rule in source.rules]
+        if len(source.rules) > 1:
+            variants.append((COMBINED, source.rules))
         for variant, rules in variants:
             texts = [rewrite_exhaustively(fragment.text, rules) for fragment in fragments]
             rewritten.update(
@@ -1704,8 +1927,8 @@ def dry_run_lint(
 
     return DryRunDiff(
         manifest=manifest_path,
-        signals=tuple(ruleset.signal for ruleset in rulesets),
-        rules=sum(len(ruleset.rules) for ruleset in rulesets),
+        sources=tuple(source.label for source in sources),
+        rules=sum(len(source.rules) for source in sources),
         fragments=len(fragments),
         rewritten=len(rewritten),
         introduced=tuple(introduced),
@@ -1731,7 +1954,7 @@ def render_dry_run(diff: DryRunDiff) -> list[str]:
         "Rule dry run against the library lint",
         "=====================================",
         f"manifest: {diff.manifest}",
-        f"signals:  {', '.join(diff.signals)}",
+        f"sources:  {', '.join(diff.sources) or 'none'}",
         f"rules:    {diff.rules}, applied unconditionally to {diff.fragments} library lines",
         f"lines any rule rewrites: {diff.rewritten}",
         "",
@@ -1762,14 +1985,43 @@ def render_dry_run(diff: DryRunDiff) -> list[str]:
 def load_rulesets(
     signal: str | None,
     rules_dir: Path,
-) -> list[RuleSet]:
-    """Every rule file the dry run should check: one signal's, or all of them."""
-    if signal is not None:
-        return [load_rules(rules_path(signal, rules_dir))]
-    paths = sorted(rules_dir.glob("*.rules.json"))
-    if not paths:
-        raise ExpansionError(f"no '*.rules.json' files under {rules_dir}")
-    return [load_rules(path) for path in paths]
+    *,
+    classes_dir: Path | None = None,
+    rule_kinds: str = "both",
+    class_groups: Sequence[str] | None = None,
+) -> list[RuleSource]:
+    """Every file the dry run should check, as :class:`RuleSource` entries.
+
+    The defaults are what CI runs: every ``*.rules.json`` under ``--rules-dir``
+    and every ``*.classes.json`` under ``--classes-dir``. ``--signal`` narrows
+    the first, ``--class-groups`` the second, and ``--rules`` drops either
+    side entirely.
+
+    An empty ``classes/`` directory is not an error: the dry run lints what is
+    committed and writes nothing, so "no class files" is a true answer, and the
+    header prints the sources it checked so that the answer is visible rather
+    than assumed. A *named* group that is not on disk is still fatal.
+    """
+    if rule_kinds not in RULE_KINDS:
+        raise ExpansionError(f"--rules must be one of {', '.join(RULE_KINDS)}, got {rule_kinds!r}")
+    sources: list[RuleSource] = []
+    if selects_signal_rules(rule_kinds):
+        if signal is not None:
+            sources.append(load_rules(rules_path(signal, rules_dir)).source)
+        else:
+            paths = sorted(rules_dir.glob("*.rules.json"))
+            if not paths:
+                raise ExpansionError(f"no '*.rules.json' files under {rules_dir}")
+            sources.extend(load_rules(path).source for path in paths)
+    class_sets = _selected_class_sets(
+        rule_kinds, classes_dir=classes_dir, class_groups=class_groups
+    )
+    sources.extend(class_set.source for class_set in class_sets)
+    if not sources:
+        raise ExpansionError(
+            f"--rules {rule_kinds!r} selected no rule files at all; there is nothing to dry-run"
+        )
+    return sources
 
 
 def _rate(raw: str) -> float:
@@ -1777,6 +2029,17 @@ def _rate(raw: str) -> float:
     if not 0 < value <= 1:
         raise argparse.ArgumentTypeError(f"must be in (0, 1]: {raw}")
     return value
+
+
+def _groups(raw: str) -> tuple[str, ...]:
+    """Parse ``--class-groups``. An empty entry is a typo, not an empty group."""
+    groups = [part.strip() for part in raw.split(",")]
+    if not groups or any(not group for group in groups):
+        raise argparse.ArgumentTypeError(f"not a comma-separated list of group names: {raw!r}")
+    duplicates = sorted({group for group in groups if groups.count(group) > 1})
+    if duplicates:
+        raise argparse.ArgumentTypeError(f"repeated group(s): {', '.join(duplicates)}")
+    return tuple(groups)
 
 
 def _share(raw: str) -> float:
@@ -1828,6 +2091,30 @@ def build_parser() -> argparse.ArgumentParser:
         "outside data/synthetic/, which holds nothing but the libraries and the manifest",
     )
     parser.add_argument(
+        "--classes-dir",
+        type=Path,
+        default=CLASSES_ROOT,
+        help=f"directory holding '<group>.classes.json' (default: {CLASSES_ROOT})",
+    )
+    parser.add_argument(
+        "--rules",
+        choices=RULE_KINDS,
+        default="both",
+        dest="rule_kinds",
+        help="which rules an arm applies (DD5). 'signal' is the hand-written "
+        "'<signal>.rules.json' alone and reproduces the v1 arm byte for byte; 'classes' is the "
+        "swap classes alone, which belong to no signal; 'both' concatenates them and is the "
+        "decision arm (default: both)",
+    )
+    parser.add_argument(
+        "--class-groups",
+        type=_groups,
+        default=None,
+        help="comma-separated swap-class groups to load, e.g. 'referent,calendar,setting'. The "
+        "default is every group with a file in --classes-dir; a named group with no file is an "
+        "error rather than an empty selection",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="write into a non-empty --out-dir",
@@ -1838,7 +2125,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="apply every rule to every committed library line unconditionally and diff the "
         "filler-purity and cross-signal reports against the same two over the originals. "
         "Reads the libraries and writes nothing: no tree is generated and none is expanded. "
-        "A hit a rule manufactured is a failure; a hit it removed is printed and is not",
+        "A hit a rule manufactured is a failure; a hit it removed is printed and is not. "
+        "With no other flags it covers every rule file and every class file, which is what "
+        "CI runs; the cost is linear in rule count, so budget minutes rather than seconds",
     )
     parser.add_argument(
         "--manifest",
@@ -1849,7 +2138,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--signal",
         help="with --dry-run-lint, check only this signal's rule file; the default checks "
-        "every rule file in --rules-dir",
+        "every rule file in --rules-dir. It narrows the '*.rules.json' side only -- the class "
+        "files belong to no signal, and --class-groups is what narrows those",
     )
     return parser
 
@@ -1860,7 +2150,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.dry_run_lint:
         try:
-            diff = dry_run_lint(args.manifest, load_rulesets(args.signal, args.rules_dir))
+            diff = dry_run_lint(
+                args.manifest,
+                load_rulesets(
+                    args.signal,
+                    args.rules_dir,
+                    classes_dir=args.classes_dir,
+                    rule_kinds=args.rule_kinds,
+                    class_groups=args.class_groups,
+                ),
+            )
         except ExpansionError as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
@@ -1886,6 +2185,9 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             clean_share=args.clean_share,
             rules_dir=args.rules_dir,
+            classes_dir=args.classes_dir,
+            rule_kinds=args.rule_kinds,
+            class_groups=args.class_groups,
             force=args.force,
         )
     except ExpansionError as error:

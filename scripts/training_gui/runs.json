@@ -849,7 +849,7 @@
     {
       "id": "lexical-expansion-2x2",
       "name": "Lexical variant expansion: the 2x2, end to end",
-      "description": "Task 6 of the lexical variant expansion plan, as one button: smoke test, generate the clean fever tree, expand it at the operating point the rule-authoring report recommends (rate 0.4 at clean share 0.25, p = 0.30), re-check the rules against the library lint before any GPU time, train the four cells of the 2x2, then compute the paired flip rate for both arms and score the pre-registered decisive-accuracy guard. Twenty trainings -- four cells of five folds -- at roughly ten minutes a cell, so about forty minutes of GPU. Read the pre-registration first: the expected movement on the clean synthetic test set is *nothing*, and a large gain there is evidence of a new shortcut rather than a removed one. Every path is a literal and the entry takes no parameters.",
+      "description": "Task 6 of the lexical variant expansion plan, as one button: smoke test, generate the clean fever tree, expand it at the operating point the rule-authoring report recommends (rate 0.4 at clean share 0.25, p = 0.30), re-check the rules against the library lint before any GPU time, train the four cells of the 2x2, then compute the paired flip rate for both arms and score the pre-registered decisive-accuracy guard. Twenty trainings -- four cells of five folds -- at roughly ten minutes a cell, so about forty minutes of GPU. Read the pre-registration first: the expected movement on the clean synthetic test set is *nothing*, and a large gain there is evidence of a new shortcut rather than a removed one. Both expansion steps pin `--rules signal`, so this entry stays the v1 arm -- the 2026-09-04 anchor -- byte for byte once swap-class files exist on disk. Every path is a literal and the entry takes no parameters.",
       "steps": [
         [
           "-m",
@@ -880,12 +880,16 @@
           "0.25",
           "--seed",
           "42",
+          "--rules",
+          "signal",
           "--force"
         ],
         [
           "-m",
           "scripts.synthetic_data.expand",
           "--dry-run-lint",
+          "--rules",
+          "signal",
           "--signal",
           "fever_present"
         ],

@@ -2130,10 +2130,25 @@ forms, so running them in one experiment makes the result unattributable, and
 the order is **expand then noise**: paraphrase first, damage the final surface
 second.
 
-**Where the files live.** Rule files are `data/expansion/<signal>.rules.json`,
+**Where the files live.** Rule files are `data/expansion/<signal>.rules.json`
+and swap-class files are `data/expansion/classes/<group>.classes.json`, both
 deliberately outside `data/synthetic/`, which a test guards as holding nothing
 but the fragment libraries and the manifest. `data/expansion/README.md` is what a
 rule author reads.
+
+**A run selects which rule files apply, and that selection *is* the arm.**
+`--rules {signal,classes,both}` picks the kinds and `--class-groups` picks the
+groups; the five arms of the v2 experiment are five invocations of those two
+flags and nothing else. Rules from the selected files are concatenated with no
+precedence between them — `match_sites` prefers the longest `find` and breaks a
+tie by weight, so a hand-written rule and a class rule compete at a shared site
+exactly as two hand-written rules do. Three properties are load-time failures
+rather than defaults: a named class group with no file, a selection that leaves
+a signal with **no rules at all** (an untouched tree written under a name that
+says "expanded" is the one silent no-op an arm comparison cannot see), and a
+missing `<signal>.rules.json` *when and only when* `--rules` asks for one — a
+classes-only arm runs against a signal that has no rule file, which is the whole
+point of a class belonging to no signal.
 
 **The library statistics a rule author decides from are committed code.**
 `scripts/synthetic_data/class_stats.py` counts candidate swap-class members over
@@ -2209,12 +2224,15 @@ This is the same instrument section 10 records the companion run needing, for th
 same reason.
 
 **The reports say which tree they were scored against.** `_expansion_header`
-records the `expansion` block — rate, clean share, seed, and the rule file's
-sha256 — for both the training tree and, where `--test-dir` is set, the test
-tree. Rate and seed reproduce a tree only in combination with the rules that were
-on disk at the time, and rule files are hand-edited between runs. Read against
-the wrong tree, "clean-trained, expanded test" and "clean-trained, clean test"
-are the same sentence.
+records the `expansion` block — rate, clean share, seed, the selected class
+groups, and **one entry per rule file** with its sha256 — for both the training
+tree and, where `--test-dir` is set, the test tree. One entry per file rather
+than one block for "the" rule file is forced by the arm selection above: several
+files are concatenated before the pass sees them, so the files are all that
+survives. Rate and seed reproduce a tree only in combination with every rule
+file that was on disk at the time, and those files are hand-edited between runs.
+Read against the wrong tree, "clean-trained, expanded test" and "clean-trained,
+clean test" are the same sentence.
 
 **The whole sequence is one catalogue entry**, `lexical-expansion-2x2` in
 `scripts/training_gui/runs.json`: smoke test, generate, expand, `--dry-run-lint`,
