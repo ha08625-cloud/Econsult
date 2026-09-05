@@ -1,0 +1,15 @@
+{
+  "group": "calendar",
+  "classes": [
+    {
+      "id": "calendar.weekday",
+      "gender": "none",
+      "life_stage": "none",
+      "number": "singular",
+      "person": "none",
+      "tier": "B",
+      "members": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+      "invariant": "Every member is a day name and every member is consonant-initial, so the three frames the libraries actually use -- 'on X', 'since X', 'next X' -- stay well formed under every swap, and the one 'a Saturday' site takes any of the seven. No day name appears in any signal lexicon, so no swap can move a signal term. What a swap does move is the implied duration of 'since X', and that is safe here only because no signal in this dataset is scored on duration: fever_present, dysuria_present and the rest are all point-in-time presence, and recent_uti_present keys on 'weeks ago' and 'this month' rather than on a day name. Checked against fever_null_thirdparty 'My carer who visits twice a week has had a fever since X'."
+    }
+  ]
+}

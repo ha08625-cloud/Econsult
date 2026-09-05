@@ -1,0 +1,204 @@
+{
+  "group": "referent",
+  "classes": [
+    {
+      "id": "referent.adult_female",
+      "gender": "female",
+      "life_stage": "adult",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "mum",
+        "mother",
+        "wife",
+        "missus",
+        "sister",
+        "aunt",
+        "auntie",
+        "girlfriend"
+      ],
+      "invariant": "Every member names one adult woman other than the author. Checked against fever_null_thirdparty 'My X has had a fever since Monday': the line stays a third-party attribution under every swap, because only which woman it is changes and the libraries never label on that. Second senses: 'sister' also names a nurse in older NHS usage, which does not appear in these libraries. 'mother' and 'sister' are shadowed at in-law sites by referent.in_law_female, so no swap can produce 'my wife in law'. 'mummy' is absent: its one library occurrence is a child's quoted vocative, which a bare-noun swap cannot survive."
+    },
+    {
+      "id": "referent.adult_male",
+      "gender": "male",
+      "life_stage": "adult",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "dad",
+        "father",
+        "husband",
+        "brother",
+        "boyfriend"
+      ],
+      "invariant": "Every member names one adult man other than the author. Checked against fever_null_thirdparty 'My X woke up with a fever this morning': third-party attribution survives every swap. 'uncle' is deliberately absent although it occurs seven times: this class has one indefinite-article site ('a colleague of mine has a father'), and 'a uncle' is broken English that neither structural nor lexicon invariance can see. 'daddy' is absent as an implausible register for an adult referent. 'father' and 'brother' are shadowed at in-law sites by referent.in_law_male."
+    },
+    {
+      "id": "referent.elder_female",
+      "gender": "female",
+      "life_stage": "elder",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "nan",
+        "nanna",
+        "nana",
+        "gran",
+        "granny",
+        "grandma",
+        "grandmother"
+      ],
+      "invariant": "Every member is a British name for one grandmother, so the swap moves register and nothing else. Checked against nocturia_null_thirdparty 'four trips to the toilet before dawn isn't safe for my X': the line stays about an elderly third party under every swap. Second sense: 'nan' also names a flatbread, which does not occur in these libraries. Four members occur nowhere and exist only to widen the target vocabulary, which is what DD14 says a member is for."
+    },
+    {
+      "id": "referent.elder_male",
+      "gender": "male",
+      "life_stage": "elder",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "grandad",
+        "granddad",
+        "grandpa",
+        "grandfather",
+        "gramps"
+      ],
+      "invariant": "Every member is a British name for one grandfather, so the swap moves register and nothing else. Checked against urinary_frequency_null_thirdparty 'My X has been getting up four or five times in the night for a wee': the attribution stays with an elderly third party. Only 'grandad' occurs in the libraries; the other four exist as targets, and 'granddad' differs from it by one letter on purpose, because spelling variation is exactly what the encoder should not be keying on."
+    },
+    {
+      "id": "referent.adult_neutral",
+      "gender": "neutral",
+      "life_stage": "adult",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "partner",
+        "friend",
+        "neighbour",
+        "colleague",
+        "cousin",
+        "flatmate",
+        "housemate",
+        "mate",
+        "boss"
+      ],
+      "invariant": "Every member names one adult of unstated gender other than the author, and every member is consonant-initial, which matters because this class has fourteen indefinite-article sites ('a friend of mine', 'a colleague at work'). Checked against fever_null_thirdparty 'A colleague at work went home with a fever on Monday'. Second senses: 'partner' is romantic in these libraries but also commercial elsewhere, and 'mate' is a British vocative; neither reading changes who the symptom belongs to. 'other half' is absent per review F6 (vowel-initial at seventeen 'a' sites) and 'carer' is absent because 'I'm a carer for a lady' breaks under every swap."
+    },
+    {
+      "id": "referent.child_neutral_singular",
+      "gender": "neutral",
+      "life_stage": "child",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "kid",
+        "child",
+        "little one"
+      ],
+      "invariant": "Every member names one child of unstated gender, and every member takes the same determiners: this class has ten indefinite-article sites and all three members are consonant-initial. Checked against nocturia_null_thirdparty 'The X keeps waking to be taken for a wee'. 'youngest' and 'eldest' are absent although they occur seven times: they are number-ambiguous ('my two youngest are both saying') so no truthful 'number' can be declared for a class holding them, and 'eldest' is vowel-initial where this class writes 'a kid'."
+    },
+    {
+      "id": "referent.child_neutral_plural",
+      "gender": "neutral",
+      "life_stage": "child",
+      "number": "plural",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "kids",
+        "children"
+      ],
+      "invariant": "Both members are plural nouns for the author's children, taking the same determiners ('the kids', 'my children') and no indefinite article anywhere in the libraries. Checked against fever_null_thirdparty 'The X have been off school with a temperature': plurality and third-party attribution both survive. Kept apart from referent.child_neutral_singular because a class declares one number, and 'my kids were' must not become 'my child were'."
+    },
+    {
+      "id": "referent.child_female",
+      "gender": "female",
+      "life_stage": "child",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "daughter",
+        "girl"
+      ],
+      "invariant": "Both members name the author's female child. Checked against dysuria_null_thirdparty 'My X keeps crying that it hurts when she goes to the toilet': the attribution stays with a female child under either swap. Second sense, and the accepted residual: 'girl' also names an adult woman, and the libraries carry one such line ('The girl at the desk next to me went home early on Monday'), where the swap to 'daughter' is wrong. That is one site against forty-six on which 'daughter' becomes reachable as a find, and it is recorded rather than fixed because the format cannot condition a member on its determiner."
+    },
+    {
+      "id": "referent.child_male",
+      "gender": "male",
+      "life_stage": "child",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "son",
+        "boy"
+      ],
+      "invariant": "Both members name the author's male child. Checked against flank_pain_null_thirdparty 'My little X keeps crying and holding his side': the attribution stays with a male child under either swap. Second sense, and the accepted residual: 'boy' also names a young man, and the libraries carry one such line ('The boy my daughter's been seeing'), where the swap to 'son' is wrong; and 'my little boy' becomes the stilted 'my little son' at four sites. Weighed against thirty-five sites on which 'son' becomes reachable as a find."
+    },
+    {
+      "id": "referent.in_law_female",
+      "gender": "female",
+      "life_stage": "adult",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "mother in law",
+        "sister in law",
+        "daughter in law"
+      ],
+      "invariant": "Every member is an adult female relative by marriage, written unhyphenated. This class exists first to shadow: without it the longest match at 'my mother in law' is the bare 'mother', and referent.adult_female rewrites it to 'my wife in law'. Because a longer find wins at a site, listing the compounds moves those nine sites into a class where every swap is well formed. Life stage is adult for every member including 'daughter in law', which is what makes the three interchangeable. Checked against haematuria_null_thirdparty 'There was a trace of blood in the sample my X took to her appointment'."
+    },
+    {
+      "id": "referent.in_law_male",
+      "gender": "male",
+      "life_stage": "adult",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "father in law",
+        "brother in law",
+        "son in law"
+      ],
+      "invariant": "Every member is an adult male relative by marriage, written unhyphenated, and the class exists first to shadow the bare 'father' and 'brother' at the six sites where the libraries spell the compound with spaces; without it referent.adult_male produces 'my husband in law'. Life stage is adult for every member including 'son in law', which is what makes the three interchangeable. Checked against haematuria_null_thirdparty 'My X has been passing dark red blood for over a week'."
+    },
+    {
+      "id": "referent.in_law_female_hyphenated",
+      "gender": "female",
+      "life_stage": "adult",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "mother-in-law",
+        "mum-in-law",
+        "sister-in-law",
+        "daughter-in-law"
+      ],
+      "invariant": "The hyphenated spelling of referent.in_law_female, and a separate class rather than three more members of it because layer 2 reads a hyphenated compound as one token and an unhyphenated one as three, so the two spellings do not compare equal and no class may hold both. Same shadowing job: without it 'My mother-in-law lives with us' becomes 'My mum-in-law lives with us', and 'My mum-in-law phoned earlier' becomes 'My wife-in-law phoned earlier'. Checked against urinary_frequency_null_thirdparty 'My X lives with us and barely sits through a meal without excusing herself'. The one library line spelling it 'mother-in law' -- one hyphen, one space -- stays unshadowed and is recorded in the completion note; it is a typo in the library, and adding it as a member would make the pass manufacture that spelling as a target."
+    },
+    {
+      "id": "referent.in_law_male_hyphenated",
+      "gender": "male",
+      "life_stage": "adult",
+      "number": "singular",
+      "person": "third-party",
+      "tier": "B",
+      "members": [
+        "father-in-law",
+        "brother-in-law",
+        "son-in-law"
+      ],
+      "invariant": "The hyphenated spelling of referent.in_law_male, kept in its own class for the reason referent.in_law_female_hyphenated gives: the two spellings do not produce the same layer-2 sequence, so a class holding both would be refused. It shadows the bare 'brother' and 'father' at the six hyphenated sites. Checked against urinary_frequency_null_thirdparty 'My X has been weeing far more than usual since his operation'."
+    }
+  ]
+}

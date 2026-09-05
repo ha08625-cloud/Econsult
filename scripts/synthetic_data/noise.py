@@ -343,6 +343,23 @@ PERSON_CLASSES: dict[str, str] = {
     # referent/child_male.
     "son": THIRD_PARTY,
     "boy": THIRD_PARTY,
+    # referent/in_law_*_hyphenated. The unhyphenated spellings ("mother in
+    # law") need no entry: expansion splits on whitespace and the base noun
+    # above already maps. A hyphenated compound folds to a single token, so
+    # without these six it would yield an empty sequence and every pair
+    # touching it would pass layer 2 vacuously rather than fail closed.
+    "mother-in-law": THIRD_PARTY,
+    "sister-in-law": THIRD_PARTY,
+    "daughter-in-law": THIRD_PARTY,
+    "father-in-law": THIRD_PARTY,
+    "brother-in-law": THIRD_PARTY,
+    "son-in-law": THIRD_PARTY,
+    # Attested in tangents.txt and a legitimate British spelling rather than a
+    # typo, so it is a class member as well as a map key. Its sibling typo
+    # "mother-in law" (one space, one hyphen) is deliberately *not* here: it
+    # would have to become a swap target too, and no pass should be manufacturing
+    # that spelling.
+    "mum-in-law": THIRD_PARTY,
 }
 
 #: Curly punctuation folded to ASCII on lookup. Same spirit as

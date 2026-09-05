@@ -892,6 +892,16 @@ def tree(tmp_path):
 def run_tree(source, target, rules_dir, **kwargs):
     kwargs.setdefault("rate", 0.5)
     kwargs.setdefault("root", source.parent)
+    # Hermetic unless the caller says otherwise. An arm that names no class
+    # group falls back to ``discover_class_groups()`` over the committed
+    # ``data/expansion/classes``, so from Task 6 onwards a directory-pass test
+    # built on a tmp tree would silently run the shipped swap classes against
+    # a two-rule tmp rule file. The tests that are *about* class selection pass
+    # their own ``classes_dir`` and are unaffected.
+    if "classes_dir" not in kwargs and "class_groups" not in kwargs:
+        empty = source.parent / "expansion-classes-empty"
+        empty.mkdir(exist_ok=True)
+        kwargs["classes_dir"] = empty
     return expand.expand_tree(source, target, rules_dir=rules_dir, **kwargs)
 
 
@@ -1616,6 +1626,193 @@ def test_the_committed_rules_pass_the_dry_run_against_the_real_libraries(committ
     text the rule's author never saw.
     """
     diff = expand.dry_run_lint(expand.DEFAULT_MANIFEST, [committed.source])
+
+    assert not diff.failed, "\n".join(expand.render_dry_run(diff))
+    assert diff.rewritten, "no library line is rewritten at all"
+
+
+# ---------------------------------------------------------------------------
+# The committed swap classes (Task 6)
+# ---------------------------------------------------------------------------
+
+#: Members whose class is a referent class, and therefore must be reachable by
+#: :data:`~scripts.synthetic_data.noise.PERSON_CLASSES`. Everything else --
+#: weekdays, affect adjectives, clinicians -- must *not* be, and the second
+#: half of that is the load-bearing one: mapping a clinician onto
+#: ``<third-party>`` would let a swap pass a check whose whole subject is
+#: whose symptom is being described.
+REFERENT_GROUP = "referent"
+
+
+@pytest.fixture(scope="module")
+def committed_classes():
+    """Every committed class file, loaded through every validation layer.
+
+    Loading *is* the assertion, exactly as for the committed rule file: the
+    loader runs layer 1, layer 2 on person class (because these rules carry an
+    ``origin``) and layer 3 in its signal-agnostic form on every generated
+    pair, so a set that reaches the fixture body has passed all three.
+    """
+    groups = expand.discover_class_groups()
+    assert groups, "no committed class files"
+    return tuple(expand.load_classes(expand.classes_path(group)) for group in groups)
+
+
+@pytest.fixture(scope="module")
+def committed_class_rules(committed_classes):
+    return tuple(rule for class_set in committed_classes for rule in class_set.rules)
+
+
+def _members(class_sets):
+    """``(group, class id, member)`` for every member of every committed class."""
+    return [
+        (class_set.group, swap_class.id, member)
+        for class_set in class_sets
+        for swap_class in class_set.classes
+        for member in swap_class.members
+    ]
+
+
+def test_the_committed_class_files_load_and_expand(committed_classes, committed_class_rules):
+    assert {class_set.group for class_set in committed_classes} == {
+        "affect",
+        "calendar",
+        "referent",
+        "setting",
+    }
+    # Ordered pairs, so a class of n members is n*(n-1) rules and the total is
+    # a function of the committed lists alone.
+    assert len(committed_class_rules) == sum(
+        len(swap_class.members) * (len(swap_class.members) - 1)
+        for class_set in committed_classes
+        for swap_class in class_set.classes
+    )
+    assert {rule.origin for rule in committed_class_rules} == {
+        swap_class.id for class_set in committed_classes for swap_class in class_set.classes
+    }
+
+
+def test_every_referent_member_is_reachable_by_the_person_map(committed_classes):
+    """DD6a's fail-closed property, asserted on the committed lists.
+
+    Checked as "does layer 2 see a person here" rather than as literal
+    membership of :data:`~scripts.synthetic_data.noise.PERSON_CLASSES`, because
+    that is the property that matters and the map reaches more than its keys:
+    an unhyphenated "mother in law" is normalised through its head noun, and a
+    hyphenated "mother-in-law" is one token and needs its own key. A member
+    that produced an empty sequence would compare equal to any other empty one,
+    which is the failure the map is total to prevent.
+    """
+    for group, class_id, member in _members(committed_classes):
+        sequence = structural_sequence(member, person_classes=True)
+        if group == REFERENT_GROUP:
+            assert sequence == (noise.THIRD_PARTY,), f"{class_id}: {member!r}"
+        else:
+            assert sequence == (), f"{class_id}: {member!r} must not read as a person"
+
+
+def test_every_member_that_occurs_fires_as_a_find_and_every_member_is_a_target(
+    committed_classes, committed_class_rules, library_fragments
+):
+    """DD14's replacement for "every committed rule fires somewhere".
+
+    A generated pair whose ``find`` names a member the libraries never use
+    fires nowhere, and that is the mechanism working rather than a fault: such
+    a member exists to widen the *target* vocabulary. So the guard splits in
+    two. A member the libraries *do* use must be reachable as a ``find`` --
+    if it is not, a longer member is shadowing every one of its sites and the
+    lists want looking at. And every member must be some rule's ``replace``,
+    which is what makes an unreachable member worth its authoring cost.
+    """
+    fired = {
+        fold_haystack(rule.find)
+        for fragment in library_fragments
+        for site in expand.match_sites(fragment.text, committed_class_rules)
+        for rule in site.rules
+    }
+    targets = {fold_haystack(rule.replace) for rule in committed_class_rules}
+    for _, class_id, member in _members(committed_classes):
+        folded = fold_haystack(member)
+        assert folded in targets, f"{class_id}: {member!r} is never a replacement"
+        occurs = any(
+            re.search(rf"(?<!\w){re.escape(member.lower())}(?!\w)", fragment.text.lower())
+            for fragment in library_fragments
+        )
+        if occurs:
+            assert folded in fired, f"{class_id}: {member!r} occurs but fires nowhere"
+
+
+def test_the_in_law_classes_shadow_the_bare_referent_nouns(committed_class_rules):
+    """The one property the referent lists are built on, guarded directly.
+
+    Without the compound classes the longest match at "my mother in law" is the
+    bare "mother", and referent.adult_female rewrites the line to "my wife in
+    law": broken English that introduces no lexicon hit, so ``--dry-run-lint``
+    exits 0 on it. Longest-match-wins is what fixes it, and this is the test
+    that notices if a compound is ever dropped from a list.
+    """
+    for text in (
+        "My mother-in-law lives with us",
+        "my mother in law's falls",
+        "My brother-in-law is off work",
+        "It's been months of my brother in law waking needing a wee",
+        "My mum-in-law phoned earlier",
+    ):
+        for rotation in range(8):
+            rewritten = expand.rewrite_exhaustively(text, committed_class_rules, rotation=rotation)
+            assert re.search(r"(?<!\w)\w+[- ]in[- ]law", rewritten, re.I), rewritten
+            # "mum-in-law" is absent from this list on purpose: it is an
+            # authored member of referent.in_law_female_hyphenated, because the
+            # libraries spell one site that way and it is a real British form.
+            assert not re.search(
+                r"(?<!\w)(wife|husband|dad|girlfriend|boyfriend|missus|aunt|auntie)"
+                r"[- ]in[- ]law",
+                rewritten,
+                re.I,
+            ), f"rotation {rotation}: {rewritten}"
+
+
+def test_no_committed_class_rewrites_a_line_into_another_librarys_line(
+    committed_class_rules, library_fragments
+):
+    """The rule-file guard, extended to classes, and the one most likely to fire.
+
+    A referent swap is exactly the edit that can land a ``*_null_thirdparty``
+    line on a line from a library carrying a different label. Run at every
+    rotation, because a single exhaustive pass only ever picks the target whose
+    id sorts first and would check one of n-1 (v2 review F9).
+    """
+    by_text: dict[str, set[str]] = {}
+    for fragment in library_fragments:
+        by_text.setdefault(normalise(fragment.text), set()).add(fragment.library)
+    rotations = expand.combined_rotations(committed_class_rules)
+    for rotation in range(rotations):
+        for fragment in library_fragments:
+            rewritten = expand.rewrite_exhaustively(
+                fragment.text, committed_class_rules, rotation=rotation
+            )
+            if rewritten == fragment.text:
+                continue
+            landed = by_text.get(normalise(rewritten), set())
+            assert landed <= {fragment.library}, (
+                f"rotation {rotation}: {fragment.fragment_id} -> {sorted(landed)}"
+            )
+
+
+def test_the_committed_classes_pass_the_dry_run_against_every_signals_libraries(
+    committed_classes,
+):
+    """Task 4's aggregate check over the classes, for all seven signals at once.
+
+    A swap class belongs to no signal, so this is not seven runs but one: every
+    class rule is applied to every library line of every signal, and the diff is
+    over all seven lexicon reports. Slow -- it is the whole corpus times every
+    rule -- and the plan budgets for it rather than skipping it, because a
+    lexicon hit completed by a swap is invisible to every per-rule layer.
+    """
+    diff = expand.dry_run_lint(
+        expand.DEFAULT_MANIFEST, [class_set.source for class_set in committed_classes]
+    )
 
     assert not diff.failed, "\n".join(expand.render_dry_run(diff))
     assert diff.rewritten, "no library line is rewritten at all"
