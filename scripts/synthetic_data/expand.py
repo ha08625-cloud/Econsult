@@ -89,11 +89,14 @@ from .lint import (
 )
 from .manifest import Fragment, ManifestError, load_fragments
 from .noise import (
+    FIRST_PERSON,
     GENERATED_ROOT,
     LABEL_MODES,
     LABELS,
+    PERSON_CLASSES,
     RECORD_KEYS,
     STRUCTURAL_FROZEN,
+    THIRD_PARTY,
     TREE_AGREEMENT_FIELDS,
     NoiseError,
     check_directories,
@@ -152,8 +155,19 @@ TIERS = ("A", "B")
 #: association for another.
 DEFAULT_CLEAN_SHARE = 0.25
 
-#: Structural tokens, folded once, for :func:`structural_sequence`.
-_STRUCTURAL = frozenset(fold_token(word) for word in STRUCTURAL_FROZEN)
+#: Structural tokens, folded once, for :func:`structural_sequence`. The two
+#: person-class markers are members because a class-generated rule's sequence
+#: is built from them: they are what "my mum" and "my sister" have in common
+#: and what "my mum" and "I" do not (DD6a).
+_STRUCTURAL = frozenset(fold_token(word) for word in STRUCTURAL_FROZEN) | {
+    FIRST_PERSON,
+    THIRD_PARTY,
+}
+
+#: Longest :data:`~scripts.synthetic_data.noise.PERSON_CLASSES` key, in words.
+#: Keys are matched longest-first so that a multi-word member ("little one")
+#: collapses to a single marker rather than to its two unmapped words.
+_PERSON_CLASS_MAX_WORDS = max(len(key.split()) for key in PERSON_CLASSES)
 
 #: Contractions expanded before the layer-2 comparison, so that the Tier A
 #: rules the pass exists to carry -- ``haven't`` -> ``have not``, ``I've`` ->
@@ -227,6 +241,12 @@ class Rule:
     replace: str
     invariant: str
     weight: float = 1.0
+    #: ``None`` for a rule read from a ``*.rules.json`` file; the class id for
+    #: one the swap-class loader generated. It is the *only* thing that
+    #: relaxes layer 2 onto person classes (DD6a), and keeping the relaxation
+    #: on the rule rather than in :func:`_check_structural` is what stops a
+    #: hand-written file borrowing it (v2 review, F3).
+    origin: str | None = None
 
     @property
     def needle(self) -> str:
@@ -258,7 +278,31 @@ def fold_haystack(text: str) -> str:
     )
 
 
-def structural_sequence(phrase: str) -> tuple[str, ...]:
+def _person_classes(words: Sequence[str]) -> list[str]:
+    """Replace every :data:`PERSON_CLASSES` member in ``words`` with its marker.
+
+    Longest match wins, so "little one" becomes one :data:`THIRD_PARTY` and not
+    two unmapped words. No key begins with a structural token, so a match can
+    never swallow one: the longest keys are "little one" and "other half", and
+    neither "little" nor "other" is frozen.
+    """
+    normalised: list[str] = []
+    index = 0
+    while index < len(words):
+        span = min(_PERSON_CLASS_MAX_WORDS, len(words) - index)
+        for length in range(span, 0, -1):
+            marker = PERSON_CLASSES.get(" ".join(words[index : index + length]))
+            if marker is not None:
+                normalised.append(marker)
+                index += length
+                break
+        else:
+            normalised.append(words[index])
+            index += 1
+    return normalised
+
+
+def structural_sequence(phrase: str, *, person_classes: bool = False) -> tuple[str, ...]:
     """The :data:`STRUCTURAL_FROZEN` tokens of ``phrase``, in order.
 
     Contractions are expanded first, so ``haven't`` and ``have not`` produce
@@ -267,6 +311,20 @@ def structural_sequence(phrase: str) -> tuple[str, ...]:
     modality separates a hard-case ``null`` from an assertion, so a swap that
     inserts "not", drops "my" or turns "had" into "have" has changed the label
     whatever its author intended.
+
+    With ``person_classes``, every
+    :data:`~scripts.synthetic_data.noise.PERSON_CLASSES` member is first
+    normalised to its class marker, so the comparison asks *whose symptom is
+    this* rather than *which word names them* -- which is what lets
+    ``mum -> sister`` load while ``mum -> I`` still does not (DD6a). The
+    default is the behaviour every hand-written rule file has always had, byte
+    for byte, and only :attr:`Rule.origin` turns it on.
+
+    Order matters: contractions are expanded **before** the map is consulted,
+    so ``I've -> I have`` still produces ``('<first-person>', 'have')`` on both
+    sides and the Tier A rules layer 2 exists to carry are not newly refused.
+    Mapping then runs before the :data:`_STRUCTURAL` filter, because the map's
+    whole job is to decide what survives that filter.
     """
     words: list[str] = []
     for token in split_words(phrase):
@@ -274,6 +332,8 @@ def structural_sequence(phrase: str) -> tuple[str, ...]:
         if not folded:
             continue
         words.extend(_CONTRACTIONS.get(folded, folded).split())
+    if person_classes:
+        words = _person_classes(words)
     return tuple(word for word in words if word in _STRUCTURAL)
 
 
@@ -344,15 +404,24 @@ def _check_matchable(rule: Rule) -> None:
 
 
 def _check_structural(rule: Rule) -> None:
-    """Layer 2 of the load check: DD6's structural-token invariance."""
-    before = structural_sequence(rule.find)
-    after = structural_sequence(rule.replace)
+    """Layer 2 of the load check: DD6's structural-token invariance.
+
+    A rule the swap-class loader generated is compared on person *class* rather
+    than on the literal person tokens (DD6a); a rule read from a
+    ``*.rules.json`` file is not, and that asymmetry is the point. The eleven
+    referent nouns in :data:`STRUCTURAL_FROZEN` are what a swap class exists to
+    move, and they are also what a hand-written rule must never move silently.
+    """
+    generated = rule.origin is not None
+    before = structural_sequence(rule.find, person_classes=generated)
+    after = structural_sequence(rule.replace, person_classes=generated)
     if before != after:
+        source = f" (class {rule.origin!r})" if generated else ""
         raise ExpansionError(
-            f"rule {rule.id!r}: structural-token invariance (DD6 layer 2). {rule.find!r} carries "
-            f"{before or '()'} and {rule.replace!r} carries {after or '()'}. Those tokens are "
-            "negation, person, tense and modality -- the swap changes the label, whatever it "
-            "was meant to change"
+            f"rule {rule.id!r}{source}: structural-token invariance (DD6 layer 2). "
+            f"{rule.find!r} carries {before or '()'} and {rule.replace!r} carries "
+            f"{after or '()'}. Those tokens are negation, person, tense and modality -- the "
+            "swap changes the label, whatever it was meant to change"
         )
 
 

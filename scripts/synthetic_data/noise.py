@@ -224,6 +224,127 @@ STRUCTURAL_FROZEN = (
     "very",
 )
 
+#: The two person classes :data:`PERSON_CLASSES` normalises to.
+FIRST_PERSON = "<first-person>"
+THIRD_PARTY = "<third-party>"
+
+#: Person tokens normalised to their class for expansion's layer 2 (DD6a).
+#:
+#: :data:`STRUCTURAL_FROZEN` freezes eleven referent nouns -- ``son``,
+#: ``daughter``, ``wife``, ``husband``, ``mum``, ``mother``, ``dad``,
+#: ``father``, ``partner``, ``nan``, ``gran`` -- because *whose* symptom this
+#: is decides the third-party null axis. That freeze is right for the noise
+#: pass, which damages characters and must never turn "my son" into "my sob".
+#: It is too strong for a swap class, where the whole point of ``mum -> sister``
+#: is that both sides are a third party and the axis has not moved. Expansion's
+#: layer 2 compares this map's output instead, but *only* for a rule the class
+#: loader generated (``Rule.origin is not None``); a hand-written
+#: ``*.rules.json`` file still gets the literal freeze, so ``my mum -> my
+#: daughter`` stays refused there.
+#:
+#: **Authored, never inferred, and total over the referent classes.** A member
+#: missing here yields an empty sequence, so every pair touching it is refused
+#: rather than silently allowed -- which is only true because *every* referent
+#: is mapped. With a partial map an unmapped referent would compare equal to
+#: another unmapped referent (both ``()``) and a forgotten member would change
+#: nothing. Being total also makes the map strictly stronger than the freeze it
+#: relaxes: ``sister -> nurse`` is accepted by layer 2 today and is refused
+#: here, because a clinician is not a referent.
+#:
+#: Keys are :func:`fold_token` output, joined by single spaces for the
+#: multi-word members ("little one", "other half"), and matched longest-first
+#: so that a two-word member normalises to one marker exactly as a one-word
+#: member does. The four contracted first-person spellings (``im``, ``i'm``,
+#: ``ive``, ``i've``) are unreachable in practice because expansion expands
+#: contractions before it consults this map; they are listed so the map does
+#: not quietly depend on that expansion table staying complete.
+#:
+#: Three groups of words are deliberately **absent**, and each omission is a
+#: judgement rather than an oversight:
+#:
+#: * **Pronouns** (``he``, ``she``, ``her``, ``his``, ``they``, ``them`` ...).
+#:   DD4 forbids cross-gender swaps precisely because a pronoun later in the
+#:   line cannot be repaired by a rule that only sees the noun. Collapsing
+#:   ``he`` and ``she`` onto one marker would hide that violation from layer 2,
+#:   which is the one place it could still be caught.
+#: * **Healthcare people** (``gp``, ``doctor``, ``nurse``, ``clinician``). A
+#:   clinician is not whose symptom this is, so mapping them to
+#:   :data:`THIRD_PARTY` would let ``mum -> nurse`` pass a check whose entire
+#:   subject is the third-party axis.
+#: * **Weekday and affect members**, which are not persons at all and whose
+#:   classes need no relaxation: no member of either is in
+#:   :data:`STRUCTURAL_FROZEN`.
+PERSON_CLASSES: dict[str, str] = {
+    # First person: the speaker.
+    "i": FIRST_PERSON,
+    "im": FIRST_PERSON,
+    "i'm": FIRST_PERSON,
+    "ive": FIRST_PERSON,
+    "i've": FIRST_PERSON,
+    "my": FIRST_PERSON,
+    "me": FIRST_PERSON,
+    # referent/adult_female.
+    "mum": THIRD_PARTY,
+    "mummy": THIRD_PARTY,
+    "mother": THIRD_PARTY,
+    "wife": THIRD_PARTY,
+    "missus": THIRD_PARTY,
+    "sister": THIRD_PARTY,
+    "aunt": THIRD_PARTY,
+    "auntie": THIRD_PARTY,
+    "girlfriend": THIRD_PARTY,
+    # referent/adult_male.
+    "dad": THIRD_PARTY,
+    "daddy": THIRD_PARTY,
+    "father": THIRD_PARTY,
+    "husband": THIRD_PARTY,
+    "brother": THIRD_PARTY,
+    "uncle": THIRD_PARTY,
+    "boyfriend": THIRD_PARTY,
+    # referent/elder_female.
+    "nan": THIRD_PARTY,
+    "nanna": THIRD_PARTY,
+    "nana": THIRD_PARTY,
+    "gran": THIRD_PARTY,
+    "granny": THIRD_PARTY,
+    "grandma": THIRD_PARTY,
+    "grandmother": THIRD_PARTY,
+    # referent/elder_male.
+    "grandad": THIRD_PARTY,
+    "granddad": THIRD_PARTY,
+    "grandpa": THIRD_PARTY,
+    "grandfather": THIRD_PARTY,
+    "gramps": THIRD_PARTY,
+    # referent/adult_neutral.
+    "partner": THIRD_PARTY,
+    "other half": THIRD_PARTY,
+    "friend": THIRD_PARTY,
+    "neighbour": THIRD_PARTY,
+    "colleague": THIRD_PARTY,
+    "coworker": THIRD_PARTY,
+    "cousin": THIRD_PARTY,
+    "flatmate": THIRD_PARTY,
+    "housemate": THIRD_PARTY,
+    "mate": THIRD_PARTY,
+    "boss": THIRD_PARTY,
+    "carer": THIRD_PARTY,
+    # referent/child_neutral_singular.
+    "kid": THIRD_PARTY,
+    "child": THIRD_PARTY,
+    "little one": THIRD_PARTY,
+    "youngest": THIRD_PARTY,
+    "eldest": THIRD_PARTY,
+    # referent/child_neutral_plural.
+    "kids": THIRD_PARTY,
+    "children": THIRD_PARTY,
+    # referent/child_female.
+    "daughter": THIRD_PARTY,
+    "girl": THIRD_PARTY,
+    # referent/child_male.
+    "son": THIRD_PARTY,
+    "boy": THIRD_PARTY,
+}
+
 #: Curly punctuation folded to ASCII on lookup. Same spirit as
 #: :mod:`~scripts.synthetic_data.normalise`, which is deliberately *not*
 #: imported: it also strips terminal punctuation, which is one of the things
