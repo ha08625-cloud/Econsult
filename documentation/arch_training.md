@@ -2323,6 +2323,38 @@ explicit statement that the expected movement on the clean synthetic test set is
 vocabulary and so cannot contain the failure being targeted. A large synthetic
 gain there is evidence of a new shortcut rather than a removed one.
 
+### 12.11 What comes after augmentation — provisional plan only, nothing built
+
+`documentation/encoder_plans/beyond_augmentation_provisional.md` is the plan of
+record and is at stage 1: design decisions argued, task list a shape, nothing
+built and nothing measured.
+
+**It exists because four dataset changes have now been measured against the same
+instrument and only one of them moved a real-text number.** Companions changed
+what an example is *made of* and bought 36.5% → 81.0%; the declarative library,
+the noise pass and the lexical variant pass each changed how an idea is
+*written*, and their real-text effects are respectively negative, nil on clean
+text, and inside every interval. The three sentences this document already
+carries — 12.3's "a dataset that grows in line count has not grown in
+difficulty", 12.6's and 12.10's "adds no ideas and effective sample size is
+unchanged" — are that table stated one pass at a time. **The surface-forms
+family is worked out, and the swap-class batch of 12.10b is its fifth member.**
+
+Six things the plan proposes, each independent: a real-text corpus split into a
+frozen holdout and a *dev* set that decisions may legitimately be made against
+(which is what makes §10's Outstanding item 1 fixable rather than merely
+recorded); freezing the margin at a pre-registered constant in the meantime,
+which costs absolute accuracy and buys readable arm comparisons; an authoring
+loop that mines ideas from real text rather than asking a model to invent them;
+domain-adaptive pretraining, the one model-side lever needing no labels; a
+**question-conditioned** model, measured by a leave-one-signal-out cell, which is
+the only proposal that changes the arithmetic of the 165 distinct
+`encoder_prompt` wordings across the committed rulesets; and an LLM ceiling
+reading on the 67 submissions, which bounds all of the above.
+
+Nothing in it is evidence yet. It is recorded here so that the next augmentation
+ticket is a decision rather than a default.
+
 ## 13. How experiments are batched
 
 **This section exists because the scarce resource is not what the plans assume.**
