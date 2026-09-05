@@ -1968,6 +1968,11 @@ gates it was built through, and
 against the pre-registration committed beside it, with
 `2026-09-04-lexical-variant-plain-english.md` as the standalone version for a
 reader who has not read this document.
+`lexical_variant_expansion_v2_provisional.md` is what happens next: the fever
+rules move the surface vocabulary by a measured 10.8%, which is why extending
+them to six more signals (v1's Task 7) is **abandoned rather than pending**, and
+signal-agnostic entity classes reach 25.8% from six word lists instead of
+thirty-six rules.
 
 **The short version, so it is not reconstructed from the tables below.** The
 mechanism the pass targets is real and the pass removes it: under paraphrase the
@@ -1990,14 +1995,20 @@ how a project acquires a component it cannot later evaluate.
   training split and cannot produce a rate of that size. The observed baseline was
   1.89%, so the bound was impossible before a model was trained. It is recorded as
   "not met" and left unedited.
-* **The synthetic decisive-accuracy guard did not proxy for the failure it was
-  designed to detect.** DD7 put the guard on decisive accuracy to catch an arm
-  that lowers its flip rate by answering `null` more often. The expanded arm did
-  exactly that on the 67 real submissions -- `null` recall +14 points, `true`
-  recall -18, `null -> true` rate 0.237 -> 0.090, and *not* through its decision
-  rule, which moved the other way -- while its **synthetic** decisive accuracy
-  went *up* 1.2 points and the guard held. Any future guard of this shape has to
-  be scored where the failure can appear.
+* **The real-text decisive slice cannot establish a harm of this size, in either
+  direction.** *(Corrected 2026-09-05. The first version of this bullet claimed
+  the synthetic guard had failed to see a real harm, and read a noise draw as a
+  signal.)* The expanded arm's real-text decisive accuracy fell 11.1 points while
+  its synthetic decisive accuracy rose 1.2 and the guard held. That looks like a
+  guard measuring in the wrong place until it is set beside 12.6, which ran the
+  same instrument over four arms built by a different augmentation: real-text
+  decisive came out 76.7% (clean), 76.7% (r03), 78.9% (r06) and **64.4%** (r12),
+  the last a 12.3-point drop on an arm 12.6 concluded was beneficial and
+  harmless. Eighteen decisive cells with a +/-23-point half-width and a per-arm
+  fold sd of 10-20 points cannot separate an 11-point difference from nothing.
+  The lesson is about the instrument, not the guard: a real-text slice this small
+  is a validity check and never an effect size, which is what `holdout.py` has
+  said all along.
 * **The instrument that saw something was the one that cannot rank.** Every bound
   was written against a tree that, by DD8's own argument, cannot contain the
   failure being targeted; the 67 submissions moved and are worth +/-12 points.

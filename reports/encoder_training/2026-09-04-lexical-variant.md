@@ -18,18 +18,18 @@ language, for a reader who has not read `arch_training.md`.
 ## The one-paragraph answer
 
 **The mechanism is real and the pass removes it. The pre-registered bound was
-unattainable and is not met. The guard held on synthetic text and would not have
-held on real text.** The clean-trained head flips on 1.9% of the pairs the pass
+unattainable and is not met. The guard held, and nothing in this run tests
+whether it would have caught the failure it was built for.** The clean-trained head flips on 1.9% of the pairs the pass
 changed; the expanded-trained head flips on 0.8%, and 46 of the clean arm's 74
 flips are `null → true` — displaced fever language being read as decisive once
 the word changes, which is precisely the fault §8 and Task 1 describe. But the
 flip rate was never anywhere near the 15.4% Task 2 measured on real text, so the
 "falls by ≥ 5 points" bound could not be met arithmetically, and the diagnostic
 cell shows the fault costs the clean head **0.2 accuracy points** on synthetic
-text. Meanwhile the expanded arm's real-text profile moved a long way: `null`
-recall +14 points, `true` recall −18, `null → true` rate 0.237 → 0.090. That is
-a head that has become **more conservative**, which the synthetic guard scored as
-an improvement and the real-text decisive slice scored as a loss.
+text. The expanded arm's real-text profile also moved — `null` recall +14 points,
+`true` recall −18, `null → true` rate 0.237 → 0.090 — but section 5's correction
+shows that slice swings further than that between arms known to be fine, so it
+establishes nothing in either direction.
 
 ---
 
@@ -108,8 +108,10 @@ Pre-registered: a drop of no more than **0.02**.
 room, and `paired-flip-rate` exited 0.
 
 **Read this cautiously.** It held in the sense that the expanded arm did not buy
-its flip rate by refusing to commit *on the synthetic tree*. Section 5 shows it
-did buy something on real text, and this guard did not see it.
+its flip rate by refusing to commit *on the synthetic tree*. Whether it would
+catch an arm that did is untested: no arm in this run is known to have refused to
+commit, and section 5's correction shows the real-text slice cannot tell us
+whether one did.
 
 ---
 
@@ -200,13 +202,29 @@ Two observations that are worth more than the point estimates:
   lower margin makes `true` *easier* to reach. The head itself became less willing
   to say `true`, against the direction its own decision rule moved.
 
-**What this means for the guard.** DD7 put the guard on synthetic decisive
-accuracy specifically to catch an arm that lowers its flip rate by answering
-`null` more often. On synthetic text that arm's decisive accuracy went *up*, so
-the guard held; on real text its decisive accuracy went *down* by 11 points. **The
-synthetic decisive-cell guard did not proxy for the thing it was designed to
-detect.** That is the most important methodological finding in this run, and it
-is a fault in the pre-registration rather than in the code.
+**What this means for the guard — corrected 2026-09-05.** This section first
+concluded that the synthetic guard had failed to see a real harm, on the grounds
+that decisive accuracy rose 1.2 points on synthetic text and fell 11.1 on real
+text. **That conclusion does not survive comparison with 12.6**, which ran the
+same instrument over four arms built by a different augmentation:
+
+| trained on | decisive acc, clean test | real-text decisive |
+|---|---|---|
+| clean | 93.3% | 76.7% ± 17.3 |
+| 3% typos | 93.5% | 76.7% ± 12.7 |
+| 6% typos | 93.8% | 78.9% ± 9.9 |
+| 12% typos | 94.3% | **64.4%** ± 19.9 |
+
+`r12` fell **12.3 points** on that slice — more than this arm's 11.1 — and 12.6
+concluded that arm was beneficial and harmless. Eighteen decisive cells with a
+±23-point half-width and a per-arm fold sd of 10–20 points cannot separate an
+11-point difference from nothing.
+
+**The defensible claim is weaker and is about the instrument:** the real-text
+decisive slice cannot establish a harm of this size in either direction. It is a
+validity check, never an effect size — which is what `holdout.py` has said all
+along, and which this section originally failed to apply to its own number. The
+guard is not shown to have failed; nothing here shows it was tested.
 
 ---
 
@@ -230,21 +248,34 @@ is a fault in the pre-registration rather than in the code.
 
 ## Was the pass adopted?
 
-**Not yet, and not on this evidence alone.** The recommendation is:
+**The rule set as authored is not extended; the idea is continued at a larger
+size.** *(This section was revised 2026-09-05 alongside section 5's correction.
+The original recommended stopping, partly on the strength of a real-text harm
+that section 5 no longer supports.)*
 
-1. **Do not extend to the other six signals (Task 7) on these numbers.** The
-   accuracy case is 0.2 points on synthetic text and unmeasurable on real text.
-   Rolling a pass out across six signals on an unseparated 1.2-point gain is how
-   a project acquires machinery it cannot later evaluate.
-2. **The direction result is worth keeping and worth re-testing.** `null → true`
-   falling 46 → 10 under paraphrase, and the real-text `null → true` rate falling
-   0.237 → 0.090, are the same finding seen through two instruments. If the next
-   ticket wants one thing from this, it is that.
-3. **The next measurement should be powered on real text, not synthetic.** Every
-   bound in this pre-registration was written against a synthetic tree that, by
-   DD8's own argument, cannot contain the failure. The instrument that saw
-   something was the 67 submissions, and it cannot rank. That is the gap to close
-   before spending more GPU here.
+1. **Do not extend *these rules* to the other six signals (v1 Task 7).** Not
+   because they are risky — see below — but because they are small. Measured over
+   the committed libraries, the 36 fever rules widen the reachable 4-gram
+   inventory by **10.8%**, and the run realised about a quarter of that. Six more
+   signals would cost ~200 more hand-written invariants for a proportionate share
+   of a 3% intervention.
+2. **The direction result is the thing worth keeping.** `null → true` falling
+   46 → 10 under paraphrase is this run's one clear finding, and it is evidence
+   that the §8 fault reaches a trained model rather than merely existing in the
+   data.
+3. **The risk case for continuing is better than this report first concluded.**
+   12.6 measured surface augmentation on this exact data four times; none harmed
+   clean-test performance and all nudged it up monotonically (93.3 → 93.5 → 93.8
+   → 94.3). The one piece of contrary evidence here was a real-text draw that
+   section 5 now shows is within that instrument's ordinary swing. What remains
+   true is that the pass *can* harm if misconfigured — the rule-authoring report
+   measured it inverting the bias at p = 1 — so "unlikely to harm" holds at a sane
+   rate with the lint passing, and those conditions are load-bearing.
+4. **The successor is `lexical_variant_expansion_v2_provisional.md`**, which
+   attacks surface n-gram reuse rather than vocabulary–label correlation, using
+   signal-agnostic entity classes: **+25.8%** reachable 4-grams from six word
+   lists, against +10.8% from thirty-six individually-written rules, and 82% of
+   the lines it touches are outside fever.
 
 ## What this does not establish
 
