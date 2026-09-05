@@ -157,6 +157,112 @@ def test_layer_two_survives_contraction_expansion():
     assert structural_sequence("I've") == structural_sequence("I have")
 
 
+# ---------------------------------------------------------------------------
+# Layer 2's person-class relaxation, and the fact that it is gated (DD6a, F3)
+# ---------------------------------------------------------------------------
+
+
+def generated(find, replace, origin="referent/adult_female"):
+    """A rule as the swap-class loader would build it: ``origin`` set."""
+    return expand.Rule(
+        id=f"{origin}:{find}->{replace}",
+        tier="B",
+        find=find,
+        replace=replace,
+        invariant="Both members name a third party, and the class declares it.",
+        origin=origin,
+    )
+
+
+@pytest.mark.parametrize(
+    ("find", "replace"),
+    [
+        ("mum", "sister"),  # both frozen today; both <third-party> now
+        ("partner", "flatmate"),  # frozen -> unfrozen, the 57% DD6a unlocks
+        ("son", "boy"),  # the gendered child sub-classes, empty before DD6a
+        ("daughter", "girl"),
+        ("my wife", "my sister"),  # the possessive survives on both sides
+        ("kid", "little one"),  # a multi-word member is one marker, not two
+    ],
+)
+def test_layer_two_allows_a_person_class_swap_for_a_generated_rule(find, replace):
+    expand._check_structural(generated(find, replace))
+
+
+@pytest.mark.parametrize(
+    ("find", "replace"),
+    [
+        ("mum", "I"),  # third party -> speaker: the null axis moves
+        ("my wife", "I"),
+        ("sister", "my sister"),  # gains a person marker
+        ("mum", "my mum"),
+        ("sister", "nurse"),  # a clinician is not whose symptom this is
+        ("sister", "tomorrow"),  # and neither is a day
+    ],
+)
+def test_layer_two_still_refuses_a_generated_rule_that_moves_the_person(find, replace):
+    with pytest.raises(ExpansionError, match="structural-token invariance"):
+        expand._check_structural(generated(find, replace))
+
+
+def test_an_unmapped_member_fails_closed():
+    """DD6a's whole argument for a *total* map.
+
+    A referent normalises to a marker, so a word that is not in
+    :data:`PERSON_CLASSES` normalises to nothing and every pair touching it is
+    refused. With a partial map both sides would be ``()`` and the pair would
+    load.
+    """
+    assert structural_sequence("sister", person_classes=True) == (noise.THIRD_PARTY,)
+    assert structural_sequence("plumber", person_classes=True) == ()
+    with pytest.raises(ExpansionError, match="structural-token invariance"):
+        expand._check_structural(generated("sister", "plumber"))
+
+
+def test_a_generated_rules_refusal_names_its_class():
+    with pytest.raises(ExpansionError) as error:
+        expand._check_structural(generated("mum", "I", origin="referent/adult_female"))
+    assert "referent/adult_female" in str(error.value)
+
+
+def test_the_relaxation_does_not_reach_a_hand_written_rule_file():
+    """F3, and the whole reason DD6a is carried on the rule rather than in the check.
+
+    ``_check_structural`` runs from ``parse_rules`` for every rule, so a
+    relaxation written into the check itself would relax the signal rule files
+    too. A ``*.rules.json`` file loads with ``origin is None``, so ``my mum ->
+    my daughter`` -- two members of *different* referent classes, which DD4
+    forbids and no class file could generate -- is still refused there.
+    """
+    with pytest.raises(ExpansionError, match="structural-token invariance"):
+        load(rule(find="my mum", replace="my daughter"))
+    assert all(one.origin is None for one in RULES)
+
+
+@pytest.mark.parametrize("find,replace", [("mum", "sister"), ("partner", "flatmate")])
+def test_the_pairs_dd6a_unlocks_are_refused_from_a_rule_file(find, replace):
+    with pytest.raises(ExpansionError, match="structural-token invariance"):
+        load(rule(find=find, replace=replace))
+
+
+def test_the_default_sequence_is_unchanged():
+    """The v1 arm has to reproduce 2026-09-04 byte for byte, so the default is."""
+    for phrase in ("my mum", "I've had a fever", "no fever", "my son had a temperature"):
+        assert structural_sequence(phrase) == structural_sequence(phrase, person_classes=False)
+    assert structural_sequence("my mum") == ("my", "mum")
+    assert structural_sequence("my mum", person_classes=True) == (
+        noise.FIRST_PERSON,
+        noise.THIRD_PARTY,
+    )
+
+
+def test_contractions_expand_before_the_person_map():
+    """Order matters: the Tier A rules layer 2 exists to carry stay loadable."""
+    assert structural_sequence("I've", person_classes=True) == (noise.FIRST_PERSON, "have")
+    assert structural_sequence("I have", person_classes=True) == (noise.FIRST_PERSON, "have")
+    expand._check_structural(generated("I've", "I have", origin="tier-a"))
+
+
 def test_layer_three_refuses_a_swap_that_moves_its_own_signal_out_of_view():
     with pytest.raises(ExpansionError, match="signal-lexicon invariance"):
         load(rule(replace="a headache"))

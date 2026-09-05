@@ -19,7 +19,7 @@ from collections import Counter
 import pytest
 
 from scripts.encoder_training import dataset
-from scripts.synthetic_data import noise
+from scripts.synthetic_data import class_stats, noise
 from scripts.synthetic_data.noise import (
     CHARACTER_OPERATIONS,
     DEFAULT_FREEZE_MODE,
@@ -27,6 +27,7 @@ from scripts.synthetic_data.noise import (
     KEYBOARD_NEIGHBOURS,
     MAX_REDRAWS,
     SHAPE_PRESERVING_OPERATIONS,
+    STRUCTURAL_FROZEN,
     TEXT_OPERATION_WEIGHTS,
     WORD_OPERATION_WEIGHTS,
     NoiseError,
@@ -115,6 +116,109 @@ def test_lookup_is_case_and_punctuation_insensitive():
     assert lexicon.is_frozen("don’t")
     assert lexicon.is_frozen("don't")
     assert fold_token("Don’t.") == "don't"
+
+
+# ---------------------------------------------------------------------------
+# The person-class map (DD6a)
+# ---------------------------------------------------------------------------
+#
+# The map lives here, beside STRUCTURAL_FROZEN, because the two lists have to
+# be read together: one is the freeze the noise pass needs and the other is the
+# relaxation expansion's layer 2 needs, and putting them in one module is what
+# stops them drifting. The noise pass itself must never consult it -- that is
+# the last test in this block.
+
+
+def test_the_person_map_only_ever_yields_the_two_class_markers():
+    assert set(noise.PERSON_CLASSES.values()) == {noise.FIRST_PERSON, noise.THIRD_PARTY}
+    assert noise.FIRST_PERSON != noise.THIRD_PARTY
+
+
+def test_the_person_map_is_keyed_on_folded_tokens():
+    """A key the folder could never produce is a key that never fires."""
+    for key in noise.PERSON_CLASSES:
+        assert key == " ".join(fold_token(word) for word in key.split()), key
+
+
+def test_the_person_map_is_total_over_the_referent_candidates():
+    """DD6a: a member missing here fails closed, but only if every member is here.
+
+    Written against ``class_stats.CANDIDATE_CLASSES`` because the class files
+    themselves do not exist until Task 3; Task 6 tightens it onto the committed
+    files.
+    """
+    missing = [
+        member
+        for group, _class_id, members in class_stats.CANDIDATE_CLASSES
+        if group == "referent"
+        for member in members
+        if member not in noise.PERSON_CLASSES
+    ]
+    assert missing == []
+
+
+def test_every_frozen_referent_noun_is_mapped():
+    """The eleven nouns DD6a exists to unlock, named rather than derived."""
+    frozen_referents = (
+        "son",
+        "daughter",
+        "wife",
+        "husband",
+        "mum",
+        "mother",
+        "dad",
+        "father",
+        "partner",
+        "nan",
+        "gran",
+    )
+    for word in frozen_referents:
+        assert word in STRUCTURAL_FROZEN
+        assert noise.PERSON_CLASSES[word] == noise.THIRD_PARTY
+
+
+def test_the_first_person_tokens_are_mapped_together():
+    for word in ("i", "im", "i'm", "ive", "i've", "my", "me"):
+        assert noise.PERSON_CLASSES[word] == noise.FIRST_PERSON
+
+
+@pytest.mark.parametrize(
+    ("word", "why"),
+    [
+        ("he", "a pronoun cannot be repaired by a rule that only sees the noun"),
+        ("she", "DD4 forbids cross-gender swaps and layer 2 is where it is caught"),
+        ("her", "same"),
+        ("his", "same"),
+        ("they", "same"),
+        ("them", "same"),
+        ("gp", "a clinician is not whose symptom this is"),
+        ("doctor", "same"),
+        ("nurse", "same"),
+        ("clinician", "same"),
+        ("monday", "a weekday is not a person and its class needs no relaxation"),
+        ("worried", "and neither is an affect word"),
+    ],
+)
+def test_the_person_map_deliberately_omits(word, why):
+    assert word not in noise.PERSON_CLASSES, why
+
+
+def test_no_person_class_key_begins_with_a_structural_token():
+    """Longest-match normalisation must not be able to swallow a frozen token."""
+    frozen = {fold_token(word) for word in STRUCTURAL_FROZEN}
+    for key in noise.PERSON_CLASSES:
+        if len(key.split()) > 1:
+            assert key.split()[0] not in frozen, key
+
+
+def test_the_noise_pass_never_sees_the_person_map():
+    """It needs the literal freeze: "my son" -> "my sob" is what it must not do."""
+    lexicon = noise_lexicon(SIGNAL)
+    for word in ("mum", "son", "partner", "wife", "my"):
+        assert lexicon.is_frozen(word)
+    # And a member the freeze does not carry stays damageable, which is the
+    # noise pass behaving exactly as it did before DD6a.
+    assert not lexicon.is_frozen("sister")
 
 
 # ---------------------------------------------------------------------------

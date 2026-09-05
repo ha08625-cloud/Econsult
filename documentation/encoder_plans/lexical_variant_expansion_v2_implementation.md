@@ -97,7 +97,16 @@ referent maps: with a partial map, `sister` (unfrozen) yields `()` and a
 forgotten member changes nothing, which fails open. With a total map, `sister`
 yields `('<third-party>',)`, so a forgotten member yields `()` and every pair
 touching it is refused. The total map is also strictly stronger than today —
-`sister → flatmate` is currently accepted by layer 2 and would be refused.
+`sister → nurse` is currently accepted by layer 2 and would be refused, because
+healthcare people are deliberately left out of the map.
+
+**Corrected in implementation (Task 2).** Revision 2 gave `sister → flatmate` as
+that example. It is the wrong one: `flatmate` is a member of
+`referent/adult_neutral`, so a *total* map maps it and the pair loads. What
+actually stops `sister → flatmate` is that the two words are in different
+classes, and no class file can generate a cross-class pair — layer 2 cannot see
+class and never could. The strictly-stronger claim itself stands; it needs a
+target the map genuinely omits.
 
 Concretely, in `noise.py` beside `STRUCTURAL_FROZEN`:
 
@@ -279,9 +288,10 @@ all. `STRUCTURAL_FROZEN` is not edited.
    weekdays and affect words are absent.
 2. `Rule.origin: str | None = None`.
 3. `structural_sequence(phrase, *, person_classes: bool = False)`; with the flag,
-   each token is mapped through `PERSON_CLASSES` **after** contraction expansion
-   and before the `_STRUCTURAL` filter, and `_STRUCTURAL` includes the two class
-   markers.
+   the token stream is mapped through `PERSON_CLASSES` **after** contraction
+   expansion and before the `_STRUCTURAL` filter, and `_STRUCTURAL` includes the
+   two class markers. Keys may be multi-word (space-joined folded tokens) and
+   are matched **longest-first**; see the correction under C.
 4. `_check_structural` uses `person_classes=rule.origin is not None`, and its
    error message names the class when it refuses a generated rule.
 5. Tests, both directions.
@@ -290,15 +300,36 @@ all. `STRUCTURAL_FROZEN` is not edited.
 
 Order matters inside `structural_sequence`: expand contractions first, so
 `I've → I have` still produces `('<first-person>', 'have')` on both sides and the
-Tier A rules the pass exists to carry are not newly refused. Map per token, then
-filter to `_STRUCTURAL`, then return.
+Tier A rules the pass exists to carry are not newly refused. Map, then filter to
+`_STRUCTURAL`, then return.
+
+**Corrected in implementation (Task 2): map by longest match, not per token.**
+Revision 2 said "map per token". Two referent members are multi-word — `little
+one` (`child_neutral_singular`) and `other half` (`adult_neutral`) — and a
+per-token map cannot reach either: neither `little`/`one` nor `other`/`half` is
+a sensible key on its own, so `little one` normalises to `()` and every pair
+touching it is refused. That fails closed, which is safe, but it silently
+deletes a member from a class and Task 6 would meet it as an unexplained dead
+entry rather than a decision. So `PERSON_CLASSES` keys may be multi-word
+(folded tokens joined by single spaces) and are matched longest-first, which
+makes `little one` collapse to one `<third-party>` exactly as `kid` does. Pin
+that no multi-word key begins with a structural token, so a match can never
+swallow one; today the longest keys are `little one` and `other half`, and
+neither `little` nor `other` is frozen.
+
+(This is orthogonal to F6, which drops `other half` for the article fault —
+"a other half" — not for anything layer 2 sees.)
 
 Pin **newly allowed**, all with `origin` set: `mum → sister`, `partner →
 flatmate`, `son → boy`, `daughter → girl`, `my wife → my sister`.
 
 Pin **still refused**, with `origin` set: `mum → I`, `my wife → I`, `sister → my
-sister`, `mum → my mum`, and `sister → flatmate` (the new refusal — a referent
-swapping to an unmapped word).
+sister`, `mum → my mum`, and `sister → nurse` (the new refusal — a referent
+swapping to a word the map deliberately omits). Revision 2 gave `sister →
+flatmate` here; that pair loads, for the reason set out under DD6a above.
+`sister → plumber` is worth pinning beside it: `nurse` shows the deliberate
+omission, `plumber` shows the accidental one, and the fail-closed argument is
+about the second.
 
 Pin **unchanged for hand-written rules** (`origin is None`): every existing
 layer-2 case in the file still raises, plus a new one — a `*.rules.json` file
