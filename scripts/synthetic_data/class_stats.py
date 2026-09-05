@@ -51,6 +51,7 @@ import json
 import re
 import sys
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -377,6 +378,142 @@ def group_lines(
 
 
 # ---------------------------------------------------------------------------
+# The reachable n-gram ceiling (DD15)
+# ---------------------------------------------------------------------------
+
+#: Window sizes the ceiling is reported at. Four is the one the v1 report
+#: quoted; three and five are here because a single width is easy to pick after
+#: the fact and a trend is not.
+NGRAM_WIDTHS = (3, 4, 5)
+
+#: Most lines carry no member at all and a handful carry three. The cap is a
+#: guard against a future library line with a dozen, not a live constraint: it
+#: is reported when it binds, and a report that never says "capped" is a report
+#: whose numbers are exact.
+MAX_LINE_VARIANTS = 100_000
+
+#: Tokens for the n-gram count: runs of word characters and apostrophes, so
+#: "haven't" is one token and "mother-in-law" is three. Deliberately cruder
+#: than :func:`~scripts.synthetic_data.normalise.normalise`; the ceiling is a
+#: ratio of two counts taken the same way, and the tokeniser cancels.
+_TOKEN = re.compile(r"[\w']+")
+
+
+@dataclass(frozen=True)
+class NgramCeiling:
+    """Distinct n-grams the libraries hold, and the number a swap set reaches."""
+
+    width: int
+    baseline: int
+    reachable: int
+    capped_lines: int
+
+    @property
+    def gain(self) -> float:
+        return 100 * (self.reachable - self.baseline) / self.baseline if self.baseline else 0.0
+
+
+def tokenise(text: str) -> list[str]:
+    """Lowercased word tokens of one line."""
+    return _TOKEN.findall(text.lower())
+
+
+def _line_units(
+    line: str, members_by_class: Sequence[tuple[str, ...]]
+) -> list[tuple[tuple[str, ...], ...]]:
+    """One line as a list of slots, each slot a tuple of token-tuple alternatives.
+
+    A stretch of text that matches no member is a slot with exactly one
+    alternative, so the whole line is one uniform structure and the caller does
+    not branch. A stretch that matches member *m* of class *C* is a slot whose
+    alternatives are every member of *C* including *m* itself -- ``m`` stays in
+    because DEFAULT_CLEAN_SHARE means the unrewritten line is reachable too.
+
+    Matching is longest-first and left-to-right, which is what
+    :func:`~scripts.synthetic_data.expand.match_sites` does, so "mother in law"
+    claims its span before the bare "mother" can.
+    """
+    lowered = line.lower()
+    spans: list[tuple[int, int, tuple[str, ...]]] = []
+    for members in members_by_class:
+        for member in members:
+            for match in member_pattern(member).finditer(lowered):
+                spans.append((match.start(), match.end(), members))
+    # Longest first at a position, then left to right, then drop overlaps.
+    spans.sort(key=lambda span: (span[0], -(span[1] - span[0])))
+    chosen: list[tuple[int, int, tuple[str, ...]]] = []
+    cursor = 0
+    for start, end, members in spans:
+        if start < cursor:
+            continue
+        chosen.append((start, end, members))
+        cursor = end
+
+    units: list[tuple[tuple[str, ...], ...]] = []
+    cursor = 0
+    for start, end, members in chosen:
+        units.append((tuple(tokenise(line[cursor:start])),))
+        units.append(tuple(tuple(tokenise(member)) for member in members))
+        cursor = end
+    units.append((tuple(tokenise(line[cursor:])),))
+    return units
+
+
+def _line_variants(
+    units: Sequence[tuple[tuple[str, ...], ...]], cap: int = MAX_LINE_VARIANTS
+) -> tuple[list[list[str]], bool]:
+    """Every token sequence the slots can produce, and whether the cap bound.
+
+    Exact rather than sampled: the ceiling is a ceiling, and a sampled ceiling
+    is a floor with a confusing name. When the cap binds the line contributes
+    only its unrewritten form and the caller reports the count, so a capped run
+    understates the ceiling and never overstates it.
+    """
+    total = 1
+    for slot in units:
+        total *= len(slot)
+        if total > cap:
+            return [[token for slot in units for token in slot[0]]], True
+    variants: list[list[str]] = [[]]
+    for slot in units:
+        variants = [prefix + list(alternative) for prefix in variants for alternative in slot]
+    return variants, False
+
+
+def ngram_ceiling(
+    candidates: Sequence[CandidateClass],
+    corpus: Corpus,
+    width: int,
+) -> NgramCeiling:
+    """Distinct ``width``-grams before and after ``candidates`` are let loose.
+
+    The number the plan calls the reachable ceiling: not what a run produces,
+    which depends on ``--rate`` and the draw, but what the vocabulary *could*
+    produce if every site took every value. It is the honest upper bound on
+    what this ticket buys, and it is code rather than prose because revision
+    1's ``+25.8%`` had no committed provenance and did not reproduce (DD15).
+    """
+    members_by_class = tuple(candidate.members for candidate in candidates)
+    baseline: set[tuple[str, ...]] = set()
+    reachable: set[tuple[str, ...]] = set()
+    capped = 0
+    for line in corpus.lines:
+        tokens = tokenise(line)
+        baseline.update(
+            tuple(tokens[index : index + width]) for index in range(len(tokens) - width + 1)
+        )
+        variants, was_capped = _line_variants(_line_units(line, members_by_class))
+        capped += was_capped
+        for variant in variants:
+            reachable.update(
+                tuple(variant[index : index + width]) for index in range(len(variant) - width + 1)
+            )
+    return NgramCeiling(
+        width=width, baseline=len(baseline), reachable=len(reachable), capped_lines=capped
+    )
+
+
+# ---------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------
 
@@ -405,6 +542,37 @@ def render(
     out += _render_determiners(stats)
     out += ["", "Section 3 -- group rollup", ""]
     out += _render_groups(stats, corpus)
+    out += ["", "Section 4 -- reachable n-gram ceiling", ""]
+    out += _render_ceiling(stats, corpus)
+    return out
+
+
+def _render_ceiling(stats: tuple[ClassStats, ...], corpus: Corpus) -> list[str]:
+    """Section 4: what the swap set could reach, per group and all together."""
+    candidates = tuple(entry.candidate for entry in stats)
+    groups = list(dict.fromkeys(candidate.group for candidate in candidates))
+    out = [
+        "  Distinct n-grams the committed libraries hold, and the number reachable",
+        "  if every member site took every value of its class. An upper bound, not",
+        "  a forecast: a real run draws at --rate and leaves --clean-share alone.",
+        "",
+        f"  {'scope':<12}{'n':>3}{'baseline':>11}{'reachable':>11}{'gain':>9}",
+    ]
+    for scope, selected in [
+        *((group, tuple(c for c in candidates if c.group == group)) for group in groups),
+        ("ALL", candidates),
+    ]:
+        for width in NGRAM_WIDTHS:
+            ceiling = ngram_ceiling(selected, corpus, width)
+            out.append(
+                f"  {scope:<12}{ceiling.width:>3}{ceiling.baseline:>11}"
+                f"{ceiling.reachable:>11}{ceiling.gain:>8.1f}%"
+            )
+            if ceiling.capped_lines:
+                out.append(
+                    f"    CAPPED on {ceiling.capped_lines} line(s): the figure understates "
+                    f"the ceiling"
+                )
     return out
 
 

@@ -1,0 +1,21 @@
+{
+  "group": "affect",
+  "classes": [
+    {
+      "id": "affect.worry",
+      "gender": "none",
+      "life_stage": "none",
+      "number": "singular",
+      "person": "none",
+      "tier": "B",
+      "members": [
+        "worried",
+        "concerned",
+        "anxious",
+        "nervous",
+        "uneasy"
+      ],
+      "invariant": "Every member is a predicative adjective of apprehension, used bare in these libraries (\"I'm X about it\", \"my mum's X\"), with no article site anywhere in the class and no member in any signal lexicon. Checked against fever_null_attribution and fever_null_hedged rather than against filler/emotional.txt, because those two are where an affect word does label work: \"I assumed I was just anxious about the interview\" attributes the symptom to nerves, and it attributes it to nerves equally under every swap. 'on edge' was dropped because the loader refuses a vowel-initial multi-word member unconditionally, and it occurred nowhere anyway. Accepted residual: 'worried sick' is a fixed collocation at three sites and the swap yields 'anxious sick'; shadowing it as a member costs more sites than it saves, so it is recorded instead."
+    }
+  ]
+}

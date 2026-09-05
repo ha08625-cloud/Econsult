@@ -2184,6 +2184,47 @@ against, not a gate, and the gate stays `--dry-run-lint` plus the committed-file
 tests. The reason it exists is that the v2 plan's hand-quoted statistics did not
 reproduce (referent occurrences ~25% low, healthcare ~20% high), and a table with
 no reproducible provenance cannot tell a library edit from a counting error.
+Section 4 is the **reachable n-gram ceiling**: distinct n-grams the libraries
+hold against the number reachable if every member site took every value of its
+class. It is an upper bound rather than a forecast — a real run draws at
+`--rate` and leaves `--clean-share` alone — and it replaces revision 1's
+uncommitted `+25.8%`. As committed, the sixteen classes reach **+36.8%** distinct
+4-grams (referent alone +27.1%, calendar +4.5%, affect +2.4%, setting +1.1%).
+
+**What is actually authored, and what was dropped.** Sixteen classes in four
+group files expand to 320 rules from 71 members. Three of the provisional's
+candidate lists are not there and each omission is evidence rather than taste:
+the healthcare **place** class, because a third of `surgery`'s occurrences are
+the operation sense; the healthcare **encounter** class, because `appointment`
+is the only member that occurs and the libraries write "an appointment" at eight
+sites, where every consonant-initial target is broken English; and `other half`,
+which the loader refuses outright as a vowel-initial multi-word member. Members
+dropped for the same class of reason: `uncle` (the male class has one "a father"
+site), `carer` ("I'm a carer for a lady" survives no swap), `youngest`/`eldest`
+(number-ambiguous, so no truthful `number` can be declared for a class holding
+them), and `mummy`/`daddy` (a register an adult referent is not written in).
+
+**Compound members exist to shadow, not only to swap.** Twenty-five library
+lines spell an in-law relationship, and `match_sites` bounds a whole word on
+non-word characters, so the bare `mother` matches inside "my mother-in-law" and
+`referent.adult_female` would rewrite the line to "my wife-in-law" — broken
+English that moves no lexicon term, so `--dry-run-lint` exits 0 on it. Listing
+the compounds as members of their own classes fixes it *because a longer find
+wins at a site*: those sites move into a class where every swap is well formed.
+The hyphenated and unhyphenated spellings are separate classes and must be,
+because layer 2 reads `mother-in-law` as one token and `mother in law` as three,
+so the two do not produce the same sequence and no single class may hold both.
+The hyphenated forms are therefore `PERSON_CLASSES` keys in their own right,
+without which they would produce an empty sequence and pass layer 2 vacuously
+rather than fail closed.
+
+**The combined dry-run variant rotates its tie-break.** `rewrite_exhaustively`
+breaks a tie at a site by lowest rule id, so a class of *n* members — whose
+*n*−1 rules all share a `find` — would have exactly one target exercised by the
+whole-file pass and *n*−2 never seen. `dry_run_lint` now runs
+`combined_rotations(rules)` whole-file passes, rotating which tied rule wins.
+That is *n*−1 passes for a class and **one** for a hand-written rule file, which
+keeps a rule file's report byte-identical, label included.
 
 **The rate is load-bearing, and 1.0 is wrong** — measured while authoring the
 `fever_present` rules (`reports/synthetic_data/2026-09-04-fever-expansion-rules.md`).

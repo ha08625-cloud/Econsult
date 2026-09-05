@@ -1,0 +1,15 @@
+{
+  "group": "setting",
+  "classes": [
+    {
+      "id": "setting.healthcare_person",
+      "gender": "neutral",
+      "life_stage": "adult",
+      "number": "singular",
+      "person": "none",
+      "tier": "B",
+      "members": ["gp", "doctor", "nurse"],
+      "invariant": "Every member names the clinician a line reports to or quotes, never the person whose symptom is being described, which is why 'person' is declared none and why noise.PERSON_CLASSES deliberately omits all three: a clinician is not on the third-party attribution axis and must not be mapped onto it. Checked against fever_null_attribution 'my X already knows all about it': who the clinician is never carries a label. All three are consonant-initial, which the one 'a doctor' site needs. 'clinician' is absent as a register a patient does not write, and the healthcare place and encounter classes are dropped entirely -- see the completion note for review F5 and the 'an appointment' problem."
+    }
+  ]
+}

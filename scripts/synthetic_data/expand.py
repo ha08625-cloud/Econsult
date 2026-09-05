@@ -1833,23 +1833,49 @@ DEFAULT_MANIFEST = Path("data/synthetic/manifest.json")
 COMBINED = "<all rules together>"
 
 
-def rewrite_exhaustively(text: str, rules: Sequence[Rule]) -> str:
+def rewrite_exhaustively(text: str, rules: Sequence[Rule], *, rotation: int = 0) -> str:
     """Apply ``rules`` at **every** site they match, with no rate and no draw.
 
     The worst case, which is what a dry run wants: a rule that is harmless at
     the sampled rate is harmless because of the sampling, not because of the
-    rule. Where two rules tie at a site the lowest id wins, so the rewrite is
-    deterministic and a reported hit can be reproduced by re-running the mode.
+    rule. Where several rules tie at a site they are ordered by id and the
+    ``rotation``-th is taken, so the rewrite stays deterministic and a reported
+    hit can be reproduced by re-running the mode.
+
+    ``rotation`` defaults to 0, which is "lowest id wins" -- byte for byte what
+    this function did before swap classes existed, and what every caller other
+    than :func:`dry_run_lint` still gets. It exists for v2 review F9: a class of
+    *N* members puts *N*-1 rules on every site of a member, all sharing a find,
+    so a single combined pass exercises one target and never the other *N*-2.
+    Rotating the index over successive passes covers them all (DD6's reason for
+    the combined variant is an aggregate effect, and an aggregate effect that
+    only ever fires one target of a class is not the aggregate).
     """
     pieces: list[str] = []
     cursor = 0
     for site in match_sites(text, rules):
-        chosen = min(site.rules, key=lambda rule: rule.id)
+        ordered = sorted(site.rules, key=lambda rule: rule.id)
+        chosen = ordered[rotation % len(ordered)]
         pieces.append(text[cursor : site.start])
         pieces.append(_match_leading_case(text[site.start : site.end], chosen.replace))
         cursor = site.end
     pieces.append(text[cursor:])
     return "".join(pieces)
+
+
+def combined_rotations(rules: Sequence[Rule]) -> int:
+    """How many combined passes it takes to exercise every tie at a site.
+
+    The most rules any one ``find`` carries, which for a swap class is exactly
+    *N*-1 and for a hand-written rule file is almost always 1. Folded, because
+    that is the key :func:`match_sites` matches on.
+
+    Returning 1 for a rule file is the point: the extra passes cost the dry run
+    nothing where there is nothing to rotate, and the variant keeps its old
+    label so the report of a rule file is unchanged (v2 review F9).
+    """
+    counts = Counter(fold_haystack(rule.find) for rule in rules)
+    return max(counts.values(), default=1)
 
 
 @dataclass(frozen=True)
@@ -1992,9 +2018,16 @@ def dry_run_lint(
     can be completed by a swap that carries neither on its own.
 
     Every rule is applied **unconditionally**, not at ``--rate``, once per rule
-    and once with the whole file at play. Two things come back: hits the
+    and then with the whole file at play. Two things come back: hits the
     rewrites introduced, which are the failure, and hits they removed, which are
     not a failure but have changed what a library says and want reading.
+
+    The whole-file pass is run :func:`combined_rotations` times rather than
+    once, rotating which of several rules tied at a site wins (v2 review F9).
+    For a hand-written rule file that is one pass and the old label; for a swap
+    class of *N* members it is *N*-1 passes, which is what it takes for the
+    combined variant to see every target rather than only the one whose id
+    sorts first.
 
     ``check_cells=False`` is the lint's own posture, for the lint's own reason:
     a check that refuses to run because the libraries are unbalanced is useless
@@ -2009,11 +2042,24 @@ def dry_run_lint(
     removed: list[HitChange] = []
     rewritten: set[str] = set()
     for source in sources:
-        variants: list[tuple[str, tuple[Rule, ...]]] = [(rule.id, (rule,)) for rule in source.rules]
+        variants: list[tuple[str, tuple[Rule, ...], int]] = [
+            (rule.id, (rule,), 0) for rule in source.rules
+        ]
         if len(source.rules) > 1:
-            variants.append((COMBINED, source.rules))
-        for variant, rules in variants:
-            texts = [rewrite_exhaustively(fragment.text, rules) for fragment in fragments]
+            rotations = combined_rotations(source.rules)
+            variants.extend(
+                (
+                    COMBINED if rotations == 1 else f"{COMBINED} [{offset + 1}/{rotations}]",
+                    source.rules,
+                    offset,
+                )
+                for offset in range(rotations)
+            )
+        for variant, rules, rotation in variants:
+            texts = [
+                rewrite_exhaustively(fragment.text, rules, rotation=rotation)
+                for fragment in fragments
+            ]
             rewritten.update(
                 fragment.fragment_id
                 for fragment, text in zip(fragments, texts, strict=True)
