@@ -16,6 +16,10 @@
 # One-time setup so ruff runs automatically on every commit:
 #     make hooks-install
 #
+# Lexical expansion dry run -- every rule file and swap class against the
+# synthetic libraries, no database, no GPU (CI runs this on any data/ change):
+#     make dry-run-lint
+#
 # Migrations against test database:
 #     make migrate-test
 #
@@ -41,7 +45,7 @@
 include .env
 export
 
-.PHONY: test test-integration test-all lint hooks-install migrate-test seed-test-db sandbox-up sandbox-down sandbox-check
+.PHONY: test test-integration test-all lint dry-run-lint hooks-install migrate-test seed-test-db sandbox-up sandbox-down sandbox-check
 
 test:
 	python -m pytest tests/ -m "not integration" -v
@@ -50,6 +54,12 @@ test:
 lint:
 	ruff check .
 	ruff format --check .
+
+# Applies every committed expansion rule and every swap class to every library
+# line and fails if a rewrite manufactures a lexicon hit the libraries do not
+# have. Reads the libraries and writes nothing. ~2 minutes at 356 rules.
+dry-run-lint:
+	python -m scripts.synthetic_data.expand --dry-run-lint
 
 hooks-install:
 	pre-commit install

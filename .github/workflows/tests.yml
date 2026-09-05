@@ -88,6 +88,23 @@ jobs:
       - name: Validate the realistic held-out set
         run: python -m pytest tests/test_encoder_training_holdout.py -v
 
+      # The lexical expansion rule files and the swap classes both live under
+      # data/, so an edit to either skips the unit job -- and a broken or rotted
+      # class file is exactly what this dry run exists to catch. It loads every
+      # data/expansion/*.rules.json and every data/expansion/classes/*.classes.json,
+      # applies each rule unconditionally to every library line, and exits
+      # non-zero if any rewrite manufactures a lexicon hit the committed
+      # libraries do not have. After DD6a no swap class is protected per-rule by
+      # either mechanical layer, so this step and the committed-file tests are
+      # the safety argument, not a nicety. Stdlib plus requirements.txt only --
+      # no GPU and no ML wheels, which is the point of running it here rather
+      # than inside a training night.
+      #
+      # Measured cost: ~2 minutes at 356 rules, linear in rule count. It reads
+      # the libraries and writes nothing.
+      - name: Dry-run the lexical expansion rules and swap classes
+        run: python -m scripts.synthetic_data.expand --dry-run-lint
+
   # ---------------------------------------------------------------------------
   # Unit tests: Python (no database) + frontend Vitest
   # Mirrors: make test
