@@ -1971,8 +1971,13 @@ reader who has not read this document.
 `lexical_variant_expansion_v2_provisional.md` is what happens next: the fever
 rules move the surface vocabulary by a measured 10.8%, which is why extending
 them to six more signals (v1's Task 7) is **abandoned rather than pending**, and
-signal-agnostic entity classes reach 25.8% from six word lists instead of
-thirty-six rules.
+signal-agnostic swap classes reach far more surface from a dozen word lists
+instead of thirty-six rules. *(The first draft of that plan quoted 25.8% for six
+entity classes. That figure is void: it was computed without applying DD6 layer
+2, which freezes `mum`, `wife`, `partner`, `son` and eight other referents and
+therefore refuses 61% of the referent sites those classes were counting. Revision
+2 of the plan owns the layer-2 change and re-measures the ceiling; until it does,
+no reachable-n-gram figure for the classes is quotable.)*
 
 **The short version, so it is not reconstructed from the tables below.** The
 mechanism the pass targets is real and the pass removes it: under paraphrase the
@@ -2220,3 +2225,63 @@ explicit statement that the expected movement on the clean synthetic test set is
 *nothing* — because that set is drawn from the same libraries under the same
 vocabulary and so cannot contain the failure being targeted. A large synthetic
 gain there is evidence of a new shortcut rather than a removed one.
+
+## 13. How experiments are batched
+
+**This section exists because the scarce resource is not what the plans assume.**
+Most plans in `documentation/encoder_plans/` sequence a cheap experiment in front
+of an expensive one and call the first a gate: run the small thing, read it,
+decide whether the big thing is worth paying for. That is the right instinct when
+GPU time is the constraint. It is the wrong instinct here, and the numbers say
+why.
+
+**The arithmetic.** `arch_encoder_training.md` records roughly **two minutes per
+fold on a 12GB card**. The lexical-variant 2×2 is twenty fold-trainings — about
+forty minutes. GPU access is one or two nights a week, and a night is about eight
+hours, which is **roughly 240 fold-trainings, or twelve times the whole 2×2**.
+
+So compute is not the constraint. **Nights are.** A thirty-minute gate does not
+cost thirty minutes; it costs a week, because the decision it produces cannot be
+acted on until the next night. That inverts the usual calculus completely.
+
+**The rule that follows.**
+
+> **A gate that needs a GPU runs *inside* the same batch as the thing it gates,
+> not in front of it.** What is forfeited is the option of not spending GPU that
+> was going spare anyway. What is bought back is a week of calendar per gate.
+>
+> **A gate that does not need a GPU still runs first.** The lint, the
+> token-association report, `expand.py --dry-run-lint`, rate sweeps over library
+> text, library statistics, the threshold arithmetic — these cost seconds, they
+> change *what gets authored*, and no amount of GPU repairs an unauthored rule or
+> a rule set that inverts the association it was meant to flatten.
+
+**Three consequences worth stating, because they change how a plan is written.**
+
+* **Design a night to be arm-rich rather than sequential.** A night must contain
+  no decision point that a human has to be awake for. If step 7 depends on
+  reading step 6, either fold both readings into one report or run both arms and
+  read them in the morning. The composite catalogue entries in
+  `scripts/training_gui/runs.json` are the mechanism: a whole sweep is one
+  parameterless press, and adding an arm is a catalogue edit rather than a code
+  change.
+* **Put the cheap failure at the front.** A wasted night should fail in minute
+  five, not hour eight. The composites already open with `smoke-cuda` and
+  `train-canary` for this reason; an experiment that has a *known* cell — one
+  whose value is fixed by deterministic generation and untouched by the change
+  under test — should reproduce that cell early rather than discover in the
+  read-out that the pipeline moved.
+* **The discipline that replaces gating is pre-registration, and it gets more
+  important, not less.** A gate used to limit how many comparisons a run could
+  make. Twelve arms in one night, read afterwards, will produce a winner by noise
+  if the winner is chosen post hoc. So the pre-registration must name the
+  **decision arm** and its bounds before the night, and say explicitly which arms
+  are exploratory. That is the price of dropping the gate, and it is a real one.
+
+**What this does not license.** It is not an argument for running more arms than
+can be interpreted, and it is not an argument against the CPU gates — the two
+that came before the lexical variant pass, a per-token label-association lint
+report and a paraphrase-flip diagnostic, were both cheap and both designed to be
+allowed to fail, and that is exactly the shape a gate should have. It is an
+argument against spending a week of calendar to save forty minutes of a resource
+that is sitting idle.

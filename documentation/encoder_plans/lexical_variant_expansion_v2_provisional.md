@@ -1,22 +1,33 @@
-# Provisional plan: lexical variant expansion v2 — entity classes (12.10b)
+# Provisional plan: lexical variant expansion v2 — swap classes (12.10b)
 
-**Status: provisional.** Stage 1 of the workflow — the design decisions are made
-and argued, the task list is a shape rather than an instruction set, and the open
-questions at the end are for the stage-2 review pass to close.
+**Status: provisional, revision 2 (2026-09-05).** Stage 1 of the workflow. The
+design decisions are made and argued; the task list is a shape rather than an
+instruction set; the open questions at the end are for the stage-2 review pass to
+close.
+
+**What revision 2 changes.** Revision 1 was written on the belief that entity
+classes need no new safety machinery — six word lists and a loader. That is
+wrong, and §2 is the correction: **the referent nouns the plan is built on are
+already in `noise.STRUCTURAL_FROZEN`, and DD6 layer 2 rejects most of the plan's
+own rules at load time.** Fixing that is now the substantive engineering of the
+ticket. Revision 2 also widens the mechanism from entity classes to *swap
+classes* — colloquial referents, healthcare-setting nouns and an affect class
+join the six original lists — and folds in the batching constraint now written
+up as `arch_training.md` §13, which changes two of revision 1's answers.
 
 Read first: `arch_training.md` §8 (the lint's two blind faults), §10 (effective
-sample size), §12.6 (the noise pass), §12.10 (this pass as built and measured);
-then `reports/encoder_training/2026-09-04-lexical-variant.md` and its
+sample size), §12.6 (the noise pass), §12.10 (this pass as built and measured),
+§13 (how experiments are batched); then
+`reports/encoder_training/2026-09-04-lexical-variant.md` and its
 pre-registration, which are what this plan exists because of.
 
 **The v1 plan of record is `lexical_variant_expansion_implementation.md`. Its
 Task 7 — extending the fever rules to the other six signals — is deliberately
 left unfinished and is superseded by this plan.** Not because it failed, but
-because §5 below shows it would have bought almost nothing: the fever rule set
-moves the surface vocabulary by a measured 10.8%, and rolling it across six more
-signals would have cost roughly 200 more hand-written invariants for a
-proportionate share of that. This plan is the cheaper and larger version of the
-same idea.
+because the fever rule set moves the surface vocabulary by a measured 10.8%, and
+rolling it across six more signals would have cost roughly 200 more hand-written
+invariants for a proportionate share of that. This plan is the cheaper and larger
+version of the same idea.
 
 ---
 
@@ -47,13 +58,20 @@ The two objectives are different and this plan serves the second:
 | the fault | word choice predicts the label | fragments recur verbatim |
 | the evidence it exists | Task 1's token–label skew | every fragment appears in dozens of examples |
 | what a rule swaps | `fever` ⇄ `temperature` | `sister` ⇄ `brother` ⇄ `cousin` |
-| does a flip mean an error? | arguably — the words differ in register | **unambiguously yes** |
+| does a flip mean an error? | arguably — the words differ in register | **unambiguously yes, for the referent classes** |
 
 That last row is why this is a *better* experiment than the one just run, and it
 is worth stating plainly. There is no defensible reason for a model's answer to
 change when `sister` becomes `brother`. Any flip is the model reading noise. With
 `fever → temperature` a reader could always argue the two words carry different
 register, which made the flip rate a softer instrument than it looked.
+
+**The qualifier on that row is new in revision 2 and is load-bearing.** It holds
+for the referent, weekday and healthcare classes, whose members are
+interchangeable *by construction*. It does **not** hold for the affect class
+(`worried → concerned`), which is a register swap of exactly v1's kind. That is
+why DD10 gives affect its own arm and its own flip accounting rather than letting
+it dilute the clean instrument.
 
 **One thing this plan does not claim.** It adds no ideas and no effective sample
 size, exactly as v1 did not. The expanded tree holds the same examples built from
@@ -62,73 +80,102 @@ growth.
 
 ---
 
-## 2. What changed since v1, and why v1's answer was small
+## 2. The correction that reshapes this plan: layer 2 already refuses these rules
 
-The 2026-09-04 run came back small on every synthetic measure: flips 1.89% →
-0.84%, and the fault costing the clean model **0.21 decisive points**. The
-hypothesis this plan is built on is that the result was small because **the pass
-was small**, not because the idea is wrong.
+Revision 1's DD6 said:
 
-Measured over the committed libraries, applying every rule at every site — the
-ceiling, not the operating point:
+> Structural-token invariance. Unchanged. Referent nouns are not in
+> `STRUCTURAL_FROZEN`, so classes pass trivially.
 
-| rule set | hand-written units | rules | new 4-grams reachable |
-|---|---|---|---|
-| v1 fever rules | 36 individually-reviewed rules | 36 | **+10.8%** |
-| v2 entity classes | 6 word lists | 210 | **+25.8%** |
-| both together | 6 lists + 36 rules | 246 | **+36.6%** |
+**That is false.** `noise.STRUCTURAL_FROZEN` carries a block commented "Person:
+whose symptom this is, which is the third-party null axis", and it contains
+`mum`, `mother`, `wife`, `husband`, `dad`, `father`, `partner`, `nan`, `gran`,
+`son` and `daughter` — **11 of the 38 words revision 1 proposed**.
+`expand._check_structural` compares the *sequence* of frozen tokens in `find`
+against the sequence in `replace` and raises on any difference, so every pair
+touching a frozen word is refused when the file loads. That includes
+`mum → mother`, where both sides are frozen but the sequences differ.
 
-And the realised rate was about a quarter of the ceiling — the run recorded 1.375
-substitutions per 100 words against 5.12 available. So the model saw roughly a 3%
-widening of its n-gram inventory. **A small effect from a 3% intervention is the
-expected result, not an informative one.**
+Measured against revision 1's own six lists:
 
-The reason v1 was structurally limited is worth naming, because it was a
-deliberate decision that was right for v1's purpose and wrong for this one.
-**v1's DD11 excluded the filler libraries** on the grounds that "filler carries no
-label, so expanding it cannot decorrelate anything". Correct for decorrelation.
-But 45,706 of the manifest's 53,678 words are filler and other signals' text, so
-the pass was pointed away from 85% of the vocabulary. **This plan reverses DD11
-for the surface-variety objective while leaving it standing for decorrelation.**
+| class | rules revision 1 claimed | rules that survive layer 2 |
+|---|---|---|
+| adult female | 30 | 6 |
+| adult male | 30 | 6 |
+| elder female | 12 | 2 |
+| elder male | 6 | 6 |
+| adult neutral | 90 | 72 |
+| weekday | 42 | 42 |
+| **total** | **210** | **134** |
+
+Rule count understates it, because the frozen words are the frequent ones.
+Counting occurrences across the 2,506 hand-written library lines: `mum` 42,
+`partner` 41, `daughter` 33, `wife` 27, `husband` 25, `son` 25. **190 of the 313
+referent occurrences on revision 1's lists — 61% — sit on a frozen word**, and
+the wider lists of §3 do not change the picture (248 of 452, 55%).
+
+**Consequences for the plan.**
+
+* The `+25.8%` reachable-4-gram headline in revision 1 was computed without
+  applying layer 2 and is not achievable as designed. Revision 2 quotes no
+  n-gram figure; re-measuring it is Task 2, and it is a CPU measurement that runs
+  before any GPU night (§13).
+* The ticket is not "six word lists and a loader". It owns a change to a
+  mechanical safety layer, which is the one thing revision 1 promised it would
+  not do. DD6a is that change and it needs its own tests.
+* The claim in revision 1's DD2 that "the lexicon safety check does not weaken as
+  a result" survives; it is layer 2, not layer 3, that has to move.
 
 ---
 
-## 3. What an entity class is, and why it is cheap
+## 3. What a swap class is, and what the classes cost
 
-A class is one hand-written list of interchangeable referents. Every ordered pair
-within it becomes a rule, so an *N*-word list yields *N*×(*N*−1) rules from one
-review.
+A class is one hand-written list of interchangeable members plus one declared
+invariant for the list as a whole. Every ordered pair within a class becomes a
+rule, so an *N*-member list yields *N*×(*N*−1) rules from one review. That is the
+entire cost argument, and it is why adding colloquial members is close to free:
+taking a 6-member list to 9 members takes it from 30 rules to 72.
 
-The proposed classes and what they cost:
+The proposed classes, with occurrence counts measured over the committed
+hand-written libraries (`data/synthetic/**/*.txt`, 2,506 lines):
 
-| class | words | rules |
-|---|---|---|
-| adult female | mum, mother, wife, sister, aunt, girlfriend | 30 |
-| adult male | dad, father, husband, brother, uncle, boyfriend | 30 |
-| elder female | grandma, grandmother, nan, gran | 12 |
-| elder male | grandad, granddad, grandfather | 6 |
-| adult neutral | partner, friend, neighbour, colleague, coworker, cousin, flatmate, housemate, mate, boss | 90 |
-| weekday | monday … sunday | 42 |
-| **total** | **38 words in 6 lists** | **210** |
+| group | class | members (indicative) | occurrences | rules |
+|---|---|---|---|---|
+| referent | adult female | mum, mummy, mother, wife, missus, sister, aunt, auntie, girlfriend | 114 | 72 |
+| referent | adult male | dad, daddy, father, husband, brother, uncle, boyfriend | 78 | 42 |
+| referent | elder female | nan, nanna, nana, gran, granny, grandma, grandmother | 18 | 42 |
+| referent | elder male | grandad, granddad, grandpa, grandfather, gramps | 3 | 20 |
+| referent | adult neutral | partner, other half, friend, neighbour, colleague, coworker, cousin, flatmate, housemate, mate, boss, carer | 113 | 132 |
+| referent | child (four sub-classes by gender and number) | kid, child, little one, youngest, eldest / kids, children / daughter, girl / son, boy | 126 | 30 |
+| calendar | weekday | monday … sunday | 68 | 42 |
+| setting | healthcare place / person / encounter | surgery, practice, clinic / gp, doctor, nurse, clinician / appointment, consultation, call-back | ~118 | ~24 |
+| affect | worry (DD10: separate arm) | worried, concerned, anxious, nervous, uneasy, on edge | 71 | 30 |
+| | **total** | **~66 words in 13 lists** | **~709** | **~434** |
 
-**The roll-out is genuinely cheap, and that is measured rather than asserted.**
-387 library lines carry one of these referents, and they are spread across every
-signal:
+Against v1's 36 rules from 36 individual reviews. **470 of the 2,506 library
+lines — 19% — carry at least one referent**, and they are spread across every
+signal, which is the roll-out argument: one list set covers all seven signals
+where v1's fever rules would have needed authoring seven times.
 
-| where | lines |
-|---|---|
-| shared filler (`tangents`, `justifiers`) | 88 |
-| fever | 71 |
-| nocturia | 57 |
-| flank pain | 39 |
-| dysuria | 36 |
-| urinary frequency | 35 |
-| haematuria | 33 |
-| recent UTI | 28 |
+**Colloquial members are kept British.** `grammy` is American and the only
+real-text instrument this project has is 67 NHS submissions; `nan`, `nanna`,
+`granny`, `gran`, `grandad`, `grandpa`, `the missus` and `my other half` are the
+register actually at issue. `nanny` is excluded — it is also a childcare worker,
+and a whole-word swap cannot tell the two apart.
 
-**82% of them are outside fever.** One list set covers all seven signals, where
-v1's fever rules would have needed authoring seven times. That is the whole of
-the "cheap to roll out" claim and it is the main reason to prefer this shape.
+**`my other half` joins the neutral class**, not a gendered one, which is where
+the rule count is already largest and where DD4's pronoun problem does not apply.
+
+**Multi-word members are allowed and introduce two failure modes the format does
+not check** (DD11): number, because whole-word matching makes `colleague` and
+`colleagues` different words and a class mixing them produces "my kids has been";
+and determiner agreement, because the format has no notion of it. Both are
+handled by declaring `number` on a class alongside gender and life stage, and by
+splitting the child group into four sub-classes rather than one.
+
+**`surgery` is the class system's best cautionary example** and its invariant
+must name it: `surgery → practice` is right in "the surgery is closed" and wrong
+in "I had surgery last year", and no mechanical layer sees the difference.
 
 ---
 
@@ -136,35 +183,50 @@ the "cheap to roll out" claim and it is the main reason to prefer this shape.
 
 **In scope**
 
-* Six entity-class word lists at `data/expansion/classes/<class>.json`, expanded
-  into rules by the loader (DD3).
+* Swap-class files at `data/expansion/classes/<class>.json`, expanded into
+  ordered-pair rules by the loader (DD3). `data/expansion/` is already inside
+  `OFFLINE_DATA_DIRS`, which prunes the whole subtree, so no registry change is
+  needed.
+* **The DD6a change to `expand._check_structural`**: person-class equivalence in
+  place of literal-token equality, with tests pinning both what is newly allowed
+  and what is still refused.
 * Whatever change `expand.py` needs to accept a class file alongside a rule file,
   and to run rules that are **signal-agnostic** rather than scoped to one signal
-  (DD2).
-* Re-running the four-cell 2×2 with the **combined** fever + entity-class rule
-  set, and its pre-registration.
-* The `arch_training.md` §12.10 correction described in DD8.
+  (DD2). `parse_rules` currently requires `signal` to be a member of
+  `SIGNAL_LEXICONS`.
+* Per-example substitution memoisation (DD12).
+* Re-measuring the reachable-n-gram ceiling after DD6a, since revision 1's figure
+  is void (Task 2).
+* A CI step that loads every rule and class file and runs `--dry-run-lint`
+  (DD13). Nothing in `.github/workflows/` or the `Makefile` currently touches
+  `expand.py`.
+* Re-running the 2×2 with the combined rule set, plus the two extra arms §13
+  makes affordable (DD5, DD10), and its pre-registration.
 
 **Out of scope**
 
-* **Time units.** The single largest opportunity by raw count — 1,171
-  occurrences, `night` alone appearing 433 times — and poison. `night`,
-  `nights`, `overnight` and `midnight` are `NOCTURIA_LEXICON` *modifiers*, and
-  `every hour`/`hourly` are urinary-frequency modifiers. `night → morning` on a
-  nocturia line deletes the thing that makes it nocturia. See DD6: the existing
-  layer-3 check rejects these mechanically, which is the reassurance rather than
+* **Time units.** The single largest opportunity by raw count and poison.
+  `night`, `nights`, `overnight` and `midnight` are `NOCTURIA_LEXICON`
+  *modifiers*, and `every hour`/`hourly` are urinary-frequency modifiers.
+  `night → morning` on a nocturia line deletes the thing that makes it nocturia.
+  DD6 layer 3 rejects these mechanically, which is the reassurance rather than
   the permission.
-* **Numbers.** `three` (×92), `four` (×38). §12.10 already records why: no
-  lexicon holds a numeric term, so `38.4 → 37.6` passes every mechanical check
-  while walking a `fever_true` line into saying the temperature was normal.
-* **Laterality.** `left`/`right` (×70/×37). Decided out: it is clinical
-  laterality and not worth the argument for 107 occurrences.
+* **Numbers.** No lexicon holds a numeric term, so `38.4 → 37.6` passes every
+  mechanical check while walking a `fever_true` line into saying the temperature
+  was normal.
+* **Laterality.** `left`/`right`. Clinical laterality, not worth the argument.
+* **Reporting verbs** (`said` 55, `says` 36, `mentioned` 17, `told` 15).
+  Considered and deferred, and the reason is instructive: tense is a null axis,
+  so `said ↔ says` is forbidden and the class must be tense-matched; and `told`
+  takes an object, so "she said she'd been up" → "she told she'd been up" is
+  broken English that no layer catches. The literal format cannot express
+  subcategorisation frames, which is the same limit that puts Tier C out of
+  scope.
 * **Cross-gender and cross-life-stage swaps.** DD4.
-* **Child referents as a working class.** `daughter` and `son` are currently
-  alone in their classes and generate nothing. Adding `boy`, `girl`, `little
-  one`, `eldest`, `youngest` is a stage-2 question, not a v2 commitment.
+* **Certainty and hedge adjectives.** Unchanged from §12.10 — and DD10 explains
+  why the affect class is *not* a back door to them.
 * **Tier C** (aspect and opener rewrites), unchanged from v1.
-* **v1's Task 7.** Superseded, as stated at the top.
+* **v1's Task 7.** Superseded.
 * Editing `data/synthetic/*.txt`, the manifest, `manifest.py`, `recombine.py` or
   the generator. Unchanged from v1 DD1: this is post-processing over the JSONL.
 
@@ -179,32 +241,36 @@ Expansion is post-processing over the generated tree: same filenames, same
 moves, no split moves, the golden digest holds, and every expanded example stays
 paired with its clean original. Nothing in this plan reopens that.
 
-### DD2 — Entity classes are signal-agnostic, and that is a new capability
+### DD2 — Swap classes are signal-agnostic, and that is a new capability
 
 v1's rules are scoped to a signal because the vocabulary they swap *belongs* to
 that signal. `sister → brother` belongs to no signal — it appears in `tangents`,
 in `justifiers`, and in all seven `*_null_thirdparty` libraries. Scoping it to
 one signal would be arbitrary and would forfeit the roll-out argument in §3.
 
-So the class file declares no signal, and `expand.py` needs to accept that. **The
-lexicon safety check does not weaken as a result** — DD6's layer 3 already tests a
-rule against *every* signal's lexicon for introduced matches, and a
-signal-agnostic rule simply has no "own signal" to be exempt about.
+So a class file declares no signal, and `parse_rules` must stop requiring one.
+**The lexicon check gets stronger rather than weaker as a result.** For a
+signal-scoped rule, layer 3 asks that the phrase's *own* signal reading is
+unchanged and that no *other* signal's language is introduced. A class rule has
+no own signal, so the check becomes: for **every** signal *s*,
+`lexicon_matches(find, s)` must equal `lexicon_matches(replace, s)` — neither
+introduced nor removed. That is strictly stronger than the scoped form, and it is
+what makes `night → morning` impossible to author as a class even by accident.
 
 ### DD3 — A class is a list; the rules are generated, not written
 
-The reviewable artefact is a word list of 6–10 members with one written
-invariant for the class as a whole. The loader expands it to ordered pairs. This
-is the entire cost argument: 38 words reviewed once produce 210 rules, against
+The reviewable artefact is a list of 5–12 members with one written invariant for
+the class as a whole, plus its declared gender, life stage and number. The loader
+expands it to ordered pairs. 66 words reviewed once produce ~434 rules, against
 v1's 36 rules reviewed 36 times producing 36.
 
 The generated rules are still subject to every per-rule check in DD6, so
 generation is a convenience for the author, not a hole in the validation.
 
-### DD4 — Swaps stay inside gender and life stage, and this is not fastidiousness
+### DD4 — Swaps stay inside gender, life stage and number
 
-**148 of the 387 referent lines — 38% — carry a gendered referent and a gendered
-pronoun in the same sentence.**
+**148 of the referent lines carry a gendered referent and a gendered pronoun in
+the same sentence.**
 
 > *"My **wife** has been poorly and I've been up seeing to **her**"*
 
@@ -217,111 +283,138 @@ The neutral class is exempt and is therefore the largest: *"My upstairs
 neutral noun never contradicts a pronoun. Neutral↔neutral is always safe;
 neutral↔gendered is not.
 
-Life stage is the same argument from a different direction. 38 lines put the
-referent somewhere age-specific — *"**daughter** was sent home from school"* —
-where `grandma` is grammatical and absurd. Absurd text is not a label error, but
-it is not free either, and splitting the lists costs nothing.
+Life stage is the same argument from a different direction: *"**daughter** was
+sent home from school"* → `grandma` is grammatical and absurd. Absurd text is not
+a label error, but it is not free, and splitting the lists costs nothing.
 
-**This restriction is what takes the payoff from +40.1% to +25.8%.** It is worth
-paying: the unrestricted version breaks the grammar of well over a third of the
-lines it touches.
+Number is new in revision 2 and is mechanical rather than semantic: whole-word
+matching means `kid` and `kids` are unrelated strings, so a class mixing them
+would produce "my kids has been". Declared `number` on the class, and the child
+group split four ways.
 
-### DD5 — v1's rules and the entity classes run together, and the cost is named
+### DD5 — The arms, and what §13 changes about them
 
-The v2 arm is the **combined** rule set. The trade-off, recorded so it is not
-discovered later: running both means the result cannot be attributed to either
-half. That is exactly DD9's argument for keeping expansion and the noise pass
-apart, and it is being knowingly accepted here for two reasons — the v1 half is
-already independently measured (2026-09-04), so the combined arm is read against
-a known quantity rather than against nothing; and the alternative costs a third
-arm and five more trainings to separate two things nobody intends to ship
-separately.
+Revision 1 ran a single combined arm and accepted that the result could not be
+attributed to either half, on the argument that separating them "costs a third
+arm and five more trainings". **§13 voids that argument.** At roughly two minutes
+per fold, a night holds about 240 fold-trainings — twelve times the whole 2×2.
+Five trainings is not a cost worth trading a permanent attribution gap for.
 
-**A stage-2 question, not a decision:** whether to add an entity-classes-only arm
-anyway, at five trainings and ~10 minutes, to make the attribution explicit.
+So the arms are:
 
-### DD6 — The safety layers are unchanged, and the most tempting mistake is already blocked
+| arm | rule set |
+|---|---|
+| clean | none (baseline) |
+| v1 | fever rules only (already measured 2026-09-04, re-run as the anchor) |
+| classes | referent + weekday + healthcare classes only |
+| combined | v1 rules + those classes |
+| affect | the affect class only (DD10) |
 
-All three of v1's layers apply, with one clarification each:
+Every arm is scored against clean and expanded test trees where the 2×2 shape
+applies. The read-out for every arm is pre-registered before the night; the
+**decision arm is `combined`**, and the others are explicitly exploratory. That
+last sentence is the discipline §13 says has to replace gating, and it matters
+more here than in any previous run: five arms picked over post hoc will produce a
+winner by noise.
 
-1. **Declared invariant**, now per class rather than per rule. Six statements
-   instead of 210. This is a genuine reduction in what a reviewer must read, and
-   it is also a concentration of risk: one wrong class invariant is wrong 30
-   times. Stage 2 should decide whether a class needs a stricter review than a
-   rule did.
-2. **Structural-token invariance.** Unchanged. Referent nouns are not in
-   `STRUCTURAL_FROZEN`, so classes pass trivially — which is a reason to lean on
-   layer 3 rather than a reason to relax.
-3. **Signal-lexicon invariance.** This is the layer that matters here, and it is
-   already sufficient for the worst case in scope. `night → morning` changes
-   whether the phrase matches `NOCTURIA_LEXICON` and is **rejected when the rule
-   file loads**, before a byte is written. The single most attractive extension
-   to this plan is mechanically blocked by machinery that already exists.
+### DD6 — The three safety layers, with layer 2 rewritten
 
-Plus `--dry-run-lint` over the committed libraries, unchanged, with new-hit-is-a-
-failure semantics. The specific hazard it exists for — a rule that is individually
-harmless and manufactures a cross-signal hit in combination — is *more* likely
-here than in v1, because classes touch filler and filler is where the
-`playing up → aching` case came from.
+1. **Declared invariant**, now per class rather than per rule. Thirteen
+   statements instead of 434. This is a genuine reduction in what a reviewer must
+   read, and it is also a concentration of risk: one wrong class invariant is
+   wrong dozens of times. The class file therefore carries more declared
+   structure than a rule did — gender, life stage, number, and the invariant —
+   so that a reviewer is checking a small number of stated properties rather than
+   re-reading prose.
+2. **Structural-token invariance.** Rewritten — see DD6a.
+3. **Signal-lexicon invariance.** Strengthened for class rules — see DD2.
 
-**One honest limit on layer 3, found while writing this plan.** The lexicon check
-protects *signal words*, not their *modifiers*: `high` (×118) and `raised` (×96)
-are in no lexicon, and `a high temperature → a normal temperature` would pass
-every mechanical check. Nothing in this plan proposes such a rule, and the class
-mechanism cannot express one — but the limit should be written down rather than
+Plus `--dry-run-lint` over the committed libraries for all seven signals, with
+new-hit-is-a-failure semantics. The specific hazard it exists for — a rule that is
+individually harmless and manufactures a cross-signal hit in combination — is
+*more* likely here than in v1, because classes touch filler and filler is where
+the `playing up → aching` case came from.
+
+**One honest limit on layer 3, carried over from revision 1.** The lexicon check
+protects *signal words*, not their *modifiers*: `high` and `raised` are in no
+lexicon, and `a high temperature → a normal temperature` would pass every
+mechanical check. Nothing in this plan proposes such a rule and the class
+mechanism cannot express one, but the limit is written down rather than
 discovered.
+
+### DD6a — Layer 2 compares person *class*, not person *token* — NEW
+
+`STRUCTURAL_FROZEN` freezes referent nouns for the noise pass's reasons: a
+character-level edit turning `wife` into `life` destroys who has the symptom, and
+the third-party null axis is exactly what the frozen block's comment names. Those
+reasons do not transfer to a whole-word swap between two third-party referents.
+`mum → sister` leaves the person axis precisely where it was; `mum → I` does not.
+
+So layer 2, **for expansion only**, normalises person tokens to their class
+before comparing sequences:
+
+* `i`, `im`, `i'm`, `ive`, `i've`, `my`, `me` → `<first-person>`
+* every third-party referent noun → `<third-party>`
+* every other frozen token → itself
+
+`mum → sister` then compares `('<third-party>',)` against `('<third-party>',)` and
+passes. `mum → I` compares `('<third-party>',)` against `('<first-person>',)` and
+is refused, with the same message quality the existing layer has.
+
+Four constraints on how this is built, because it is the only place v2 weakens a
+mechanical layer:
+
+* **`STRUCTURAL_FROZEN` is not edited.** The noise pass keeps the literal freeze
+  it needs. The person-class map is a new shared constant, imported by `expand.py`
+  the way `STRUCTURAL_FROZEN` already is — "two lists in two modules drifting
+  apart is the outcome that import exists to prevent".
+* **The map is authored, not inferred.** A referent that is not in the map is not
+  a person as far as layer 2 is concerned, so adding a class member without
+  adding it to the map fails closed rather than open. A test asserts every class
+  member appears in the map.
+* **Pronouns stay literal.** `he`/`she`/`her`/`his`/`they` are *not* collapsed:
+  DD4 forbids cross-gender swaps precisely because the pronoun cannot be
+  repaired, and collapsing pronouns to a class would make that violation
+  invisible to layer 2.
+* **The tests pin both directions.** What is newly allowed (`mum → sister`,
+  `partner → flatmate`, `son → boy`) and what is still refused (`mum → I`,
+  `my wife → I`, `sister → my sister`, and every tense, negation and modality
+  case the existing tests already cover).
 
 ### DD7 — The decision metric is the paired flip rate, and it means more here
 
 Unchanged machinery: `paired-flip-rate`, changed pairs only, cluster-level
 resampling, and the pre-registered decisive-accuracy guard.
 
-What changes is the interpretation. For an entity swap there is **no legitimate
+What changes is the interpretation. For a referent swap there is **no legitimate
 reason for the answer to move**, so the flip rate is a direct measurement of
 surface overfitting rather than a proxy for it. A pre-registered bound can
-therefore be stated in absolute terms — flips on entity-only pairs should be at
-or near zero for a model that is reading language rather than fragments — and a
-non-zero rate in the clean-trained arm is itself the finding.
+therefore be stated in absolute terms — flips on referent-only pairs should be at
+or near zero for a model reading language rather than fragments — and a non-zero
+rate in the clean-trained arm is itself the finding.
 
 **Bounds are for stage 2**, and stage 2 must set them against the *observed*
 1.89% baseline rather than against Task 2's real-text 15.4%. That mistake is
 recorded in DD8 and is the single most reusable thing the v1 run produced.
 
-### DD8 — The §12.10 correction ships with this plan
+### DD8 — The §12.10 correction
 
-The 2026-09-04 write-ups contain a finding that does not survive scrutiny, and it
-is currently in `arch_training.md` §12.10 as "the most useful thing this run
-taught us". It is corrected in the same PR as this plan because the two are the
-same argument.
+The correction is **already applied** to `arch_training.md` §12.10 and to
+`reports/encoder_training/2026-09-04-lexical-variant.md` (both dated 2026-09-05).
+Stage 2 should verify only that
+`2026-09-04-lexical-variant-plain-english.md` carries it too, and then drop this
+DD to a citation.
 
-**What was claimed:** the synthetic decisive-accuracy guard held while the
-expanded arm's *real-text* decisive accuracy fell 11 points, therefore the guard
-was measuring somewhere the failure it was designed for does not appear.
-
-**Why it does not hold.** The noise 2×2 ran the same instrument over four arms
-built by a different augmentation, and its real-text decisive figures are:
-
-| trained on | decisive acc, clean test | real-text decisive |
-|---|---|---|
-| clean | 93.3% | 76.7% ± 17.3 |
-| 3% typos | 93.5% | 76.7% ± 12.7 |
-| 6% typos | 93.8% | 78.9% ± 9.9 |
-| 12% typos | 94.3% | **64.4%** ± 19.9 |
-
-`r12` dropped **12.3 points** on that slice — more than the expansion arm's 11.1
-— and the noise 2×2 concluded that arm was beneficial and harmless. An 11-point
-swing on 18 decisive cells with a ±23-point half-width is an ordinary draw, not a
-detected harm.
-
-**The corrected claim:** the real-text decisive slice cannot establish a harm of
-this size in either direction. That is a limitation of the instrument, not a
-finding about the guard, and it should never have been written up as one.
-
-**What this changes about the ticket.** The only evidence for harm dissolves, and
-the noise precedent — four measurements of surface augmentation on this exact
-data, none harming clean performance, all nudging it up monotonically — becomes
-the relevant prior. The risk/reward case for continuing is better than the
-2026-09-04 write-up concluded.
+The substance, retained because the rest of the plan leans on it: the claim that
+the synthetic guard held while real-text decisive accuracy fell 11 points, and
+that the guard was therefore measuring in the wrong place, does not survive being
+set beside 12.6, where the `r12` arm fell **12.3 points** on the same slice and
+was concluded beneficial and harmless. Eighteen decisive cells with a ±23-point
+half-width cannot separate an 11-point difference from nothing. The corrected
+claim is about the instrument, not the guard. **What this changes about the
+ticket:** the only evidence for harm dissolves, and the noise precedent — four
+measurements of surface augmentation on this exact data, none harming clean
+performance — becomes the relevant prior.
 
 **What does not change.** The pass can still harm if misconfigured: the rule
 authoring report measured it *inverting* the vocabulary bias at p = 1 and opening
@@ -333,57 +426,170 @@ load-bearing.
 
 Unchanged from v1. If they are ever combined the order is expand then noise.
 
+### DD10 — The affect class is authored, but separately, and it is not the same kind of thing — NEW
+
+The idea is sound and cheap: `worried` (40), `concerned` (17), `anxious` (11) and
+their neighbours are 71–106 occurrences of vocabulary that carries no signal, and
+once the class machinery exists an affect list costs one review. But three things
+separate it from the referent classes and the plan must not blur them.
+
+* **Neither mechanical layer protects it.** No affect word appears in any of the
+  seven signal lexicons (checked), and none is in `STRUCTURAL_FROZEN`. Layers 2
+  and 3 both pass trivially, so the *entire* safety argument is the declared
+  invariant. That is exactly the shape §12.10 ruled out of scope for certainty
+  adjectives.
+* **Affect words already do label work in the committed libraries.** Two lines,
+  found while writing this plan:
+
+  > `nocturia_null_attribution.txt:16` — "I wake up **anxious** around three most
+  > nights and end up wandering to the bathroom"
+  >
+  > `urinary_frequency_null_hedged.txt:13` — "I've been **anxious** about all
+  > this so I may be reading too much into my toilet trips"
+
+  In both, the affect word *is* the attribution or the hedge — the axes a class
+  must not touch. `anxious → fed up` breaks the first. Referents are
+  interchangeable by construction; affect words are not, and the class invariant
+  has to be written against the `*_null_attribution` and `*_null_hedged`
+  libraries specifically rather than against `emotional.txt`.
+* **It costs v2 its best property.** §1's table claims a flip is *unambiguously*
+  an error. `worried → apprehensive` is a register change and a reader can argue
+  register, which is the softness that made v1's instrument weaker than it
+  looked. Folding affect into the combined arm contaminates the one clean
+  measurement this plan has.
+
+**The decision: author it as its own class group, run it as its own arm, and
+report its flip rate separately from the referent classes'.** The class is
+restricted to intensity- and valence-matched members (`worried`, `concerned`,
+`anxious`, `nervous`, `uneasy`, `on edge`) and explicitly excludes
+`fed up`, `embarrassed`, `annoyed`, `panicking`, `terrified` and anything else
+that moves intensity. **This is the plan author's call and the one decision in
+revision 2 the user did not make; it is cheap to overturn in stage 2, and
+overturning it means folding affect into `combined` and accepting that the flip
+rate no longer means what §1 says it means.**
+
+**One forward-looking note, because reusability is the stated motive for this
+whole ticket.** If a mental-health signal is ever written, `anxious` enters a
+lexicon and `worried → anxious` starts failing layer 3 at load time. That is the
+machinery working — but only if the class files are loaded somewhere automatic,
+which is DD13.
+
+### DD11 — Multi-word and colloquial members, and what the format cannot check — NEW
+
+`_check_matchable` requires `find` to begin and end on a word character, which
+multi-word members satisfy. What the format does not check is agreement:
+
+* **Number.** `colleague` and `colleagues` are unrelated strings under whole-word
+  matching. Declared `number` per class; the child group splits four ways.
+* **Determiners.** `colleague → buddy at work` is right after "my" and "a" and
+  the format has no way to know. The invariant must state the frames the class is
+  authored for, and `--dry-run-lint` output must be read as text rather than only
+  as a pass/fail — a rule that produces broken English produces no new lexicon
+  hit and will pass.
+* **Ambiguity.** `surgery` (§3) is the standing example, and the general rule is
+  that a member with a second common sense needs the invariant to name it.
+
+### DD12 — Referent substitution is memoised per example — NEW
+
+Rules fire per match site independently. An example is a recombination of several
+fragments, so a referent can appear more than once in one example — and two
+independent draws turn *"my wife has been up in the night … my wife is worried"*
+into two different people. This is a coherence failure the fever rules could not
+produce, because alternating `fever` and `temperature` in one example is
+harmless.
+
+Within the committed libraries a single *line* rarely repeats a referent (29 of
+470 referent-bearing lines carry two, and one repeats the same word), but the
+recombination is where the exposure is and it has not been measured.
+
+**The decision: the expander memoises per example.** Once a class fires on a
+given source word within one example, every later occurrence of that same source
+word in that example takes the same target. Cheap to implement, removes the whole
+failure mode, and the memo is keyed on `(example_id, folded find)` so it cannot
+leak between examples. Stage 2 should measure how often the memo actually fires,
+because that number is also the size of the bug it prevents.
+
+### DD13 — Rule and class files are loaded in CI — NEW
+
+Nothing in `.github/workflows/` or the `Makefile` currently runs `expand.py`, so
+a rule file can be committed broken, or rot silently as the lexicons grow (DD10).
+A CI step that loads every file in `data/expansion/` and runs `--dry-run-lint`
+costs a couple of seconds, needs no GPU and no ML wheels, and is what makes the
+"layer 3 will reject it when the lexicon arrives" reassurance true rather than
+theoretical. It also belongs to the class of checks §13 says must run *before* a
+GPU night rather than inside one.
+
 ---
 
 ## 6. Tasks (provisional shape, for the stage-2 pass to expand)
 
-**Task 1 — The class file format and the loader.** A class is a list plus one
-declared invariant; the loader expands it to ordered pairs and runs every
-existing per-rule check over each. Signal-agnostic rule files (DD2). The bulk of
-the work is validation, not generation.
+**Task 1 — Layer 2's person-class comparison (DD6a).** The shared person-class
+map, the change to `_check_structural`, and the tests pinning both what is newly
+allowed and what is still refused. `STRUCTURAL_FROZEN` untouched. This is the
+prerequisite for every other task and the only task that changes a safety layer.
 
-**Task 2 — Author the six classes**, with their invariants, and run
+**Task 2 — The class file format and the loader.** A class is a list plus
+declared gender, life stage, number and one invariant; the loader expands it to
+ordered pairs and runs every per-rule check over each. Signal-agnostic rule files
+(DD2), per-example memoisation (DD12). Re-measure the reachable-n-gram ceiling
+now that layer 2 admits the frozen referents, since revision 1's `+25.8%` is
+void. CPU only.
+
+**Task 3 — Author the classes** (§3), with their invariants, and run
 `--dry-run-lint` over the committed libraries for all seven signals rather than
-fever alone. This is where the DD6 cross-signal hazard would surface.
+fever alone. The affect class is authored here but kept in its own group (DD10).
+This is where the DD6 cross-signal hazard and the DD11 agreement hazards surface,
+and the dry-run output is read as text, not only as an exit code.
 
-**Task 3 — The §12.10 correction** (DD8), across `arch_training.md` and the two
-2026-09-04 reports. No code. Ships in the same PR as this plan; listed as a task
-so it is not forgotten if the plan is split.
+**Task 4 — CI loads the rule and class files (DD13).** No GPU, no ML wheels.
 
-**Task 4 — Pre-register**, with bounds set against the observed 1.89% baseline
-and an explicit statement of what an entity-swap flip means (DD7).
+**Task 5 — Pre-register**, with bounds set against the observed 1.89% baseline,
+an explicit statement of what a referent-swap flip means (DD7), the five arms of
+DD5, and which one is the decision arm. Every arm's read-out is written down
+before the night (§13).
 
-**Task 5 — Run the 2×2** with the combined rule set and read it out. Twenty
-trainings, ~40 minutes, machinery unchanged. One free correctness check falls
-out: the clean-trained/clean-test cell must reproduce **0.9329** decisive exactly,
-since generation is deterministic and that cell is untouched by this plan. If it
-does not, something in the pipeline moved and the run is void before anything is
-interpreted.
+**Task 6 — Run the batch and read it out.** Five arms; the 2×2 shape where it
+applies. The batch opens with the canary and the reproduce check: the
+clean-trained/clean-test cell must return **0.9329** decisive exactly, since
+generation is deterministic and that cell is untouched by this plan. If it does
+not, something in the pipeline moved and the night is void before anything is
+interpreted — which is the whole point of putting it first rather than last
+(§13).
 
-**Task 6 — Report**, against the pre-registration, item by item, including the
-items that fail.
+**Task 7 — Report**, against the pre-registration, item by item, including the
+items that fail, and with referent-class and affect-class flip rates reported
+separately.
 
-Tasks 1 and 3 are signal-agnostic machinery. Task 2 is the authoring cost, and
+Tasks 1, 2 and 4 are signal-agnostic machinery. Task 3 is the authoring cost, and
 unlike v1 it does **not** repeat per signal.
 
 ---
 
 ## 7. Open questions for the review pass
 
-1. **Do the classes need a stricter review than a rule did?** DD6 layer 1 goes
-   from 36 statements to 6, and one wrong class invariant is wrong 30 times.
-   Cheaper to read, more concentrated to get wrong.
-2. **Should there be an entity-classes-only arm?** DD5 accepts unattributability
-   to save five trainings. Ten minutes of GPU buys it back.
+1. **Is DD6a's person-class map the right shape, or should it be a per-class
+   declaration instead?** A shared map is one place to get wrong; a per-class
+   `person: third-party` field puts the declaration next to the words it
+   describes but lets two classes disagree. Stage 2 picks one.
+2. **How strict a review does a class invariant need?** Layer 1 goes from 434
+   statements to 13. Cheaper to read, more concentrated to get wrong. The
+   declared gender/life-stage/number fields are a partial answer; stage 2 should
+   decide whether that is enough.
 3. **What bound?** DD7 says absolute rather than relative, and stage 2 must
-   choose the number. The v1 mistake — a bound anchored on an instrument other
-   than the one being measured — is the thing to avoid.
-4. **Are the child classes worth completing?** `daughter` and `son` currently
-   generate nothing. Adding four or five words makes two more classes work.
-5. **Is 387 lines enough to move a model at all?** They are 11% of the fragment
-   inventory. The +25.8% n-gram figure says the *surface* moves; nothing yet says
-   a model notices, and this question is exactly what Task 5 exists to answer —
-   and is allowed to answer negatively.
-6. **Does the rate need re-tuning?** 0.4 at clean share 0.25 was chosen from
-   fever's library statistics. The entity classes have a different site density
-   and nobody has looked at what the combined set does at that rate.
+   choose the number, separately for the referent classes and for affect. The v1
+   mistake — a bound anchored on an instrument other than the one being measured
+   — is the thing to avoid.
+4. **Does affect stay a separate arm?** DD10 is the plan author's call, not the
+   user's.
+5. **Is ~700 referent, weekday, setting and affect occurrences enough to move a
+   model at all?** They sit on 19% of the fragment inventory. Nothing yet says a
+   model notices, and Task 6 is allowed to answer negatively.
+6. **Does the rate need re-tuning, and should it be swept as arms?** 0.4 at clean
+   share 0.25 was chosen from fever's library statistics; the classes have a
+   different site density. §13 makes a three- or four-rate sweep affordable in
+   one night, which is a better answer than picking one operating point from
+   library statistics and hoping. The cost is more arms to pre-register.
+7. **Should the reporting-verb class be reconsidered** once someone has looked at
+   whether a tense- and frame-matched subset (`said`, `mentioned`, `remarked`)
+   is worth ~120 occurrences? Scoped out in §4 on the subcategorisation argument,
+   which stage 2 may judge too cautious.
