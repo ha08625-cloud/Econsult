@@ -1180,7 +1180,23 @@ def test_the_header_records_the_expansion_of_both_trees(tmp_path):
         "requested": {
             "rate": 0.4,
             "clean_share": 0.25,
-            "rules": {"path": "data/expansion/fever_present.rules.json", "sha256": "abc123"},
+            "class_groups": ["referent"],
+            "rule_sources": [
+                {
+                    "path": "data/expansion/fever_present.rules.json",
+                    "sha256": "abc123",
+                    "kind": "rules",
+                    "signal": SIGNAL,
+                    "count": 36,
+                },
+                {
+                    "path": "data/expansion/classes/referent.classes.json",
+                    "sha256": "def456",
+                    "kind": "classes",
+                    "signal": None,
+                    "count": 210,
+                },
+            ],
         },
         "realised": {"changed_examples": {"count": 3910, "share": 0.391}},
     }
@@ -1215,8 +1231,19 @@ def test_the_header_records_the_expansion_of_both_trees(tmp_path):
     header = main_module._header(args, folds)
 
     assert header["dataset_expansion"]["requested_rate"] == 0.4
-    assert header["dataset_expansion"]["rules_sha256"] == "abc123"
     assert header["dataset_expansion"]["changed_share"] == 0.391
+    assert header["dataset_expansion"]["class_groups"] == ["referent"]
+    # Every source named, with its own digest: an arm is a selection over
+    # several files and one of them alone does not reproduce the tree.
+    assert [entry["sha256"] for entry in header["dataset_expansion"]["rule_sources"]] == [
+        "abc123",
+        "def456",
+    ]
+    assert [entry["kind"] for entry in header["dataset_expansion"]["rule_sources"]] == [
+        "rules",
+        "classes",
+    ]
+    assert header["dataset_expansion"]["rules_count"] == 246
     # The test split came from the clean tree, which carries no block at all.
     assert header["test_dataset_expansion"] == "none -- the tree carries no expansion block"
 

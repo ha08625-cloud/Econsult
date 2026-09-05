@@ -405,18 +405,31 @@ def _expansion_header(stats: Mapping[str, object], *, key: str) -> dict:
     the wrong tree, "clean-trained, expanded test" and "clean-trained, clean
     test" are the same sentence.
 
-    The rule file's digest is what makes the record load-bearing rather than
+    The rule files' digests are what make the record load-bearing rather than
     decorative. ``--rate`` and ``--seed`` reproduce a tree only in combination
     with the rules that were on disk at the time, and the rules are hand-edited
     between runs.
+
+    Since the swap classes there is no single rule file to name: an arm is a
+    selection over a per-signal ``*.rules.json`` and any number of
+    ``*.classes.json`` groups, and the sidecar records one entry per file under
+    ``requested.rule_sources``. Reading that list is not optional bookkeeping --
+    the previous shape here asked for a mapping under ``requested.rules``, which
+    a class-bearing sidecar does not have, so every provenance field would have
+    come back ``None`` and the report would have said nothing about the rules
+    while looking exactly as it always did.
     """
     expansion = stats.get("expansion")
     if not isinstance(expansion, Mapping):
         return {key: "none -- the tree carries no expansion block"}
     requested = expansion.get("requested")
     requested = requested if isinstance(requested, Mapping) else {}
-    rules = requested.get("rules")
-    rules = rules if isinstance(rules, Mapping) else {}
+    raw_sources = requested.get("rule_sources")
+    sources = (
+        [entry for entry in raw_sources if isinstance(entry, Mapping)]
+        if isinstance(raw_sources, list)
+        else []
+    )
     realised = expansion.get("realised")
     realised = realised if isinstance(realised, Mapping) else {}
     return {
@@ -425,10 +438,20 @@ def _expansion_header(stats: Mapping[str, object], *, key: str) -> dict:
             "seed": expansion.get("seed"),
             "requested_rate": requested.get("rate"),
             "clean_share": requested.get("clean_share"),
-            "rules_path": rules.get("path"),
-            "rules_sha256": rules.get("sha256"),
-            "rules_signal": rules.get("signal"),
-            "rules_count": rules.get("count"),
+            "class_groups": requested.get("class_groups"),
+            "rule_sources": [
+                {
+                    "path": entry.get("path"),
+                    "sha256": entry.get("sha256"),
+                    "kind": entry.get("kind"),
+                    "signal": entry.get("signal"),
+                    "count": entry.get("count"),
+                }
+                for entry in sources
+            ],
+            "rules_count": sum(
+                entry["count"] for entry in sources if isinstance(entry.get("count"), int)
+            ),
             # DD5's telemetry, carried into the report because a by-label gap is
             # the one number that would turn this pass from a decorrelation into
             # a new correlation, and nobody would open a sidecar to check.

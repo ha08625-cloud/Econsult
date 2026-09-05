@@ -125,8 +125,51 @@ reports against the same two over the originals.
   existing hit disappear has changed what that library says, so read it.
 
 The mode reads the libraries and writes nothing: no tree is generated and none
-is expanded. Without `--signal` it checks every `*.rules.json` in this
-directory.
+is expanded. With no flags it checks **every** `*.rules.json` in this directory
+and **every** `classes/*.classes.json`, which is what CI runs; `--signal`
+narrows the first, `--class-groups` the second, and `--rules` drops either side.
+Budget minutes rather than seconds: the cost is linear in rule count, and a
+swap-class group is hundreds of generated rules.
+
+## Choosing which rules run: `--rules` and `--class-groups`
+
+There are two kinds of rule file and a run selects between them. A
+`<signal>.rules.json` is hand-written and belongs to one signal; a
+`classes/<group>.classes.json` is a swap class, belongs to no signal, and
+expands to every ordered pair of its members. `--rules` picks the kinds and
+`--class-groups` picks which groups:
+
+| arm | invocation | what it is |
+|---|---|---|
+| clean | (no expansion) | the baseline |
+| v1 | `--rules signal` | the hand-written rules alone; reproduces the 2026-09-04 anchor byte for byte |
+| classes | `--rules classes --class-groups referent,calendar,setting` | the swap classes alone |
+| combined | `--rules both --class-groups referent,calendar,setting` | both, concatenated |
+| affect | `--rules classes --class-groups affect` | the affect classes, reported separately |
+
+`--rules` defaults to `both` and `--class-groups` defaults to every group with a
+file in `--classes-dir`. Two things are errors rather than empty selections: a
+named group with no file (a typo, never a state), and a selection that leaves a
+signal with **no rules at all** — writing an untouched copy of a tree under a
+name that says "expanded" is a silent no-op an arm comparison cannot see. A
+missing `<signal>.rules.json` is fatal only when `--rules` asks for one, so a
+classes-only arm runs against a signal that has no rule file.
+
+Within a run the two sources are simply concatenated. There is no precedence
+between them: `match_sites` prefers the longest `find` and breaks a tie by
+weight, so a hand-written `my mum` beats a class's `mum` at the same site for
+the same reason one hand-written rule beats another.
+
+## What the sidecar records
+
+The expanded tree's `*.stats.json` grows an `expansion` block, and its
+`requested.rule_sources` is a list with **one entry per file** — `path`,
+`sha256`, `kind` (`rules` or `classes`), `signal` (null for a class file) and
+`count` — beside `requested.class_groups`. One entry per file rather than one
+block for "the" rule file is what survives the concatenation: `--rate` and
+`--seed` reproduce a tree only in combination with every file that was on disk
+at the time, and these files are hand-edited between runs. The training reports
+carry the same list through `_expansion_header`.
 
 ## Running the pass
 
@@ -134,7 +177,8 @@ directory.
 python -m scripts.synthetic_data.expand \
   --in-dir data/synthetic/generated/<clean tree> \
   --out-dir data/synthetic/generated/<expanded tree> \
-  --rate 0.5
+  --rate 0.5 \
+  --rules both
 ```
 
 Every layer runs at load time, before a byte is written, so a bad rule is
