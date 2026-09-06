@@ -16,10 +16,13 @@ invocation with its own `--report-dir` because four cells sharing one directory
 would overwrite each other's `<signal>.arm_b_finetune.json`. `noise/` and `decl/`
 are 12.6's and 12.5's; `lexical/` is 12.10's 2x2, plus `paired_flip_rate.json` —
 the flip rate and the decisive-accuracy guard, computed across the four cells
-after they ran. The dated write-up for each sits at this level, not inside the
-sub-directory — `2026-09-04-lexical-variant.md` for 12.10, with
-`-plain-english.md` beside it and `-preregistration.md` holding the bounds it is
-read against.
+after they ran. `swapclass/` is 12.10b's five-arm batch: thirteen cells, because
+`--test-dir` takes one path and the clean-trained arm is the paired baseline for
+all four expanded arms, plus one `paired_flip_rate_<arm>.json` per expanded arm.
+The dated write-up for each sits at this level, not inside the sub-directory —
+`2026-09-04-lexical-variant.md` for 12.10 and `2026-09-05-swap-class-expansion.md`
+for 12.10b, each with `-plain-english.md` beside it and `-preregistration.md`
+holding the bounds it is read against.
 
 `<stem>` is `baselines`, `arm_a_probe`, `arm_b_finetune`, `joint_comparison`
 (the three-arm single/volume/joint sweep) or `companion_comparison` (Arm 0, Arm
