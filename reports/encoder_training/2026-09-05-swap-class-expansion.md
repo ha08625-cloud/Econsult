@@ -35,6 +35,14 @@ comparison is computable from this batch at all, because each arm's flip rate is
 measured over its own pair set. The night bought a clean reproduction, four met
 bounds and no answer to the question it was run to settle.
 
+**The classes are adopted anyway** — `referent` and `setting` on by default,
+`calendar` opt-in, `affect` not at all — on the ground the pre-registration never
+modelled: applying a signal-agnostic class to the next condition costs nothing,
+so the decision rule that actually applies is "does it harm?" rather than "does
+it help?", and this run answers that one. §10 is the argument, and it is recorded
+as an **override** of a pre-registered stop rather than as a reading of the
+result.
+
 ---
 
 ## 0. Verification before any result
@@ -421,46 +429,126 @@ wants a *difference* rather than a level needs either far more changed pairs or 
 paired test across arms inside one invocation.
 
 ---
+## 10. Was the pass adopted? **Yes — on cost asymmetry, not on evidence of benefit.**
 
-## 10. Was the pass adopted?
+**This is an override of the pre-registration's decision rule, and it is recorded
+as one.** §4.2(b) named "≤0.5% with an upper interval below 1%" as the **stop**
+for open question 5, and the measured 0.71% [0.21%, 1.68%] is not a pass by that
+rule — it is not anything by that rule. The classes are being adopted anyway, on
+a ground the pre-registration never modelled.
 
-**No — and the pre-registration's own pass row would have said yes.**
+### The ground
 
-§6 says: combined arm ≤ 1.00% with the guard held means "adopt, and roll the
-classes to the other six signals." That condition is satisfied. It is being
-declined anyway, and the reason is stated rather than discovered afterwards:
+The pre-registration asked *"does this help?"* and treated a "no" as "abandon".
+That is the right structure when a technique costs something to apply. These
+classes do not. They are signal-agnostic by construction: sixteen lists written
+once, expanded by the loader into 320 ordered pairs that mention no signal, and
+applying them to a new condition's libraries is passing `--class-groups` on a
+generation run. There is no per-condition authoring, no per-symptom tuning and no
+per-library review implied by the mechanism itself.
 
-1. **The bound the decision arm met does not measure the classes.** The combined
-   arm contains the v1 rules, which supplied 79% of its substitutions. Its 0.76%
-   is consistent with the v1 rules doing all the work; §9 explains why no
-   available number separates them.
-2. **The measurement that would justify the rollout is indeterminate** (§2.2).
-   Open question 5 remains open.
-3. **The only clean-tree evidence of benefit fails to order by intervention
-   size** (§5), which is the signature of noise.
+The system is heading for roughly fifty conditions, ~200 symptoms and five or six
+fragment libraries each. Hand-written fragments are the expensive resource in that
+plan and always will be; anything that widens the surface those fragments cover
+without more of them being written is worth keeping unless it is shown to hurt.
 
-What is *kept*: the sixteen class files, the loader, the DD6a normalisation, the
-memo and the injectivity draw are all committed, tested and demonstrated to leave
-the v1 arm bit-exact. Nothing needs rebuilding. The question is only whether to
-spend authoring effort extending them to six more signals, and the answer is not
-yet.
+So the decision rule that actually applies is **"does it harm?"**, and this run
+answers that as well as one run can:
 
-**Recommended next, in order:**
+* the swaps do not perturb the model at all on accuracy — the clean-trained head
+  scores 0.9329 on the clean tree and 0.9336 after a fifth of the test set has
+  had its referents swapped;
+* all four guards passed, every arm at or above the baseline on the clean test
+  tree;
+* no arm gained only on its own expanded tree, so nothing was manufactured;
+* the dry-run lint finds no rule that creates medical language the libraries do
+  not already contain;
+* 14 paired flips out of 1,983, all of them cases where the model was reading
+  vocabulary it should not have been.
 
-1. **Close question 5 properly, cheaply.** The obstacle is 1,983 changed pairs.
-   Raising the class rate towards 0.95 — the setting §7 of the pre-registration
-   declined to sweep — roughly doubles the changed pairs on the same libraries and
-   the same night, and the clean-trained arm needs no retraining to be scored
-   against a new tree. One clean-trained model, several expanded test trees, one
-   evening. If the clean head's rate on class pairs is still ~0.7% with a tighter
-   interval, question 5 closes as "no", and the classes should not be extended.
-2. **If it closes as "yes", fix the comparison before spending the GPU.** A
-   paired test between arms on a shared pair set, and a fixed margin across arms,
-   or the next batch will produce another table of overlapping intervals.
-3. **Not the affect class.** §3 is consistent with no change at all and DD10
-   already excludes it from supporting the referent case.
+**Adopted, therefore, on a cost/harm argument. Nothing in this report is evidence
+that the classes improve anything**, and §5 explains why the apparent clean-tree
+gains should not be read as benefit. That distinction has to survive into
+whatever cites this report: a later run that finds something odd must not be read
+against a benefit nobody measured.
 
----
+### What is adopted, and what is not
+
+| group | decision |
+|---|---|
+| `referent` | **default on** for future generation |
+| `setting` | **default on** |
+| `calendar` | **opt-in per condition** — see below |
+| `affect` | **not adopted.** §3 is consistent with nothing having happened, and DD10 already bars it from supporting the referent case. |
+
+`calendar` is held back for a reason specific to the rollout rather than to this
+run. A weekday swap is safe when nothing labels on time, which is true of fever.
+For a symptom whose label depends on onset or duration, a weekday changed in one
+fragment can contradict a duration phrase in another — and that contradiction is
+*cross-fragment*, so the memo cannot see it (it forces consistency only for
+repeats of the same token) and neither can any of the three load-time layers. It
+is 68 occurrences over 2.6% of library lines and it buys +4.5% on the 4-gram
+ceiling. Not worth carrying by default into conditions where onset is the answer.
+
+### The real risk is the rollout, not the fever data
+
+The `referent.adult_female` invariant, in the committed file, says:
+
+> *"the line stays a third-party attribution under every swap, because only which
+> woman it is changes and **the libraries never label on that**."*
+
+That final clause is a claim about **this corpus**. It is true of UTI. It is the
+thing that stops being automatically true at fifty conditions, and the class lists
+make the exposure concrete: `referent.adult_female` holds *mum, mother, wife,
+missus, sister, aunt, auntie, girlfriend* in one interchangeable list, so
+`my wife → my sister` is a legal swap. Nothing labels on that for fever. For
+sexual health, contact tracing, obstetrics or safeguarding, the *relationship* is
+clinically material and that swap moves real information.
+
+**The mechanism that handles this already exists, is stricter for classes than
+for hand-written rules, and now has a test.** Layer 3 requires a class-generated
+rule to leave the matched terms unchanged for **every** signal in
+`SIGNAL_LEXICONS` — there is no "own lexicon" to swap inside. So a condition
+where `sister` or `partner` is load-bearing declares it in that condition's
+lexicon, and every pair touching the word stops loading. The per-condition
+clinical judgement becomes "write the lexicon properly", which is already part of
+adding a condition.
+
+Until this ticket that guard had never fired: none of the 71 members appears in
+any of the seven UTI lexicons, so layer 3 passed **vacuously** on every committed
+class rule, and the rollout would have been resting on a check nobody had watched
+work. `tests/test_synthetic_expand.py::test_a_class_member_entering_a_signal_lexicon_refuses_the_whole_group`
+now adds a signal whose lexicon names `sister` and asserts the refusal, and
+`test_the_committed_members_are_absent_from_every_signal_lexicon` records why the
+check is vacuous today rather than leaving it assumed.
+
+**It fails closed and coarsely**, which is worth knowing before it happens: the
+refusal is raised during `load_classes`, so one collision refuses the whole
+`referent` group everywhere rather than dropping the offending pairs. Loud and
+safe, and it means the first condition that collides is a small piece of work
+(split the list, or narrow the lexicon), not a silent degradation.
+
+### Conditions on the adoption
+
+1. **Run `--dry-run-lint` per new condition** and read its accepted-degraded-sites
+   output once. It is already in CI. "Signal-agnostic" means the rules name no
+   signal — not that they have been checked against every one.
+2. **`referent.adult_female` and `referent.adult_male` are known debt.** They mix
+   relationship-bearing members (`wife`, `girlfriend`, `husband`) with
+   kinship-only ones (`mum`, `sister`, `dad`, `brother`). The first condition
+   where relationship is clinically material needs them split. Named here so it
+   is not rediscovered by accident.
+3. **The sixteen invariants are still the whole safety argument** for anything
+   layer 3 does not catch, and they were written against fever libraries.
+4. **Nothing here licenses `affect`.**
+
+### What is no longer urgent
+
+The rate sweep proposed as the way to close question 5 drops in priority. Its
+value was deciding whether to keep the classes; that decision is now made on other
+grounds. Whether the classes *help* is a question the real-text holdout will
+answer better than another synthetic night, once that set is large enough to rank
+anything — which §7 shows it is not.
 
 ## 11. What this does not establish
 

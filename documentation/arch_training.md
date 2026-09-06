@@ -2337,9 +2337,48 @@ belong to no signal, so they apply to every library rather than to one:
 changes its answer on 14 of 1,983 pairs that differ only by a referent, weekday
 or clinician noun — 0.71%, CI [0.21%, 1.68%] — which is neither branch of the
 pre-registered reading, so open question 5 is still open. On *accuracy* the same
-substitution moves nothing (0.9329 → 0.9336). Every pre-registered bound was met,
-including the decision arm's, and the rollout was still declined: see the
-report's §10 for why a met bound was not sufficient.
+substitution moves nothing (0.9329 → 0.9336).
+
+**The classes are adopted anyway, and the reason is a cost asymmetry the
+pre-registration never modelled.** `referent` and `setting` are default-on for
+future generation, `calendar` is opt-in per condition, `affect` is dropped. The
+pre-registration asked "does this help?" and made "we cannot tell" equivalent to
+"abandon", which is the right structure only for a technique that costs something
+per use. A signal-agnostic class costs a command-line option per condition, and
+the corpus is heading for ~50 conditions and ~200 symptoms whose hand-written
+fragments are the expensive resource. So the operative rule is **"does it
+harm?"**, which this run answers: accuracy unmoved by the substitution, four
+guards passed with every arm at or above baseline, no arm gaining only on its own
+tree, no manufactured lexicon hit. **Nothing measured here says the classes help**
+— see the report's §5 for why the apparent clean-tree gains are noise — and the
+decision is recorded as an *override* of a pre-registered stop, not as a reading
+of the result. `calendar` is held back because a weekday changed in one fragment
+can contradict a duration phrase in another, and that contradiction is
+cross-fragment: the DD12 memo covers repeats of one token within an example, and
+no load-time layer sees across fragments at all.
+
+**The rollout's risk is in the class boundaries, not in this run.** Each class
+invariant is a claim about *this* corpus — `referent.adult_female`'s says in as
+many words that "the libraries never label on that", which is true of UTI and is
+the first thing to stop being true elsewhere. The list holds `mum, mother, wife,
+missus, sister, aunt, auntie, girlfriend` as mutually interchangeable, so
+`my wife → my sister` is legal; harmless for fever, material in sexual health,
+contact tracing, obstetrics or safeguarding. **Layer 3 is the mechanism that
+scales to that**, and it is stricter for class rules than for hand-written ones:
+a class-generated rule must leave the matched terms unchanged for *every* signal
+in `SIGNAL_LEXICONS`, so a condition that declares `sister` or `partner` in its
+lexicon refuses those pairs at load. That converts a per-condition clinical
+judgement into lexicon authoring, which adding a condition requires anyway. Two
+properties of it worth knowing before it fires: it is **fail-closed and coarse**
+(the refusal is raised in `load_classes`, so one collision refuses the whole
+group rather than dropping the offending pairs), and until 12.10b it had never
+fired at all — none of the 71 members appears in any of the seven UTI lexicons,
+so it passed vacuously on every committed class rule.
+`tests/test_synthetic_expand.py::test_a_class_member_entering_a_signal_lexicon_refuses_the_whole_group`
+now watches it work, and its neighbour records the vacuity rather than assuming
+it. `referent.adult_female` and `referent.adult_male` are carried as known debt:
+they mix kinship members with relationship-bearing ones and need splitting at the
+first condition where that distinction is clinical.
 
 Three design lessons, which cost a night each to learn and belong here rather
 than in the report:

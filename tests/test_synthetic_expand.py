@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from scripts.encoder_training import dataset
-from scripts.synthetic_data import expand, noise
+from scripts.synthetic_data import expand, lint, noise
 from scripts.synthetic_data.expand import (
     DEFAULT_CLEAN_SHARE,
     RULES_ROOT,
@@ -36,6 +36,7 @@ from scripts.synthetic_data.expand import (
     parse_rules,
     structural_sequence,
 )
+from scripts.synthetic_data.lint import lexicon_matches
 from scripts.synthetic_data.manifest import load_fragments
 from scripts.synthetic_data.normalise import normalise
 from tests.test_synthetic_noise import SIGNAL, read_records, write_tree
@@ -1690,6 +1691,60 @@ def test_the_committed_class_files_load_and_expand(committed_classes, committed_
     assert {rule.origin for rule in committed_class_rules} == {
         swap_class.id for class_set in committed_classes for swap_class in class_set.classes
     }
+
+
+def test_a_class_member_entering_a_signal_lexicon_refuses_the_whole_group(monkeypatch):
+    """The guard the swap-class rollout rests on, watched firing once.
+
+    Layer 3 is *stricter* for a class-generated rule than for a hand-written
+    one: a class belongs to no signal, so its matched terms must be unchanged
+    for **every** signal in ``SIGNAL_LEXICONS``. That is what is supposed to
+    make the classes safe to apply to conditions nobody reviewed them against —
+    a condition where ``sister`` or ``partner`` is clinically load-bearing puts
+    the word in its lexicon, and the pairs touching it stop loading.
+
+    The committed corpus cannot exercise this: none of the 71 members appears in
+    any of the seven UTI lexicons, so the check passes vacuously today and the
+    rollout would be relying on a guard nobody has seen work. This test adds a
+    signal whose lexicon names one member and asserts the refusal.
+
+    It also pins the *shape* of the refusal, which is the operationally
+    important half: the load fails, so the whole ``referent`` group is refused
+    rather than the offending pairs being dropped silently. Fail-closed and
+    loud, at the cost of one collision disabling a group everywhere.
+    """
+    lexicon = lint.Lexicon(terms=("sister",))
+    monkeypatch.setitem(lint.SIGNAL_LEXICONS, "contact_history_present", lexicon)
+    monkeypatch.setitem(
+        lint._COMPILED_LEXICONS,
+        "contact_history_present",
+        (
+            lint._compile(lexicon.terms),
+            lint._compile(lexicon.anchors),
+            lint._compile(lexicon.modifiers),
+        ),
+    )
+    monkeypatch.setattr(expand, "SIGNAL_LEXICONS", lint.SIGNAL_LEXICONS)
+
+    with pytest.raises(ExpansionError) as refusal:
+        expand.load_classes(expand.classes_path(REFERENT_GROUP))
+
+    message = str(refusal.value)
+    assert "signal-lexicon invariance" in message
+    assert "contact_history_present" in message
+    assert "sister" in message
+
+
+def test_the_committed_members_are_absent_from_every_signal_lexicon(committed_classes):
+    """Why the check above passes vacuously on the committed corpus.
+
+    Recorded as a measurement rather than assumed: it is the reason the class
+    files load at all today, and the first condition that breaks it is the one
+    that needs a human to look at the class lists.
+    """
+    for group, class_id, member in _members(committed_classes):
+        for signal in lint.SIGNAL_LEXICONS:
+            assert not lexicon_matches(member, signal), (group, class_id, member, signal)
 
 
 def test_every_referent_member_is_reachable_by_the_person_map(committed_classes):
