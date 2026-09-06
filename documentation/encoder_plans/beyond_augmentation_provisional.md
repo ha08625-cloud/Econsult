@@ -72,8 +72,7 @@ Measured over the committed rulesets rather than estimated:
 
 **At the current cost model, 165 questions is roughly 1,150 libraries and 58,000
 hand-written lines — about 23 times the corpus that took the project to this
-point, for one condition's seven signals.** Your own estimate of 1,000+
-libraries was right and slightly conservative.
+point, for one condition's seven signals.** 
 
 Two further facts make it worse rather than better. **101 of the 165 questions
 are compound** ("a fever or feeling generally unwell", "painful swallowing
