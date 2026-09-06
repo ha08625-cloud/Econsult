@@ -1,0 +1,885 @@
+{
+  "signal": "fever_present",
+  "folds": 5,
+  "clean_dir": "data/synthetic/generated/swapclass/clean",
+  "expanded_dir": "data/synthetic/generated/swapclass/exp-classes",
+  "n_examples": 10000,
+  "n_changed": 1983,
+  "arms": [
+    {
+      "arm": "clean_trained",
+      "n_examples": 10000,
+      "n_changed": 1983,
+      "changed_share": 0.1983,
+      "n_unchanged": 8017,
+      "n_pairs": 1983,
+      "n_submissions": 363,
+      "flip_rate": {
+        "point": 0.007060010085728652,
+        "low": 0.0020523345305284435,
+        "high": 0.016825164594001518,
+        "effective_n": 363,
+        "resamples_used": 2000
+      },
+      "flips": 14,
+      "direction": {
+        "matrix": [
+          [
+            492,
+            0,
+            1
+          ],
+          [
+            1,
+            296,
+            4
+          ],
+          [
+            4,
+            4,
+            1181
+          ]
+        ],
+        "rows": "the source's class",
+        "columns": "the variant's class",
+        "transitions": {
+          "null -> false": 4,
+          "null -> true": 4,
+          "true -> null": 4,
+          "false -> null": 1,
+          "true -> false": 1
+        }
+      },
+      "n_clusters": 363,
+      "by_label_mode": [
+        {
+          "label_mode": "false",
+          "n_pairs": 510,
+          "n_submissions": 95,
+          "flip_rate": {
+            "point": 0.007843137254901933,
+            "low": 0.0,
+            "high": 0.025369978858350906,
+            "effective_n": 95,
+            "resamples_used": 2000
+          },
+          "flips": 4,
+          "direction": {
+            "matrix": [
+              [
+                483,
+                0,
+                0
+              ],
+              [
+                0,
+                13,
+                0
+              ],
+              [
+                4,
+                0,
+                10
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> false": 4
+            }
+          }
+        },
+        {
+          "label_mode": "null_ambiguous",
+          "n_pairs": 580,
+          "n_submissions": 187,
+          "flip_rate": {
+            "point": 0.01379310344827589,
+            "low": 0.0034602076124568004,
+            "high": 0.02842809364548493,
+            "effective_n": 187,
+            "resamples_used": 2000
+          },
+          "flips": 8,
+          "direction": {
+            "matrix": [
+              [
+                8,
+                0,
+                1
+              ],
+              [
+                1,
+                33,
+                3
+              ],
+              [
+                0,
+                3,
+                531
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> true": 3,
+              "true -> null": 3,
+              "false -> null": 1,
+              "true -> false": 1
+            }
+          }
+        },
+        {
+          "label_mode": "null_structural",
+          "n_pairs": 608,
+          "n_submissions": 1,
+          "flip_rate": {
+            "point": 0.0,
+            "low": 0.0,
+            "high": 0.0,
+            "effective_n": 1,
+            "resamples_used": 2000
+          },
+          "flips": 0,
+          "direction": {
+            "matrix": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                608
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {}
+          }
+        },
+        {
+          "label_mode": "true",
+          "n_pairs": 285,
+          "n_submissions": 80,
+          "flip_rate": {
+            "point": 0.007017543859649145,
+            "low": 0.0,
+            "high": 0.018181818181818188,
+            "effective_n": 80,
+            "resamples_used": 2000
+          },
+          "flips": 2,
+          "direction": {
+            "matrix": [
+              [
+                1,
+                0,
+                0
+              ],
+              [
+                0,
+                250,
+                1
+              ],
+              [
+                0,
+                1,
+                32
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> true": 1,
+              "true -> null": 1
+            }
+          }
+        }
+      ],
+      "bootstrap": {
+        "resamples": 2000,
+        "seed": 0,
+        "alpha": 0.05
+      },
+      "resampling_unit": "the decisive fragment's cluster",
+      "what_a_flip_is": "A flip is a disagreement between one arm's prediction on the clean test tree and the same arm's prediction on the expanded test tree, for the same example_id. The two texts make the same claim under rules whose declared invariant is that they change neither tense, person, certainty nor polarity, so a flip is an error on one side of the pair, whichever side that is. No label is read to see one.",
+      "denominator": "The denominator is the pairs the expansion pass actually changed. An example it left alone -- the clean share, plus every example holding no match site -- is byte-identical on both sides and cannot flip, so including it would drag the rate towards zero by an amount that says nothing about the model and everything about `--clean-share`. The unchanged count is reported beside the rate rather than folded into it.",
+      "cluster_unit": "The resampling unit is the decisive fragment's cluster, not the example. Ten thousand test examples sit on a few hundred clusters, because every example recombines a decisive fragment with filler; resampling examples would treat rewrites of one idea as independent observations and report an interval several times too narrow.",
+      "no_growth": "The expanded tree holds exactly as many examples as the clean one, paired example_id for example_id: expansion creates no fragments and no clusters, so effective sample size is identical in every cell. A difference between two cells can therefore only be robustness to paraphrase; it can never be better coverage.",
+      "predictions": {
+        "clean_test": {
+          "path": "models/encoder-swapclass/clean-trained-clean-test.predictions.json",
+          "header": {
+            "model": "arm_b_finetune",
+            "signal": "fever_present",
+            "dataset_dir": "data/synthetic/generated/swapclass/clean",
+            "test_dir": "data/synthetic/generated/swapclass/clean",
+            "folds": 5,
+            "report_header": {
+              "signal": "fever_present",
+              "folds": 5,
+              "generator_version": 4,
+              "generator_base_seed": 42,
+              "generator_seed_rule": "base + 100 * fold + {train: 0, val: 1, test: 2}",
+              "split_salt": "0",
+              "dataset_dir": "data/synthetic/generated/swapclass/clean",
+              "dataset_expansion": "none -- the tree carries no expansion block",
+              "test_dataset_dir": "data/synthetic/generated/swapclass/clean",
+              "test_dataset_noise": "none -- the test tree carries no noise block",
+              "test_dataset_expansion": "none -- the tree carries no expansion block",
+              "ruleset": "data/uti1.json",
+              "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+              "examples_per_fold": {
+                "train": 10000,
+                "val": 2000,
+                "test": 2000
+              },
+              "shuffle_seed": 7,
+              "arm": "arm_b_finetune",
+              "base_model": "roberta-base",
+              "pooling": "mean",
+              "max_seq_len": 256,
+              "device": "cuda",
+              "epochs": 3,
+              "batch_size": 32,
+              "lr": 2e-05,
+              "warmup_ratio": 0.1,
+              "determinism": "strict",
+              "train_seed": 1234,
+              "trainable": "all layers unfrozen",
+              "holdout": "data/realistic/uti1_holdout.labels.tsv -- 67 real submissions, scored after test, selects nothing",
+              "validation_guided_decisions": [
+                "pooling mode (DD3) -- mean vs CLS, compared once",
+                "learning rate",
+                "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+                "decision margin (DD9)"
+              ],
+              "artefacts": "models/encoder-swapclass/clean-trained-clean-test/fever_present/arm_b_finetune",
+              "weights": "not written (--no-weights)",
+              "model_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+              "revision_pinned": false,
+              "tokeniser_lowercases": false,
+              "tokeniser_vocab_size": 50265,
+              "tokeniser_discards_casing": false,
+              "cluster_tag_coverage": "6 of 8 libraries carry cluster markers; 194 of 899 fragments are in libraries with none"
+            }
+          }
+        },
+        "expanded_test": {
+          "path": "models/encoder-swapclass/clean-trained-classes-test.predictions.json",
+          "header": {
+            "model": "arm_b_finetune",
+            "signal": "fever_present",
+            "dataset_dir": "data/synthetic/generated/swapclass/clean",
+            "test_dir": "data/synthetic/generated/swapclass/exp-classes",
+            "folds": 5,
+            "report_header": {
+              "signal": "fever_present",
+              "folds": 5,
+              "generator_version": 4,
+              "generator_base_seed": 42,
+              "generator_seed_rule": "base + 100 * fold + {train: 0, val: 1, test: 2}",
+              "split_salt": "0",
+              "dataset_dir": "data/synthetic/generated/swapclass/clean",
+              "dataset_expansion": "none -- the tree carries no expansion block",
+              "test_dataset_dir": "data/synthetic/generated/swapclass/exp-classes",
+              "test_dataset_noise": "none -- the test tree carries no noise block",
+              "test_dataset_expansion": {
+                "source_dir": "data/synthetic/generated/swapclass/clean",
+                "seed": 42,
+                "requested_rate": 0.4,
+                "clean_share": 0.25,
+                "class_groups": [
+                  "referent",
+                  "calendar",
+                  "setting"
+                ],
+                "rule_sources": [
+                  {
+                    "path": "data/expansion/classes/referent.classes.json",
+                    "sha256": "0e88e3a6256d8753cb65b760cf8182a8a35ad6983e73d6e736a47f280e84efd4",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 252
+                  },
+                  {
+                    "path": "data/expansion/classes/calendar.classes.json",
+                    "sha256": "c02b6a68fb78730f67262f51aa5515accb388cb065e2ea0be097c803fe9f323d",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 42
+                  },
+                  {
+                    "path": "data/expansion/classes/setting.classes.json",
+                    "sha256": "707164688bd143f4914c2bd557b7de09d064483b4969bac741d8400f97e6b538",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 6
+                  }
+                ],
+                "rules_count": 300,
+                "changed_share": 0.1805,
+                "substitutions_per_hundred_words": {
+                  "by_label": {
+                    "true": 0.4633,
+                    "false": 0.5135,
+                    "null": 0.5758
+                  },
+                  "by_label_mode": {
+                    "true": 0.4633,
+                    "false": 0.5135,
+                    "null_structural": 0.6602,
+                    "null_ambiguous": 0.5026
+                  },
+                  "overall": 0.5423,
+                  "largest_by_label_gap": 0.1125
+                }
+              },
+              "ruleset": "data/uti1.json",
+              "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+              "examples_per_fold": {
+                "train": 10000,
+                "val": 2000,
+                "test": 2000
+              },
+              "shuffle_seed": 7,
+              "arm": "arm_b_finetune",
+              "base_model": "roberta-base",
+              "pooling": "mean",
+              "max_seq_len": 256,
+              "device": "cuda",
+              "epochs": 3,
+              "batch_size": 32,
+              "lr": 2e-05,
+              "warmup_ratio": 0.1,
+              "determinism": "strict",
+              "train_seed": 1234,
+              "trainable": "all layers unfrozen",
+              "holdout": "data/realistic/uti1_holdout.labels.tsv -- 67 real submissions, scored after test, selects nothing",
+              "validation_guided_decisions": [
+                "pooling mode (DD3) -- mean vs CLS, compared once",
+                "learning rate",
+                "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+                "decision margin (DD9)"
+              ],
+              "artefacts": "models/encoder-swapclass/clean-trained-classes-test/fever_present/arm_b_finetune",
+              "weights": "not written (--no-weights)",
+              "model_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+              "revision_pinned": false,
+              "tokeniser_lowercases": false,
+              "tokeniser_vocab_size": 50265,
+              "tokeniser_discards_casing": false,
+              "cluster_tag_coverage": "6 of 8 libraries carry cluster markers; 194 of 899 fragments are in libraries with none"
+            }
+          }
+        }
+      }
+    },
+    {
+      "arm": "classes_trained",
+      "n_examples": 10000,
+      "n_changed": 1983,
+      "changed_share": 0.1983,
+      "n_unchanged": 8017,
+      "n_pairs": 1983,
+      "n_submissions": 363,
+      "flip_rate": {
+        "point": 0.0035300050428643814,
+        "low": 0.0007784120394395133,
+        "high": 0.008487269096355443,
+        "effective_n": 363,
+        "resamples_used": 2000
+      },
+      "flips": 7,
+      "direction": {
+        "matrix": [
+          [
+            515,
+            0,
+            0
+          ],
+          [
+            0,
+            263,
+            4
+          ],
+          [
+            1,
+            2,
+            1198
+          ]
+        ],
+        "rows": "the source's class",
+        "columns": "the variant's class",
+        "transitions": {
+          "true -> null": 4,
+          "null -> true": 2,
+          "null -> false": 1
+        }
+      },
+      "n_clusters": 363,
+      "by_label_mode": [
+        {
+          "label_mode": "false",
+          "n_pairs": 510,
+          "n_submissions": 95,
+          "flip_rate": {
+            "point": 0.0019607843137254832,
+            "low": 0.0,
+            "high": 0.0063157894736841635,
+            "effective_n": 95,
+            "resamples_used": 2000
+          },
+          "flips": 1,
+          "direction": {
+            "matrix": [
+              [
+                499,
+                0,
+                0
+              ],
+              [
+                0,
+                7,
+                0
+              ],
+              [
+                1,
+                0,
+                3
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> false": 1
+            }
+          }
+        },
+        {
+          "label_mode": "null_ambiguous",
+          "n_pairs": 580,
+          "n_submissions": 187,
+          "flip_rate": {
+            "point": 0.0034482758620689724,
+            "low": 0.0,
+            "high": 0.00907441016333943,
+            "effective_n": 187,
+            "resamples_used": 2000
+          },
+          "flips": 2,
+          "direction": {
+            "matrix": [
+              [
+                14,
+                0,
+                0
+              ],
+              [
+                0,
+                15,
+                1
+              ],
+              [
+                0,
+                1,
+                549
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "null -> true": 1,
+              "true -> null": 1
+            }
+          }
+        },
+        {
+          "label_mode": "null_structural",
+          "n_pairs": 608,
+          "n_submissions": 1,
+          "flip_rate": {
+            "point": 0.0,
+            "low": 0.0,
+            "high": 0.0,
+            "effective_n": 1,
+            "resamples_used": 2000
+          },
+          "flips": 0,
+          "direction": {
+            "matrix": [
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                608
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {}
+          }
+        },
+        {
+          "label_mode": "true",
+          "n_pairs": 285,
+          "n_submissions": 80,
+          "flip_rate": {
+            "point": 0.01403508771929829,
+            "low": 0.0,
+            "high": 0.032258064516129004,
+            "effective_n": 80,
+            "resamples_used": 2000
+          },
+          "flips": 4,
+          "direction": {
+            "matrix": [
+              [
+                2,
+                0,
+                0
+              ],
+              [
+                0,
+                241,
+                3
+              ],
+              [
+                0,
+                1,
+                38
+              ]
+            ],
+            "rows": "the source's class",
+            "columns": "the variant's class",
+            "transitions": {
+              "true -> null": 3,
+              "null -> true": 1
+            }
+          }
+        }
+      ],
+      "bootstrap": {
+        "resamples": 2000,
+        "seed": 0,
+        "alpha": 0.05
+      },
+      "resampling_unit": "the decisive fragment's cluster",
+      "what_a_flip_is": "A flip is a disagreement between one arm's prediction on the clean test tree and the same arm's prediction on the expanded test tree, for the same example_id. The two texts make the same claim under rules whose declared invariant is that they change neither tense, person, certainty nor polarity, so a flip is an error on one side of the pair, whichever side that is. No label is read to see one.",
+      "denominator": "The denominator is the pairs the expansion pass actually changed. An example it left alone -- the clean share, plus every example holding no match site -- is byte-identical on both sides and cannot flip, so including it would drag the rate towards zero by an amount that says nothing about the model and everything about `--clean-share`. The unchanged count is reported beside the rate rather than folded into it.",
+      "cluster_unit": "The resampling unit is the decisive fragment's cluster, not the example. Ten thousand test examples sit on a few hundred clusters, because every example recombines a decisive fragment with filler; resampling examples would treat rewrites of one idea as independent observations and report an interval several times too narrow.",
+      "no_growth": "The expanded tree holds exactly as many examples as the clean one, paired example_id for example_id: expansion creates no fragments and no clusters, so effective sample size is identical in every cell. A difference between two cells can therefore only be robustness to paraphrase; it can never be better coverage.",
+      "predictions": {
+        "clean_test": {
+          "path": "models/encoder-swapclass/classes-trained-clean-test.predictions.json",
+          "header": {
+            "model": "arm_b_finetune",
+            "signal": "fever_present",
+            "dataset_dir": "data/synthetic/generated/swapclass/exp-classes",
+            "test_dir": "data/synthetic/generated/swapclass/clean",
+            "folds": 5,
+            "report_header": {
+              "signal": "fever_present",
+              "folds": 5,
+              "generator_version": 4,
+              "generator_base_seed": 42,
+              "generator_seed_rule": "base + 100 * fold + {train: 0, val: 1, test: 2}",
+              "split_salt": "0",
+              "dataset_dir": "data/synthetic/generated/swapclass/exp-classes",
+              "dataset_expansion": {
+                "source_dir": "data/synthetic/generated/swapclass/clean",
+                "seed": 42,
+                "requested_rate": 0.4,
+                "clean_share": 0.25,
+                "class_groups": [
+                  "referent",
+                  "calendar",
+                  "setting"
+                ],
+                "rule_sources": [
+                  {
+                    "path": "data/expansion/classes/referent.classes.json",
+                    "sha256": "0e88e3a6256d8753cb65b760cf8182a8a35ad6983e73d6e736a47f280e84efd4",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 252
+                  },
+                  {
+                    "path": "data/expansion/classes/calendar.classes.json",
+                    "sha256": "c02b6a68fb78730f67262f51aa5515accb388cb065e2ea0be097c803fe9f323d",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 42
+                  },
+                  {
+                    "path": "data/expansion/classes/setting.classes.json",
+                    "sha256": "707164688bd143f4914c2bd557b7de09d064483b4969bac741d8400f97e6b538",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 6
+                  }
+                ],
+                "rules_count": 300,
+                "changed_share": 0.1935,
+                "substitutions_per_hundred_words": {
+                  "by_label": {
+                    "true": 0.6084,
+                    "false": 0.5352,
+                    "null": 0.6325
+                  },
+                  "by_label_mode": {
+                    "true": 0.6084,
+                    "false": 0.5352,
+                    "null_structural": 0.6828,
+                    "null_ambiguous": 0.584
+                  },
+                  "overall": 0.6041,
+                  "largest_by_label_gap": 0.0973
+                }
+              },
+              "test_dataset_dir": "data/synthetic/generated/swapclass/clean",
+              "test_dataset_noise": "none -- the test tree carries no noise block",
+              "test_dataset_expansion": "none -- the tree carries no expansion block",
+              "ruleset": "data/uti1.json",
+              "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+              "examples_per_fold": {
+                "train": 10000,
+                "val": 2000,
+                "test": 2000
+              },
+              "shuffle_seed": 7,
+              "arm": "arm_b_finetune",
+              "base_model": "roberta-base",
+              "pooling": "mean",
+              "max_seq_len": 256,
+              "device": "cuda",
+              "epochs": 3,
+              "batch_size": 32,
+              "lr": 2e-05,
+              "warmup_ratio": 0.1,
+              "determinism": "strict",
+              "train_seed": 1234,
+              "trainable": "all layers unfrozen",
+              "holdout": "data/realistic/uti1_holdout.labels.tsv -- 67 real submissions, scored after test, selects nothing",
+              "validation_guided_decisions": [
+                "pooling mode (DD3) -- mean vs CLS, compared once",
+                "learning rate",
+                "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+                "decision margin (DD9)"
+              ],
+              "artefacts": "models/encoder-swapclass/classes-trained-clean-test/fever_present/arm_b_finetune",
+              "weights": "not written (--no-weights)",
+              "model_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+              "revision_pinned": false,
+              "tokeniser_lowercases": false,
+              "tokeniser_vocab_size": 50265,
+              "tokeniser_discards_casing": false,
+              "cluster_tag_coverage": "6 of 8 libraries carry cluster markers; 194 of 899 fragments are in libraries with none"
+            }
+          }
+        },
+        "expanded_test": {
+          "path": "models/encoder-swapclass/classes-trained-classes-test.predictions.json",
+          "header": {
+            "model": "arm_b_finetune",
+            "signal": "fever_present",
+            "dataset_dir": "data/synthetic/generated/swapclass/exp-classes",
+            "test_dir": "data/synthetic/generated/swapclass/exp-classes",
+            "folds": 5,
+            "report_header": {
+              "signal": "fever_present",
+              "folds": 5,
+              "generator_version": 4,
+              "generator_base_seed": 42,
+              "generator_seed_rule": "base + 100 * fold + {train: 0, val: 1, test: 2}",
+              "split_salt": "0",
+              "dataset_dir": "data/synthetic/generated/swapclass/exp-classes",
+              "dataset_expansion": {
+                "source_dir": "data/synthetic/generated/swapclass/clean",
+                "seed": 42,
+                "requested_rate": 0.4,
+                "clean_share": 0.25,
+                "class_groups": [
+                  "referent",
+                  "calendar",
+                  "setting"
+                ],
+                "rule_sources": [
+                  {
+                    "path": "data/expansion/classes/referent.classes.json",
+                    "sha256": "0e88e3a6256d8753cb65b760cf8182a8a35ad6983e73d6e736a47f280e84efd4",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 252
+                  },
+                  {
+                    "path": "data/expansion/classes/calendar.classes.json",
+                    "sha256": "c02b6a68fb78730f67262f51aa5515accb388cb065e2ea0be097c803fe9f323d",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 42
+                  },
+                  {
+                    "path": "data/expansion/classes/setting.classes.json",
+                    "sha256": "707164688bd143f4914c2bd557b7de09d064483b4969bac741d8400f97e6b538",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 6
+                  }
+                ],
+                "rules_count": 300,
+                "changed_share": 0.1935,
+                "substitutions_per_hundred_words": {
+                  "by_label": {
+                    "true": 0.6084,
+                    "false": 0.5352,
+                    "null": 0.6325
+                  },
+                  "by_label_mode": {
+                    "true": 0.6084,
+                    "false": 0.5352,
+                    "null_structural": 0.6828,
+                    "null_ambiguous": 0.584
+                  },
+                  "overall": 0.6041,
+                  "largest_by_label_gap": 0.0973
+                }
+              },
+              "test_dataset_dir": "data/synthetic/generated/swapclass/exp-classes",
+              "test_dataset_noise": "none -- the test tree carries no noise block",
+              "test_dataset_expansion": {
+                "source_dir": "data/synthetic/generated/swapclass/clean",
+                "seed": 42,
+                "requested_rate": 0.4,
+                "clean_share": 0.25,
+                "class_groups": [
+                  "referent",
+                  "calendar",
+                  "setting"
+                ],
+                "rule_sources": [
+                  {
+                    "path": "data/expansion/classes/referent.classes.json",
+                    "sha256": "0e88e3a6256d8753cb65b760cf8182a8a35ad6983e73d6e736a47f280e84efd4",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 252
+                  },
+                  {
+                    "path": "data/expansion/classes/calendar.classes.json",
+                    "sha256": "c02b6a68fb78730f67262f51aa5515accb388cb065e2ea0be097c803fe9f323d",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 42
+                  },
+                  {
+                    "path": "data/expansion/classes/setting.classes.json",
+                    "sha256": "707164688bd143f4914c2bd557b7de09d064483b4969bac741d8400f97e6b538",
+                    "kind": "classes",
+                    "signal": null,
+                    "count": 6
+                  }
+                ],
+                "rules_count": 300,
+                "changed_share": 0.1805,
+                "substitutions_per_hundred_words": {
+                  "by_label": {
+                    "true": 0.4633,
+                    "false": 0.5135,
+                    "null": 0.5758
+                  },
+                  "by_label_mode": {
+                    "true": 0.4633,
+                    "false": 0.5135,
+                    "null_structural": 0.6602,
+                    "null_ambiguous": 0.5026
+                  },
+                  "overall": 0.5423,
+                  "largest_by_label_gap": 0.1125
+                }
+              },
+              "ruleset": "data/uti1.json",
+              "ruleset_hash": "325b33068307bc70ca085b27117a90c2ad9e71fac24a80f77c8107d08049bb9f",
+              "examples_per_fold": {
+                "train": 10000,
+                "val": 2000,
+                "test": 2000
+              },
+              "shuffle_seed": 7,
+              "arm": "arm_b_finetune",
+              "base_model": "roberta-base",
+              "pooling": "mean",
+              "max_seq_len": 256,
+              "device": "cuda",
+              "epochs": 3,
+              "batch_size": 32,
+              "lr": 2e-05,
+              "warmup_ratio": 0.1,
+              "determinism": "strict",
+              "train_seed": 1234,
+              "trainable": "all layers unfrozen",
+              "holdout": "data/realistic/uti1_holdout.labels.tsv -- 67 real submissions, scored after test, selects nothing",
+              "validation_guided_decisions": [
+                "pooling mode (DD3) -- mean vs CLS, compared once",
+                "learning rate",
+                "epoch count (the epoch restored is the best-scoring one on the fold's own validation split)",
+                "decision margin (DD9)"
+              ],
+              "artefacts": "models/encoder-swapclass/classes-trained-classes-test/fever_present/arm_b_finetune",
+              "weights": "not written (--no-weights)",
+              "model_revision": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+              "revision_pinned": false,
+              "tokeniser_lowercases": false,
+              "tokeniser_vocab_size": 50265,
+              "tokeniser_discards_casing": false,
+              "cluster_tag_coverage": "6 of 8 libraries carry cluster markers; 194 of 899 fragments are in libraries with none"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "guard": {
+    "measured_on": "the clean test tree, both arms",
+    "model": "arm_b_finetune",
+    "bound": 0.02,
+    "baseline": {
+      "report": "reports/encoder_training/swapclass/clean-trained-clean-test/fever_present.arm_b_finetune.json",
+      "model": "arm_b_finetune",
+      "point": 0.9329250925662205,
+      "low": 0.9118667591950035,
+      "high": 0.9526601830663616,
+      "effective_n": 418,
+      "resamples_used": 2000
+    },
+    "arm": {
+      "report": "reports/encoder_training/swapclass/classes-trained-clean-test/fever_present.arm_b_finetune.json",
+      "model": "arm_b_finetune",
+      "point": 0.942324124181145,
+      "low": 0.9232571763327475,
+      "high": 0.9602539332045267,
+      "effective_n": 418,
+      "resamples_used": 2000
+    },
+    "drop": -0.009399031614924502,
+    "passed": true,
+    "why": "a flip rate falls to zero for a head that answers `null` to everything, so a lower flip rate is only a win if decisive accuracy held (plan DD7)"
+  },
+  "negative_control": "The clean synthetic test set is drawn from the same libraries under the same vocabulary as the training split, so it cannot contain the failure this pass targets. The pre-registered expectation is that nothing moves on it. A large gain there is a warning -- it means a new shortcut was manufactured -- not a result."
+}
