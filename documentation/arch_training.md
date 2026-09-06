@@ -2323,6 +2323,47 @@ explicit statement that the expected movement on the clean synthetic test set is
 vocabulary and so cannot contain the failure being targeted. A large synthetic
 gain there is evidence of a new shortcut rather than a removed one.
 
+### 12.10b Swap classes — built, measured, and the measurement came back indeterminate
+
+`reports/encoder_training/2026-09-05-swap-class-expansion.md` is the write-up,
+read against `2026-09-05-swap-class-preregistration.md`; the plain-English
+companion sits beside them. Sixteen hand-written lists of interchangeable words
+(71 members, four groups) expand at load time into 320 ordered-pair rules that
+belong to no signal, so they apply to every library rather than to one:
+`data/expansion/classes/<group>.classes.json`, selected per arm with
+`--rules classes|both --class-groups`.
+
+**The result to carry forward is a null-shaped one.** The clean-trained head
+changes its answer on 14 of 1,983 pairs that differ only by a referent, weekday
+or clinician noun — 0.71%, CI [0.21%, 1.68%] — which is neither branch of the
+pre-registered reading, so open question 5 is still open. On *accuracy* the same
+substitution moves nothing (0.9329 → 0.9336). Every pre-registered bound was met,
+including the decision arm's, and the rollout was still declined: see the
+report's §10 for why a met bound was not sufficient.
+
+Three design lessons, which cost a night each to learn and belong here rather
+than in the report:
+
+* **A flip rate computed over an arm's own changed pairs cannot compare two
+  arms.** Each arm's rate has a different denominator and a different population,
+  so the arms in one batch are five levels, not a ranking. A comparison between
+  arms needs a shared pair set and a paired test inside one invocation, and
+  `paired-flip-rate` does not offer one.
+* **The per-fold decision margin is selected per arm**, and arms in the same
+  batch select very different ones. Flip rate and decisive accuracy are both
+  computed after gating, so part of every between-arm difference is that discrete
+  choice rather than what the encoder learned. Fix the margin across arms before
+  reading a between-arm difference.
+* **A pre-registration needs a branch for the middle.** 12.10's bound was
+  unattainable; 12.10b's two readings were both attainable and left a gap between
+  them, which is where the number landed. Pre-register the indeterminate range and
+  what it costs to resolve it.
+
+The batch also demonstrated, rather than asserted, that DD6a's person-class
+normalisation and DD12's memoisation are gated to class-generated rules: the v1
+arm reproduces 2026-09-04 bit for bit — same 74 and 33 flips, same 0.9329, same
+guard drop — which is what makes the two runs comparable at all.
+
 ### 12.11 What comes after augmentation — provisional plan only, nothing built
 
 `documentation/encoder_plans/beyond_augmentation_provisional.md` is the plan of
