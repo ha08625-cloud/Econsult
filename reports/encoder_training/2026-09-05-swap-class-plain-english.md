@@ -16,7 +16,10 @@ We asked whether the model secretly cares about words that carry no medical
 meaning — *sister*, *Tuesday*, *nurse* — and after a full night on the GPU the
 honest answer is **"a little, maybe, we still can't tell"**.
 
-That is a disappointing result and it is written up as one.
+That is a disappointing result and it is written up as one. The word lists are
+being kept regardless, because they cost nothing to use and appear to do no
+harm — which is a different reason from the one the experiment was designed to
+supply, and §6 says so plainly.
 
 ---
 
@@ -176,37 +179,95 @@ None had. That is all it can say, and it was written down in advance that it wou
 be all it can say.
 
 ---
+## 6. So what happens next? **We're keeping it.**
 
-## 6. So what happens next?
+The plan written before the run said: if the model turns out not to care about
+these words, stop and don't extend the word lists to the other symptoms. The
+result came in between "it cares" and "it doesn't", and **the lists are being kept
+anyway**. That is a deliberate override of the plan's own rule, not a
+reinterpretation of the result, and it is worth being clear about why.
 
-**The rollout was declined**, even though the deciding version passed its bar.
+**The plan asked the wrong question.** It asked "does this help?", and treated
+"we can't tell" as a reason to abandon. That is the right way to decide about
+something that costs effort to use. These word lists don't. They were written
+once, they mention no symptom, and applying them to a new condition means adding
+one option to a command — no new writing, no tuning, no per-symptom review.
 
-That deserves an explanation, because it is the opposite of what the pass rule
-said to do. Three reasons:
+That matters because of where the system is going: roughly fifty conditions, a
+couple of hundred symptoms, five or six sentence libraries each. Hand-writing
+those sentences is the expensive part and always will be. Anything that makes the
+existing sentences stretch further, for free, is worth keeping unless it is shown
+to do damage.
 
-1. The version that passed contains **both** sets of rules, and last month's
-   fever rules did about 80% of the rewriting in it. Nothing in this run
-   separates what the new swaps contributed from what the old rules did.
-2. The measurement that would justify extending the swap lists to six more
-   symptoms is the indeterminate one.
-3. The only sign of benefit is the one §5 explains away.
+So the question that actually decides it is **"does it hurt?"** — and this run
+answers that reasonably well. Swapping relatives around in a fifth of the test
+data changes the model's overall score by essentially nothing (93.29% → 93.36%).
+Every version trained on swapped data scored at or above the untouched one. No
+version learned a new shortcut. The safety scan found no rule that invents medical
+language.
 
-Extending the lists to six more symptoms is many hours of careful hand-authoring,
-and there is no evidence yet that it would buy anything.
+**What is being kept, and what isn't:**
 
-**What is proposed instead** is a cheap follow-up that closes the question rather
-than re-asking it. The problem is that only 1,983 sentences changed, so the
-measurement is made of 14 events. Turning the rewriting rate up roughly doubles
-the sentences it touches, using the same lists and the same night, and the
-untouched model doesn't need retraining to be measured again. If the number is
-still around 0.7% with a tighter range, the question closes as "no" and the swap
-lists stay where they are.
+| word lists | decision |
+|---|---|
+| relatives, in-laws, children | **on by default** |
+| doctor / GP / nurse | **on by default** |
+| days of the week | **off unless a condition asks for it** |
+| worried / concerned / anxious | **dropped** |
 
-Nothing built in this ticket is wasted or needs rebuilding — sixteen lists, the
-loader, the safety checks and the tests are all committed and working. The only
-open decision is whether to write more of them.
+Days of the week are held back for a specific reason. Changing "Monday" to
+"Thursday" is harmless when the answer doesn't depend on timing — which is true
+of fever. For a symptom where *when it started* is the answer, a changed weekday
+in one sentence can contradict "four days ago" in another, and none of the
+automatic checks can see that, because they look at one sentence at a time.
 
----
+The worried/concerned list is dropped because §5 shows it did nothing measurable
+and it was always the list with the weakest argument behind it.
+
+**One thing must not get lost in the retelling: nothing here shows the swaps
+help.** They are being kept because they are free and appear harmless, not
+because they were shown to improve anything. If a future run turns up something
+strange, whoever reads this needs to know there was never a measured benefit to
+weigh against it.
+
+### The risk isn't in this run, it's in the rollout
+
+The "relatives" list contains *mum, mother, wife, missus, sister, aunt, auntie,
+girlfriend*, and the software may swap any of them for any other. The written
+promise attached to that list says, in as many words, that the libraries never
+label on which woman it is. **That is true of a urine-infection questionnaire.**
+
+It stops being automatically true across fifty conditions. Swapping "my wife" for
+"my sister" is harmless when the question is whether someone has a fever. It is
+not harmless in sexual health, contact tracing, obstetrics or safeguarding, where
+the *relationship* is part of the clinical picture.
+
+The good news is that the machinery to catch this already exists and is *stricter*
+for these generated word lists than for hand-written rules: a swap may not change
+any medical wording for **any** symptom the system knows about. So a condition
+where "sister" or "partner" is medically meaningful declares that word in its own
+vocabulary list, and every swap touching it stops working automatically. The
+per-condition judgement becomes "describe the new condition properly", which is
+already unavoidable work.
+
+Until this ticket, that safeguard had **never actually fired** — none of the 71
+words appears in any of the seven urine-infection vocabularies, so it was passing
+without ever being tested. A test has now been added that puts "sister" into a
+made-up condition's vocabulary and checks the refusal happens. It does, and it
+refuses loudly: the whole list is rejected rather than the offending pair being
+quietly dropped.
+
+### Conditions attached to keeping it
+
+1. Run the safety scan for each new condition and read its output once. "Works
+   for any symptom" means the rules don't mention a symptom — not that anyone has
+   checked them against every one.
+2. The "relatives" lists mix family relationships with romantic ones. The first
+   condition where that distinction is medically meaningful needs them split.
+   Written down here so it isn't rediscovered by accident.
+3. Sixteen hand-written promises are still the safety net for anything the
+   automatic check can't see, and they were written while looking at fever
+   sentences.
 
 ## 7. Honest limitations
 
