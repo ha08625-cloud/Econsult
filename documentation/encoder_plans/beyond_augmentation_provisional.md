@@ -1,24 +1,10 @@
 # Provisional plan: what to do now that augmentation has stopped paying
 
-**Status: provisional, revision 1 (2026-09-05).** Stage 1 of the workflow: the
-design decisions are argued, the task list is a shape rather than an instruction
-set, and the open questions at the end are for the stage-2 review pass to close.
-Nothing here is built.
-
-**It lives in `encoder_plans/` rather than `planned_updates/` because
-`arch_training.md` §12.8 names this directory as where the forward plan's plans
-of record live.**
-
 Read first: `arch_training.md` §9 (what the data is worth), §10 (the four
 measured runs and the Outstanding list), §12.6 and §12.10 (the two augmentation
 passes as measured), §13 (how experiments are batched);
 `arch_encoder_training.md` §11 (the real-text holdout and what it can decide);
 `data/realistic/README.md` (the five rules).
-
-**What this plan is not.** It is not a fifth augmentation pass, and it does not
-propose a way of writing more surface forms per idea. §1 is the argument that
-that seam is worked out. It is also not a rejection of anything already built —
-companions are the largest measured win in the project and stay.
 
 ---
 
@@ -36,22 +22,8 @@ side by side, they say something the individual write-ups do not:
 
 **One of those four moved the number that matters, and it is the only one that
 changed the *shape* of a training example rather than its wording.** The other
-three are the three ways of writing one idea differently, which is the family
-this plan exists because you have now exhausted. `arch_training.md` says it
-about each of them separately — 12.6 "adds no ideas and effective sample size is
-unchanged", 12.10 "adds no ideas and no effective sample size", 12.3 "a dataset
-that grows in line count has not grown in difficulty" — and the table is what
-those three sentences look like together.
-
-**So the instinct that keeps being reported back to you in every chat is
-correct, and it is now measured rather than asserted.** What follows is not
-"write more ideas". Writing more ideas by hand is the thing that does not scale
+three are the three ways of writing one idea differently. However, writing more ideas by hand is the thing that does not scale
 to 165 questions, and §2.3 does the arithmetic.
-
-**One consequence for the run in progress.** The swap-class batch (12.10b) is
-the fifth member of the surface-forms family. Finish it, because it is
-pre-registered and the GPU is otherwise idle, and expect it to land inside the
-intervals as v1 did. **Nothing further should be queued behind it.**
 
 ---
 
@@ -61,18 +33,12 @@ Three constraints, in the order they bind.
 
 ### 2.1 The measuring instrument, not the training data
 
-This is the first item on §10's Outstanding list and it has grown since it was
-written there. As of 2026-09-02 the margin selector varies more between folds of
-one cell than the treatments vary from each other, and the document states the
-consequence plainly: **no cross-arm real-text comparison in this pipeline is
+This is the first item on §10's Outstanding list and it has grown. The margin selector varies more between folds of
+one cell than the treatments vary from each other: **no cross-arm real-text comparison in this pipeline is
 trustworthy, including those already committed.**
 
 Underneath that sits the harder version. The 67 submissions carry ±12 points
-overall and ±23 to ±40 per signal on the decisive slice. 12.10 records what that
-means in practice: an 11-point real-text fall in the expanded arm could not be
-separated from a 12.3-point fall in an arm that 12.6 concluded was beneficial
-and harmless. **Both of those readings are noise at this sample size, and no
-change to the training data alters that.**
+overall and ±23 to ±40 per signal on the decisive slice. 
 
 Every augmentation experiment from here is therefore being scored by an
 instrument that cannot see effects of the size those experiments produce. That
@@ -88,8 +54,7 @@ the sixty-seven sit in a tidier register than the libraries aim at.
 
 **Stated plainly: the "real text" instrument is itself synthetic, and it shares
 an author with the thing it is measuring.** Every register claim in the project
-is bounded by that, and no augmentation pass can reach it — a paraphrase of a
-sentence one person wrote is still that person's idea of how a patient writes.
+is bounded by that
 
 ### 2.3 The arithmetic of the other 164 questions
 
