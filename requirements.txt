@@ -8,7 +8,7 @@ pydantic==2.13.5
 anyio==4.15.1
 python-multipart==0.0.32
 nh3==0.3.7
-psycopg2-binary==2.9.12
+psycopg2-binary==2.9.13
 alembic==1.19.2
 tzdata
 fpdf2==2.8.8
